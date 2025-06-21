@@ -99,22 +99,7 @@ Este é o backend da aplicação **Kavita**, um sistema completo de e-commerce v
 
 ---
 
-## 🔒 Variáveis de Ambiente (.env)
 
-```env
-DB_HOST=localhost
-DB_USER=root
-DB_PASS=suaSenhaAqui
-DB_NAME=kavita
-
-JWT_SECRET=sua_chave_super_secreta
-EMAIL_USER=seuemail@gmail.com
-EMAIL_PASS=suasenha
-```
-
-> ⚠️ Dica: Adicione `.env` ao `.gitignore` para evitar vazamento de senhas no GitHub
-
----
 
 ## 📬 Envio de E-mail
 
