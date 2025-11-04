@@ -1,69 +1,112 @@
+// routes/checkoutRoutes.js
 const express = require("express");
-const pool = require("../config/pool"); // Conexão com o banco de dados MySQL
-const axios = require("axios"); // Pode ser usado para enviar mensagens no WhatsApp
+const pool = require("../config/pool");
 const router = express.Router();
 
-// 📦 POST /api/checkout — Registra um novo pedido no banco
+// POST /api/checkout
 router.post("/", async (req, res) => {
-  console.log("🔔 [POST] /api/checkout foi acionada!");
+  const { usuario_id, endereco, formaPagamento, produtos } = req.body || {};
 
-  // Desestrutura os dados esperados no corpo da requisição
-  const {
-    usuario_id,        // ID do usuário que está fazendo o pedido
-    endereco,          // Objeto contendo logradouro, cidade, número, etc.
-    formaPagamento,    // Exemplo: "Pix", "Cartão", "Dinheiro"
-    produtos,          // Lista de produtos comprados com quantidade
-  } = req.body;
-
-  // Valida se todos os campos obrigatórios foram enviados
-  if (!usuario_id || !endereco || !formaPagamento || !produtos) {
-    console.warn("⚠️ Campos obrigatórios ausentes no corpo da requisição.");
-    return res.status(400).json({ message: "Todos os campos são obrigatórios" });
+  if (!usuario_id || !endereco || !formaPagamento || !Array.isArray(produtos) || !produtos.length) {
+    return res.status(400).json({ message: "Campos obrigatórios ausentes." });
   }
 
-  const connection = await pool.getConnection(); // Pega uma conexão do pool
+  // Mapa id -> quantidade solicitada (agrega duplicados)
+  const wantMap = new Map();
+  for (const p of produtos) {
+    const id = Number(p.id);
+    const q  = Math.max(1, Number(p.quantidade || p.quantity || 0));
+    if (!id || !q) return res.status(400).json({ message: "Produto/quantidade inválidos." });
+    wantMap.set(id, (wantMap.get(id) || 0) + q);
+  }
+  const ids = [...wantMap.keys()];
 
+  const conn = await pool.getConnection();
   try {
-    await connection.beginTransaction(); // Inicia transação para garantir integridade do pedido
+    await conn.beginTransaction();
 
-    // 🔸 Insere o pedido na tabela principal
-    const [pedidoResult] = await connection.query(
-      "INSERT INTO pedidos (usuario_id, endereco, forma_pagamento) VALUES (?, ?, ?)",
-      [usuario_id, JSON.stringify(endereco), formaPagamento]
+    // 🔒 trava as linhas de estoque até o commit/rollback
+    const [rows] = await conn.query(
+      `SELECT id, name, quantity, price
+         FROM products
+        WHERE id IN (?)
+        FOR UPDATE`,
+      [ids]
     );
 
-    const pedidoId = pedidoResult.insertId; // Pega o ID do pedido recém-criado
-
-    // 🔸 Insere os itens do pedido na tabela de ligação pedidos_produtos
-    for (const produto of produtos) {
-      await connection.query(
-        "INSERT INTO pedidos_produtos (pedido_id, produto_id, quantidade) VALUES (?, ?, ?)",
-        [pedidoId, produto.id, produto.quantidade]
-      );
+    // Checagem de existência e de estoque
+    const byId = new Map(rows.map(r => [r.id, r]));
+    const faltas = [];
+    for (const id of ids) {
+      const row = byId.get(id);
+      if (!row) {
+        faltas.push({ id, motivo: "Produto não encontrado" });
+        continue;
+      }
+      const want = wantMap.get(id);
+      if (Number(row.quantity) < want) {
+        faltas.push({
+          id,
+          name: row.name,
+          disponivel: Number(row.quantity),
+          solicitado: want,
+          motivo: "Estoque insuficiente",
+        });
+      }
+    }
+    if (faltas.length) {
+      await conn.rollback();
+      return res.status(400).json({
+        message: "Estoque insuficiente em um ou mais itens.",
+        itens: faltas,
+      });
     }
 
-    await connection.commit(); // Finaliza a transação com sucesso
-    console.log(`✅ Pedido #${pedidoId} salvo com sucesso no banco de dados!`);
+    // Insere o pedido
+    const [pedidoResult] = await conn.query(
+      `INSERT INTO pedidos (usuario_id, endereco, forma_pagamento)
+       VALUES (?, ?, ?)`,
+      [usuario_id, JSON.stringify(endereco), formaPagamento]
+    );
+    const pedidoId = pedidoResult.insertId;
 
-    // 💬 Mensagem de confirmação (opcional: envio para WhatsApp)
-    const mensagem = `📦 *Novo Pedido Confirmado!* \n\n🛒 Pedido ID: ${pedidoId}\n📍 Endereço: ${endereco.logradouro}, ${endereco.numero} - ${endereco.cidade}\n💳 Pagamento: ${formaPagamento}\n\n✅ Seu pedido foi registrado!`;
+    // Insere itens do pedido + baixa estoque
+    for (const id of ids) {
+      const row  = byId.get(id);
+      const qnt  = wantMap.get(id);
+      const unit = Number(row.price) || 0;
 
-    // (Comentado) Exemplo de integração com API do WhatsApp:
-    /*
-    await axios.post("https://api.whatsapp.com/send", {
-      to: "+55SEUNUMERO",
-      message: mensagem,
-    });
-    */
+      await conn.query(
+        `INSERT INTO pedidos_produtos (pedido_id, produto_id, quantidade, valor_unitario)
+         VALUES (?, ?, ?, ?)`,
+        [pedidoId, id, qnt, unit]
+      );
 
-    res.status(201).json({ message: "Pedido registrado com sucesso!" });
-  } catch (error) {
-    await connection.rollback(); // Se algo falhar, desfaz tudo
-    console.error("❌ Erro ao salvar pedido:", error);
-    res.status(500).json({ message: "Erro ao processar o pedido" });
+      const [upd] = await conn.query(
+        `UPDATE products
+            SET quantity = quantity - ?
+          WHERE id = ? AND quantity >= ?`,
+        [qnt, id, qnt]
+      );
+      // Segurança adicional: se alguém consumir estoque entre o SELECT e o UPDATE
+      if (!upd.affectedRows) {
+        await conn.rollback();
+        return res.status(409).json({
+          message: "Conflito de estoque ao finalizar. Tente novamente.",
+          item: { id, name: row.name },
+        });
+      }
+    }
+
+    await conn.commit();
+    return res.status(201).json({ message: "Pedido registrado com sucesso!", pedidoId });
+  } catch (err) {
+    await conn.rollback();
+    console.error("[checkout][POST] erro:", err?.sqlMessage || err);
+    return res.status(500).json({ message: "Erro ao processar o pedido." });
   } finally {
-    connection.release(); // Libera a conexão para ser usada novamente
+    conn.release();
   }
 });
 
-module.exports = router; // Exporta o roteador para ser usado na aplicação principal
+module.exports = router;
