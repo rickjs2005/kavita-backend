@@ -43,16 +43,59 @@ async function attachImages(rows) {
   }));
 }
 
+// Whitelist para ORDER BY
+const SORT_MAP = {
+  id: "c.id",
+  nome: "c.nome",
+  cargo: "c.cargo",
+  especialidade: "e.nome",
+};
+
 /* =====================================================
    GET /api/public/servicos
-   - Lista serviços públicos “espelhando” a lógica do admin:
-     • base: colaboradores
-     • join: especialidades
-     • imagens: de colaborador_images (capa = c.imagem || primeira)
+   Query:
+     - page: número da página (default 1)
+     - limit: itens por página (default 12, máx 100)
+     - sort: id | nome | cargo | especialidade (default id)
+     - order: asc | desc (default desc)
 ===================================================== */
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const [rows] = await pool.query(`
+    const {
+      page = "1",
+      limit = "12",
+      sort = "id",
+      order = "desc",
+    } = req.query;
+
+    // paginação segura
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 100);
+    const offset = (pageNum - 1) * limitNum;
+
+    // ordenação segura
+    const sortKey = String(sort).toLowerCase();
+    const sortCol = SORT_MAP[sortKey] || SORT_MAP.id;
+    const orderDir = String(order).toUpperCase() === "ASC" ? "ASC" : "DESC";
+
+    // (se quiser filtros depois, monte where/params aqui)
+    const whereSql = ""; // por enquanto sem filtros
+    const params = [];
+
+    // total
+    const [[{ total }]] = await pool.query(
+      `
+      SELECT COUNT(*) AS total
+        FROM colaboradores c
+        LEFT JOIN especialidades e ON e.id = c.especialidade_id
+      ${whereSql}
+      `,
+      params
+    );
+
+    // dados paginados + ordenados
+    const [rows] = await pool.query(
+      `
       SELECT
         c.id,
         c.nome,
@@ -64,14 +107,17 @@ router.get("/", async (_req, res) => {
         e.nome      AS especialidade_nome
       FROM colaboradores c
       LEFT JOIN especialidades e ON e.id = c.especialidade_id
-      ORDER BY c.id DESC
-    `);
+      ${whereSql}
+      ORDER BY ${sortCol} ${orderDir}
+      LIMIT ? OFFSET ?
+    `,
+      [...params, limitNum, offset]
+    );
 
     const withImages = await attachImages(rows);
 
     const data = withImages.map((r) => {
-      // Caso queira suportar "images" vindas como JSON/CSV no futuro:
-      const extraFromColab = normalizeImages(r.images); // já é array, mas passamos no normalizador por segurança
+      const extraFromColab = normalizeImages(r.images); // já é array, normalizamos por segurança
       const imagem = r.imagem_capa || extraFromColab[0] || null;
 
       return {
@@ -87,7 +133,15 @@ router.get("/", async (_req, res) => {
       };
     });
 
-    res.json(data);
+    res.json({
+      data,
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages: Math.ceil(total / limitNum),
+      sort: sortKey,
+      order: orderDir.toLowerCase(),
+    });
   } catch (err) {
     console.error("Erro ao listar serviços públicos:", err);
     res.status(500).json({ message: "Erro interno ao listar serviços." });

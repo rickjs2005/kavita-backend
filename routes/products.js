@@ -38,15 +38,46 @@ async function attachImages(products) {
   }));
 }
 
+// Whitelist de colunas para ORDER BY
+const SORT_MAP = {
+  id: "p.id",
+  name: "p.name",
+  price: "p.price",
+  quantity: "p.quantity",
+  // adicione aqui se sua tabela tiver as colunas:
+  // created_at: "p.created_at",
+};
+
 /**
  * GET /api/products
  * Query:
  *  - category: "all" (default) | <id numérico> | <slug/nome>
  *  - search: termo para LIKE em name/description
+ *  - page: número da página (default 1)
+ *  - limit: itens por página (default 12, máx 100)
+ *  - sort: id | name | price | quantity (default id)
+ *  - order: asc | desc (default desc)
  */
 router.get("/", async (req, res) => {
   try {
-    const { category = "all", search } = req.query;
+    const {
+      category = "all",
+      search,
+      page = "1",
+      limit = "12",
+      sort = "id",
+      order = "desc",
+    } = req.query;
+
+    // paginação segura
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 100);
+    const offset = (pageNum - 1) * limitNum;
+
+    // ordenação segura
+    const sortKey = String(sort).toLowerCase();
+    const sortCol = SORT_MAP[sortKey] || SORT_MAP.id;
+    const orderDir = String(order).toUpperCase() === "ASC" ? "ASC" : "DESC";
 
     const where = [];
     const params = [];
@@ -77,16 +108,39 @@ router.get("/", async (req, res) => {
       params.push(like, like);
     }
 
-    const sql = `
+    const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
+
+    // total para paginação
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) AS total
+         FROM products p
+        ${whereSql}`,
+      params
+    );
+
+    // dados paginados + ordenados
+    const [rows] = await pool.query(
+      `
       SELECT p.*
         FROM products p
-       ${where.length ? "WHERE " + where.join(" AND ") : ""}
-       ORDER BY p.id DESC
-    `;
+       ${whereSql}
+       ORDER BY ${sortCol} ${orderDir}
+       LIMIT ? OFFSET ?
+      `,
+      [...params, limitNum, offset]
+    );
 
-    const [rows] = await pool.query(sql, params);
-    const withImages = await attachImages(rows);
-    res.json(withImages);
+    const data = await attachImages(rows);
+
+    res.json({
+      data,
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages: Math.ceil(total / limitNum),
+      sort: sortKey,
+      order: orderDir.toLowerCase(),
+    });
   } catch (err) {
     console.error("[GET /api/products] Erro:", err);
     res.status(500).json({ message: "Erro interno no servidor." });
