@@ -27,6 +27,50 @@ const CheckoutSchema = z.object({
   produtos: z.array(ProdutoSchema).nonempty()
 });
 
+/**
+ * @openapi
+ * /api/checkout:
+ *   post:
+ *     tags: [Public, Pedidos]
+ *     summary: Realiza checkout e cria um novo pedido
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [usuario_id, endereco, formaPagamento, produtos]
+ *             properties:
+ *               usuario_id: { type: integer }
+ *               formaPagamento: { type: string, enum: ["mercadopago", "pix", "cartao"] }
+ *               endereco:
+ *                 type: object
+ *                 properties:
+ *                   cep: { type: string }
+ *                   rua: { type: string }
+ *                   numero: { type: string }
+ *                   bairro: { type: string }
+ *                   cidade: { type: string }
+ *                   estado: { type: string }
+ *                   complemento: { type: string, nullable: true }
+ *               produtos:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: integer }
+ *                     quantidade: { type: integer }
+ *     responses:
+ *       201:
+ *         description: Pedido criado com sucesso
+ *       400:
+ *         description: Erro de validação ou estoque insuficiente
+ *       409:
+ *         description: Conflito de estoque
+ *       500:
+ *         description: Erro interno
+ */
+
 router.post("/", async (req, res) => {
   // valida (lança se inválido)
   let parsed;

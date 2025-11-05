@@ -51,6 +51,52 @@ const SORT_MAP = {
   especialidade: "e.nome",
 };
 
+/**
+ * @openapi
+ * /api/public/servicos:
+ *   get:
+ *     tags: [Public, Serviços]
+ *     summary: Lista serviços (colaboradores) públicos com paginação
+ *     parameters:
+ *       - $ref: '#/components/parameters/PageParam'
+ *       - $ref: '#/components/parameters/LimitParam'
+ *       - $ref: '#/components/parameters/SortParam'
+ *       - $ref: '#/components/parameters/OrderParam'
+ *     responses:
+ *       200:
+ *         description: Lista paginada de serviços
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedServices'
+ *       500:
+ *         description: Erro ao listar serviços
+ */
+
+/**
+ * @openapi
+ * /api/public/servicos/{id}:
+ *   get:
+ *     tags: [Public, Serviços]
+ *     summary: Detalhe de um serviço ou colaborador específico
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Detalhes do serviço retornados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Service'
+ *       404:
+ *         description: Serviço não encontrado
+ *       500:
+ *         description: Erro interno
+ */
+
 /* =====================================================
    GET /api/public/servicos
    Query:

@@ -56,6 +56,123 @@ async function attachImages(rows) {
    Rotas
 ============================== */
 
+/**
+ * @openapi
+ * /api/admin/servicos:
+ *   get:
+ *     tags: [Admin, Serviços]
+ *     summary: Lista todos os colaboradores/serviços cadastrados
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de serviços retornada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/Service' }
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/admin/servicos:
+ *   post:
+ *     tags: [Admin, Serviços]
+ *     summary: Cadastra um novo serviço/colaborador
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [nome, whatsapp, especialidade_id]
+ *             properties:
+ *               nome: { type: string }
+ *               cargo: { type: string }
+ *               whatsapp: { type: string }
+ *               descricao: { type: string }
+ *               especialidade_id: { type: integer }
+ *               images: { type: array, items: { type: string, format: binary } }
+ *     responses:
+ *       201:
+ *         description: Serviço cadastrado
+ *       400:
+ *         description: Campos obrigatórios ausentes
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/admin/servicos/{id}:
+ *   put:
+ *     tags: [Admin, Serviços]
+ *     summary: Atualiza serviço existente (imagens inclusas)
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nome: { type: string }
+ *               cargo: { type: string }
+ *               whatsapp: { type: string }
+ *               descricao: { type: string }
+ *               especialidade_id: { type: integer }
+ *               keepImages: { type: string }
+ *               images: { type: array, items: { type: string, format: binary } }
+ *     responses:
+ *       200:
+ *         description: Serviço atualizado
+ *       404:
+ *         description: Serviço não encontrado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/admin/servicos/{id}:
+ *   delete:
+ *     tags: [Admin, Serviços]
+ *     summary: Remove serviço e apaga imagens relacionadas
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Serviço removido
+ *       404:
+ *         description: Serviço não encontrado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
 /** 🔹 GET /api/admin/servicos — Lista todos os colaboradores + imagens + especialidade */
 router.get("/", verifyAdmin, async (_req, res) => {
   try {

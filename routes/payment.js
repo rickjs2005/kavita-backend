@@ -79,6 +79,66 @@ router.post("/start", async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/payment/start:
+ *   post:
+ *     tags: [Pagamentos]
+ *     summary: Inicia o fluxo de pagamento via Mercado Pago
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [pedidoId]
+ *             properties:
+ *               pedidoId: { type: integer, example: 123 }
+ *     responses:
+ *       200:
+ *         description: Retorna dados da preferência de pagamento
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 preferenceId: { type: string }
+ *                 init_point: { type: string }
+ *                 sandbox_init_point: { type: string }
+ *       400:
+ *         description: Campo pedidoId ausente
+ *       404:
+ *         description: Pedido não encontrado
+ *       500:
+ *         description: Erro ao iniciar pagamento
+ */
+
+/**
+ * @openapi
+ * /api/payment/webhook:
+ *   post:
+ *     tags: [Pagamentos]
+ *     summary: Webhook de notificação do Mercado Pago
+ *     description: Atualiza automaticamente o status dos pedidos conforme o pagamento.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               type: { type: string, example: "payment" }
+ *               data:
+ *                 type: object
+ *                 properties:
+ *                   id: { type: string, example: "123456789" }
+ *     responses:
+ *       200:
+ *         description: Notificação recebida e processada
+ *       500:
+ *         description: Erro interno (geralmente ainda retorna 200 para evitar redelivery)
+ */
+
 // webhook Mercado Pago
 router.post("/webhook", async (req, res) => {
   try {

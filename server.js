@@ -4,8 +4,8 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
-const logger = console; // se você tiver outro logger, mantenha o seu
-const { setupDocs } = require("./docs/swagger"); // <-- já importado no topo
+const logger = console;
+const { setupDocs } = require("./docs/swagger");
 
 const app = express();
 
@@ -36,8 +36,6 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // ============================
 // Rotas públicas e admin
 // ============================
-
-// Public
 try { app.use("/api/products", require("./routes/products")); } catch {}
 try { app.use("/api/products", require("./routes/productById")); } catch {}
 try { app.use("/api/public/categorias", require("./routes/publicCategorias")); } catch {}
@@ -83,15 +81,22 @@ app.use((err, _req, res, _next) => {
     message: err.message || "Erro interno",
     requestId: crypto.randomUUID?.() || String(Date.now()),
   };
-  if (process.env.NODE_ENV !== "production" && err.stack) payload.stack = err.stack;
+  if (process.env.NODE_ENV !== "production" && err.stack) {
+    payload.stack = err.stack;
+  }
   res.status(status).json(payload);
 });
 
 // ============================
-// Start
+// Start condicional (somente fora de teste)
 // ============================
-const PORT = Number(process.env.PORT) || 5000;
-app.listen(PORT, () => {
-  logger.info(`✅ Server rodando em http://localhost:${PORT}`);
-  logger.info(`📚 Swagger em: http://localhost:${PORT}/docs`);
-});
+if (process.env.NODE_ENV !== "test") {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    logger.info(`✅ Server rodando em http://localhost:${PORT}`);
+    logger.info(`📚 Swagger em: http://localhost:${PORT}/docs`);
+  });
+}
+
+// Exporta o app para uso nos testes
+module.exports = app;

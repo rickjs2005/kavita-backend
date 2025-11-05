@@ -49,6 +49,40 @@ const SORT_MAP = {
 };
 
 /**
+ * @openapi
+ * /api/products:
+ *   get:
+ *     tags: [Public, Produtos]
+ *     summary: Lista produtos com paginação, filtro e ordenação
+ *     parameters:
+ *       - name: category
+ *         in: query
+ *         required: false
+ *         schema: { type: string, example: "fertilizantes" }
+ *         description: Nome ou ID da categoria. Use "all" para todas.
+ *       - name: search
+ *         in: query
+ *         required: false
+ *         schema: { type: string }
+ *         description: Termo de busca (em nome ou descrição)
+ *       - $ref: '#/components/parameters/PageParam'
+ *       - $ref: '#/components/parameters/LimitParam'
+ *       - $ref: '#/components/parameters/SortParam'
+ *       - $ref: '#/components/parameters/OrderParam'
+ *     responses:
+ *       200:
+ *         description: Lista paginada de produtos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedProducts'
+ *       404:
+ *         description: Categoria não encontrada
+ *       500:
+ *         description: Erro interno no servidor
+ */
+
+/**
  * GET /api/products
  * Query:
  *  - category: "all" (default) | <id numérico> | <slug/nome>

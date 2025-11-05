@@ -3,6 +3,29 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool");
 
+/**
+ * @openapi
+ * /api/public/categorias:
+ *   get:
+ *     tags: [Public, Categorias]
+ *     summary: Lista todas as categorias com contagem de produtos
+ *     responses:
+ *       200:
+ *         description: Lista de categorias retornada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id: { type: integer }
+ *                   name: { type: string }
+ *                   total_products: { type: integer }
+ *       500:
+ *         description: Erro interno no servidor
+ */
+
 /** GET /api/public/categorias */
 router.get("/", async (_req, res) => {
   try {
