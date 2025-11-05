@@ -91,6 +91,7 @@ try { protect("/api/admin/produtos", "./routes/adminProdutos"); } catch {}
 try { protect("/api/admin/servicos", "./routes/adminServicos"); } catch {}
 // se tiver módulo users administrativo
 try { protect("/api/admin/users", "./routes/users"); } catch {}
+try { mount("/api/users", "./routes/users"); } catch {}
 
 /* =========================
    404 & Error Handler
