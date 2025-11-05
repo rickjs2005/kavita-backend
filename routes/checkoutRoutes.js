@@ -1,23 +1,47 @@
 // routes/checkoutRoutes.js
 const express = require("express");
 const pool = require("../config/pool");
+const { z } = require("zod");
 const router = express.Router();
 
-// POST /api/checkout
-router.post("/", async (req, res) => {
-  const { usuario_id, endereco, formaPagamento, produtos } = req.body || {};
+/** ===== Schema de validação ===== */
+const EnderecoSchema = z.object({
+  cep: z.string().min(8).max(10),
+  rua: z.string().min(2),
+  numero: z.string().min(1),
+  bairro: z.string().min(2),
+  cidade: z.string().min(2),
+  estado: z.string().min(2).max(2),
+  complemento: z.string().optional().nullable(),
+});
 
-  if (!usuario_id || !endereco || !formaPagamento || !Array.isArray(produtos) || !produtos.length) {
-    return res.status(400).json({ message: "Campos obrigatórios ausentes." });
+const ProdutoSchema = z.object({
+  id: z.coerce.number().int().positive(),
+  quantidade: z.coerce.number().int().positive().default(1)
+}).transform(p => ({ id: p.id, quantidade: Math.max(1, p.quantidade) }));
+
+const CheckoutSchema = z.object({
+  usuario_id: z.coerce.number().int().positive(),
+  endereco: EnderecoSchema,
+  formaPagamento: z.enum(["mercadopago", "pix", "cartao"]),
+  produtos: z.array(ProdutoSchema).nonempty()
+});
+
+router.post("/", async (req, res) => {
+  // valida (lança se inválido)
+  let parsed;
+  try {
+    parsed = CheckoutSchema.parse(req.body || {});
+  } catch (err) {
+    return res.status(400).json({ message: "Payload inválido", detalhes: err.errors });
   }
 
-  // Mapa id -> quantidade solicitada (agrega duplicados)
+  const { usuario_id, endereco, formaPagamento, produtos } = parsed;
+
+  // agrega duplicados: id -> quantidade
   const wantMap = new Map();
   for (const p of produtos) {
-    const id = Number(p.id);
-    const q  = Math.max(1, Number(p.quantidade || p.quantity || 0));
-    if (!id || !q) return res.status(400).json({ message: "Produto/quantidade inválidos." });
-    wantMap.set(id, (wantMap.get(id) || 0) + q);
+    wantMap.set(p.id, (wantMap.get(p.id) || 0) + p.quantidade);
   }
   const ids = [...wantMap.keys()];
 
@@ -25,7 +49,6 @@ router.post("/", async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // 🔒 trava as linhas de estoque até o commit/rollback
     const [rows] = await conn.query(
       `SELECT id, name, quantity, price
          FROM products
@@ -34,7 +57,6 @@ router.post("/", async (req, res) => {
       [ids]
     );
 
-    // Checagem de existência e de estoque
     const byId = new Map(rows.map(r => [r.id, r]));
     const faltas = [];
     for (const id of ids) {
@@ -62,18 +84,18 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Insere o pedido
+    // cria pedido com status inicial aguardando pagamento
     const [pedidoResult] = await conn.query(
-      `INSERT INTO pedidos (usuario_id, endereco, forma_pagamento)
-       VALUES (?, ?, ?)`,
-      [usuario_id, JSON.stringify(endereco), formaPagamento]
+      `INSERT INTO pedidos (usuario_id, endereco, forma_pagamento, status)
+       VALUES (?, ?, ?, ?)`,
+      [usuario_id, JSON.stringify(endereco), formaPagamento, "aguardando_pagamento"]
     );
     const pedidoId = pedidoResult.insertId;
 
-    // Insere itens do pedido + baixa estoque
+    // insere itens e baixa estoque
     for (const id of ids) {
-      const row  = byId.get(id);
-      const qnt  = wantMap.get(id);
+      const row = byId.get(id);
+      const qnt = wantMap.get(id);
       const unit = Number(row.price) || 0;
 
       await conn.query(
@@ -88,7 +110,6 @@ router.post("/", async (req, res) => {
           WHERE id = ? AND quantity >= ?`,
         [qnt, id, qnt]
       );
-      // Segurança adicional: se alguém consumir estoque entre o SELECT e o UPDATE
       if (!upd.affectedRows) {
         await conn.rollback();
         return res.status(409).json({
@@ -99,7 +120,10 @@ router.post("/", async (req, res) => {
     }
 
     await conn.commit();
-    return res.status(201).json({ message: "Pedido registrado com sucesso!", pedidoId });
+    return res.status(201).json({
+      message: "Pedido registrado com sucesso! Aguardando pagamento.",
+      pedidoId
+    });
   } catch (err) {
     await conn.rollback();
     console.error("[checkout][POST] erro:", err?.sqlMessage || err);
