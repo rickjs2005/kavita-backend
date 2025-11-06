@@ -1,4 +1,4 @@
-// server.js (refatorado)
+// server.js
 require("dotenv").config();
 
 const express = require("express");
@@ -30,7 +30,10 @@ app.use(
   })
 );
 
+// JSON para APIs e webhooks
 app.use(express.json({ limit: "10mb" }));
+
+// estático de uploads
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 /* =========================
@@ -51,32 +54,39 @@ app.get("/api/healthz", async (_req, res) => {
    Helpers p/ montar rotas
 ========================= */
 const mount = (base, file) => {
-  // monta uma rota sem proteção
-  app.use(base, require(file));
+  app.use(base, require(file)); // rota pública
 };
 const protect = (base, file) => {
-  // monta rota protegida por JWT admin
-  app.use(base, verifyAdmin, require(file));
+  app.use(base, verifyAdmin, require(file)); // rota protegida (admin)
 };
 
 /* =========================
-   Rotas Públicas (/api/public)
+   Rotas Públicas
 ========================= */
+// Produtos
+try { mount("/api/products", "./routes/products"); } catch {}
+// Produto por ID
+try { mount("/api/products", "./routes/productById"); } catch {}
+// Categorias públicas
+try { mount("/api/public/categorias", "./routes/publicCategorias"); } catch {}
+// Outras públicas existentes
 try { mount("/api/public/produtos", "./routes/publicProdutos"); } catch {}
 try { mount("/api/public/destaques", "./routes/publicDestaques"); } catch {}
 try { mount("/api/public/servicos", "./routes/publicServicos"); } catch {}
 
-// compat legado (se ainda usa)
-try { mount("/api/products", "./routes/products"); } catch {}
+// Checkout
 try { mount("/api/checkout", "./routes/checkoutRoutes"); } catch {}
+
+// Pagamentos (Mercado Pago) — NOVO
+// routes/payment.js precisa exportar o router com /start e /webhook
+try { mount("/api/payment", "./routes/payment"); } catch {}
 
 /* =========================
    Autenticação
 ========================= */
-// login admin (público)
+// Login admin
 try { mount("/api/admin", "./routes/adminLogin"); } catch {}
-
-// login usuário comum (se existir)
+// Login user (se existir)
 try { mount("/api/login", "./routes/login"); } catch {}
 
 /* =========================
@@ -89,8 +99,9 @@ try { protect("/api/admin/especialidades", "./routes/adminEspecialidades"); } ca
 try { protect("/api/admin/pedidos", "./routes/adminPedidos"); } catch {}
 try { protect("/api/admin/produtos", "./routes/adminProdutos"); } catch {}
 try { protect("/api/admin/servicos", "./routes/adminServicos"); } catch {}
-// se tiver módulo users administrativo
+// users admin/public (se existirem)
 try { protect("/api/admin/users", "./routes/users"); } catch {}
+try { mount("/api/users", "./routes/users"); } catch {}
 
 /* =========================
    404 & Error Handler
