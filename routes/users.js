@@ -48,6 +48,87 @@ router.post("/register", async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/users/register:
+ *   post:
+ *     tags: [Public, Usuários]
+ *     summary: Cadastro de novo usuário
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               [nome, email, senha, endereco, data_nascimento, telefone, pais, estado, cidade, cep, ponto_referencia]
+ *             properties:
+ *               nome: { type: string }
+ *               email: { type: string }
+ *               senha: { type: string }
+ *               endereco: { type: string }
+ *               data_nascimento: { type: string, format: date }
+ *               telefone: { type: string }
+ *               pais: { type: string }
+ *               estado: { type: string }
+ *               cidade: { type: string }
+ *               cep: { type: string }
+ *               ponto_referencia: { type: string }
+ *     responses:
+ *       201:
+ *         description: Usuário cadastrado com sucesso
+ *       400:
+ *         description: Campos obrigatórios ausentes ou email duplicado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/users/forgot-password:
+ *   post:
+ *     tags: [Public, Usuários]
+ *     summary: Envia email de recuperação de senha
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email: { type: string, example: "usuario@email.com" }
+ *     responses:
+ *       200:
+ *         description: Email de recuperação enviado (ou silenciosamente ignorado)
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/users/reset-password:
+ *   post:
+ *     tags: [Public, Usuários]
+ *     summary: Redefine senha com token válido
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, novaSenha]
+ *             properties:
+ *               token: { type: string }
+ *               novaSenha: { type: string }
+ *     responses:
+ *       200:
+ *         description: Senha redefinida com sucesso
+ *       400:
+ *         description: Token inválido ou expirado
+ *       500:
+ *         description: Erro interno
+ */
+
 // ✅ POST /forgot-password — Enviar link de redefinição de senha
 router.post("/forgot-password", async (req, res) => {
   try {

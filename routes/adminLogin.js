@@ -12,6 +12,48 @@ if (!SECRET_KEY) {
   throw new Error("❌ JWT_SECRET não definido no .env");
 }
 
+/**
+ * @openapi
+ * /api/admin/login:
+ *   post:
+ *     tags: [Public, Login]
+ *     summary: Realiza login de administrador e gera token JWT
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, senha]
+ *             properties:
+ *               email: { type: string, example: "admin@kavita.com" }
+ *               senha: { type: string, example: "123456" }
+ *     responses:
+ *       200:
+ *         description: Login bem-sucedido, retorna token JWT e dados do admin
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string }
+ *                 token: { type: string }
+ *                 admin:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: integer }
+ *                     email: { type: string }
+ *                     nome: { type: string }
+ *       400:
+ *         description: Campos obrigatórios ausentes
+ *       404:
+ *         description: Admin não encontrado
+ *       401:
+ *         description: Senha incorreta
+ *       500:
+ *         description: Erro interno no servidor
+ */
+
 // 📌 Rota POST /login — realiza login do administrador
 router.post("/login", async (req, res) => {
   const { email, senha } = req.body;

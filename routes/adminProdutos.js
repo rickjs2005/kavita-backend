@@ -79,6 +79,123 @@ async function attachImages(rows) {
 
 /* ============ Rotas ============ */
 
+/**
+ * @openapi
+ * /api/admin/produtos:
+ *   get:
+ *     tags: [Admin, Produtos]
+ *     summary: Lista todos os produtos cadastrados
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de produtos retornada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/Product' }
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/admin/produtos:
+ *   post:
+ *     tags: [Admin, Produtos]
+ *     summary: Cadastra um novo produto com imagens
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [name, price, quantity, category_id]
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string, nullable: true }
+ *               price: { type: number }
+ *               quantity: { type: integer }
+ *               category_id: { type: integer }
+ *               images: { type: array, items: { type: string, format: binary } }
+ *     responses:
+ *       201:
+ *         description: Produto criado com sucesso
+ *       400:
+ *         description: Campos inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/admin/produtos/{id}:
+ *   put:
+ *     tags: [Admin, Produtos]
+ *     summary: Atualiza um produto existente
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *               price: { type: number }
+ *               quantity: { type: integer }
+ *               category_id: { type: integer }
+ *               keepImages: { type: string, example: '["/uploads/abc.jpg"]' }
+ *               images: { type: array, items: { type: string, format: binary } }
+ *     responses:
+ *       200:
+ *         description: Produto atualizado
+ *       404:
+ *         description: Produto não encontrado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/admin/produtos/{id}:
+ *   delete:
+ *     tags: [Admin, Produtos]
+ *     summary: Remove um produto e suas imagens
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Produto removido
+ *       404:
+ *         description: Produto não encontrado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
 // GET /api/admin/produtos
 router.get("/", verifyAdmin, async (_req, res) => {
   try {

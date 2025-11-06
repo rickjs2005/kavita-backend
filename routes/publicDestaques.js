@@ -4,6 +4,33 @@ const router = express.Router();
 const pool = require("../config/pool");
 
 /**
+ * @openapi
+ * /api/public/destaques:
+ *   get:
+ *     tags: [Public, Destaques]
+ *     summary: Lista produtos em destaque para exibição no site público
+ *     description: Retorna lista com id, nome, descrição, preço, quantidade e imagem principal.
+ *     responses:
+ *       200:
+ *         description: Lista de produtos em destaque
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id: { type: integer }
+ *                   name: { type: string }
+ *                   description: { type: string }
+ *                   price: { type: number, format: float }
+ *                   quantity: { type: integer }
+ *                   image: { type: string, nullable: true }
+ *       500:
+ *         description: Erro interno ao buscar destaques
+ */
+
+/**
  * GET /api/public/destaques
  * Retorna produtos em destaque para o site público
  * - Garante price como número (DECIMAL)

@@ -1,0 +1,19 @@
+### 1) Criar pedido
+POST http://localhost:5000/api/checkout
+Content-Type: application/json
+
+{
+  "usuario_id": 10,
+  "formaPagamento": "mercadopago",
+  "endereco": {
+    "cep": "12345678",
+    "rua": "Rua das Flores",
+    "numero": "100",
+    "bairro": "Centro",
+    "cidade": "Manhuaçu",
+    "estado": "MG"
+  },
+  "produtos": [
+    { "id": 111, "quantidade": 1 }
+  ]
+}

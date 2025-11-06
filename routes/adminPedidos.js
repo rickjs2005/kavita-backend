@@ -89,6 +89,119 @@ router.put("/:id/endereco", verifyAdmin, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/admin/pedidos:
+ *   get:
+ *     tags: [Admin, Pedidos]
+ *     summary: Lista todos os pedidos com itens, status e endereço
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de pedidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro ao buscar pedidos
+ */
+
+/**
+ * @openapi
+ * /api/admin/pedidos/{id}/status:
+ *   put:
+ *     tags: [Admin, Pedidos]
+ *     summary: Atualiza o status do pedido
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status: { type: string, example: "entregue" }
+ *     responses:
+ *       200:
+ *         description: Status atualizado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/admin/pedidos/{id}/endereco:
+ *   put:
+ *     tags: [Admin, Pedidos]
+ *     summary: Atualiza o endereço de um pedido
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               endereco:
+ *                 type: object
+ *                 properties:
+ *                   cep: { type: string }
+ *                   rua: { type: string }
+ *                   numero: { type: string }
+ *                   bairro: { type: string }
+ *                   cidade: { type: string }
+ *                   estado: { type: string }
+ *     responses:
+ *       200:
+ *         description: Endereço atualizado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
+ * /api/admin/pedidos/{id}/itens:
+ *   put:
+ *     tags: [Admin, Pedidos]
+ *     summary: Substitui os itens do pedido
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               itens:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     produto_id: { type: integer }
+ *                     quantidade: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Itens atualizados
+ *       400:
+ *         description: Itens inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
 // ✅ PUT /admin/pedidos/:id/itens — Substitui os itens do pedido
 router.put("/:id/itens", verifyAdmin, async (req, res) => {
   const { itens } = req.body;

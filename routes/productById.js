@@ -11,6 +11,31 @@ async function getImages(productId) {
   return imgs.map(i => i.image_url);
 }
 
+/**
+ * @openapi
+ * /api/products/{id}:
+ *   get:
+ *     tags: [Public, Produtos]
+ *     summary: Retorna detalhes de um produto específico por ID
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Detalhes do produto retornados com sucesso
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Product' }
+ *       400:
+ *         description: ID inválido
+ *       404:
+ *         description: Produto não encontrado
+ *       500:
+ *         description: Erro interno no servidor
+ */
+
 router.get("/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);

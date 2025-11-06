@@ -3,6 +3,63 @@ const router = express.Router();
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
 
+/**
+ * @openapi
+ * /api/admin/colaboradores:
+ *   post:
+ *     tags: [Admin, Colaboradores]
+ *     summary: Cadastra um novo colaborador
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [nome, whatsapp, especialidade_id]
+ *             properties:
+ *               nome: { type: string }
+ *               cargo: { type: string }
+ *               whatsapp: { type: string }
+ *               imagem: { type: string, nullable: true }
+ *               descricao: { type: string, nullable: true }
+ *               especialidade_id: { type: integer }
+ *     responses:
+ *       201:
+ *         description: Colaborador cadastrado com sucesso
+ *       400:
+ *         description: Campos obrigatórios ausentes ou inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno no servidor
+ */
+
+/**
+ * @openapi
+ * /api/admin/colaboradores/{id}:
+ *   delete:
+ *     tags: [Admin, Colaboradores]
+ *     summary: Exclui colaborador pelo ID
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Colaborador removido com sucesso
+ *       404:
+ *         description: Colaborador não encontrado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro ao deletar colaborador
+ */
+
 // ✅ POST /admin/colaboradores — Cadastra um novo colaborador
 router.post("/", verifyAdmin, async (req, res) => {
   const { nome, cargo, whatsapp, imagem, descricao, especialidade_id } = req.body;

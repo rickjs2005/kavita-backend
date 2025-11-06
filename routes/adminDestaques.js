@@ -13,6 +13,91 @@ const IMAGE_TABLE = "product_images";
 const IMAGE_COL   = "image_url"; // <<<<< MUDE AQUI se for "url" ou "path"
 const COVER_COL   = null;        // <<<<< se tiver "is_cover", use "is_cover"; se não, mantenha null
 
+/**
+ * @openapi
+ * /api/admin/destaques:
+ *   get:
+ *     tags: [Admin, Destaques]
+ *     summary: Lista todos os produtos destacados
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de produtos em destaque
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id: { type: integer }
+ *                   product_id: { type: integer }
+ *                   name: { type: string }
+ *                   image: { type: string }
+ *                   price: { type: number }
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro ao buscar destaques
+ */
+
+/**
+ * @openapi
+ * /api/admin/destaques:
+ *   post:
+ *     tags: [Admin, Destaques]
+ *     summary: Adiciona um produto aos destaques
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [product_id]
+ *             properties:
+ *               product_id: { type: integer }
+ *     responses:
+ *       201:
+ *         description: Produto adicionado aos destaques
+ *       400:
+ *         description: ID do produto é obrigatório
+ *       404:
+ *         description: Produto não encontrado
+ *       409:
+ *         description: Produto já está nos destaques
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro ao adicionar destaque
+ */
+
+/**
+ * @openapi
+ * /api/admin/destaques/{id}:
+ *   delete:
+ *     tags: [Admin, Destaques]
+ *     summary: Remove um produto dos destaques
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Destaque removido com sucesso
+ *       404:
+ *         description: Destaque não encontrado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro ao remover destaque
+ */
+
 router.get("/", verifyAdmin, async (_req, res) => {
   try {
     const sql = `
