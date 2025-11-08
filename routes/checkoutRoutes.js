@@ -1,14 +1,14 @@
 // routes/checkoutRoutes.js
 const express = require("express");
 const { z } = require("zod");
-const pool = require("../config/pool"); // usa seu pool.js
+const pool = require("../config/pool"); // <-- usa pool.js
 const router = express.Router();
 
 /**
  * @openapi
  * tags:
  *   name: Checkout
- *   description: Criação de pedidos no e-commerce Kavita
+ *   description: Criação de pedidos no e-commerce
  *
  * components:
  *   schemas:
@@ -40,9 +40,7 @@ const router = express.Router();
  *         produtos:
  *           type: array
  *           items: { $ref: "#/components/schemas/CheckoutProduto" }
- *         total:
- *           type: number
- *           example: 55.0
+ *         total: { type: number, example: 55.0 }
  *     CheckoutResponse:
  *       type: object
  *       properties:
@@ -61,24 +59,19 @@ const router = express.Router();
  *       required: true
  *       content:
  *         application/json:
- *           schema:
- *             $ref: "#/components/schemas/CheckoutBody"
+ *           schema: { $ref: "#/components/schemas/CheckoutBody" }
  *     responses:
  *       201:
- *         description: Pedido criado com sucesso
+ *         description: Pedido criado
  *         content:
  *           application/json:
- *             schema:
- *               $ref: "#/components/schemas/CheckoutResponse"
+ *             schema: { $ref: "#/components/schemas/CheckoutResponse" }
  *       400:
- *         description: Erro de validação ou estoque
+ *         description: Erro de validação/estoque
  *       500:
  *         description: Erro interno
  */
 
-// =========================
-// Schemas de validação
-// =========================
 const enderecoSchema = z.object({
   cep: z.string().min(8),
   rua: z.string(),
@@ -110,9 +103,7 @@ const checkoutSchema = z.object({
   total: z.number().optional(),
 });
 
-// =========================
 // POST /api/checkout
-// =========================
 router.post("/", async (req, res) => {
   try {
     const parsed = checkoutSchema.parse(req.body);
@@ -122,10 +113,13 @@ router.post("/", async (req, res) => {
     try {
       await conn.beginTransaction();
 
-      // Monta o texto do endereço para salvar no campo TEXT da tabela pedidos
-      const enderecoTexto = `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}, ${endereco.cidade} - ${endereco.estado}. CEP: ${endereco.cep}${endereco.complemento ? " (" + endereco.complemento + ")" : ""}`;
+      // endereço em TEXT (tabela pedidos)
+      const enderecoTexto =
+        `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}, ` +
+        `${endereco.cidade} - ${endereco.estado}. CEP: ${endereco.cep}` +
+        (endereco.complemento ? ` (${endereco.complemento})` : "");
 
-      // Cria o pedido principal
+      // cria pedido
       const [pedidoResult] = await conn.query(
         `INSERT INTO pedidos (usuario_id, endereco, forma_pagamento, status, data_pedido)
          VALUES (?, ?, ?, 'pendente', NOW())`,
@@ -133,14 +127,23 @@ router.post("/", async (req, res) => {
       );
       const pedido_id = pedidoResult.insertId;
 
-      // Valida produtos e estoque
+      // consulta produtos e valida estoque
       const ids = produtos.map((p) => p.id);
       const [found] = await conn.query(
         `SELECT id, nome, estoque, preco FROM products WHERE id IN (?)`,
         [ids]
       );
-
       const mapaQtd = new Map(produtos.map((p) => [p.id, p.quantidade]));
+
+      // checa todos
+      const encontrados = new Set(found.map((f) => f.id));
+      for (const reqItem of produtos) {
+        if (!encontrados.has(reqItem.id)) {
+          throw new Error(`Produto ${reqItem.id} não encontrado`);
+        }
+      }
+
+      // abate estoque + salva itens
       for (const prod of found) {
         const qtd = mapaQtd.get(prod.id);
         if (qtd > prod.estoque) {
@@ -171,22 +174,16 @@ router.post("/", async (req, res) => {
       await conn.rollback();
       conn.release();
       console.error("Erro no checkout:", error);
-      return res.status(400).json({
-        success: false,
-        message: error.message || "Erro ao criar pedido",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: error.message || "Erro ao criar pedido" });
     }
   } catch (err) {
     console.error("Erro geral:", err);
     if (err instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        errors: err.errors,
-      });
+      return res.status(400).json({ success: false, errors: err.errors });
     }
-    return res
-      .status(500)
-      .json({ success: false, message: "Erro interno no checkout" });
+    return res.status(500).json({ success: false, message: "Erro interno no checkout" });
   }
 });
 
