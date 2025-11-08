@@ -47,6 +47,7 @@ try { app.use("/api/users", require("./routes/users")); } catch {}
 try { app.use("/api/checkout", require("./routes/checkoutRoutes")); } catch {}
 try { app.use("/api/payment", require("./routes/payment")); } catch {}
 try { app.use("/api", require("./routes/authRoutes")); } catch {}
+try { app.use("/api/pedidos", require("./routes/pedidos")); } catch {}
 
 // Admin
 try { app.use("/api/admin", require("./routes/adminLogin")); } catch {}
