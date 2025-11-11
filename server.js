@@ -6,6 +6,8 @@ const path = require("path");
 const crypto = require("crypto");
 const logger = console;
 const { setupDocs } = require("./docs/swagger");
+const cookieParser = require('cookie-parser');
+
 
 const app = express();
 
@@ -33,6 +35,8 @@ app.use(express.urlencoded({ extended: true }));
 // arquivos estáticos
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
+app.use(cookieParser());
+
 // ============================
 // Rotas públicas e admin
 // ============================
@@ -48,6 +52,7 @@ try { app.use("/api/checkout", require("./routes/checkoutRoutes")); } catch {}
 try { app.use("/api/payment", require("./routes/payment")); } catch {}
 try { app.use("/api", require("./routes/authRoutes")); } catch {}
 try { app.use("/api/pedidos", require("./routes/pedidos")); } catch {}
+try { app.use("/api/users", require("./routes/userProfile")); } catch {}
 
 // Admin
 try { app.use("/api/admin", require("./routes/adminLogin")); } catch {}
