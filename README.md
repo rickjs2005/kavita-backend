@@ -129,6 +129,22 @@ Servidor será iniciado em `http://localhost:5000`
 
 ---
 
+## ✅ Testes Automatizados
+
+A suíte de testes cobre os fluxos críticos da aplicação (autenticação, checkout, pagamentos, administração e uploads) através de testes unitários e de integração.
+
+```bash
+# Executa todas as suítes uma única vez
+npm test
+
+# Executa com relatório de cobertura (gera ./coverage)
+npm run test:cov
+```
+
+O relatório de cobertura é gerado via `scripts/run-nyc.js` com objetivo global de **≥70%** para linhas, funções e statements.
+
+---
+
 ## ✉️ Contato
 
 Se você tiver dúvidas ou quiser contribuir, entre em contato:

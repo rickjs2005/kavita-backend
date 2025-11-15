@@ -1,8 +1,7 @@
 // routes/login.js
 const express = require("express");
 const router = express.Router();
-const bcrypt = require("bcryptjs");
-const pool = require("../config/pool");
+const { login } = require("../controllers/authController");
 
 /**
  * @openapi
@@ -41,31 +40,13 @@ const pool = require("../config/pool");
  *         description: Erro interno do servidor
  */
 
-router.post("/", async (req, res) => {
-  const { email, senha, password } = req.body;
-  const plain = senha || password; // aceita ambos
+router.post("/", login);
 
-  try {
-    const [rows] = await pool.query("SELECT * FROM usuarios WHERE email = ?", [email]);
-    if (!rows.length) {
-      return res.status(401).json({ message: "Usuário não encontrado" });
-    }
-
-    const user = rows[0];
-    const ok = await bcrypt.compare(plain, user.senha); // ✅ usa plain
-    if (!ok) {
-      return res.status(401).json({ message: "Senha incorreta" });
-    }
-
-    res.json({
-      message: "Login bem-sucedido!",
-      user: { id: user.id, nome: user.nome, email: user.email },
-    });
-  } catch (err) {
-    console.error("Erro no login:", err);
-    res.status(500).json({ message: "Erro interno do servidor" });
-  }
-});
-
+router.__getRouteHandler = (method, path) => {
+  const layer = router.stack.find(
+    (entry) => entry.route && entry.route.path === path && entry.route.methods[method]
+  );
+  return layer?.route?.stack?.at(-1)?.handle;
+};
 
 module.exports = router;
