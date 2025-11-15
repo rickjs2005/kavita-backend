@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  build-test:
+    name: Lint, Test & Build
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: kavita
+          MYSQL_USER: kavita
+          MYSQL_PASSWORD: kavita
+          MYSQL_ROOT_PASSWORD: kavita
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pkavita"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: kavita
+      DB_NAME: kavita
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run database migrations
+        run: npm run migrate
+
+      - name: Build Docker image
+        run: docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
+
+  run-migrations:
+    name: Apply migrations on main branch
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: build-test
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run migrations
+        run: npm run migrate
+        env:
+          DB_HOST: ${{ secrets.PROD_DB_HOST }}
+          DB_PORT: ${{ secrets.PROD_DB_PORT }}
+          DB_USER: ${{ secrets.PROD_DB_USER }}
+          DB_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+          DB_NAME: ${{ secrets.PROD_DB_NAME }}
+

@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  api:
+    image: ghcr.io/example/kavita-backend:latest
+    build:
+      context: ..
+    env_file:
+      - ../.env.example
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: kavita
+      DB_PASSWORD: kavita
+      DB_NAME: kavita
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    volumes:
+      - ../uploads:/app/uploads
+
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: kavita
+      MYSQL_USER: kavita
+      MYSQL_PASSWORD: kavita
+      MYSQL_ROOT_PASSWORD: kavita
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - db_data:/var/lib/mysql
+
+volumes:
+  db_data:

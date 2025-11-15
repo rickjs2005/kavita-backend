@@ -1,11 +1,10 @@
 // routes/adminProdutos.js — versão robusta e configurável
 const express = require("express");
 const router = express.Router();
-const path = require("path");
-const fs = require("fs");
 const multer = require("multer");
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
+const storageService = require("../services/storage");
 
 /* ==============================
    Config por ENV (flexibiliza BD)
@@ -17,19 +16,6 @@ const IMAGE_COL           = process.env.PRODUCT_IMAGE_COL   || "image";         
 const IS_DEV              = process.env.NODE_ENV !== "production";
 
 /* ============ Upload ============ */
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const dir = path.join(process.cwd(), "uploads");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
-  },
-  filename: (_req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname || "");
-    cb(null, `${unique}${ext}`);
-  },
-});
-
 const imageFilter = (_req, file, cb) => {
   if (!file.mimetype || !file.mimetype.startsWith("image/")) {
     return cb(new Error("Arquivo não é uma imagem."), false);
@@ -37,7 +23,13 @@ const imageFilter = (_req, file, cb) => {
   cb(null, true);
 };
 
-const upload = multer({ storage, fileFilter: imageFilter });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: imageFilter,
+  limits: {
+    fileSize: Number(process.env.UPLOAD_MAX_FILE_SIZE || 5 * 1024 * 1024),
+  },
+});
 
 /* ============ Helpers ============ */
 const parseMoneyBR = (v) => {
@@ -63,6 +55,16 @@ const toInt = (v, def = 0) => {
   return Number.isInteger(n) ? n : def;
 };
 
+const persistFiles = async (files = []) => {
+  if (!files.length) return [];
+  const uploaded = [];
+  for (const file of files) {
+    const stored = await storageService.uploadBuffer(file.buffer, file.originalname, file.mimetype);
+    uploaded.push({ ...stored, originalname: file.originalname });
+  }
+  return uploaded;
+};
+
 async function attachImages(rows) {
   if (!rows.length) return rows;
   const ids = rows.map((r) => r.id);
@@ -71,10 +73,13 @@ async function attachImages(rows) {
     [ids]
   );
   const bucket = imgs.reduce((acc, r) => {
-    (acc[r.product_id] ||= []).push(r.path);
+    (acc[r.product_id] ||= []).push(storageService.toPublicUrl(r.path));
     return acc;
   }, {});
-  return rows.map((r) => ({ ...r, images: bucket[r.id] || [] }));
+  return rows.map((r) => ({
+    ...r,
+    images: (bucket[r.id] || []).map((p) => storageService.toPublicUrl(p)),
+  }));
 }
 
 /* ============ Rotas ============ */
@@ -226,6 +231,17 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
   if (catIdNum <= 0)           return res.status(400).json({ message: "Categoria inválida." });
 
   const files = req.files || [];
+  let uploaded = [];
+  try {
+    uploaded = await persistFiles(files);
+  } catch (err) {
+    console.error("Erro ao enviar arquivos para o storage:", err);
+    return res.status(500).json({
+      message: "Erro ao armazenar imagens.",
+      ...(IS_DEV && { error: err.message }),
+    });
+  }
+
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -238,8 +254,8 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     );
     const productId = ins.insertId;
 
-    if (files.length) {
-      const values = files.map((f) => [productId, `/uploads/${f.filename}`]);
+    if (uploaded.length) {
+      const values = uploaded.map((f) => [productId, f.url]);
       await conn.query(
         `INSERT INTO ${PRODUCT_IMAGES_TABLE} (product_id, path) VALUES ?`,
         [values]
@@ -255,6 +271,11 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     res.status(201).json({ message: "Produto adicionado com sucesso.", id: productId });
   } catch (err) {
     await conn.rollback();
+    if (uploaded.length) {
+      await Promise.all(
+        uploaded.map((file) => storageService.deleteFile(file.url).catch(() => {}))
+      );
+    }
     console.error("POST /produtos erro:", err);
     res.status(500).json({
       message: "Erro ao adicionar produto.",
@@ -291,7 +312,19 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
   try { keep = JSON.parse(keepImages || "[]"); } catch (_) { keep = []; }
 
   const newFiles = req.files || [];
+  let uploaded = [];
+  try {
+    uploaded = await persistFiles(newFiles);
+  } catch (err) {
+    console.error("Erro ao enviar arquivos para o storage:", err);
+    return res.status(500).json({
+      message: "Erro ao armazenar novas imagens.",
+      ...(IS_DEV && { error: err.message }),
+    });
+  }
+
   const conn = await pool.getConnection();
+  let pendingDeletion = [];
 
   try {
     await conn.beginTransaction();
@@ -321,14 +354,11 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
         `DELETE FROM ${PRODUCT_IMAGES_TABLE} WHERE product_id = ? AND path IN (?)`,
         [id, toRemove]
       );
-      for (const p of toRemove) {
-        const abs = path.join(process.cwd(), p.replace("/uploads", "uploads"));
-        fs.existsSync(abs) && fs.unlink(abs, () => {});
-      }
+      pendingDeletion = toRemove;
     }
 
-    if (newFiles.length) {
-      const values = newFiles.map((f) => [id, `/uploads/${f.filename}`]);
+    if (uploaded.length) {
+      const values = uploaded.map((f) => [id, f.url]);
       await conn.query(
         `INSERT INTO ${PRODUCT_IMAGES_TABLE} (product_id, path) VALUES ?`,
         [values]
@@ -343,9 +373,19 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     );
 
     await conn.commit();
+    if (pendingDeletion.length) {
+      await Promise.all(
+        pendingDeletion.map((file) => storageService.deleteFile(file).catch(() => {}))
+      );
+    }
     res.json({ message: "Produto atualizado com sucesso." });
   } catch (err) {
     await conn.rollback();
+    if (uploaded.length) {
+      await Promise.all(
+        uploaded.map((file) => storageService.deleteFile(file.url).catch(() => {}))
+      );
+    }
     console.error("PUT /produtos erro:", err);
     res.status(500).json({
       message: "Erro ao atualizar produto.",
@@ -379,11 +419,9 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
 
     await conn.commit();
 
-    // remove arquivos do disco (fora da transação)
-    for (const r of imgs) {
-      const abs = path.join(process.cwd(), r.path.replace("/uploads", "uploads"));
-      fs.existsSync(abs) && fs.unlink(abs, () => {});
-    }
+    await Promise.all(
+      imgs.map((r) => storageService.deleteFile(r.path).catch(() => {}))
+    );
 
     res.json({ message: "Produto removido com sucesso." });
   } catch (err) {

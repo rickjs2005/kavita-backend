@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kavita-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kavita-backend
+  template:
+    metadata:
+      labels:
+        app: kavita-backend
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/kavita-backend:latest
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: kavita-backend-config
+            - secretRef:
+                name: kavita-backend-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 30

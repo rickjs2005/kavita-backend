@@ -1,11 +1,10 @@
 // routes/adminServicos.js
 const express = require("express");
 const router = express.Router();
-const path = require("path");
-const fs = require("fs");
 const multer = require("multer");
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
+const storageService = require("../services/storage");
 
 /* ==============================
    Configuração e helpers
@@ -14,20 +13,17 @@ const COLAB_TABLE = "colaboradores";
 const IMAGES_TABLE = "colaborador_images";
 const IS_DEV = process.env.NODE_ENV !== "production";
 
-/* ---------- Multer para upload ---------- */
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const dir = path.join(process.cwd(), "uploads");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
-  },
-  filename: (_req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname || "");
-    cb(null, `${unique}${ext}`);
-  },
-});
+const persistFiles = async (files = []) => {
+  if (!files.length) return [];
+  const stored = [];
+  for (const file of files) {
+    const uploaded = await storageService.uploadBuffer(file.buffer, file.originalname, file.mimetype);
+    stored.push(uploaded);
+  }
+  return stored;
+};
 
+/* ---------- Multer para upload ---------- */
 const imageFilter = (_req, file, cb) => {
   if (!file.mimetype || !file.mimetype.startsWith("image/")) {
     return cb(new Error("Arquivo não é uma imagem."), false);
@@ -35,7 +31,13 @@ const imageFilter = (_req, file, cb) => {
   cb(null, true);
 };
 
-const upload = multer({ storage, fileFilter: imageFilter });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: imageFilter,
+  limits: {
+    fileSize: Number(process.env.UPLOAD_MAX_FILE_SIZE || 5 * 1024 * 1024),
+  },
+});
 
 /* ---------- Função auxiliar para anexar imagens ---------- */
 async function attachImages(rows) {
@@ -46,10 +48,13 @@ async function attachImages(rows) {
     [ids]
   );
   const bucket = imgs.reduce((acc, r) => {
-    (acc[r.colaborador_id] ||= []).push(r.path);
+    (acc[r.colaborador_id] ||= []).push(storageService.toPublicUrl(r.path));
     return acc;
   }, {});
-  return rows.map((r) => ({ ...r, images: bucket[r.id] || [] }));
+  return rows.map((r) => ({
+    ...r,
+    images: (bucket[r.id] || []).map((p) => storageService.toPublicUrl(p)),
+  }));
 }
 
 /* ==============================
@@ -209,7 +214,19 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
       .json({ message: "Campos obrigatórios: nome, whatsapp e especialidade." });
   }
 
+  let uploaded = [];
+  try {
+    uploaded = await persistFiles(files);
+  } catch (err) {
+    console.error("Erro ao enviar arquivos para o storage:", err);
+    return res.status(500).json({
+      message: "Erro ao armazenar imagens.",
+      ...(IS_DEV && { error: err.message }),
+    });
+  }
+
   const conn = await pool.getConnection();
+  let pendingDeletion = [];
   try {
     await conn.beginTransaction();
 
@@ -220,8 +237,8 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     );
     const colaboradorId = insert.insertId;
 
-    if (files.length) {
-      const values = files.map((f) => [colaboradorId, `/uploads/${f.filename}`]);
+    if (uploaded.length) {
+      const values = uploaded.map((f) => [colaboradorId, f.url]);
       await conn.query(
         `INSERT INTO ${IMAGES_TABLE} (colaborador_id, path) VALUES ?`,
         [values]
@@ -236,6 +253,11 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     res.status(201).json({ message: "Serviço cadastrado com sucesso.", id: colaboradorId });
   } catch (err) {
     await conn.rollback();
+    if (uploaded.length) {
+      await Promise.all(
+        uploaded.map((file) => storageService.deleteFile(file.url).catch(() => {}))
+      );
+    }
     console.error("Erro ao cadastrar serviço:", err);
     res.status(500).json({ message: "Erro ao cadastrar serviço." });
   } finally {
@@ -256,7 +278,19 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     keep = [];
   }
 
+  let uploaded = [];
+  try {
+    uploaded = await persistFiles(newFiles);
+  } catch (err) {
+    console.error("Erro ao enviar arquivos para o storage:", err);
+    return res.status(500).json({
+      message: "Erro ao armazenar novas imagens.",
+      ...(IS_DEV && { error: err.message }),
+    });
+  }
+
   const conn = await pool.getConnection();
+  let pendingDeletion = [];
   try {
     await conn.beginTransaction();
 
@@ -286,14 +320,11 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
         `DELETE FROM ${IMAGES_TABLE} WHERE colaborador_id = ? AND path IN (?)`,
         [id, toRemove]
       );
-      for (const p of toRemove) {
-        const abs = path.join(process.cwd(), p.replace("/uploads", "uploads"));
-        fs.existsSync(abs) && fs.unlink(abs, () => {});
-      }
+      pendingDeletion = toRemove;
     }
 
-    if (newFiles.length) {
-      const values = newFiles.map((f) => [id, `/uploads/${f.filename}`]);
+    if (uploaded.length) {
+      const values = uploaded.map((f) => [id, f.url]);
       await conn.query(
         `INSERT INTO ${IMAGES_TABLE} (colaborador_id, path) VALUES ?`,
         [values]
@@ -305,9 +336,19 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     await conn.query(`UPDATE ${COLAB_TABLE} SET imagem = ? WHERE id = ?`, [firstImage, id]);
 
     await conn.commit();
+    if (pendingDeletion.length) {
+      await Promise.all(
+        pendingDeletion.map((file) => storageService.deleteFile(file).catch(() => {}))
+      );
+    }
     res.json({ message: "Serviço atualizado com sucesso." });
   } catch (err) {
     await conn.rollback();
+    if (uploaded.length) {
+      await Promise.all(
+        uploaded.map((file) => storageService.deleteFile(file.url).catch(() => {}))
+      );
+    }
     console.error("Erro ao atualizar serviço:", err);
     res.status(500).json({ message: "Erro ao atualizar serviço." });
   } finally {
@@ -338,11 +379,9 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
 
     await conn.commit();
 
-    // remove arquivos físicos
-    for (const r of imgs) {
-      const abs = path.join(process.cwd(), r.path.replace("/uploads", "uploads"));
-      fs.existsSync(abs) && fs.unlink(abs, () => {});
-    }
+    await Promise.all(
+      imgs.map((r) => storageService.deleteFile(r.path).catch(() => {}))
+    );
 
     res.json({ message: "Serviço removido com sucesso." });
   } catch (err) {
