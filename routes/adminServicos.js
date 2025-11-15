@@ -1,11 +1,9 @@
 // routes/adminServicos.js
 const express = require("express");
 const router = express.Router();
-const path = require("path");
-const fs = require("fs");
-const multer = require("multer");
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
+const mediaService = require("../services/mediaService");
 
 /* ==============================
    Configuração e helpers
@@ -14,28 +12,13 @@ const COLAB_TABLE = "colaboradores";
 const IMAGES_TABLE = "colaborador_images";
 const IS_DEV = process.env.NODE_ENV !== "production";
 
-/* ---------- Multer para upload ---------- */
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const dir = path.join(process.cwd(), "uploads");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
-  },
-  filename: (_req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname || "");
-    cb(null, `${unique}${ext}`);
-  },
-});
+/* ---------- Upload Helpers ---------- */
+const upload = mediaService.upload;
 
-const imageFilter = (_req, file, cb) => {
-  if (!file.mimetype || !file.mimetype.startsWith("image/")) {
-    return cb(new Error("Arquivo não é uma imagem."), false);
-  }
-  cb(null, true);
-};
-
-const upload = multer({ storage, fileFilter: imageFilter });
+const rawFileTargets = (files = []) =>
+  (files || [])
+    .filter((file) => file && file.filename)
+    .map((file) => ({ path: mediaService.toPublicPath(file.filename) }));
 
 /* ---------- Função auxiliar para anexar imagens ---------- */
 async function attachImages(rows) {
@@ -210,6 +193,7 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
   }
 
   const conn = await pool.getConnection();
+  let uploadedMedia = [];
   try {
     await conn.beginTransaction();
 
@@ -221,21 +205,29 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     const colaboradorId = insert.insertId;
 
     if (files.length) {
-      const values = files.map((f) => [colaboradorId, `/uploads/${f.filename}`]);
-      await conn.query(
-        `INSERT INTO ${IMAGES_TABLE} (colaborador_id, path) VALUES ?`,
-        [values]
-      );
-      await conn.query(
-        `UPDATE ${COLAB_TABLE} SET imagem = ? WHERE id = ?`,
-        [values[0][1], colaboradorId]
-      );
+      uploadedMedia = await mediaService.persistMedia(files, { folder: "services" });
+      if (uploadedMedia.length) {
+        const values = uploadedMedia.map((media) => [colaboradorId, media.path]);
+        await conn.query(
+          `INSERT INTO ${IMAGES_TABLE} (colaborador_id, path) VALUES ?`,
+          [values]
+        );
+        await conn.query(
+          `UPDATE ${COLAB_TABLE} SET imagem = ? WHERE id = ?`,
+          [uploadedMedia[0].path, colaboradorId]
+        );
+      }
     }
 
     await conn.commit();
     res.status(201).json({ message: "Serviço cadastrado com sucesso.", id: colaboradorId });
   } catch (err) {
     await conn.rollback();
+    const cleanupTargets = [
+      ...uploadedMedia,
+      ...rawFileTargets(files),
+    ];
+    await mediaService.enqueueOrphanCleanup(cleanupTargets);
     console.error("Erro ao cadastrar serviço:", err);
     res.status(500).json({ message: "Erro ao cadastrar serviço." });
   } finally {
@@ -257,12 +249,15 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
   }
 
   const conn = await pool.getConnection();
+  let uploadedMedia = [];
+  let removedDuringUpdate = [];
   try {
     await conn.beginTransaction();
 
     const [exists] = await conn.query(`SELECT id FROM ${COLAB_TABLE} WHERE id = ?`, [id]);
     if (!exists.length) {
       await conn.rollback();
+      await mediaService.enqueueOrphanCleanup(rawFileTargets(newFiles));
       return res.status(404).json({ message: "Serviço não encontrado." });
     }
 
@@ -286,28 +281,38 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
         `DELETE FROM ${IMAGES_TABLE} WHERE colaborador_id = ? AND path IN (?)`,
         [id, toRemove]
       );
-      for (const p of toRemove) {
-        const abs = path.join(process.cwd(), p.replace("/uploads", "uploads"));
-        fs.existsSync(abs) && fs.unlink(abs, () => {});
-      }
+      removedDuringUpdate = toRemove;
     }
 
     if (newFiles.length) {
-      const values = newFiles.map((f) => [id, `/uploads/${f.filename}`]);
-      await conn.query(
-        `INSERT INTO ${IMAGES_TABLE} (colaborador_id, path) VALUES ?`,
-        [values]
-      );
-      keep = [...keep, ...values.map((v) => v[1])];
+      uploadedMedia = await mediaService.persistMedia(newFiles, { folder: "services" });
+      if (uploadedMedia.length) {
+        const values = uploadedMedia.map((media) => [id, media.path]);
+        await conn.query(
+          `INSERT INTO ${IMAGES_TABLE} (colaborador_id, path) VALUES ?`,
+          [values]
+        );
+        keep = [...keep, ...uploadedMedia.map((item) => item.path)];
+      }
     }
 
     const firstImage = keep[0] || null;
     await conn.query(`UPDATE ${COLAB_TABLE} SET imagem = ? WHERE id = ?`, [firstImage, id]);
 
     await conn.commit();
+    if (removedDuringUpdate.length) {
+      mediaService.removeMedia(removedDuringUpdate).catch((error) => {
+        console.error("Falha ao remover mídias antigas de serviço:", error);
+      });
+    }
     res.json({ message: "Serviço atualizado com sucesso." });
   } catch (err) {
     await conn.rollback();
+    const cleanupTargets = [
+      ...uploadedMedia,
+      ...rawFileTargets(newFiles),
+    ];
+    await mediaService.enqueueOrphanCleanup(cleanupTargets);
     console.error("Erro ao atualizar serviço:", err);
     res.status(500).json({ message: "Erro ao atualizar serviço." });
   } finally {
@@ -328,7 +333,6 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
       [id]
     );
 
-    await conn.query(`DELETE FROM ${IMAGES_TABLE} WHERE colaborador_id = ?`, [id]);
     const [result] = await conn.query(`DELETE FROM ${COLAB_TABLE} WHERE id = ?`, [id]);
 
     if (result.affectedRows === 0) {
@@ -338,10 +342,10 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
 
     await conn.commit();
 
-    // remove arquivos físicos
-    for (const r of imgs) {
-      const abs = path.join(process.cwd(), r.path.replace("/uploads", "uploads"));
-      fs.existsSync(abs) && fs.unlink(abs, () => {});
+    if (imgs.length) {
+      mediaService.removeMedia(imgs.map((r) => r.path)).catch((error) => {
+        console.error("Falha ao remover mídias de serviço excluído:", error);
+      });
     }
 
     res.json({ message: "Serviço removido com sucesso." });

@@ -1,11 +1,9 @@
 // routes/adminProdutos.js — versão robusta e configurável
 const express = require("express");
 const router = express.Router();
-const path = require("path");
-const fs = require("fs");
-const multer = require("multer");
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
+const mediaService = require("../services/mediaService");
 
 /* ==============================
    Config por ENV (flexibiliza BD)
@@ -16,28 +14,13 @@ const CATEGORY_COL        = process.env.PRODUCT_CATEGORY_COL|| "category_id";   
 const IMAGE_COL           = process.env.PRODUCT_IMAGE_COL   || "image";            // coluna “capa” em products
 const IS_DEV              = process.env.NODE_ENV !== "production";
 
-/* ============ Upload ============ */
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const dir = path.join(process.cwd(), "uploads");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
-  },
-  filename: (_req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname || "");
-    cb(null, `${unique}${ext}`);
-  },
-});
+/* ============ Upload Helpers ============ */
+const upload = mediaService.upload;
 
-const imageFilter = (_req, file, cb) => {
-  if (!file.mimetype || !file.mimetype.startsWith("image/")) {
-    return cb(new Error("Arquivo não é uma imagem."), false);
-  }
-  cb(null, true);
-};
-
-const upload = multer({ storage, fileFilter: imageFilter });
+const rawFileTargets = (files = []) =>
+  (files || [])
+    .filter((file) => file && file.filename)
+    .map((file) => ({ path: mediaService.toPublicPath(file.filename) }));
 
 /* ============ Helpers ============ */
 const parseMoneyBR = (v) => {
@@ -227,6 +210,7 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
 
   const files = req.files || [];
   const conn = await pool.getConnection();
+  let uploadedMedia = [];
   try {
     await conn.beginTransaction();
 
@@ -239,22 +223,31 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     const productId = ins.insertId;
 
     if (files.length) {
-      const values = files.map((f) => [productId, `/uploads/${f.filename}`]);
-      await conn.query(
-        `INSERT INTO ${PRODUCT_IMAGES_TABLE} (product_id, path) VALUES ?`,
-        [values]
-      );
-      // define a primeira imagem como “capa”
-      await conn.query(
-        `UPDATE ${PRODUCTS_TABLE} SET ${IMAGE_COL} = ? WHERE id = ?`,
-        [values[0][1], productId]
-      );
+      uploadedMedia = await mediaService.persistMedia(files, { folder: "products" });
+
+      if (uploadedMedia.length) {
+        const values = uploadedMedia.map((media) => [productId, media.path]);
+        await conn.query(
+          `INSERT INTO ${PRODUCT_IMAGES_TABLE} (product_id, path) VALUES ?`,
+          [values]
+        );
+        // define a primeira imagem como “capa”
+        await conn.query(
+          `UPDATE ${PRODUCTS_TABLE} SET ${IMAGE_COL} = ? WHERE id = ?`,
+          [uploadedMedia[0].path, productId]
+        );
+      }
     }
 
     await conn.commit();
     res.status(201).json({ message: "Produto adicionado com sucesso.", id: productId });
   } catch (err) {
     await conn.rollback();
+    const cleanupTargets = [
+      ...uploadedMedia,
+      ...rawFileTargets(files),
+    ];
+    await mediaService.enqueueOrphanCleanup(cleanupTargets);
     console.error("POST /produtos erro:", err);
     res.status(500).json({
       message: "Erro ao adicionar produto.",
@@ -292,6 +285,8 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
 
   const newFiles = req.files || [];
   const conn = await pool.getConnection();
+  let uploadedMedia = [];
+  let removedDuringUpdate = [];
 
   try {
     await conn.beginTransaction();
@@ -299,6 +294,9 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     const [exists] = await conn.query(`SELECT id FROM ${PRODUCTS_TABLE} WHERE id = ?`, [id]);
     if (!exists.length) {
       await conn.rollback();
+      await mediaService.enqueueOrphanCleanup([
+        ...rawFileTargets(newFiles),
+      ]);
       return res.status(404).json({ message: "Produto não encontrado." });
     }
 
@@ -321,19 +319,20 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
         `DELETE FROM ${PRODUCT_IMAGES_TABLE} WHERE product_id = ? AND path IN (?)`,
         [id, toRemove]
       );
-      for (const p of toRemove) {
-        const abs = path.join(process.cwd(), p.replace("/uploads", "uploads"));
-        fs.existsSync(abs) && fs.unlink(abs, () => {});
-      }
+      removedDuringUpdate = toRemove;
     }
 
     if (newFiles.length) {
-      const values = newFiles.map((f) => [id, `/uploads/${f.filename}`]);
-      await conn.query(
-        `INSERT INTO ${PRODUCT_IMAGES_TABLE} (product_id, path) VALUES ?`,
-        [values]
-      );
-      keep = [...keep, ...values.map((v) => v[1])];
+      uploadedMedia = await mediaService.persistMedia(newFiles, { folder: "products" });
+      if (uploadedMedia.length) {
+        const values = uploadedMedia.map((media) => [id, media.path]);
+        await conn.query(
+          `INSERT INTO ${PRODUCT_IMAGES_TABLE} (product_id, path) VALUES ?`,
+          [values]
+        );
+        const uploadedPaths = uploadedMedia.map((item) => item.path);
+        keep = [...keep, ...uploadedPaths];
+      }
     }
 
     const firstImage = keep[0] || null;
@@ -343,9 +342,19 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     );
 
     await conn.commit();
+    if (removedDuringUpdate.length) {
+      mediaService.removeMedia(removedDuringUpdate).catch((error) => {
+        console.error("Falha ao remover mídias antigas de produto:", error);
+      });
+    }
     res.json({ message: "Produto atualizado com sucesso." });
   } catch (err) {
     await conn.rollback();
+    const cleanupTargets = [
+      ...uploadedMedia,
+      ...rawFileTargets(newFiles),
+    ];
+    await mediaService.enqueueOrphanCleanup(cleanupTargets);
     console.error("PUT /produtos erro:", err);
     res.status(500).json({
       message: "Erro ao atualizar produto.",
@@ -369,7 +378,6 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
       [id]
     );
 
-    await conn.query(`DELETE FROM ${PRODUCT_IMAGES_TABLE} WHERE product_id = ?`, [id]);
     const [result] = await conn.query(`DELETE FROM ${PRODUCTS_TABLE} WHERE id = ?`, [id]);
 
     if (result.affectedRows === 0) {
@@ -379,10 +387,10 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
 
     await conn.commit();
 
-    // remove arquivos do disco (fora da transação)
-    for (const r of imgs) {
-      const abs = path.join(process.cwd(), r.path.replace("/uploads", "uploads"));
-      fs.existsSync(abs) && fs.unlink(abs, () => {});
+    if (imgs.length) {
+      mediaService.removeMedia(imgs.map((r) => r.path)).catch((error) => {
+        console.error("Falha ao remover mídias de produto excluído:", error);
+      });
     }
 
     res.json({ message: "Produto removido com sucesso." });
