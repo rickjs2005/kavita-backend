@@ -6,6 +6,7 @@ const path = require("path");
 const crypto = require("crypto");
 const logger = console;
 const { setupDocs } = require("./docs/swagger");
+const { registerRoutes } = require("./loaders/routeLoader");
 
 const app = express();
 
@@ -36,28 +37,20 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // ============================
 // Rotas públicas e admin
 // ============================
-try { app.use("/api/products", require("./routes/products")); } catch {}
-try { app.use("/api/products", require("./routes/productById")); } catch {}
-try { app.use("/api/public/categorias", require("./routes/publicCategorias")); } catch {}
-try { app.use("/api/public/servicos", require("./routes/publicServicos")); } catch {}
-try { app.use("/api/public/destaques", require("./routes/publicDestaques")); } catch {}
-try { app.use("/api/public/produtos", require("./routes/publicProdutos")); } catch {}
-try { app.use("/api/login", require("./routes/login")); } catch {}
-try { app.use("/api/users", require("./routes/users")); } catch {}
-try { app.use("/api/checkout", require("./routes/checkoutRoutes")); } catch {}
-try { app.use("/api/payment", require("./routes/payment")); } catch {}
-try { app.use("/api", require("./routes/authRoutes")); } catch {}
-try { app.use("/api/pedidos", require("./routes/pedidos")); } catch {}
+try {
+  registerRoutes(app, { logger });
+} catch (error) {
+  logger.error({
+    event: "server_bootstrap_failed",
+    error: error.message,
+  });
 
-// Admin
-try { app.use("/api/admin", require("./routes/adminLogin")); } catch {}
-try { app.use("/api/admin/categorias", require("./routes/adminCategorias")); } catch {}
-try { app.use("/api/admin/colaboradores", require("./routes/adminColaboradores")); } catch {}
-try { app.use("/api/admin/destaques", require("./routes/adminDestaques")); } catch {}
-try { app.use("/api/admin/especialidades", require("./routes/adminEspecialidades")); } catch {}
-try { app.use("/api/admin/pedidos", require("./routes/adminPedidos")); } catch {}
-try { app.use("/api/admin/produtos", require("./routes/adminProdutos")); } catch {}
-try { app.use("/api/admin/servicos", require("./routes/adminServicos")); } catch {}
+  if (process.env.NODE_ENV === "test") {
+    throw error;
+  }
+
+  process.exit(1);
+}
 
 // ============================
 // Swagger (⚠️ antes do 404!)
