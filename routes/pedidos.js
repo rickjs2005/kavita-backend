@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool");
+const { parseAddress } = require("../utils/address");
 
 /**
  * @openapi
@@ -70,10 +71,9 @@ router.get("/", async (req, res) => {
   try {
     let sql = `
       SELECT p.id, p.usuario_id, p.forma_pagamento, p.status, p.data_pedido,
-             COALESCE(SUM(pp.quantidade * pr.preco), 0) AS total
+             COALESCE(SUM(pp.quantidade * pp.valor_unitario), 0) AS total
       FROM pedidos p
       LEFT JOIN pedidos_produtos pp ON pp.pedido_id = p.id
-      LEFT JOIN products pr ON pr.id = pp.produto_id
     `;
     const params = [];
 
@@ -128,7 +128,7 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ message: "Pedido não encontrado" });
 
     const [itens] = await pool.query(
-      `SELECT pr.id, pr.nome, pr.preco, pp.quantidade
+      `SELECT pr.id, pr.name, pp.valor_unitario, pp.quantidade
        FROM pedidos_produtos pp
        JOIN products pr ON pr.id = pp.produto_id
        WHERE pp.pedido_id = ?`,
@@ -136,11 +136,23 @@ router.get("/:id", async (req, res) => {
     );
 
     const total = itens.reduce(
-      (sum, i) => sum + Number(i.preco) * Number(i.quantidade),
+      (sum, i) => sum + Number(i.valor_unitario) * Number(i.quantidade),
       0
     );
 
-    res.json({ ...pedido, itens, total });
+    const itensFormatados = itens.map((item) => ({
+      id: item.id,
+      nome: item.name,
+      preco: Number(item.valor_unitario),
+      quantidade: item.quantidade,
+    }));
+
+    res.json({
+      ...pedido,
+      endereco: parseAddress(pedido.endereco),
+      itens: itensFormatados,
+      total,
+    });
   } catch (error) {
     console.error("Erro ao buscar pedido:", error);
     res.status(500).json({ message: "Erro ao buscar pedido" });
