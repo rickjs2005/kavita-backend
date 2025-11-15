@@ -1,5 +1,6 @@
 // routes/payment.js
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
 const pool = require("../config/pool");
 const mercadopago = require("mercadopago");
@@ -141,27 +142,121 @@ router.post("/start", async (req, res) => {
 
 // webhook Mercado Pago
 router.post("/webhook", async (req, res) => {
+  const signatureHeader = req.get("x-signature");
+  const idempotencyKey = req.get("x-idempotency-key");
+  const secret = process.env.MP_WEBHOOK_SECRET;
+  const unauthorized = () => res.status(401).json({ ok: false });
+
+  if (!signatureHeader || !idempotencyKey) {
+    console.warn("[payment/webhook] assinatura ou idempotency key ausentes");
+    return unauthorized();
+  }
+
+  if (!secret) {
+    console.error("[payment/webhook] MP_WEBHOOK_SECRET não configurado");
+    const status = process.env.NODE_ENV === "development" ? 500 : 200;
+    return res.status(status).json({ ok: status === 200 });
+  }
+
+  const signatureParts = signatureHeader
+    .split(",")
+    .map((part) => part.trim().split("="))
+    .reduce((acc, [key, value]) => {
+      if (key && value) acc[key] = value;
+      return acc;
+    }, {});
+
+  const ts = signatureParts.ts;
+  const providedHash = signatureParts.v1;
+
+  if (!ts || !providedHash) {
+    console.warn("[payment/webhook] formato de assinatura inválido");
+    return unauthorized();
+  }
+
+  const payloadString = JSON.stringify(req.body || {});
+  const expectedHash = crypto
+    .createHmac("sha256", secret)
+    .update(`${ts}.${payloadString}`)
+    .digest("hex");
+
+  const safeCompare = (a, b) => {
+    const bufferA = Buffer.from(a, "utf8");
+    const bufferB = Buffer.from(b, "utf8");
+    if (bufferA.length !== bufferB.length) return false;
+    return crypto.timingSafeEqual(bufferA, bufferB);
+  };
+
+  if (!safeCompare(expectedHash, providedHash)) {
+    console.warn(`[payment/webhook] assinatura inválida para chave ${idempotencyKey}`);
+    return unauthorized();
+  }
+
   try {
-    // Mercado Pago pode enviar diferentes formatos. O mais comum:
-    // { type: 'payment', data: { id: '123456' } }
     const { type, data } = req.body || {};
-    if (type !== "payment" || !data?.id) {
-      // aceite 200 para não repetir em loop
-      return res.status(200).json({ ok: true });
-    }
-
-    // consulta status do pagamento
-    const payment = await mercadopago.payment.findById(data.id);
-    const status = payment.body.status; // approved | pending | rejected | cancelled | in_process ...
-    const pedidoId = payment.body.metadata?.pedidoId;
-
-    if (!pedidoId) {
-      console.warn("[webhook] pagamento sem metadata.pedidoId", data.id);
-      return res.status(200).json({ ok: true });
-    }
+    const payload = JSON.stringify(req.body || {});
 
     const conn = await pool.getConnection();
     try {
+      await conn.beginTransaction();
+
+      const [[existingEvent]] = await conn.query(
+        `SELECT id, status, processed_at
+           FROM webhook_events
+          WHERE idempotency_key = ?
+          FOR UPDATE`,
+        [idempotencyKey]
+      );
+
+      let eventId = existingEvent?.id;
+
+      if (!existingEvent) {
+        const [insertResult] = await conn.query(
+          `INSERT INTO webhook_events (idempotency_key, signature, event_type, payload, status, created_at)
+           VALUES (?, ?, ?, ?, 'received', NOW())`,
+          [idempotencyKey, signatureHeader, type || null, payload]
+        );
+        eventId = insertResult.insertId;
+      } else if (existingEvent.processed_at) {
+        await conn.commit();
+        return res.status(200).json({ ok: true, idempotent: true });
+      } else {
+        eventId = existingEvent.id;
+        await conn.query(
+          `UPDATE webhook_events
+              SET signature = ?, event_type = ?, payload = ?, status = 'received', updated_at = NOW()
+            WHERE id = ?`,
+          [signatureHeader, type || null, payload, eventId]
+        );
+      }
+
+      if (type !== "payment" || !data?.id) {
+        await conn.query(
+          `UPDATE webhook_events
+              SET status = 'ignored', processed_at = NOW(), updated_at = NOW()
+            WHERE id = ?`,
+          [eventId]
+        );
+        await conn.commit();
+        return res.status(200).json({ ok: true });
+      }
+
+      const payment = await mercadopago.payment.findById(data.id);
+      const status = payment.body.status; // approved | pending | rejected | cancelled | in_process ...
+      const pedidoId = payment.body.metadata?.pedidoId;
+
+      if (!pedidoId) {
+        console.warn("[webhook] pagamento sem metadata.pedidoId", data.id);
+        await conn.query(
+          `UPDATE webhook_events
+              SET status = 'ignored', processed_at = NOW(), updated_at = NOW()
+            WHERE id = ?`,
+          [eventId]
+        );
+        await conn.commit();
+        return res.status(200).json({ ok: true });
+      }
+
       // mapeia status MP -> status local
       let novoStatus = "pendente";
       if (status === "approved") novoStatus = "pago";
@@ -171,18 +266,34 @@ router.post("/webhook", async (req, res) => {
       await conn.query(
         `UPDATE pedidos
             SET status = ?, pagamento_id = ?
-          WHERE id = ?`,
-        [novoStatus, String(data.id), pedidoId]
+          WHERE id = ?
+            AND (status <> ? OR pagamento_id <> ?)`,
+        [novoStatus, String(data.id), pedidoId, novoStatus, String(data.id)]
       );
+
+      await conn.query(
+        `UPDATE webhook_events
+            SET status = ?, processed_at = NOW(), updated_at = NOW()
+          WHERE id = ?`,
+        [novoStatus, eventId]
+      );
+
+      await conn.commit();
+      return res.status(200).json({ ok: true });
+    } catch (dbErr) {
+      try {
+        await conn.rollback();
+      } catch (rollbackErr) {
+        console.error("[payment/webhook] rollback falhou:", rollbackErr);
+      }
+      throw dbErr;
     } finally {
       conn.release();
     }
-
-    return res.status(200).json({ ok: true });
   } catch (err) {
-    console.error("[payment/webhook] erro:", err);
-    // ainda retornamos 200 para evitar redelivery infinito em produção; avalie 500 no dev
-    return res.status(200).json({ ok: true });
+    console.error("[payment/webhook] erro:", err, err?.stack);
+    const status = process.env.NODE_ENV === "development" ? 500 : 200;
+    return res.status(status).json({ ok: status === 200 });
   }
 });
 
