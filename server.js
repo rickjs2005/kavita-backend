@@ -8,6 +8,8 @@ const logger = console;
 const { setupDocs } = require("./docs/swagger");
 
 const app = express();
+const STORAGE_DRIVER = (process.env.STORAGE_DRIVER || "local").toLowerCase();
+const CDN_BASE_URL = process.env.STORAGE_CDN_URL || process.env.CDN_BASE_URL;
 
 // ============================
 // Middleware base
@@ -31,7 +33,19 @@ app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // arquivos estáticos
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+if (STORAGE_DRIVER === "local") {
+  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+} else if (CDN_BASE_URL) {
+  app.get("/uploads/*", (req, res) => {
+    const key = req.params[0] || "";
+    const target = `${CDN_BASE_URL.replace(/\/$/, "")}/${key}`;
+    res.redirect(302, target);
+  });
+}
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
 
 // ============================
 // Rotas públicas e admin
