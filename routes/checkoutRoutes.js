@@ -41,12 +41,15 @@ const router = express.Router();
  *           type: array
  *           items: { $ref: "#/components/schemas/CheckoutProduto" }
  *         total: { type: number, example: 55.0 }
- *     CheckoutResponse:
+ *     CheckoutSuccess:
  *       type: object
  *       properties:
- *         success: { type: boolean }
- *         message: { type: string }
- *         pedido_id: { type: integer }
+ *         message: { type: string, example: "Pedido criado com sucesso!" }
+ *         pedidoId: { type: integer, example: 123 }
+ *         payment:
+ *           type: object
+ *           description: Dados do provedor de pagamento (quando aplicável)
+ *           additionalProperties: true
  */
 
 /**
@@ -65,11 +68,25 @@ const router = express.Router();
  *         description: Pedido criado
  *         content:
  *           application/json:
- *             schema: { $ref: "#/components/schemas/CheckoutResponse" }
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiEnvelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/CheckoutSuccess'
  *       400:
  *         description: Erro de validação/estoque
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiEnvelope'
  *       500:
  *         description: Erro interno
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiEnvelope'
  */
 
 const enderecoSchema = z.object({
@@ -165,25 +182,27 @@ router.post("/", async (req, res) => {
       await conn.commit();
       conn.release();
 
-      return res.status(201).json({
-        success: true,
-        message: "Pedido criado com sucesso!",
-        pedido_id,
-      });
+      return res.success(
+        {
+          message: "Pedido criado com sucesso!",
+          pedidoId: pedido_id,
+        },
+        201
+      );
     } catch (error) {
       await conn.rollback();
       conn.release();
       console.error("Erro no checkout:", error);
-      return res
-        .status(400)
-        .json({ success: false, message: error.message || "Erro ao criar pedido" });
+      return res.fail(400, {
+        message: error.message || "Erro ao criar pedido",
+      });
     }
   } catch (err) {
     console.error("Erro geral:", err);
     if (err instanceof z.ZodError) {
-      return res.status(400).json({ success: false, errors: err.errors });
+      return res.fail(400, { message: "Payload inválido", details: err.errors });
     }
-    return res.status(500).json({ success: false, message: "Erro interno no checkout" });
+    return res.fail(500, { message: "Erro interno no checkout" });
   }
 });
 

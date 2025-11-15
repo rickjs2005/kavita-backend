@@ -15,16 +15,25 @@ const pool = require("../config/pool");
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id: { type: integer }
- *                   name: { type: string }
- *                   total_products: { type: integer }
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiEnvelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: integer }
+ *                           name: { type: string }
+ *                           total_products: { type: integer }
  *       500:
  *         description: Erro interno no servidor
- */
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiEnvelope'
+*/
 
 /** GET /api/public/categorias */
 router.get("/", async (_req, res) => {
