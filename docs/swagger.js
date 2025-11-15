@@ -64,6 +64,21 @@ const options = {
         },
       },
       schemas: {
+        ApiEnvelope: {
+          type: "object",
+          required: ["success", "data", "error"],
+          properties: {
+            success: { type: "boolean", example: true },
+            data: { nullable: true },
+            error: {
+              nullable: true,
+              oneOf: [
+                { type: "null" },
+                { $ref: "#/components/schemas/ErrorResponse" },
+              ],
+            },
+          },
+        },
         Product: {
           type: "object",
           properties: {
@@ -118,11 +133,35 @@ const options = {
             data: { type: "array", items: { $ref: "#/components/schemas/Service" } },
           },
         },
+        LoginSuccess: {
+          type: "object",
+          properties: {
+            message: { type: "string", example: "Login bem-sucedido!" },
+            token: { type: "string", description: "JWT para autenticação" },
+            user: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                nome: { type: "string" },
+                email: { type: "string", format: "email" },
+                role: { type: "string" },
+              },
+            },
+          },
+        },
         ErrorResponse: {
           type: "object",
           properties: {
             message: { type: "string" },
-            details: { type: "string" },
+            details: {
+              description: "Informações adicionais sobre o erro",
+              nullable: true,
+              oneOf: [
+                { type: "string" },
+                { type: "object", additionalProperties: true },
+                { type: "array", items: { type: "object" } },
+              ],
+            },
           },
         },
       },

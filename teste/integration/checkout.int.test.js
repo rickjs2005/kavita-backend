@@ -35,9 +35,10 @@ describe('INT /api/checkout', () => {
       .send(payload);
 
     expect(res.status).toBe(201);
-    expect(res.body).toHaveProperty('pedidoId', 123);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveProperty('pedidoId', 123);
     // Se sua rota retorna link do MP:
-    // expect(res.body).toHaveProperty('payment.init_point');
+    // expect(res.body.data).toHaveProperty('payment.init_point');
   });
 
   test('400 - payload inválido (sem produtos)', async () => {
@@ -46,6 +47,8 @@ describe('INT /api/checkout', () => {
       .send({ ...payload, produtos: [] });
 
     expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toHaveProperty('message');
   });
 
   test('409 - estoque insuficiente', async () => {
@@ -58,5 +61,7 @@ describe('INT /api/checkout', () => {
       .send(payload);
 
     expect(res.status).toBe(409);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toHaveProperty('message');
   });
 });

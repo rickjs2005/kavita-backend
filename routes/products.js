@@ -75,11 +75,24 @@ const SORT_MAP = {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/PaginatedProducts'
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiEnvelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/PaginatedProducts'
  *       404:
  *         description: Categoria não encontrada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiEnvelope'
  *       500:
  *         description: Erro interno no servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiEnvelope'
  */
 
 /**

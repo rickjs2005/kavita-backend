@@ -6,6 +6,7 @@ const path = require("path");
 const crypto = require("crypto");
 const logger = console;
 const { setupDocs } = require("./docs/swagger");
+const { responseEnvelope } = require("./middleware/responseEnvelope");
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use(
 
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(responseEnvelope);
 
 // arquivos estáticos
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
@@ -85,7 +87,7 @@ app.use((err, _req, res, _next) => {
   if (process.env.NODE_ENV !== "production" && err.stack) {
     payload.stack = err.stack;
   }
-  res.status(status).json(payload);
+  res.fail(status, payload);
 });
 
 // ============================
