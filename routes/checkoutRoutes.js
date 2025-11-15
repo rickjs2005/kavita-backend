@@ -1,7 +1,8 @@
 // routes/checkoutRoutes.js
 const express = require("express");
 const { z } = require("zod");
-const pool = require("../config/pool"); // <-- usa pool.js
+const pool = require("../config/pool");
+const { serializeAddress } = require("../utils/address");
 const router = express.Router();
 
 /**
@@ -78,7 +79,7 @@ const enderecoSchema = z.object({
   numero: z.string(),
   bairro: z.string(),
   cidade: z.string(),
-  estado: z.string(),
+  estado: z.string().min(2),
   complemento: z.string().optional(),
 });
 
@@ -104,66 +105,93 @@ const checkoutSchema = z.object({
 });
 
 // POST /api/checkout
+class CheckoutError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
 router.post("/", async (req, res) => {
+  let conn;
   try {
     const parsed = checkoutSchema.parse(req.body);
     const { usuario_id, formaPagamento, endereco, produtos } = parsed;
 
-    const conn = await pool.getConnection();
+    conn = await pool.getConnection();
+
+    const aggregated = new Map();
+    for (const item of produtos) {
+      const current = aggregated.get(item.id) || 0;
+      aggregated.set(item.id, current + item.quantidade);
+    }
+
     try {
       await conn.beginTransaction();
 
-      // endereço em TEXT (tabela pedidos)
-      const enderecoTexto =
-        `${endereco.rua}, ${endereco.numero} - ${endereco.bairro}, ` +
-        `${endereco.cidade} - ${endereco.estado}. CEP: ${endereco.cep}` +
-        (endereco.complemento ? ` (${endereco.complemento})` : "");
+      const [[usuario]] = await conn.query(
+        "SELECT id FROM usuarios WHERE id = ?",
+        [usuario_id]
+      );
+      if (!usuario) {
+        throw new CheckoutError("Usuário não encontrado", 404);
+      }
 
-      // cria pedido
+      const enderecoJSON = serializeAddress(endereco);
+
+      const productIds = Array.from(aggregated.keys());
+      const placeholders = productIds.map(() => "?").join(",");
+      const [foundProducts] = await conn.query(
+        `SELECT id, name, quantity, price FROM products WHERE id IN (${placeholders})`,
+        productIds
+      );
+
+      if (foundProducts.length !== productIds.length) {
+        const missing = productIds.filter(
+          (id) => !foundProducts.some((p) => p.id === id)
+        );
+        throw new CheckoutError(
+          `Produtos não encontrados: ${missing.join(", ")}`,
+          404
+        );
+      }
+
+      let total = 0;
+
+      for (const product of foundProducts) {
+        const requested = aggregated.get(product.id);
+        if (requested > product.quantity) {
+          throw new CheckoutError(
+            `Estoque insuficiente para o produto ${product.name}`,
+            409
+          );
+        }
+        total += Number(product.price) * requested;
+      }
+
       const [pedidoResult] = await conn.query(
-        `INSERT INTO pedidos (usuario_id, endereco, forma_pagamento, status, data_pedido)
-         VALUES (?, ?, ?, 'pendente', NOW())`,
-        [usuario_id, enderecoTexto, formaPagamento]
+        `INSERT INTO pedidos (usuario_id, endereco, forma_pagamento, status, total, data_pedido)
+         VALUES (?, ?, ?, 'pendente', ?, CURRENT_TIMESTAMP)`,
+        [usuario_id, enderecoJSON, formaPagamento, total]
       );
       const pedido_id = pedidoResult.insertId;
 
-      // consulta produtos e valida estoque
-      const ids = produtos.map((p) => p.id);
-      const [found] = await conn.query(
-        `SELECT id, nome, estoque, preco FROM products WHERE id IN (?)`,
-        [ids]
-      );
-      const mapaQtd = new Map(produtos.map((p) => [p.id, p.quantidade]));
-
-      // checa todos
-      const encontrados = new Set(found.map((f) => f.id));
-      for (const reqItem of produtos) {
-        if (!encontrados.has(reqItem.id)) {
-          throw new Error(`Produto ${reqItem.id} não encontrado`);
-        }
-      }
-
-      // abate estoque + salva itens
-      for (const prod of found) {
-        const qtd = mapaQtd.get(prod.id);
-        if (qtd > prod.estoque) {
-          throw new Error(`Estoque insuficiente para o produto ${prod.nome}`);
-        }
+      for (const product of foundProducts) {
+        const quantidade = aggregated.get(product.id);
 
         await conn.query(
-          `UPDATE products SET estoque = estoque - ? WHERE id = ?`,
-          [qtd, prod.id]
+          `UPDATE products SET quantity = quantity - ? WHERE id = ?`,
+          [quantidade, product.id]
         );
 
         await conn.query(
           `INSERT INTO pedidos_produtos (pedido_id, produto_id, quantidade, valor_unitario)
            VALUES (?, ?, ?, ?)`,
-          [pedido_id, prod.id, qtd, prod.preco]
+          [pedido_id, product.id, quantidade, product.price]
         );
       }
 
       await conn.commit();
-      conn.release();
 
       return res.status(201).json({
         success: true,
@@ -171,11 +199,17 @@ router.post("/", async (req, res) => {
         pedido_id,
       });
     } catch (error) {
-      await conn.rollback();
-      conn.release();
+      if (conn) {
+        try {
+          await conn.rollback();
+        } catch (rollbackError) {
+          console.error("Erro ao desfazer transação do checkout:", rollbackError);
+        }
+      }
+      const status = error.status || 400;
       console.error("Erro no checkout:", error);
       return res
-        .status(400)
+        .status(status)
         .json({ success: false, message: error.message || "Erro ao criar pedido" });
     }
   } catch (err) {
@@ -183,7 +217,12 @@ router.post("/", async (req, res) => {
     if (err instanceof z.ZodError) {
       return res.status(400).json({ success: false, errors: err.errors });
     }
-    return res.status(500).json({ success: false, message: "Erro interno no checkout" });
+    const status = err.status || 500;
+    return res
+      .status(status)
+      .json({ success: false, message: err.message || "Erro interno no checkout" });
+  } finally {
+    conn?.release();
   }
 });
 

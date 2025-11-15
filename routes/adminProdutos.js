@@ -10,11 +10,11 @@ const verifyAdmin = require("../middleware/verifyAdmin");
 /* ==============================
    Config por ENV (flexibiliza BD)
 ============================== */
-const PRODUCTS_TABLE      = process.env.PRODUCTS_TABLE      || "products";         // ou "produtos"
-const PRODUCT_IMAGES_TABLE= process.env.PRODUCT_IMAGES_TABLE|| "product_images";   // ou "produtos_imagens"
-const CATEGORY_COL        = process.env.PRODUCT_CATEGORY_COL|| "category_id";      // ou "categoria_id"
-const IMAGE_COL           = process.env.PRODUCT_IMAGE_COL   || "image";            // coluna “capa” em products
-const IS_DEV              = process.env.NODE_ENV !== "production";
+const PRODUCTS_TABLE = "products";
+const PRODUCT_IMAGES_TABLE = "product_images";
+const CATEGORY_COL = "category_id";
+const IMAGE_COL = "image";
+const IS_DEV = process.env.NODE_ENV !== "production";
 
 /* ============ Upload ============ */
 const storage = multer.diskStorage({
