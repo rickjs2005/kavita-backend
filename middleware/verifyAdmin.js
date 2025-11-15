@@ -1,7 +1,7 @@
 // middleware/verifyAdmin.js
 require("dotenv").config();
 const jwt = require("jsonwebtoken");
-const SECRET_KEY = process.env.JWT_SECRET;
+const SECRET_KEY = process.env.JWT_SECRET || 'test_secret';
 
 function verifyAdmin(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];

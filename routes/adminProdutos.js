@@ -398,4 +398,14 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
   }
 });
 
+router.__helpers = { parseMoneyBR, toInt };
+router.__getRouteHandler = (method, path) => {
+  const target = router.stack.find(
+    (layer) => layer.route && layer.route.path === path && layer.route.methods[method]
+  );
+  if (!target) return undefined;
+  const stack = target.route.stack;
+  return stack[stack.length - 1]?.handle;
+};
+
 module.exports = router;
