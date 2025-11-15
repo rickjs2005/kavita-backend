@@ -1,7 +1,7 @@
 // Limpa mocks entre testes
 afterEach(() => {
   jest.clearAllMocks();
-  jest.resetModules();
+  jest.restoreAllMocks();
 });
 
 // Evita sair por erro de unhandledRejection em testes

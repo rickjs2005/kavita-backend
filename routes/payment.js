@@ -186,4 +186,11 @@ router.post("/webhook", async (req, res) => {
   }
 });
 
+router.__getRouteHandler = (method, path) => {
+  const layer = router.stack.find(
+    (entry) => entry.route && entry.route.path === path && entry.route.methods[method]
+  );
+  return layer?.route?.stack?.at(-1)?.handle;
+};
+
 module.exports = router;

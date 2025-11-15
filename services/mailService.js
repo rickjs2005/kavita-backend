@@ -4,7 +4,8 @@ const nodemailer = require('nodemailer'); // Biblioteca para envio de e-mails vi
 async function sendResetPasswordEmail(toEmail, token) {
   // 🔗 Monta o link de redefinição com o token recebido
   // Esse link será clicado pelo usuário para criar uma nova senha
-  const resetLink = `http://localhost:3000/reset-password?token=${token}`;
+  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  const resetLink = `${appUrl.replace(/\/$/, '')}/reset-password?token=${token}`;
 
   // 🔐 Configura o transporte de e-mail com as credenciais do .env
   const transporter = nodemailer.createTransport({
