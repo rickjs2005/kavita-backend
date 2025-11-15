@@ -1,32 +1,41 @@
-const bcrypt = require('bcrypt'); // Biblioteca para criptografar e comparar senhas
-const jwt = require('jsonwebtoken'); // Biblioteca para gerar e verificar tokens JWT
-const pool = require('../config/pool'); // Importa a pool de conexões com o banco de dados
+const bcrypt = require('bcrypt');
+const pool = require('../config/pool');
+const authConfig = require('../config/auth');
+const passwordResetTokens = require('../services/passwordResetTokenService');
+const { sendResetPasswordEmail } = require('../services/mailService');
+
+function ensureRateLimit(req) {
+  if (!req.rateLimit) {
+    req.rateLimit = {
+      fail: () => {},
+      reset: () => {},
+    };
+  }
+}
 
 const AuthController = {
-  // Função de login do usuário
   async login(req, res) {
-    const { email, senha } = req.body; // Recebe email e senha do corpo da requisição
+    const { email, senha } = req.body;
 
     try {
-      // Verifica se o usuário existe no banco pelo e-mail
       const [users] = await pool.query('SELECT * FROM usuarios WHERE email = ?', [email]);
 
       if (users.length === 0) {
+        req.rateLimit?.fail?.();
         return res.status(400).json({ message: 'Usuário não encontrado.' });
       }
 
-      const user = users[0]; // Usuário encontrado
+      const user = users[0];
 
-      // Compara a senha informada com a senha criptografada no banco
       const isPasswordValid = await bcrypt.compare(senha, user.senha);
       if (!isPasswordValid) {
+        req.rateLimit?.fail?.();
         return res.status(400).json({ message: 'Credenciais inválidas.' });
       }
 
-      // Gera um token JWT com ID do usuário e validade de 1 hora
-      const token = jwt.sign({ id: user.id }, 'sua_chave_secreta', { expiresIn: '1h' });
+      const token = authConfig.sign({ id: user.id });
+      req.rateLimit?.reset?.();
 
-      // Retorna token e dados básicos do usuário
       res.status(200).json({
         message: 'Login bem-sucedido!',
         token,
@@ -42,28 +51,23 @@ const AuthController = {
     }
   },
 
-  // Função de registro/cadastro de novo usuário
   async register(req, res) {
-    const { nome, email, senha } = req.body; // Recebe nome, email e senha do corpo da requisição
+    const { nome, email, senha } = req.body;
 
     try {
-      // Verifica se o e-mail já está cadastrado
       const [users] = await pool.query('SELECT id FROM usuarios WHERE email = ?', [email]);
 
       if (users.length > 0) {
         return res.status(400).json({ message: 'Este email já está cadastrado.' });
       }
 
-      // Criptografa a senha antes de salvar no banco
       const hashedPassword = await bcrypt.hash(senha, 10);
 
-      // Insere o novo usuário no banco com senha criptografada
-      const [result] = await pool.query(
+      await pool.query(
         'INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?)',
         [nome, email, hashedPassword]
       );
 
-      // Responde com sucesso
       res.status(201).json({ message: 'Usuário cadastrado com sucesso!' });
     } catch (error) {
       console.error('Erro no registro:', error);
@@ -71,11 +75,90 @@ const AuthController = {
     }
   },
 
-  // Função de logout (apenas simbólica, já que JWT é controlado no frontend)
-  async logout(req, res) {
-    // Aqui seria possível invalidar o token se usasse blacklist (não implementado)
+  async logout(_req, res) {
     res.status(200).json({ message: 'Logout bem-sucedido!' });
+  },
+
+  async forgotPassword(req, res) {
+    ensureRateLimit(req);
+
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        req.rateLimit.fail();
+        return res.status(400).json({ mensagem: 'Email é obrigatório.' });
+      }
+
+      const [rows] = await pool.execute('SELECT id FROM usuarios WHERE email = ?', [email]);
+      if (!rows || rows.length === 0) {
+        req.rateLimit.reset();
+        return res.status(200).json({
+          mensagem: 'Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.',
+        });
+      }
+
+      const user = rows[0];
+      const token = passwordResetTokens.generateToken();
+      const expires = new Date(Date.now() + 3600000);
+
+      await passwordResetTokens.revokeAllForUser(user.id);
+      await passwordResetTokens.storeToken(user.id, token, expires);
+      await sendResetPasswordEmail(email, token);
+
+      req.rateLimit.reset();
+
+      return res.status(200).json({
+        mensagem: 'Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.',
+      });
+    } catch (error) {
+      console.error('Erro em forgot-password:', error);
+      req.rateLimit.fail();
+      return res.status(500).json({
+        mensagem: 'Erro no servidor. Tente novamente mais tarde.',
+      });
+    }
+  },
+
+  async resetPassword(req, res) {
+    ensureRateLimit(req);
+
+    try {
+      const { token, novaSenha } = req.body;
+
+      if (!token || !novaSenha) {
+        req.rateLimit.fail();
+        return res.status(400).json({ mensagem: 'Token e nova senha são obrigatórios.' });
+      }
+
+      const record = await passwordResetTokens.findValidToken(token);
+
+      if (!record) {
+        req.rateLimit.fail();
+        return res.status(400).json({ mensagem: 'Token inválido ou expirado.' });
+      }
+
+      const novaSenhaHash = await bcrypt.hash(novaSenha, 10);
+
+      await pool.execute('UPDATE usuarios SET senha = ? WHERE id = ?', [
+        novaSenhaHash,
+        record.user_id,
+      ]);
+
+      await passwordResetTokens.revokeToken(record.id);
+      await passwordResetTokens.revokeAllForUser(record.user_id);
+
+      req.rateLimit.reset();
+
+      return res.status(200).json({ mensagem: 'Senha redefinida com sucesso!' });
+    } catch (error) {
+      console.error('Erro em reset-password:', error);
+      req.rateLimit.fail();
+      return res.status(500).json({
+        mensagem: 'Erro no servidor. Tente novamente mais tarde.',
+      });
+    }
   },
 };
 
-module.exports = AuthController; // Exporta o objeto para ser usado em rotas
+module.exports = AuthController;

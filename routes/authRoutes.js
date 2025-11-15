@@ -1,8 +1,22 @@
 const express = require('express');
-const { forgotPassword, resetPassword } = require('../controllers/authController'); 
-// Importa as funções responsáveis por lidar com a lógica de recuperação de senha
+const AuthController = require('../controllers/authController');
+const createAdaptiveRateLimiter = require('../middleware/adaptiveRateLimiter');
 
-const router = express.Router(); // Cria um roteador Express para definir rotas relacionadas à autenticação
+const router = express.Router();
+
+const forgotPasswordLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => {
+    const email = req.body.email ? req.body.email.toLowerCase() : 'anon';
+    return `forgot:${req.ip}:${email}`;
+  },
+});
+
+const resetPasswordLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => {
+    const token = req.body.token || 'sem-token';
+    return `reset:${req.ip}:${token}`;
+  },
+});
 
 /**
  * @openapi
@@ -26,6 +40,9 @@ const router = express.Router(); // Cria um roteador Express para definir rotas 
  *       500:
  *         description: Erro interno
  */
+router.post('/forgot-password', forgotPasswordLimiter, (req, res) =>
+  AuthController.forgotPassword(req, res)
+);
 
 /**
  * @openapi
@@ -50,13 +67,8 @@ const router = express.Router(); // Cria um roteador Express para definir rotas 
  *       500:
  *         description: Erro interno
  */
+router.post('/reset-password', resetPasswordLimiter, (req, res) =>
+  AuthController.resetPassword(req, res)
+);
 
-// 🔐 POST /forgot-password — Envia link de redefinição de senha para o email do usuário
-router.post('/forgot-password', forgotPassword);
-// Exemplo: o usuário informa o email, e a aplicação envia um email com link de redefinição (com token)
-
-// 🔐 POST /reset-password — Atualiza a senha usando o token recebido no email
-router.post('/reset-password', resetPassword);
-// Exemplo: o frontend envia nova senha + token, e a senha é atualizada no banco de dados
-
-module.exports = router; // Exporta o roteador para uso no app principal
+module.exports = router;

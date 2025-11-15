@@ -6,6 +6,7 @@ const path = require("path");
 const crypto = require("crypto");
 const logger = console;
 const { setupDocs } = require("./docs/swagger");
+const config = require("./config/env");
 
 const app = express();
 
@@ -96,6 +97,8 @@ if (process.env.NODE_ENV !== "test") {
   app.listen(PORT, () => {
     logger.info(`✅ Server rodando em http://localhost:${PORT}`);
     logger.info(`📚 Swagger em: http://localhost:${PORT}/docs`);
+    logger.info(`🌐 APP_URL configurada: ${config.appUrl}`);
+    logger.info(`🛠️ BACKEND_URL configurada: ${config.backendUrl}`);
   });
 }
 
