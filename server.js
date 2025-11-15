@@ -3,8 +3,12 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const crypto = require("crypto");
-const logger = console;
+const { v4: uuidv4 } = require("uuid");
+const logger = require("./config/logger");
+const requestLogger = require("./middleware/requestLogger");
+const metricsMiddleware = require("./middleware/metrics");
+const metrics = require("./monitoring/metrics");
+const pool = require("./config/pool");
 const { setupDocs } = require("./docs/swagger");
 
 const app = express();
@@ -27,6 +31,8 @@ app.use(
   })
 );
 
+app.use(requestLogger);
+app.use(metricsMiddleware);
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -64,6 +70,42 @@ try { app.use("/api/admin/servicos", require("./routes/adminServicos")); } catch
 // ============================
 setupDocs(app);
 
+app.get("/healthz", async (_req, res) => {
+  const payload = {
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+    dependencies: {},
+  };
+
+  if (process.env.NODE_ENV === "test" || process.env.DISABLE_DB_HEALTHCHECK === "true") {
+    payload.dependencies.database = { status: "skipped" };
+    return res.status(200).json(payload);
+  }
+
+  try {
+    const connection = await pool.getConnection();
+    await connection.ping();
+    connection.release();
+    payload.dependencies.database = { status: "up" };
+  } catch (error) {
+    payload.status = "degraded";
+    payload.dependencies.database = {
+      status: "down",
+      error: process.env.NODE_ENV === "production" ? undefined : error.message,
+    };
+    logger.error({ error }, "Falha no health check do banco de dados");
+  }
+
+  const statusCode = payload.status === "ok" ? 200 : 503;
+  res.status(statusCode).json(payload);
+});
+
+app.get("/metrics", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain; version=0.0.4");
+  res.send(metrics.getMetrics());
+});
+
 // ============================
 // 404 - deve vir depois do setupDocs
 // ============================
@@ -76,16 +118,51 @@ app.use((req, _res, next) => {
 // ============================
 // Handler de erro central
 // ============================
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   const status = err.status || 500;
-  const payload = {
-    message: err.message || "Erro interno",
-    requestId: crypto.randomUUID?.() || String(Date.now()),
+  const requestId = req?.id || res.getHeader("x-request-id") || uuidv4();
+  res.setHeader("x-request-id", requestId);
+
+  const isServerError = status >= 500;
+  const message = isServerError && process.env.NODE_ENV === "production" ? "Erro interno" : err.message;
+  const response = {
+    message: message || "Erro interno",
+    requestId,
   };
+
   if (process.env.NODE_ENV !== "production" && err.stack) {
-    payload.stack = err.stack;
+    response.stack = err.stack;
   }
-  res.status(status).json(payload);
+
+  if (res.locals) {
+    res.locals.error = {
+      message: err.message,
+      status,
+    };
+  }
+
+  const logPayload = {
+    statusCode: status,
+    requestId,
+    path: req?.originalUrl,
+    method: req?.method,
+  };
+
+  if (err instanceof Error) {
+    logPayload.error = {
+      message: err.message,
+      stack: err.stack,
+    };
+  }
+
+  const targetLogger = req?.log || logger;
+  if (isServerError) {
+    targetLogger.error(logPayload, message || "Erro interno");
+  } else {
+    targetLogger.warn(logPayload, message || "Erro");
+  }
+
+  res.status(status).json(response);
 });
 
 // ============================
