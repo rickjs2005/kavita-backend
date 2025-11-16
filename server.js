@@ -5,6 +5,8 @@ const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
 const logger = console;
+const cookieParser = require("cookie-parser");
+const config = require("./config/env");
 const { setupDocs } = require("./docs/swagger");
 
 const app = express();
