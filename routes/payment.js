@@ -3,10 +3,12 @@ const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
 const pool = require("../config/pool");
-const mercadopago = require("mercadopago");
 
-mercadopago.configure({
-  access_token: process.env.MP_ACCESS_TOKEN
+// 👉 NOVO SDK Mercado Pago (v2)
+const { MercadoPagoConfig, Preference, Payment } = require("mercadopago");
+
+const mpClient = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN,
 });
 
 // util: calcula total a partir do banco
@@ -17,68 +19,14 @@ async function calcularTotalPedido(conn, pedidoId) {
       WHERE pedido_id = ?`,
     [pedidoId]
   );
-  const total = rows.reduce((acc, r) => acc + Number(r.quantidade) * Number(r.valor_unitario), 0);
+  const total = rows.reduce(
+    (acc, r) => acc + Number(r.quantidade) * Number(r.valor_unitario),
+    0
+  );
   return Number(total.toFixed(2));
 }
 
-// inicia pagamento para um pedido existente
-router.post("/start", async (req, res) => {
-  const { pedidoId } = req.body || {};
-  if (!pedidoId) return res.status(400).json({ message: "pedidoId é obrigatório." });
-
-  const conn = await pool.getConnection();
-  try {
-    // garante que pedido existe
-    const [[pedido]] = await conn.query(
-      `SELECT id, status FROM pedidos WHERE id = ?`,
-      [pedidoId]
-    );
-    if (!pedido) {
-      return res.status(404).json({ message: "Pedido não encontrado." });
-    }
-
-    // pega total pelo banco
-    const total = await calcularTotalPedido(conn, pedidoId);
-
-    // cria uma preference simples (1 item com o total)
-    const pref = await mercadopago.preferences.create({
-      items: [
-        {
-          id: `pedido-${pedidoId}`,
-          title: `Pedido #${pedidoId}`,
-          quantity: 1,
-          unit_price: total,
-          currency_id: "BRL",
-        }
-      ],
-      back_urls: {
-        success: `${process.env.APP_URL}/checkout/sucesso?pedidoId=${pedidoId}`,
-        pending: `${process.env.APP_URL}/checkout/pendente?pedidoId=${pedidoId}`,
-        failure: `${process.env.APP_URL}/checkout/erro?pedidoId=${pedidoId}`
-      },
-      auto_return: "approved",
-      notification_url: `${process.env.BACKEND_URL}/api/payment/webhook`,
-      metadata: { pedidoId }
-    });
-
-    // marca pedido como "pendente" (opcional: quando o cliente abre o fluxo)
-    await conn.query(
-      `UPDATE pedidos SET status = 'pendente' WHERE id = ?`,
-      [pedidoId]
-    );
-
-    return res.json({
-      preferenceId: pref.body.id,
-      init_point: pref.body.init_point,
-      sandbox_init_point: pref.body.sandbox_init_point
-    });
-  } catch (err) {
-    console.error("[payment/start] erro:", err);
-    return res.status(500).json({ message: "Erro ao iniciar pagamento." });
-  } finally {
-    conn.release();
-  }
-});
+// ========================= ROTA /start ========================= //
 
 /**
  * @openapi
@@ -114,6 +62,74 @@ router.post("/start", async (req, res) => {
  *         description: Erro ao iniciar pagamento
  */
 
+// inicia pagamento para um pedido existente
+router.post("/start", async (req, res) => {
+  const { pedidoId } = req.body || {};
+  if (!pedidoId)
+    return res.status(400).json({ message: "pedidoId é obrigatório." });
+
+  const conn = await pool.getConnection();
+  try {
+    // garante que pedido existe
+    const [[pedido]] = await conn.query(
+      `SELECT id, status FROM pedidos WHERE id = ?`,
+      [pedidoId]
+    );
+    if (!pedido) {
+      return res.status(404).json({ message: "Pedido não encontrado." });
+    }
+
+    // pega total pelo banco
+    const total = await calcularTotalPedido(conn, pedidoId);
+
+    // cria uma preference simples (1 item com o total)
+    const preference = new Preference(mpClient);
+    const pref = await preference.create({
+      body: {
+        items: [
+          {
+            id: `pedido-${pedidoId}`,
+            title: `Pedido #${pedidoId}`,
+            quantity: 1,
+            unit_price: total,
+            currency_id: "BRL",
+          },
+        ],
+        back_urls: {
+          success: `${process.env.APP_URL}/checkout/sucesso?pedidoId=${pedidoId}`,
+          pending: `${process.env.APP_URL}/checkout/pendente?pedidoId=${pedidoId}`,
+          failure: `${process.env.APP_URL}/checkout/erro?pedidoId=${pedidoId}`,
+        },
+        auto_return: "approved",
+        notification_url: `${process.env.BACKEND_URL}/api/payment/webhook`,
+        metadata: { pedidoId },
+      },
+    });
+
+    // marca pedido como "pendente" (opcional: quando o cliente abre o fluxo)
+    await conn.query(
+      `UPDATE pedidos SET status = 'pendente' WHERE id = ?`,
+      [pedidoId]
+    );
+
+    // no SDK novo, os dados vêm direto no objeto retornado
+    const { id, init_point, sandbox_init_point } = pref;
+
+    return res.json({
+      preferenceId: id,
+      init_point,
+      sandbox_init_point,
+    });
+  } catch (err) {
+    console.error("[payment/start] erro:", err);
+    return res.status(500).json({ message: "Erro ao iniciar pagamento." });
+  } finally {
+    conn.release();
+  }
+});
+
+// ========================= ROTA /webhook ========================= //
+
 /**
  * @openapi
  * /api/payment/webhook:
@@ -148,7 +164,9 @@ router.post("/webhook", async (req, res) => {
   const unauthorized = () => res.status(401).json({ ok: false });
 
   if (!signatureHeader || !idempotencyKey) {
-    console.warn("[payment/webhook] assinatura ou idempotency key ausentes");
+    console.warn(
+      "[payment/webhook] assinatura ou idempotency key ausentes"
+    );
     return unauthorized();
   }
 
@@ -188,7 +206,9 @@ router.post("/webhook", async (req, res) => {
   };
 
   if (!safeCompare(expectedHash, providedHash)) {
-    console.warn(`[payment/webhook] assinatura inválida para chave ${idempotencyKey}`);
+    console.warn(
+      `[payment/webhook] assinatura inválida para chave ${idempotencyKey}`
+    );
     return unauthorized();
   }
 
@@ -241,12 +261,18 @@ router.post("/webhook", async (req, res) => {
         return res.status(200).json({ ok: true });
       }
 
-      const payment = await mercadopago.payment.findById(data.id);
-      const status = payment.body.status; // approved | pending | rejected | cancelled | in_process ...
-      const pedidoId = payment.body.metadata?.pedidoId;
+      // 👉 NOVO jeito de pegar o pagamento no SDK v2
+      const paymentClient = new Payment(mpClient);
+      const payment = await paymentClient.get({ id: data.id });
+
+      const status = payment.status; // approved | pending | rejected | cancelled | in_process ...
+      const pedidoId = payment.metadata?.pedidoId;
 
       if (!pedidoId) {
-        console.warn("[webhook] pagamento sem metadata.pedidoId", data.id);
+        console.warn(
+          "[payment/webhook] pagamento sem metadata.pedidoId",
+          data.id
+        );
         await conn.query(
           `UPDATE webhook_events
               SET status = 'ignored', processed_at = NOW(), updated_at = NOW()
@@ -260,8 +286,10 @@ router.post("/webhook", async (req, res) => {
       // mapeia status MP -> status local
       let novoStatus = "pendente";
       if (status === "approved") novoStatus = "pago";
-      else if (status === "rejected" || status === "cancelled") novoStatus = "falhou";
-      else if (status === "in_process" || status === "pending") novoStatus = "pendente";
+      else if (status === "rejected" || status === "cancelled")
+        novoStatus = "falhou";
+      else if (status === "in_process" || status === "pending")
+        novoStatus = "pendente";
 
       await conn.query(
         `UPDATE pedidos
