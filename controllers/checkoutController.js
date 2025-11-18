@@ -1,5 +1,5 @@
 // controllers/checkoutController.js
-const pool = require("../config/db"); // ajuste o caminho se o seu pool estiver em outro arquivo
+const pool = require("../config/pool") 
 
 /**
  * Cria um novo pedido a partir do checkout.

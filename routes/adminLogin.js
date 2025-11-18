@@ -57,32 +57,41 @@ if (!SECRET_KEY) {
 // 📌 Rota POST /login — realiza login do administrador
 router.post("/login", async (req, res) => {
   const { email, senha } = req.body;
+  
+  // OBTÉM RATE LIMITER: Se o middleware global não foi aplicado, usa funções vazias para evitar quebrar o código.
+  const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} }; 
 
-  // Verifica se todos os campos foram preenchidos
+  // 1. Verifica se todos os campos foram preenchidos
   if (!email || !senha) {
+    rateLimit.fail(); // <--- CHAMA FALHA
     return res.status(400).json({ message: "Email e senha são obrigatórios." });
   }
 
   try {
     console.log("🔐 Tentativa de login de admin:", email);
 
-    // Busca o admin no banco de dados pelo email
+    // 2. Busca o admin no banco de dados pelo email
     const [rows] = await pool.query("SELECT * FROM admins WHERE email = ?", [email]);
 
     if (rows.length === 0) {
+      rateLimit.fail(); // <--- CHAMA FALHA
       console.warn("⚠️ Admin não encontrado:", email);
       return res.status(404).json({ message: "Admin não encontrado." });
     }
 
     const admin = rows[0];
 
-    // Compara a senha informada com a hash armazenada no banco
+    // 3. Compara a senha informada com a hash armazenada no banco
     const senhaCorreta = await bcrypt.compare(senha, admin.senha);
 
     if (!senhaCorreta) {
+      rateLimit.fail(); // <--- CHAMA FALHA (CRÍTICO)
       console.warn("⚠️ Senha incorreta para:", email);
       return res.status(401).json({ message: "Senha incorreta." });
     }
+
+    // 4. SUCESSO!
+    rateLimit.reset(); // <--- CHAMA RESET para limpar o histórico de falhas desse IP
 
     // Gera o token JWT válido por 2 horas
     const token = jwt.sign({ id: admin.id, email: admin.email }, SECRET_KEY, {
@@ -102,6 +111,7 @@ router.post("/login", async (req, res) => {
       },
     });
   } catch (err) {
+    rateLimit.fail(); // <--- CHAMA FALHA (em caso de erro interno do servidor/banco)
     console.error("❌ Erro no login do admin:", err.message);
     return res.status(500).json({ message: "Erro interno no servidor." });
   }
