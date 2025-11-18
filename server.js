@@ -30,6 +30,8 @@ const rawOrigins = [
   config.backendUrl,
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+  "http://localhost:5000",     // ✅ libera Swagger em localhost
+  "http://127.0.0.1:5000",     // ✅ alternativa pelo 127.0.0.1
 ];
 
 const ALLOWED_ORIGINS = Array.from(
