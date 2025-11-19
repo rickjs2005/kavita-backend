@@ -23,6 +23,8 @@ loadRoute('/public/produtos',   './publicProdutos');
 loadRoute('/login', './login');
 loadRoute('/users', './users');
 loadRoute('/users', './userProfile');
+loadRoute('/users/addresses', './userAddresses');
+loadRoute('/cart', './cart');
 
 // Esta rota estava como "/api" no server.js, então aqui ela fica na raiz "/"
 // pois este arquivo inteiro será montado em "/api"
