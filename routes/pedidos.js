@@ -48,6 +48,9 @@ const authenticateToken = require("../middleware/authenticateToken");
  *         id:
  *           type: integer
  *           example: 10
+ *         produto_id:
+ *           type: integer
+ *           example: 93
  *         nome:
  *           type: string
  *           example: "Vermífugo Oral para Bezerros 1L"
@@ -112,7 +115,8 @@ router.get("/", authenticateToken, async (req, res) => {
         .json({ message: "Usuário não autenticado ou token inválido." });
     }
 
-    let sql = `
+    // Aqui é só RESUMO do pedido, não precisamos de produto_id
+    const sql = `
       SELECT
         p.id,
         p.usuario_id,
@@ -128,8 +132,7 @@ router.get("/", authenticateToken, async (req, res) => {
     `;
 
     const [rows] = await pool.query(sql, [usuarioId]);
-    // sempre devolve array (mesmo vazio)
-    res.json(rows);
+    res.json(rows); // sempre array (pode ser vazio)
   } catch (error) {
     console.error("Erro ao listar pedidos:", error);
     res.status(500).json({ message: "Erro ao listar pedidos" });
@@ -205,15 +208,15 @@ router.get("/:id", authenticateToken, async (req, res) => {
     );
 
     if (!pedido) {
-      // ou não existe, ou não pertence ao usuário autenticado
       return res.status(404).json({ message: "Pedido não encontrado" });
     }
 
-    // Itens do pedido
+    // Itens do pedido (agora trazendo também o produto_id)
     const [itens] = await pool.query(
       `
       SELECT
         pp.id,
+        pp.produto_id,
         pp.quantidade,
         pp.valor_unitario AS preco,
         pr.name AS nome,
@@ -226,7 +229,8 @@ router.get("/:id", authenticateToken, async (req, res) => {
     );
 
     const itensFormatados = itens.map((i) => ({
-      id: i.id,
+      id: i.id,                  // id do item em pedidos_produtos
+      produto_id: i.produto_id,  // id REAL do produto (products.id)
       nome: i.nome,
       preco: Number(i.preco),
       quantidade: i.quantidade,
@@ -238,14 +242,13 @@ router.get("/:id", authenticateToken, async (req, res) => {
       0
     );
 
-    // Mantém endereco como STRING, igual o frontend espera
     res.json({
       id: pedido.id,
       usuario_id: pedido.usuario_id,
       forma_pagamento: pedido.forma_pagamento,
       status: pedido.status,
       data_pedido: pedido.data_pedido,
-      endereco: pedido.endereco ?? null,
+      endereco: pedido.endereco ?? null, // mantém string
       total: totalCalculado,
       itens: itensFormatados,
     });
