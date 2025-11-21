@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
-const { parseAddress, serializeAddress } = require("../utils/address");
+const { parseAddress } = require("../utils/address");
 
 // 🔄 Função utilitária para tratar erros e exibir logs contextuais
 const handleErroInterno = (res, err, contexto = "erro") => {
@@ -14,9 +14,7 @@ const handleErroInterno = (res, err, contexto = "erro") => {
  * @openapi
  * tags:
  *   - name: Admin
- *     description: Rotas de administração
- *   - name: Pedidos
- *     description: Gestão de pedidos no painel admin
+ *     description: Endpoints administrativos (pedidos, produtos, etc.)
  */
 
 /**
@@ -46,6 +44,18 @@ const handleErroInterno = (res, err, contexto = "erro") => {
  *         usuario:
  *           type: string
  *           example: "José da Silva"
+ *         email:
+ *           type: string
+ *           nullable: true
+ *           example: "cliente@exemplo.com"
+ *         telefone:
+ *           type: string
+ *           nullable: true
+ *           example: "33999998888"
+ *         cpf:
+ *           type: string
+ *           nullable: true
+ *           example: "111.111.111-11"
  *         forma_pagamento:
  *           type: string
  *           example: "pix"
@@ -82,14 +92,6 @@ const handleErroInterno = (res, err, contexto = "erro") => {
  *         - $ref: '#/components/schemas/AdminPedidoResumo'
  *         - type: object
  *           properties:
- *             email:
- *               type: string
- *               nullable: true
- *               example: "cliente@exemplo.com"
- *             telefone:
- *               type: string
- *               nullable: true
- *               example: "33999998888"
  *             itens:
  *               type: array
  *               items:
@@ -119,13 +121,16 @@ const handleErroInterno = (res, err, contexto = "erro") => {
  *         description: Erro ao buscar pedidos
  */
 
-// ✅ GET /admin/pedidos — Lista todos os pedidos com itens e endereço
+// ✅ GET /api/admin/pedidos — Lista todos os pedidos com itens e endereço
 router.get("/", verifyAdmin, async (req, res) => {
   try {
     const [pedidos] = await pool.query(`
       SELECT
         p.id AS pedido_id,
         u.nome AS usuario_nome,
+        u.email AS usuario_email,
+        u.telefone AS usuario_telefone,
+        u.cpf AS usuario_cpf,
         p.endereco,
         p.forma_pagamento,
         p.status_pagamento,
@@ -150,6 +155,9 @@ router.get("/", verifyAdmin, async (req, res) => {
     const pedidosComItens = pedidos.map((p) => ({
       id: p.pedido_id,
       usuario: p.usuario_nome,
+      email: p.usuario_email ?? null,
+      telefone: p.usuario_telefone ?? null,
+      cpf: p.usuario_cpf ?? null,
       endereco: parseAddress(p.endereco),
       forma_pagamento: p.forma_pagamento,
       status_pagamento: p.status_pagamento,
@@ -201,7 +209,7 @@ router.get("/", verifyAdmin, async (req, res) => {
  *         description: Erro ao buscar pedido
  */
 
-// ✅ GET /admin/pedidos/:id — Detalhe do pedido para a telinha do admin
+// ✅ GET /api/admin/pedidos/:id — Detalhe do pedido
 router.get("/:id", verifyAdmin, async (req, res) => {
   const { id } = req.params;
 
@@ -213,6 +221,7 @@ router.get("/:id", verifyAdmin, async (req, res) => {
         u.nome AS usuario_nome,
         u.email AS usuario_email,
         u.telefone AS usuario_telefone,
+        u.cpf AS usuario_cpf,
         p.endereco,
         p.forma_pagamento,
         p.status_pagamento,
@@ -248,6 +257,7 @@ router.get("/:id", verifyAdmin, async (req, res) => {
       usuario: pedido.usuario_nome,
       email: pedido.usuario_email ?? null,
       telefone: pedido.usuario_telefone ?? null,
+      cpf: pedido.usuario_cpf ?? null,
       endereco: parseAddress(pedido.endereco),
       forma_pagamento: pedido.forma_pagamento,
       status_pagamento: pedido.status_pagamento,
@@ -261,7 +271,70 @@ router.get("/:id", verifyAdmin, async (req, res) => {
       })),
     });
   } catch (err) {
-    handleErroInterno(res, err, "buscar detalhe do pedido");
+    handleErroInterno(res, err, "buscar detalhamento de pedido");
+  }
+});
+
+/**
+ * @openapi
+ * /api/admin/pedidos/{id}/pagamento:
+ *   put:
+ *     tags: [Admin, Pedidos]
+ *     summary: Atualiza o status de pagamento de um pedido
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status_pagamento:
+ *                 type: string
+ *                 enum: [pendente, pago, falhou, estornado]
+ *     responses:
+ *       200:
+ *         description: Status de pagamento atualizado
+ *       400:
+ *         description: Status inválido
+ *       404:
+ *         description: Pedido não encontrado
+ *       500:
+ *         description: Erro ao atualizar status de pagamento
+ */
+
+// ✅ PUT /api/admin/pedidos/:id/pagamento
+router.put("/:id/pagamento", verifyAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { status_pagamento } = req.body;
+
+  const permitidos = ["pendente", "pago", "falhou", "estornado"];
+  if (!permitidos.includes(status_pagamento)) {
+    return res
+      .status(400)
+      .json({ message: "status_pagamento inválido", status_pagamento });
+  }
+
+  try {
+    const [result] = await pool.query(
+      "UPDATE pedidos SET status_pagamento = ? WHERE id = ?",
+      [status_pagamento, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Pedido não encontrado" });
+    }
+
+    res.json({ message: "Status de pagamento atualizado com sucesso" });
+  } catch (err) {
+    handleErroInterno(res, err, "atualizar status de pagamento");
   }
 });
 
@@ -271,9 +344,6 @@ router.get("/:id", verifyAdmin, async (req, res) => {
  *   put:
  *     tags: [Admin, Pedidos]
  *     summary: Atualiza o status de entrega de um pedido
- *     description: |
- *       Atualiza apenas o status de ENTREGA do pedido (fluxo logístico).
- *       Valores permitidos: em_separacao, processando, enviado, entregue, cancelado.
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -282,353 +352,58 @@ router.get("/:id", verifyAdmin, async (req, res) => {
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID do pedido
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [status_entrega]
  *             properties:
  *               status_entrega:
  *                 type: string
  *                 enum: [em_separacao, processando, enviado, entregue, cancelado]
- *                 example: enviado
  *     responses:
  *       200:
- *         description: Status de entrega atualizado com sucesso
+ *         description: Status de entrega atualizado
  *       400:
- *         description: Status de entrega inválido
- *       401:
- *         description: Não autorizado
+ *         description: Status inválido
+ *       404:
+ *         description: Pedido não encontrado
  *       500:
- *         description: Erro interno ao atualizar status de entrega
+ *         description: Erro ao atualizar status de entrega
  */
 
-// ✅ PUT /admin/pedidos/:id/entrega — Atualiza o status de entrega do pedido
+// ✅ PUT /api/admin/pedidos/:id/entrega
 router.put("/:id/entrega", verifyAdmin, async (req, res) => {
-  const { status_entrega } = req.body;
   const { id } = req.params;
+  const { status_entrega } = req.body;
 
-  const valoresValidos = [
+  const permitidos = [
     "em_separacao",
     "processando",
     "enviado",
     "entregue",
     "cancelado",
   ];
-
-  if (!valoresValidos.includes(status_entrega)) {
-    return res.status(400).json({
-      message:
-        "status_entrega inválido. Use em_separacao, processando, enviado, entregue ou cancelado.",
-    });
+  if (!permitidos.includes(status_entrega)) {
+    return res
+      .status(400)
+      .json({ message: "status_entrega inválido", status_entrega });
   }
 
   try {
-    await pool.query("UPDATE pedidos SET status_entrega = ? WHERE id = ?", [
-      status_entrega,
-      id,
-    ]);
-
-    // opcional: manter coluna legada `status` em sincronia, se ela ainda existir
-    try {
-      await pool.query("UPDATE pedidos SET status = ? WHERE id = ?", [
-        status_entrega,
-        id,
-      ]);
-    } catch {
-      // se não existir a coluna `status`, ignoramos
-    }
-
-    res.json({ message: "Status de entrega atualizado com sucesso!" });
-  } catch (err) {
-    handleErroInterno(res, err, "atualizar status de entrega do pedido");
-  }
-});
-
-/**
- * @openapi
- * /api/admin/pedidos/{id}/status:
- *   put:
- *     tags: [Admin, Pedidos]
- *     summary: (Legado) Atualiza o status de entrega do pedido
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               status:
- *                 type: string
- *                 example: "entregue"
- *     responses:
- *       200:
- *         description: Status atualizado
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
- */
-
-// ✅ Legado: PUT /admin/pedidos/:id/status — agora também mexe em status_entrega
-router.put("/:id/status", verifyAdmin, async (req, res) => {
-  const { status } = req.body;
-  const { id } = req.params;
-
-  try {
-    await pool.query("UPDATE pedidos SET status_entrega = ? WHERE id = ?", [
-      status,
-      id,
-    ]);
-    try {
-      await pool.query("UPDATE pedidos SET status = ? WHERE id = ?", [
-        status,
-        id,
-      ]);
-    } catch {
-      // se coluna `status` não existir, ignora
-    }
-
-    res.json({ message: "Status atualizado com sucesso!" });
-  } catch (err) {
-    handleErroInterno(res, err, "atualizar status do pedido");
-  }
-});
-
-/**
- * @openapi
- * /api/admin/pedidos/{id}/pagamento:
- *   put:
- *     tags: [Admin, Pedidos]
- *     summary: Atualiza o status de pagamento de um pedido (manual)
- *     description: |
- *       Uso interno do admin para ajustar manualmente o status de PAGAMENTO,
- *       por exemplo para pedidos pagos via Pix direto ou acerto offline.
- *       Valores permitidos: pendente, pago, falhou, estornado.
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID do pedido
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [status_pagamento]
- *             properties:
- *               status_pagamento:
- *                 type: string
- *                 enum: [pendente, pago, falhou, estornado]
- *                 example: pago
- *     responses:
- *       200:
- *         description: Status de pagamento atualizado com sucesso
- *       400:
- *         description: Status de pagamento inválido
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno ao atualizar status de pagamento
- */
-
-// ✅ PUT /admin/pedidos/:id/pagamento — Atualizar status_pagamento manualmente
-router.put("/:id/pagamento", verifyAdmin, async (req, res) => {
-  const { status_pagamento } = req.body;
-  const { id } = req.params;
-
-  const valoresValidos = ["pendente", "pago", "falhou", "estornado"];
-
-  if (!valoresValidos.includes(status_pagamento)) {
-    return res.status(400).json({
-      message:
-        "status_pagamento inválido. Use pendente, pago, falhou ou estornado.",
-    });
-  }
-
-  try {
-    await pool.query("UPDATE pedidos SET status_pagamento = ? WHERE id = ?", [
-      status_pagamento,
-      id,
-    ]);
-    res.json({ message: "Status de pagamento atualizado com sucesso!" });
-  } catch (err) {
-    handleErroInterno(res, err, "atualizar status de pagamento do pedido");
-  }
-});
-
-/**
- * @openapi
- * /api/admin/pedidos/{id}/endereco:
- *   put:
- *     tags: [Admin, Pedidos]
- *     summary: Atualiza o endereço de um pedido
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID do pedido
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               endereco:
- *                 type: object
- *                 properties:
- *                   cep: { type: string }
- *                   rua: { type: string }
- *                   numero: { type: string }
- *                   bairro: { type: string }
- *                   cidade: { type: string }
- *                   estado: { type: string }
- *     responses:
- *       200:
- *         description: Endereço atualizado
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
- */
-
-// ✅ PUT /admin/pedidos/:id/endereco — Atualiza o endereço do pedido
-router.put("/:id/endereco", verifyAdmin, async (req, res) => {
-  const { endereco } = req.body;
-  const { id } = req.params;
-
-  try {
-    const enderecoJson = serializeAddress(endereco);
-    await pool.query("UPDATE pedidos SET endereco = ? WHERE id = ?", [
-      enderecoJson,
-      id,
-    ]);
-    res.json({ message: "Endereço atualizado com sucesso!" });
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      (err.message?.includes("Campo de endereço") ||
-        err.message?.includes("CEP"))
-    ) {
-      return res.status(400).json({ message: err.message });
-    }
-    handleErroInterno(res, err, "atualizar endereço do pedido");
-  }
-});
-
-/**
- * @openapi
- * /api/admin/pedidos/{id}/itens:
- *   put:
- *     tags: [Admin, Pedidos]
- *     summary: Substitui os itens do pedido
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID do pedido
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               itens:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     produto_id: { type: integer }
- *                     quantidade: { type: integer }
- *     responses:
- *       200:
- *         description: Itens atualizados
- *       400:
- *         description: Itens inválidos
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
- */
-
-// ✅ PUT /admin/pedidos/:id/itens — Substitui os itens do pedido
-router.put("/:id/itens", verifyAdmin, async (req, res) => {
-  const { itens } = req.body;
-  const { id: pedidoId } = req.params;
-
-  if (!Array.isArray(itens)) {
-    return res.status(400).json({ message: "Itens inválidos." });
-  }
-
-  const connection = await pool.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
-    await connection.query(
-      "DELETE FROM pedidos_produtos WHERE pedido_id = ?",
-      [pedidoId]
+    const [result] = await pool.query(
+      "UPDATE pedidos SET status_entrega = ? WHERE id = ?",
+      [status_entrega, id]
     );
 
-    let total = 0;
-
-    for (const item of itens) {
-      const quantidade = Number(item.quantidade);
-      const produtoId = Number(item.produto_id);
-      const valorUnitario = Number(
-        item.valor_unitario ?? item.preco_unitario ?? 0
-      );
-
-      if (!produtoId || !Number.isInteger(quantidade) || quantidade <= 0) {
-        throw new Error("Itens devem conter produto_id e quantidade válida.");
-      }
-
-      total += valorUnitario * quantidade;
-
-      await connection.query(
-        "INSERT INTO pedidos_produtos (pedido_id, produto_id, quantidade, valor_unitario) VALUES (?, ?, ?, ?)",
-        [pedidoId, produtoId, quantidade, valorUnitario]
-      );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Pedido não encontrado" });
     }
 
-    await connection.query("UPDATE pedidos SET total = ? WHERE id = ?", [
-      total,
-      pedidoId,
-    ]);
-
-    await connection.commit();
-    res.json({ message: "Itens atualizados com sucesso!", total });
+    res.json({ message: "Status de entrega atualizado com sucesso" });
   } catch (err) {
-    await connection.rollback();
-    handleErroInterno(res, err, "atualizar itens do pedido");
-  } finally {
-    connection.release();
+    handleErroInterno(res, err, "atualizar status de entrega");
   }
 });
 

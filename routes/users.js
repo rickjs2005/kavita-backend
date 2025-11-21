@@ -1,68 +1,89 @@
 // ===========================================================
 // USERS ROUTES — Cadastro, Esqueci a senha e Reset de senha
 // ===========================================================
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const pool = require('../config/pool');
-const createAdaptiveRateLimiter = require('../middleware/adaptiveRateLimiter');
-const AuthController = require('../controllers/authController');
+const express = require("express");
+const bcrypt = require("bcryptjs");
+const pool = require("../config/pool");
+const createAdaptiveRateLimiter = require("../middleware/adaptiveRateLimiter");
+const AuthController = require("../controllers/authController");
+const { sanitizeCPF, isValidCPF } = require("../utils/cpf"); // 👈 AQUI
 
 const router = express.Router();
 
-// -----------------------------------------------------------
-// ✅ Novo validador (cadastro rápido estilo e-commerce)
-// -----------------------------------------------------------
-const validarCamposBasicos = ({ nome, email, senha }) => {
-  return Boolean(nome && email && senha);
-};
-
 const forgotPasswordLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => {
-    const email = req.body.email ? req.body.email.toLowerCase() : 'anon';
+    const email = req.body.email ? req.body.email.toLowerCase() : "anon";
     return `forgot:${req.ip}:${email}`;
   },
 });
 
 const resetPasswordLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => {
-    const token = req.body.token || 'sem-token';
+    const token = req.body.token || "sem-token";
     return `reset:${req.ip}:${token}`;
   },
 });
 
 // ===========================================================
-// ✅ POST /register — Cadastro rápido de novo usuário
+// ✅ POST /register — Cadastro com CPF obrigatório
 // ===========================================================
-router.post('/register', async (req, res) => {
-  const { nome, email, senha } = req.body;
+router.post("/register", async (req, res) => {
+  const { nome, email, senha, cpf } = req.body || {};
 
-  if (!validarCamposBasicos(req.body)) {
-    return res.status(400).json({ mensagem: 'Nome, email e senha são obrigatórios.' });
+  if (!nome || !email || !senha || !cpf) {
+    return res.status(400).json({
+      mensagem: "Nome, email, senha e CPF são obrigatórios.",
+    });
+  }
+
+  const cpfLimpo = sanitizeCPF(cpf);
+
+  if (!isValidCPF(cpfLimpo)) {
+    return res.status(400).json({ mensagem: "CPF inválido." });
   }
 
   try {
-    const [rows] = await pool.execute('SELECT id FROM usuarios WHERE email = ?', [email]);
+    // verifica se já existe usuário com mesmo email OU mesmo CPF
+    const [rows] = await pool.execute(
+      "SELECT id, email, cpf FROM usuarios WHERE email = ? OR cpf = ?",
+      [email, cpfLimpo]
+    );
+
     if (rows.length > 0) {
-      return res
-        .status(400)
-        .json({ mensagem: 'Este e-mail já está cadastrado. Tente outro ou faça login.' });
+      const jaEmail = rows.some((u) => u.email === email);
+      const jaCpf = rows.some((u) => u.cpf === cpfLimpo);
+
+      if (jaEmail && jaCpf) {
+        return res
+          .status(400)
+          .json({ mensagem: "E-mail e CPF já cadastrados." });
+      }
+      if (jaEmail) {
+        return res
+          .status(400)
+          .json({ mensagem: "Este e-mail já está cadastrado." });
+      }
+      if (jaCpf) {
+        return res
+          .status(400)
+          .json({ mensagem: "Este CPF já está cadastrado." });
+      }
     }
 
     const senhaHash = await bcrypt.hash(senha, 10);
 
-    await pool.execute('INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?)', [
-      nome,
-      email,
-      senhaHash,
-    ]);
+    await pool.execute(
+      "INSERT INTO usuarios (nome, email, senha, cpf) VALUES (?, ?, ?, ?)",
+      [nome, email, senhaHash, cpfLimpo]
+    );
 
     return res.status(201).json({
-      mensagem: 'Conta criada com sucesso! Faça login para continuar.',
+      mensagem: "Conta criada com sucesso! Faça login para continuar.",
     });
   } catch (error) {
-    console.error('Erro ao cadastrar usuário:', error);
+    console.error("Erro ao cadastrar usuário:", error);
     return res.status(500).json({
-      mensagem: 'Erro interno no servidor. Tente novamente mais tarde.',
+      mensagem: "Erro interno no servidor. Tente novamente mais tarde.",
     });
   }
 });
@@ -74,7 +95,7 @@ router.post('/register', async (req, res) => {
  *     tags: [Public, Usuários]
  *     summary: Cadastro de novo usuário
  *     description: >
- *       Cria uma nova conta de usuário com nome, email e senha.
+ *       Cria uma nova conta de usuário com nome, email, senha e CPF.
  *       (Versão simplificada estilo e-commerce profissional)
  *     requestBody:
  *       required: true
@@ -82,16 +103,17 @@ router.post('/register', async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [nome, email, senha]
+ *             required: [nome, email, senha, cpf]
  *             properties:
  *               nome: { type: string, example: "João da Silva" }
  *               email: { type: string, example: "joao@email.com" }
  *               senha: { type: string, example: "123456" }
+ *               cpf:   { type: string, example: "111.111.111-11" }
  *     responses:
  *       201:
  *         description: Conta criada com sucesso
  *       400:
- *         description: Dados inválidos ou e-mail duplicado
+ *         description: Dados inválidos ou e-mail/CPF duplicados
  *       500:
  *         description: Erro interno
  */
@@ -99,7 +121,7 @@ router.post('/register', async (req, res) => {
 // ===========================================================
 // ✅ POST /forgot-password — Enviar link de redefinição de senha
 // ===========================================================
-router.post('/forgot-password', forgotPasswordLimiter, (req, res) =>
+router.post("/forgot-password", forgotPasswordLimiter, (req, res) =>
   AuthController.forgotPassword(req, res)
 );
 
@@ -127,7 +149,7 @@ router.post('/forgot-password', forgotPasswordLimiter, (req, res) =>
 // ===========================================================
 // ✅ POST /reset-password — Redefinir senha com token
 // ===========================================================
-router.post('/reset-password', resetPasswordLimiter, (req, res) =>
+router.post("/reset-password", resetPasswordLimiter, (req, res) =>
   AuthController.resetPassword(req, res)
 );
 
@@ -156,5 +178,4 @@ router.post('/reset-password', resetPasswordLimiter, (req, res) =>
  *         description: Erro interno
  */
 
-// ===========================================================
 module.exports = router;
