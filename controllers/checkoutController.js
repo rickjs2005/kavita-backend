@@ -24,10 +24,31 @@ async function create(req, res, next) {
       await connection.beginTransaction();
 
       // Insere o pedido inicial com total 0; o total será atualizado após inserir os itens
+      // Mantemos a coluna antiga `status` como 'pendente' para compatibilidade,
+      // mas o fluxo novo usa status_pagamento / status_entrega.
       const [pedidoIns] = await connection.query(
-        `INSERT INTO pedidos (usuario_id, endereco, forma_pagamento, status, total, data_pedido, pagamento_id)
-         VALUES (?, ?, ?, ?, ?, NOW(), ?)`,
-        [usuario_id, enderecoStr, formaPagamento, "pendente", 0, null]
+        `INSERT INTO pedidos (
+            usuario_id,
+            endereco,
+            forma_pagamento,
+            status,             -- legado (pode ser removido no futuro)
+            status_pagamento,   -- novo: financeiro
+            status_entrega,     -- novo: logístico
+            total,
+            data_pedido,
+            pagamento_id
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+        [
+          usuario_id,
+          enderecoStr,
+          formaPagamento,
+          "pendente",       // legado
+          "pendente",       // aguardando pagamento
+          "em_separacao",   // pedido criado, aguardando preparação
+          0,
+          null,
+        ]
       );
       const pedidoId = pedidoIns.insertId;
 
@@ -44,7 +65,10 @@ async function create(req, res, next) {
         // Mapeia dados por ID para acesso rápido
         const priceMap = {};
         prodRows.forEach((r) => {
-          priceMap[Number(r.id)] = { price: Number(r.price), stock: Number(r.quantity) };
+          priceMap[Number(r.id)] = {
+            price: Number(r.price),
+            stock: Number(r.quantity),
+          };
         });
         // Percorre cada item do pedido
         for (const item of produtos) {

@@ -1,4 +1,3 @@
-// routes/payment.js
 const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
@@ -72,7 +71,7 @@ router.post("/start", async (req, res) => {
   try {
     // garante que pedido existe
     const [[pedido]] = await conn.query(
-      `SELECT id, status FROM pedidos WHERE id = ?`,
+      `SELECT id FROM pedidos WHERE id = ?`,
       [pedidoId]
     );
     if (!pedido) {
@@ -106,9 +105,11 @@ router.post("/start", async (req, res) => {
       },
     });
 
-    // marca pedido como "pendente" (opcional: quando o cliente abre o fluxo)
+    // marca pagamento como "pendente" (início do fluxo de pagamento)
     await conn.query(
-      `UPDATE pedidos SET status = 'pendente' WHERE id = ?`,
+      `UPDATE pedidos
+          SET status_pagamento = 'pendente'
+        WHERE id = ?`,
       [pedidoId]
     );
 
@@ -164,9 +165,7 @@ router.post("/webhook", async (req, res) => {
   const unauthorized = () => res.status(401).json({ ok: false });
 
   if (!signatureHeader || !idempotencyKey) {
-    console.warn(
-      "[payment/webhook] assinatura ou idempotency key ausentes"
-    );
+    console.warn("[payment/webhook] assinatura ou idempotency key ausentes");
     return unauthorized();
   }
 
@@ -283,27 +282,27 @@ router.post("/webhook", async (req, res) => {
         return res.status(200).json({ ok: true });
       }
 
-      // mapeia status MP -> status local
-      let novoStatus = "pendente";
-      if (status === "approved") novoStatus = "pago";
+      // mapeia status MP -> status_pagamento local
+      let novoStatusPagamento = "pendente";
+      if (status === "approved") novoStatusPagamento = "pago";
       else if (status === "rejected" || status === "cancelled")
-        novoStatus = "falhou";
+        novoStatusPagamento = "falhou";
       else if (status === "in_process" || status === "pending")
-        novoStatus = "pendente";
+        novoStatusPagamento = "pendente";
 
       await conn.query(
         `UPDATE pedidos
-            SET status = ?, pagamento_id = ?
+            SET status_pagamento = ?, pagamento_id = ?
           WHERE id = ?
-            AND (status <> ? OR pagamento_id <> ?)`,
-        [novoStatus, String(data.id), pedidoId, novoStatus, String(data.id)]
+            AND (status_pagamento <> ? OR pagamento_id <> ?)`,
+        [novoStatusPagamento, String(data.id), pedidoId, novoStatusPagamento, String(data.id)]
       );
 
       await conn.query(
         `UPDATE webhook_events
             SET status = ?, processed_at = NOW(), updated_at = NOW()
           WHERE id = ?`,
-        [novoStatus, eventId]
+        [novoStatusPagamento, eventId]
       );
 
       await conn.commit();
