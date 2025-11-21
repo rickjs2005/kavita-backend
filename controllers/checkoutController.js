@@ -1,21 +1,10 @@
 const pool = require("../config/pool");
 
 /**
- * Cria um novo pedido a partir do checkout.
- * Espera no body:
- * {
- *   usuario_id,
- *   formaPagamento,
- *   endereco,
- *   produtos,
- *   nome,
- *   cpf,
- *   telefone,
- *   email
- * }
+ * Controller de Checkout
+ * Cria um novo pedido e fecha o carrinho aberto do usuário.
  */
-async function create(req, res, next) {
-  // agora também recebemos nome / cpf / telefone / email
+async function create(req, res) {
   const {
     usuario_id,
     formaPagamento,
@@ -25,184 +14,204 @@ async function create(req, res, next) {
     cpf,
     telefone,
     email,
-  } = req.body;
+  } = req.body || {};
+
+  // segurança extra: se por algum motivo não vier nada, evita quebrar
+  if (!usuario_id || !Array.isArray(produtos) || produtos.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Dados de checkout inválidos.",
+    });
+  }
+
+  let connection;
 
   try {
-    // Serializa o endereço fornecido (ou objeto vazio) para JSON
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // 1) Atualiza informações do usuário (nome, email, telefone, cpf) se vierem no checkout
+    try {
+      const campos = [];
+      const valores = [];
+
+      if (nome && String(nome).trim()) {
+        campos.push("nome = ?");
+        valores.push(String(nome).trim());
+      }
+
+      if (email && String(email).trim()) {
+        campos.push("email = ?");
+        valores.push(String(email).trim());
+      }
+
+      if (telefone && String(telefone).trim()) {
+        const telDigits = String(telefone).replace(/\D/g, "");
+        if (telDigits) {
+          campos.push("telefone = ?");
+          valores.push(telDigits);
+        }
+      }
+
+      if (cpf && String(cpf).trim()) {
+        const cpfDigits = String(cpf).replace(/\D/g, "");
+        if (cpfDigits) {
+          campos.push("cpf = ?");
+          valores.push(cpfDigits);
+        }
+      }
+
+      if (campos.length > 0) {
+        await connection.query(
+          `UPDATE usuarios SET ${campos.join(", ")} WHERE id = ?`,
+          [...valores, usuario_id]
+        );
+      }
+    } catch (err) {
+      console.error("[checkout] Erro ao atualizar dados do usuário:", err);
+      // não damos throw aqui para não impedir o pedido;
+      // se preferir ser mais rígido, pode lançar o erro.
+    }
+
+    // 2) Cria o pedido (registro principal)
     const enderecoStr = JSON.stringify(endereco || {});
 
-    // Abre uma conexão separada para a transação
-    const connection = await pool.getConnection();
-    try {
-      // Inicia a transação para garantir que todas as operações ocorram de forma atômica
-      await connection.beginTransaction();
+    const [pedidoIns] = await connection.query(
+      `INSERT INTO pedidos (
+        usuario_id,
+        endereco,
+        forma_pagamento,
+        status,             -- legado
+        status_pagamento,   -- financeiro
+        status_entrega,     -- logístico
+        total,
+        data_pedido,
+        pagamento_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+      [
+        usuario_id,
+        enderecoStr,
+        formaPagamento,
+        "pendente",      // coluna antiga
+        "pendente",      // aguardando pagamento
+        "em_separacao",  // fluxo logístico
+        0,               // total será atualizado depois
+        null,            // pagamento_id (pode receber id do MP futuramente)
+      ]
+    );
 
-      /**
-       * 1) Atualiza dados básicos do usuário (fonte oficial para o admin)
-       *    – isso garante que adminPedidos (JOIN usuarios) enxergue
-       *      telefone e cpf preenchidos, se vierem do checkout.
-       */
-      if (usuario_id) {
-        const campos = [];
-        const valores = [];
+    const pedidoId = pedidoIns.insertId;
 
-        // nome
-        if (nome && String(nome).trim()) {
-          campos.push("nome = ?");
-          valores.push(String(nome).trim());
-        }
+    // 3) Busca os produtos no banco para validar preço e estoque
+    const ids = produtos.map((p) => Number(p.id));
+    const [prodRows] = await connection.query(
+      "SELECT id, price, quantity FROM products WHERE id IN (?) FOR UPDATE",
+      [ids]
+    );
 
-        // email
-        if (email && String(email).trim()) {
-          campos.push("email = ?");
-          valores.push(String(email).trim());
-        }
+    const mapProdutos = {};
+    prodRows.forEach((row) => {
+      mapProdutos[Number(row.id)] = {
+        price: Number(row.price),
+        stock: Number(row.quantity),
+      };
+    });
 
-        // telefone (salvamos só dígitos)
-        if (telefone && String(telefone).trim()) {
-          const telDigits = String(telefone).replace(/\D/g, "");
-          if (telDigits) {
-            campos.push("telefone = ?");
-            valores.push(telDigits);
-          }
-        }
+    // 4) Insere itens do pedido e atualiza estoque
+    let totalPedido = 0;
 
-        // cpf (também apenas dígitos)
-        if (cpf && String(cpf).trim()) {
-          const cpfDigits = String(cpf).replace(/\D/g, "");
-          if (cpfDigits) {
-            campos.push("cpf = ?");
-            valores.push(cpfDigits);
-          }
-        }
+    for (const item of produtos) {
+      const produtoId = Number(item.id);
+      const qtd = Number(item.quantidade || 0);
 
-        if (campos.length > 0) {
-          await connection.query(
-            `UPDATE usuarios SET ${campos.join(", ")} WHERE id = ?`,
-            [...valores, usuario_id]
-          );
-        }
-      }
-
-      /**
-       * 2) Cria o pedido
-       *
-       * Mantemos a coluna antiga `status` como 'pendente' para compatibilidade,
-       * mas o fluxo novo usa status_pagamento / status_entrega.
-       */
-      const [pedidoIns] = await connection.query(
-        `INSERT INTO pedidos (
-            usuario_id,
-            endereco,
-            forma_pagamento,
-            status,             -- legado (pode ser removido no futuro)
-            status_pagamento,   -- novo: financeiro
-            status_entrega,     -- novo: logístico
-            total,
-            data_pedido,
-            pagamento_id
-         )
-         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
-        [
-          usuario_id,
-          enderecoStr,
-          formaPagamento,
-          "pendente", // legado
-          "pendente", // aguardando pagamento
-          "em_separacao", // pedido criado, aguardando preparação
-          0,
-          null,
-        ]
-      );
-      const pedidoId = pedidoIns.insertId;
-
-      /**
-       * 3) Calcula o total do pedido e insere os itens
-       */
-      let totalPedido = 0;
-      if (Array.isArray(produtos) && produtos.length > 0) {
-        // Extrai todos os IDs dos produtos do checkout
-        const ids = produtos.map((p) => Number(p.id));
-
-        // Busca preço e estoque atual dos produtos para evitar corrida de condições
-        const [prodRows] = await connection.query(
-          `SELECT id, price, quantity FROM products WHERE id IN (?) FOR UPDATE`,
-          [ids]
-        );
-
-        // Mapeia dados por ID para acesso rápido
-        const priceMap = {};
-        prodRows.forEach((r) => {
-          priceMap[Number(r.id)] = {
-            price: Number(r.price),
-            stock: Number(r.quantity),
-          };
+      if (!produtoId || !Number.isFinite(qtd) || qtd <= 0) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message: "Produto inválido no checkout.",
         });
-
-        // Percorre cada item do pedido
-        for (const item of produtos) {
-          const produtoId = Number(item.id);
-          const qtd = Number(item.quantidade || 0);
-
-          if (!produtoId || !Number.isFinite(qtd) || qtd <= 0) {
-            throw new Error("Produto inválido no checkout");
-          }
-
-          const info = priceMap[produtoId];
-          if (!info) {
-            throw new Error(`Produto ${produtoId} não encontrado`);
-          }
-
-          const valorUnitario = info.price;
-
-          // Verifica se há estoque suficiente
-          if (info.stock < qtd) {
-            throw new Error(
-              `Estoque insuficiente para o produto ${produtoId}`
-            );
-          }
-
-          // Insere item na tabela pedidos_produtos com o preço atual
-          await connection.query(
-            `INSERT INTO pedidos_produtos (pedido_id, produto_id, quantidade, valor_unitario)
-             VALUES (?, ?, ?, ?)`,
-            [pedidoId, produtoId, qtd, valorUnitario]
-          );
-
-          // Atualiza o estoque do produto
-          await connection.query(
-            `UPDATE products SET quantity = quantity - ? WHERE id = ?`,
-            [qtd, produtoId]
-          );
-
-          totalPedido += valorUnitario * qtd;
-        }
       }
 
-      // Atualiza o total do pedido no próprio registro
+      const info = mapProdutos[produtoId];
+      if (!info) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Produto ${produtoId} não encontrado.`,
+        });
+      }
+
+      if (info.stock < qtd) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Estoque insuficiente para o produto ${produtoId}.`,
+        });
+      }
+
+      const valorUnitario = info.price;
+
       await connection.query(
-        `UPDATE pedidos SET total = ? WHERE id = ?`,
-        [totalPedido, pedidoId]
+        `INSERT INTO pedidos_produtos (pedido_id, produto_id, quantidade, valor_unitario)
+         VALUES (?, ?, ?, ?)`,
+        [pedidoId, produtoId, qtd, valorUnitario]
       );
 
-      // Finaliza transação
-      await connection.commit();
+      await connection.query(
+        "UPDATE products SET quantity = quantity - ? WHERE id = ?",
+        [qtd, produtoId]
+      );
 
-      return res.status(201).json({
-        success: true,
-        message: "Pedido criado com sucesso",
-        pedido_id: pedidoId,
-        total: totalPedido,
-      });
+      totalPedido += valorUnitario * qtd;
+    }
+
+    // 5) Atualiza total do pedido
+    await connection.query(
+      "UPDATE pedidos SET total = ? WHERE id = ?",
+      [totalPedido, pedidoId]
+    );
+
+    // 6) Commit na transação principal
+    await connection.commit();
+
+    // 7) Fora da transação: fecha qualquer carrinho aberto desse usuário
+    try {
+      await pool.query(
+        'UPDATE carrinhos SET status = "fechado" WHERE usuario_id = ? AND status = "aberto"',
+        [usuario_id]
+      );
     } catch (err) {
-      // Reverte a transação em caso de erro
-      await connection.rollback();
-      return next(err);
-    } finally {
+      console.error("[checkout] Erro ao fechar carrinho após checkout:", err);
+      // não lançamos erro aqui para não quebrar a resposta
+    }
+
+    // 8) Resposta final
+    return res.status(201).json({
+      success: true,
+      message: "Pedido criado com sucesso",
+      pedido_id: pedidoId,
+      total: totalPedido,
+    });
+  } catch (err) {
+    console.error("[checkout] Erro geral no checkout:", err);
+
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackErr) {
+        console.error("[checkout] Erro ao dar rollback:", rollbackErr);
+      }
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Erro interno ao processar checkout.",
+    });
+  } finally {
+    if (connection) {
       connection.release();
     }
-  } catch (err) {
-    return next(err);
   }
 }
 
