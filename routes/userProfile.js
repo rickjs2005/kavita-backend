@@ -187,7 +187,7 @@ router.put("/me", async (req, res) => {
     ]);
 
     const [rows] = await pool.query(
-      `SELECT id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia
+      `SELECT id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia, status_conta
        FROM usuarios
        WHERE id = ?`,
       [userId]
@@ -210,7 +210,7 @@ router.get("/admin/:id", async (req, res) => {
   if (!id) return res.status(400).json({ mensagem: "ID inválido." });
   try {
     const [rows] = await pool.query(
-      `SELECT id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia
+      `SELECT id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia, status_conta
        FROM usuarios WHERE id = ?`,
       [id]
     );
@@ -278,8 +278,9 @@ router.put("/admin/:id", async (req, res) => {
       id,
     ]);
     const [rows] = await pool.query(
-      `SELECT id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia
-       FROM usuarios WHERE id = ?`,
+      `SELECT id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia, status_conta
+       FROM usuarios
+       WHERE id = ?`,
       [id]
     );
     return res.json(rows[0]);

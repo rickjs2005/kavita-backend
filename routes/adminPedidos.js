@@ -41,6 +41,9 @@ const handleErroInterno = (res, err, contexto = "erro") => {
  *         id:
  *           type: integer
  *           example: 123
+ *         usuario_id:
+ *           type: integer
+ *           example: 19
  *         usuario:
  *           type: string
  *           example: "José da Silva"
@@ -85,7 +88,17 @@ const handleErroInterno = (res, err, contexto = "erro") => {
  *             bairro: { type: string, example: "Centro" }
  *             cidade: { type: string, example: "Teófilo Otoni" }
  *             estado: { type: string, example: "MG" }
- *       required: [id, usuario, forma_pagamento, status_pagamento, status_entrega, total, data_pedido]
+ *       required:
+ *         [
+ *           id,
+ *           usuario_id,
+ *           usuario,
+ *           forma_pagamento,
+ *           status_pagamento,
+ *           status_entrega,
+ *           total,
+ *           data_pedido
+ *         ]
  *
  *     AdminPedidoDetalhe:
  *       allOf:
@@ -127,6 +140,7 @@ router.get("/", verifyAdmin, async (req, res) => {
     const [pedidos] = await pool.query(`
       SELECT
         p.id AS pedido_id,
+        p.usuario_id,
         u.nome AS usuario_nome,
         u.email AS usuario_email,
         u.telefone AS usuario_telefone,
@@ -154,6 +168,7 @@ router.get("/", verifyAdmin, async (req, res) => {
 
     const pedidosComItens = pedidos.map((p) => ({
       id: p.pedido_id,
+      usuario_id: p.usuario_id,
       usuario: p.usuario_nome,
       email: p.usuario_email ?? null,
       telefone: p.usuario_telefone ?? null,
@@ -218,6 +233,7 @@ router.get("/:id", verifyAdmin, async (req, res) => {
       `
       SELECT
         p.id AS pedido_id,
+        p.usuario_id,
         u.nome AS usuario_nome,
         u.email AS usuario_email,
         u.telefone AS usuario_telefone,
@@ -254,6 +270,7 @@ router.get("/:id", verifyAdmin, async (req, res) => {
 
     res.json({
       id: pedido.pedido_id,
+      usuario_id: pedido.usuario_id,
       usuario: pedido.usuario_nome,
       email: pedido.usuario_email ?? null,
       telefone: pedido.usuario_telefone ?? null,
