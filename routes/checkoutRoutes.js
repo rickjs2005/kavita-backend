@@ -113,7 +113,15 @@ const authenticateToken = require("../middleware/authenticateToken");
  * /api/checkout:
  *   post:
  *     summary: Cria um novo pedido
- *     description: Cria um pedido a partir do carrinho do usuário autenticado.
+ *     description: |
+ *       Cria um pedido a partir do carrinho do usuário autenticado.
+ *
+ *       - Valida estoque e estrutura dos dados do checkout.
+ *       - Usa o `usuario_id` do token JWT quando disponível.
+ *       - Dentro do controller de checkout, após a criação do pedido,
+ *         o carrinho aberto associado pode ser marcado como **recuperado**
+ *         na tabela `carrinhos_abandonados` (quando existir), integrando com
+ *         o sistema de carrinhos abandonados do admin.
  *     tags:
  *       - Checkout
  *     security:

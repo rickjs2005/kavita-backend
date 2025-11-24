@@ -2,7 +2,13 @@ const pool = require("../config/pool");
 
 /**
  * Controller de Checkout
- * Cria um novo pedido e fecha o carrinho aberto do usuário.
+ *
+ * - Cria um novo pedido.
+ * - Atualiza dados básicos do usuário (nome, email, telefone, cpf).
+ * - Valida estoque e atualiza quantity dos produtos.
+ * - Integra com o sistema de carrinhos abandonados:
+ *   - Se existir um carrinho "aberto" para o usuário, tenta marcar
+ *     esse carrinho como "recuperado" na tabela `carrinhos_abandonados`.
  */
 async function create(req, res) {
   const {
@@ -16,7 +22,7 @@ async function create(req, res) {
     email,
   } = req.body || {};
 
-  // segurança extra: se por algum motivo não vier nada, evita quebrar
+  // Segurança extra: se por algum motivo não vier nada, evita quebrar
   if (!usuario_id || !Array.isArray(produtos) || produtos.length === 0) {
     return res.status(400).json({
       success: false,
@@ -30,7 +36,10 @@ async function create(req, res) {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // 1) Atualiza informações do usuário (nome, email, telefone, cpf) se vierem no checkout
+    /* ------------------------------------------------------------------ */
+    /* 1) (Opcional) Atualiza informações do usuário (CRM básico)         */
+    /* ------------------------------------------------------------------ */
+
     try {
       const campos = [];
       const valores = [];
@@ -56,6 +65,9 @@ async function create(req, res) {
       if (cpf && String(cpf).trim()) {
         const cpfDigits = String(cpf).replace(/\D/g, "");
         if (cpfDigits) {
+          // aqui você poderia limitar para 11 dígitos, se quiser ser mais rígido
+          // const normalizado = cpfDigits.slice(0, 11);
+          // valores.push(normalizado);
           campos.push("cpf = ?");
           valores.push(cpfDigits);
         }
@@ -73,7 +85,39 @@ async function create(req, res) {
       // se preferir ser mais rígido, pode lançar o erro.
     }
 
-    // 2) Cria o pedido (registro principal)
+    /* ------------------------------------------------------------------ */
+    /* 2) (Novo) Descobre um carrinho aberto do usuário, se existir       */
+    /* ------------------------------------------------------------------ */
+
+    let carrinhoAberto = null;
+
+    try {
+      const [rowsCarrinho] = await connection.query(
+        `
+          SELECT id
+          FROM carrinhos
+          WHERE usuario_id = ? AND status = "aberto"
+          ORDER BY id DESC
+          LIMIT 1
+        `,
+        [usuario_id]
+      );
+
+      if (rowsCarrinho && rowsCarrinho.length > 0) {
+        carrinhoAberto = rowsCarrinho[0]; // { id: ... }
+      }
+    } catch (err) {
+      console.error(
+        "[checkout] Erro ao buscar carrinho aberto do usuário:",
+        err
+      );
+      // não bloqueia o fluxo do pedido
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 3) Cria o pedido (registro principal)                              */
+    /* ------------------------------------------------------------------ */
+
     const enderecoStr = JSON.stringify(endereco || {});
 
     const [pedidoIns] = await connection.query(
@@ -103,7 +147,10 @@ async function create(req, res) {
 
     const pedidoId = pedidoIns.insertId;
 
-    // 3) Busca os produtos no banco para validar preço e estoque
+    /* ------------------------------------------------------------------ */
+    /* 4) Busca os produtos no banco para validar preço e estoque         */
+    /* ------------------------------------------------------------------ */
+
     const ids = produtos.map((p) => Number(p.id));
     const [prodRows] = await connection.query(
       "SELECT id, price, quantity FROM products WHERE id IN (?) FOR UPDATE",
@@ -118,7 +165,10 @@ async function create(req, res) {
       };
     });
 
-    // 4) Insere itens do pedido e atualiza estoque
+    /* ------------------------------------------------------------------ */
+    /* 5) Insere itens do pedido e atualiza estoque                       */
+    /* ------------------------------------------------------------------ */
+
     let totalPedido = 0;
 
     for (const item of produtos) {
@@ -166,16 +216,53 @@ async function create(req, res) {
       totalPedido += valorUnitario * qtd;
     }
 
-    // 5) Atualiza total do pedido
+    /* ------------------------------------------------------------------ */
+    /* 6) Atualiza total do pedido                                        */
+    /* ------------------------------------------------------------------ */
+
     await connection.query(
       "UPDATE pedidos SET total = ? WHERE id = ?",
       [totalPedido, pedidoId]
     );
 
-    // 6) Commit na transação principal
+    /* ------------------------------------------------------------------ */
+    /* 7) Integração com carrinhos_abandonados                            */
+    /*    - Se houver um carrinho aberto para o usuário e ele estiver     */
+    /*      registrado em carrinhos_abandonados, marcamos como            */
+    /*      recuperado = 1.                                               */
+    /* ------------------------------------------------------------------ */
+
+    try {
+      if (carrinhoAberto && carrinhoAberto.id) {
+        await connection.query(
+          `
+            UPDATE carrinhos_abandonados
+            SET recuperado = 1,
+                atualizado_em = NOW()
+            WHERE carrinho_id = ?
+          `,
+          [carrinhoAberto.id]
+        );
+      }
+    } catch (err) {
+      console.error(
+        "[checkout] Erro ao marcar carrinho abandonado como recuperado:",
+        err
+      );
+      // não impede o pedido; se der erro aqui, apenas não marca como recuperado
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 8) Commit na transação principal                                   */
+    /* ------------------------------------------------------------------ */
+
     await connection.commit();
 
-    // 7) Fora da transação: fecha qualquer carrinho aberto desse usuário
+    /* ------------------------------------------------------------------ */
+    /* 9) Fora da transação: fecha qualquer carrinho aberto desse usuário */
+    /*    (comportamento antigo preservado)                               */
+    /* ------------------------------------------------------------------ */
+
     try {
       await pool.query(
         'UPDATE carrinhos SET status = "fechado" WHERE usuario_id = ? AND status = "aberto"',
@@ -186,7 +273,10 @@ async function create(req, res) {
       // não lançamos erro aqui para não quebrar a resposta
     }
 
-    // 8) Resposta final
+    /* ------------------------------------------------------------------ */
+    /* 10) Resposta final                                                 */
+    /* ------------------------------------------------------------------ */
+
     return res.status(201).json({
       success: true,
       message: "Pedido criado com sucesso",
