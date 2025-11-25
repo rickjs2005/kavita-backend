@@ -4,6 +4,9 @@ const router = express.Router();
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
 
+const DEFAULT_ABANDON_THRESHOLD_HOURS =
+  Number(process.env.ABANDON_CART_HOURS) || 24;
+
 /* ------------------------------------------------------------------ */
 /*                               Swagger                              */
 /* ------------------------------------------------------------------ */
@@ -24,7 +27,7 @@ const verifyAdmin = require("../middleware/verifyAdmin");
  *       properties:
  *         produto_id:
  *           type: integer
- *           example: 10
+ *           example: 42
  *         produto:
  *           type: string
  *           example: "Ração Premium 25kg"
@@ -41,22 +44,16 @@ const verifyAdmin = require("../middleware/verifyAdmin");
  *       properties:
  *         id:
  *           type: integer
- *           example: 1
  *         carrinho_id:
  *           type: integer
- *           example: 45
  *         usuario_id:
  *           type: integer
- *           example: 7
- *         nome:
+ *         usuario_nome:
  *           type: string
- *           example: "João da Silva"
- *         email:
+ *         usuario_email:
  *           type: string
- *           example: "joao@email.com"
- *         telefone:
+ *         usuario_telefone:
  *           type: string
- *           example: "(33) 99999-0000"
  *         itens:
  *           type: array
  *           items:
@@ -64,35 +61,27 @@ const verifyAdmin = require("../middleware/verifyAdmin");
  *         total_estimado:
  *           type: number
  *           format: float
- *           example: 259.8
  *         criado_em:
  *           type: string
  *           format: date-time
- *           example: "2025-01-20T14:10:00.000Z"
  *         atualizado_em:
  *           type: string
  *           format: date-time
- *           example: "2025-01-21T08:32:00.000Z"
  *         recuperado:
  *           type: boolean
- *           example: false
  *
- *     AbandonedCartNotificationRequest:
- *       type: object
- *       required:
- *         - tipo
- *       properties:
- *         tipo:
- *           type: string
- *           enum: [whatsapp, email]
- *           example: "whatsapp"
- *
- *     AbandonedCartNotificationResponse:
- *       type: object
- *       properties:
- *         message:
- *           type: string
- *           example: "Notificação de carrinho abandonado via whatsapp registrada com sucesso."
+ *   parameters:
+ *     AbandonCartHoursQuery:
+ *       in: query
+ *       name: horas
+ *       schema:
+ *         type: integer
+ *         minimum: 1
+ *         maximum: 720
+ *       required: false
+ *       description: |
+ *         Quantidade de horas para considerar um carrinho como abandonado.
+ *         Se não informado, usa ABANDON_CART_HOURS ou 24h como padrão.
  */
 
 /**
@@ -101,44 +90,34 @@ const verifyAdmin = require("../middleware/verifyAdmin");
  *   get:
  *     summary: Lista carrinhos abandonados
  *     description: |
- *       Gera registros em `carrinhos_abandonados` com base nos carrinhos abertos
- *       e retorna a lista de carrinhos abandonados.
- *
- *       Critério padrão para considerar um carrinho abandonado:
- *
- *       - `status = "aberto"` na tabela `carrinhos`
- *       - `criado_em` mais antigo que o limite em horas definido em `ABANDON_CART_HOURS`
- *         (por padrão, 24 horas) ou sobrescrito pelo parâmetro de query `horas`.
- *
- *       A cada chamada, novos carrinhos que se encaixarem no critério são
- *       inseridos em `carrinhos_abandonados` (sem duplicar os já existentes).
+ *       1. Registra carrinhos **abertos** e antigos em `carrinhos_abandonados`
+ *          (se ainda não existirem lá).
+ *       2. Agenda notificações padrão em
+ *          `carrinhos_abandonados_notifications` (se a tabela existir).
+ *       3. Retorna todos os registros de `carrinhos_abandonados` com dados
+ *          do usuário.
  *     tags:
  *       - AdminCarrinhos
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: query
- *         name: horas
- *         schema:
- *           type: number
- *           example: 4
- *         required: false
- *         description: >
- *           Número de horas para considerar um carrinho como abandonado.
- *           Se não informado, usa o valor de `ABANDON_CART_HOURS` ou 24 horas.
+ *       - $ref: "#/components/parameters/AbandonCartHoursQuery"
  *     responses:
  *       200:
  *         description: Lista de carrinhos abandonados
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 $ref: "#/components/schemas/AbandonedCart"
+ *               type: object
+ *               properties:
+ *                 carrinhos:
+ *                   type: array
+ *                   items:
+ *                     $ref: "#/components/schemas/AbandonedCart"
  *       401:
  *         description: Não autorizado (admin não autenticado)
  *       500:
- *         description: Erro ao buscar carrinhos abandonados
+ *         description: Erro interno ao buscar carrinhos abandonados
  */
 
 /**
@@ -147,9 +126,9 @@ const verifyAdmin = require("../middleware/verifyAdmin");
  *   post:
  *     summary: Registra notificação de carrinho abandonado
  *     description: |
- *       Registra a intenção de notificar um cliente sobre um carrinho abandonado
- *       via WhatsApp ou e-mail. Ideal para ser usado junto a um serviço externo
- *       (Twilio, WhatsApp API, serviço de e-mail, etc).
+ *       Cria um registro em `carrinhos_abandonados_notifications` com
+ *       `scheduled_at = NOW()` e `status = 'pending'` para o worker
+ *       processar (WhatsApp ou e-mail).
  *     tags:
  *       - AdminCarrinhos
  *     security:
@@ -158,119 +137,116 @@ const verifyAdmin = require("../middleware/verifyAdmin");
  *       - in: path
  *         name: id
  *         required: true
- *         description: ID do registro em `carrinhos_abandonados`
  *         schema:
  *           type: integer
- *           example: 1
+ *         description: ID do carrinho abandonado
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             $ref: "#/components/schemas/AbandonedCartNotificationRequest"
+ *             type: object
+ *             required:
+ *               - tipo
+ *             properties:
+ *               tipo:
+ *                 type: string
+ *                 enum: [whatsapp, email]
+ *                 example: "whatsapp"
  *     responses:
  *       200:
- *         description: Notificação registrada com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               $ref: "#/components/schemas/AbandonedCartNotificationResponse"
+ *         description: Notificação registrada
  *       400:
- *         description: Erro de validação (ID ou tipo inválido)
- *       401:
- *         description: Não autorizado (admin não autenticado)
+ *         description: Requisição inválida (tipo/ID/carrinho recuperado)
  *       404:
  *         description: Carrinho abandonado não encontrado
  *       500:
- *         description: Erro ao notificar carrinho abandonado
+ *         description: Erro interno ao registrar notificação
  */
 
 /* ------------------------------------------------------------------ */
-/*                    Configuração de threshold dinâmico              */
+/*                           Funções auxiliares                       */
 /* ------------------------------------------------------------------ */
 
-const DEFAULT_ABANDON_THRESHOLD_HOURS = Number(
-    process.env.ABANDON_CART_HOURS || 24
-);
-
-// Helper: converte JSON de itens em array seguro
 function parseItens(row) {
-    try {
-        if (!row.itens) return [];
-        if (Array.isArray(row.itens)) return row.itens;
-        return JSON.parse(row.itens);
-    } catch {
-        return [];
-    }
+  try {
+    const itens = JSON.parse(row.itens || "[]");
+    return Array.isArray(itens) ? itens : [];
+  } catch {
+    return [];
+  }
 }
 
 /* ------------------------------------------------------------------ */
-/*                            GET /admin/carrinhos                    */
+/*                        GET /api/admin/carrinhos                    */
 /* ------------------------------------------------------------------ */
 
 router.get("/", verifyAdmin, async (req, res) => {
-    const conn = await pool.getConnection();
+  const conn = await pool.getConnection();
 
-    try {
-        // threshold em horas (query > env > default)
-        const horasParam = Number(req.query.horas || "");
-        const thresholdHours =
-            Number.isFinite(horasParam) && horasParam > 0
-                ? horasParam
-                : DEFAULT_ABANDON_THRESHOLD_HOURS;
+  try {
+    const horasParam = Number(req.query.horas);
+    const thresholdHours =
+      Number.isFinite(horasParam) && horasParam > 0
+        ? horasParam
+        : DEFAULT_ABANDON_THRESHOLD_HOURS;
 
-        // 1) Buscar carrinhos "abertos" e antigos que ainda não estão em carrinhos_abandonados
-        const [carts] = await conn.query(
-            `
+    // 1) Buscar carrinhos "abertos" e antigos que ainda não estão em carrinhos_abandonados
+    const [carts] = await conn.query(
+      `
       SELECT
         c.id,
         c.usuario_id,
-        c.criado_em
+        c.created_at
       FROM carrinhos c
       LEFT JOIN carrinhos_abandonados ca ON ca.carrinho_id = c.id
       WHERE
         c.status = 'aberto'
         AND ca.id IS NULL
-        AND c.criado_em < DATE_SUB(NOW(), INTERVAL ? HOUR)
-      ORDER BY c.criado_em ASC
+        AND c.created_at < DATE_SUB(NOW(), INTERVAL ? HOUR)
+      ORDER BY c.created_at ASC
       `,
-            [thresholdHours]
-        );
+      [thresholdHours]
+    );
 
-        // 2) Para cada carrinho, tentar gerar o registro de abandonado.
-        //    Se falhar em algum, apenas loga e continua (não derruba a rota).
-        for (const cart of carts) {
-            try {
-                const [itensRows] = await conn.query(
-                    `
+    // 2) Para cada carrinho, gerar o registro de abandonado + tentar agendar notificações
+    for (const cart of carts) {
+      try {
+        const [itensRows] = await conn.query(
+          `
           SELECT
             ci.produto_id,
-            p.name AS produto,
+            p.title AS produto,
             ci.quantidade,
             ci.valor_unitario AS preco_unitario
           FROM carrinho_itens ci
           JOIN products p ON p.id = ci.produto_id
           WHERE ci.carrinho_id = ?
           `,
-                    [cart.id]
-                );
+          [cart.id]
+        );
 
-                const itens = itensRows.map((row) => ({
-                    produto_id: row.produto_id,
-                    produto: row.produto,
-                    quantidade: row.quantidade,
-                    preco_unitario: Number(
-                        row.preco_unituario || row.preco_unitario || 0
-                    ),
-                }));
+        const itens = itensRows.map((row) => {
+          const preco =
+            row.preco_unitario === 0 || row.preco_unitario
+              ? Number(row.preco_unitario)
+              : 0;
 
-                const totalEstimado = itens.reduce(
-                    (acc, item) => acc + item.quantidade * item.preco_unitario,
-                    0
-                );
+          return {
+            produto_id: row.produto_id,
+            produto: row.produto,
+            quantidade: row.quantidade,
+            preco_unitario: preco,
+          };
+        });
 
-                await conn.query(
-                    `
+        const totalEstimado = itens.reduce(
+          (acc, item) => acc + item.quantidade * item.preco_unitario,
+          0
+        );
+
+        const [abandonRes] = await conn.query(
+          `
           INSERT INTO carrinhos_abandonados (
             carrinho_id,
             usuario_id,
@@ -282,27 +258,61 @@ router.get("/", verifyAdmin, async (req, res) => {
           )
           VALUES (?, ?, ?, ?, ?, NOW(), 0)
           `,
-                    [
-                        cart.id,
-                        cart.usuario_id,
-                        JSON.stringify(itens),
-                        totalEstimado,
-                        cart.criado_em,
-                    ]
-                );
-            } catch (errCart) {
-                console.warn(
-                    "[AdminCarrinhos] Erro ao processar carrinho",
-                    cart.id,
-                    errCart
-                );
-                // segue para o próximo carrinho
-            }
-        }
+          [
+            cart.id,
+            cart.usuario_id,
+            JSON.stringify(itens),
+            totalEstimado,
+            cart.created_at,
+          ]
+        );
 
-        // 3) Buscar todos os carrinhos abandonados existentes
-        const [rows] = await conn.query(
+        const abandonedId = abandonRes.insertId;
+
+        // 2.1) Tentar agendar notificações padrão — se der erro, só loga
+        try {
+          const now = new Date();
+          const in1Hour = new Date(now.getTime() + 1 * 60 * 60 * 1000);
+          const in4Hours = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+          const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+          const values = [
+            [abandonedId, "whatsapp", in1Hour, "pending"],
+            [abandonedId, "email", in4Hours, "pending"],
+            [abandonedId, "whatsapp", in24Hours, "pending"],
+          ];
+
+          await conn.query(
             `
+            INSERT INTO carrinhos_abandonados_notifications (
+              carrinho_abandonado_id,
+              tipo,
+              scheduled_at,
+              status
+            )
+            VALUES ?
+            `,
+            [values]
+          );
+        } catch (errNotif) {
+          console.warn(
+            "[AdminCarrinhos] Erro ao agendar notificações para carrinho abandonado",
+            abandonedId,
+            errNotif
+          );
+        }
+      } catch (errCart) {
+        console.warn(
+          "[AdminCarrinhos] Erro ao processar carrinho",
+          cart.id,
+          errCart
+        );
+      }
+    }
+
+    // 3) Buscar todos os carrinhos abandonados existentes
+    const [rows] = await conn.query(
+      `
       SELECT
         ca.id,
         ca.carrinho_id,
@@ -319,54 +329,55 @@ router.get("/", verifyAdmin, async (req, res) => {
       JOIN usuarios u ON u.id = ca.usuario_id
       ORDER BY ca.criado_em DESC
       `
-        );
+    );
 
-        const resultado = rows.map((row) => ({
-            id: row.id,
-            carrinho_id: row.carrinho_id,
-            usuario_id: row.usuario_id,
-            nome: row.usuario_nome,
-            email: row.usuario_email,
-            telefone: row.usuario_telefone,
-            itens: parseItens(row),
-            total_estimado: Number(row.total_estimado || 0),
-            criado_em: row.criado_em,
-            atualizado_em: row.atualizado_em,
-            recuperado: !!row.recuperado,
-        }));
+    const carrinhos = rows.map((row) => ({
+      id: row.id,
+      carrinho_id: row.carrinho_id,
+      usuario_id: row.usuario_id,
+      usuario_nome: row.usuario_nome,
+      usuario_email: row.usuario_email,
+      usuario_telefone: row.usuario_telefone,
+      itens: parseItens(row),
+      total_estimado: Number(row.total_estimado || 0),
+      criado_em: row.criado_em,
+      atualizado_em: row.atualizado_em,
+      recuperado: !!row.recuperado,
+    }));
 
-        // 🔥 Ponto importante:
-        // Mesmo se não tiver nenhum, devolvemos [] com status 200.
-        return res.json(resultado);
-    } catch (err) {
-        console.error("Erro em GET /api/admin/carrinhos:", err);
-        // 👉 Em vez de 500, devolve lista vazia.
-        return res.status(200).json([]);
-    } finally {
-        conn.release();
-    }
+    return res.json({ carrinhos });
+  } catch (err) {
+    console.error("Erro em GET /api/admin/carrinhos:", err);
+    return res
+      .status(500)
+      .json({ message: "Erro ao buscar carrinhos abandonados" });
+  } finally {
+    conn.release();
+  }
 });
 
 /* ------------------------------------------------------------------ */
-/*                     POST /admin/carrinhos/:id/notificar            */
+/*             POST /api/admin/carrinhos/:id/notificar                */
 /* ------------------------------------------------------------------ */
 
 router.post("/:id/notificar", verifyAdmin, async (req, res) => {
-    const id = Number(req.params.id);
-    const { tipo } = req.body || {};
+  const id = Number(req.params.id);
+  const { tipo } = req.body || {};
 
-    if (!id) {
-        return res.status(400).json({ message: "ID inválido." });
-    }
-    if (!["whatsapp", "email"].includes(tipo)) {
-        return res
-            .status(400)
-            .json({ message: "tipo deve ser 'whatsapp' ou 'email'." });
-    }
+  if (!id) {
+    return res.status(400).json({ message: "ID inválido." });
+  }
+  if (!["whatsapp", "email"].includes(tipo)) {
+    return res
+      .status(400)
+      .json({ message: "tipo deve ser 'whatsapp' ou 'email'." });
+  }
 
-    try {
-        const [[row]] = await pool.query(
-            `
+  const conn = await pool.getConnection();
+
+  try {
+    const [[row]] = await conn.query(
+      `
       SELECT
         ca.id,
         ca.carrinho_id,
@@ -382,26 +393,50 @@ router.post("/:id/notificar", verifyAdmin, async (req, res) => {
       JOIN usuarios u ON u.id = ca.usuario_id
       WHERE ca.id = ?
       `,
-            [id]
-        );
+      [id]
+    );
 
-        if (!row) {
-            return res
-                .status(404)
-                .json({ message: "Carrinho abandonado não encontrado." });
-        }
-
-        console.log(
-            `[Carrinho Abandonado] Enviar lembrete via ${tipo} para usuário ${row.usuario_id} (${row.usuario_nome})`
-        );
-
-        return res.json({
-            message: `Notificação de carrinho abandonado via ${tipo} registrada com sucesso.`,
-        });
-    } catch (err) {
-        console.error("Erro em POST /api/admin/carrinhos/:id/notificar:", err);
-        res.status(500).json({ message: "Erro ao notificar carrinho abandonado" });
+    if (!row) {
+      return res
+        .status(404)
+        .json({ message: "Carrinho abandonado não encontrado." });
     }
+
+    if (row.recuperado) {
+      return res.status(400).json({
+        message:
+          "Este carrinho já foi marcado como recuperado. Não é necessário enviar nova notificação.",
+      });
+    }
+
+    await conn.query(
+      `
+      INSERT INTO carrinhos_abandonados_notifications (
+        carrinho_abandonado_id,
+        tipo,
+        scheduled_at,
+        status
+      )
+      VALUES (?, ?, NOW(), 'pending')
+      `,
+      [row.id, tipo]
+    );
+
+    console.log(
+      `[Carrinho Abandonado] Notificação manual via ${tipo} registrada para usuário ${row.usuario_id} (${row.usuario_nome})`
+    );
+
+    return res.json({
+      message: `Notificação de carrinho abandonado via ${tipo} registrada e será processada pelo worker.`,
+    });
+  } catch (err) {
+    console.error("Erro em POST /api/admin/carrinhos/:id/notificar:", err);
+    return res
+      .status(500)
+      .json({ message: "Erro ao notificar carrinho abandonado" });
+  } finally {
+    conn.release();
+  }
 });
 
 module.exports = router;

@@ -265,7 +265,7 @@ async function create(req, res) {
 
     try {
       await pool.query(
-        'UPDATE carrinhos SET status = "fechado" WHERE usuario_id = ? AND status = "aberto"',
+       'UPDATE carrinhos SET status = "convertido" WHERE usuario_id = ? AND status = "aberto"',
         [usuario_id]
       );
     } catch (err) {
