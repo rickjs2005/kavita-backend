@@ -114,4 +114,54 @@ router.put("/:id/block", verifyAdmin, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/admin/users/{id}:
+ *   delete:
+ *     tags: [Admin - Users]
+ *     summary: Exclui um usuário do sistema
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Usuário excluído com sucesso
+ *       400:
+ *         description: ID inválido
+ *       404:
+ *         description: Usuário não encontrado
+ *       500:
+ *         description: Erro interno
+ */
+router.delete("/:id", verifyAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({ message: "ID inválido." });
+  }
+
+  try {
+    const [result] = await pool.query(
+      "DELETE FROM usuarios WHERE id = ?",
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Usuário não encontrado." });
+    }
+
+    return res.json({ message: "Usuário excluído com sucesso." });
+  } catch (err) {
+    console.error("Erro ao excluir usuário:", err);
+    return res
+      .status(500)
+      .json({ message: "Erro ao excluir usuário." });
+  }
+});
+
 module.exports = router;
