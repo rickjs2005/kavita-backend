@@ -6,11 +6,14 @@ const pool = require("../config/pool");
 // 👉 NOVO SDK Mercado Pago (v2)
 const { MercadoPagoConfig, Preference, Payment } = require("mercadopago");
 
+// Configuração do cliente do Mercado Pago
 const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
 });
 
-// util: calcula total a partir do banco
+// =====================================================
+// Util: calcula o total do pedido diretamente no banco
+// =====================================================
 async function calcularTotalPedido(conn, pedidoId) {
   const [rows] = await conn.query(
     `SELECT quantidade, valor_unitario
@@ -18,14 +21,106 @@ async function calcularTotalPedido(conn, pedidoId) {
       WHERE pedido_id = ?`,
     [pedidoId]
   );
+
   const total = rows.reduce(
     (acc, r) => acc + Number(r.quantidade) * Number(r.valor_unitario),
     0
   );
+
   return Number(total.toFixed(2));
 }
 
-// ========================= ROTA /start ========================= //
+// =====================================================
+// Helper: monta o body da Preference do Mercado Pago
+// - Configura back_urls
+// - Configura payment_methods de acordo com forma_pagamento
+// - Em produção, adiciona auto_return + notification_url
+// =====================================================
+function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
+  const appUrl = process.env.APP_URL;
+  const backendUrl = process.env.BACKEND_URL;
+  const tipo = (formaPagamento || "").toLowerCase();
+
+  const body = {
+    items: [
+      {
+        id: `pedido-${pedidoId}`,
+        title: `Pedido #${pedidoId}`,
+        quantity: 1,
+        unit_price: total,
+        currency_id: "BRL",
+      },
+    ],
+    back_urls: {
+      success: `${appUrl}/checkout/sucesso?pedidoId=${pedidoId}`,
+      pending: `${appUrl}/checkout/pendente?pedidoId=${pedidoId}`,
+      failure: `${appUrl}/checkout/erro?pedidoId=${pedidoId}`,
+    },
+    metadata: { pedidoId },
+  };
+
+  /**
+   * 💳 Alinhando com a forma de pagamento escolhida no checkout:
+   *
+   * - PIX:
+   *    - Exclui cartão de crédito, débito e boleto (ticket)
+   *    - Sobra principalmente bank_transfer (Pix)
+   *
+   * - BOLETO:
+   *    - Exclui cartão de crédito, débito e bank_transfer (Pix)
+   *
+   * - CARTÃO / MERCADOPAGO:
+   *    - Exclui Pix (bank_transfer) e boleto (ticket)
+   */
+  if (tipo === "pix") {
+    body.payment_methods = {
+      excluded_payment_types: [
+        { id: "credit_card" },
+        { id: "debit_card" },
+        { id: "ticket" }, // boleto
+      ],
+    };
+  } else if (tipo === "boleto") {
+    body.payment_methods = {
+      excluded_payment_types: [
+        { id: "credit_card" },
+        { id: "debit_card" },
+        { id: "bank_transfer" }, // Pix
+      ],
+    };
+  } else if (tipo === "mercadopago" || tipo === "cartao" || tipo === "cartão") {
+    body.payment_methods = {
+      excluded_payment_types: [
+        { id: "bank_transfer" }, // Pix
+        { id: "ticket" }, // boleto
+      ],
+    };
+  }
+
+  /**
+   * ⚠️ IMPORTANTE:
+   * Em ambiente local (localhost / IP interno), o Mercado Pago costuma
+   * rejeitar:
+   *   - auto_return com back_urls locais
+   *   - notification_url apontando para IP privado / localhost
+   *
+   * Por isso, deixamos auto_return + notification_url **apenas em produção**,
+   * quando APP_URL e BACKEND_URL apontam para domínios públicos HTTPS.
+   */
+  if (process.env.NODE_ENV === "production") {
+    body.auto_return = "approved";
+
+    if (backendUrl) {
+      body.notification_url = `${backendUrl}/api/payment/webhook`;
+    }
+  }
+
+  return body;
+}
+
+// =====================================================
+// ROTA /start
+// =====================================================
 
 /**
  * @openapi
@@ -64,46 +159,34 @@ async function calcularTotalPedido(conn, pedidoId) {
 // inicia pagamento para um pedido existente
 router.post("/start", async (req, res) => {
   const { pedidoId } = req.body || {};
-  if (!pedidoId)
+  if (!pedidoId) {
     return res.status(400).json({ message: "pedidoId é obrigatório." });
+  }
 
   const conn = await pool.getConnection();
   try {
-    // garante que pedido existe
+    // garante que o pedido existe e traz a forma_pagamento
     const [[pedido]] = await conn.query(
-      `SELECT id FROM pedidos WHERE id = ?`,
+      `SELECT id, forma_pagamento
+         FROM pedidos
+        WHERE id = ?`,
       [pedidoId]
     );
+
     if (!pedido) {
       return res.status(404).json({ message: "Pedido não encontrado." });
     }
 
+    const formaPagamento = (pedido.forma_pagamento || "").toLowerCase();
+
     // pega total pelo banco
     const total = await calcularTotalPedido(conn, pedidoId);
 
-    // cria uma preference simples (1 item com o total)
+    // cria a preference
     const preference = new Preference(mpClient);
-    const pref = await preference.create({
-      body: {
-        items: [
-          {
-            id: `pedido-${pedidoId}`,
-            title: `Pedido #${pedidoId}`,
-            quantity: 1,
-            unit_price: total,
-            currency_id: "BRL",
-          },
-        ],
-        back_urls: {
-          success: `${process.env.APP_URL}/checkout/sucesso?pedidoId=${pedidoId}`,
-          pending: `${process.env.APP_URL}/checkout/pendente?pedidoId=${pedidoId}`,
-          failure: `${process.env.APP_URL}/checkout/erro?pedidoId=${pedidoId}`,
-        },
-        auto_return: "approved",
-        notification_url: `${process.env.BACKEND_URL}/api/payment/webhook`,
-        metadata: { pedidoId },
-      },
-    });
+    const body = buildPreferenceBody({ total, pedidoId, formaPagamento });
+
+    const pref = await preference.create({ body });
 
     // marca pagamento como "pendente" (início do fluxo de pagamento)
     await conn.query(
@@ -113,7 +196,6 @@ router.post("/start", async (req, res) => {
       [pedidoId]
     );
 
-    // no SDK novo, os dados vêm direto no objeto retornado
     const { id, init_point, sandbox_init_point } = pref;
 
     return res.json({
@@ -122,14 +204,28 @@ router.post("/start", async (req, res) => {
       sandbox_init_point,
     });
   } catch (err) {
-    console.error("[payment/start] erro:", err);
-    return res.status(500).json({ message: "Erro ao iniciar pagamento." });
+    console.error("[payment/start] erro bruto:", err);
+
+    if (err?.message || err?.status || err?.error) {
+      console.error("[payment/start] detalhes:", {
+        message: err.message,
+        error: err.error,
+        status: err.status,
+        cause: err.cause ?? null,
+      });
+    }
+
+    return res
+      .status(500)
+      .json({ message: "Erro ao iniciar pagamento com o Mercado Pago." });
   } finally {
     conn.release();
   }
 });
 
-// ========================= ROTA /webhook ========================= //
+// =====================================================
+// ROTA /webhook
+// =====================================================
 
 /**
  * @openapi
@@ -295,7 +391,13 @@ router.post("/webhook", async (req, res) => {
             SET status_pagamento = ?, pagamento_id = ?
           WHERE id = ?
             AND (status_pagamento <> ? OR pagamento_id <> ?)`,
-        [novoStatusPagamento, String(data.id), pedidoId, novoStatusPagamento, String(data.id)]
+        [
+          novoStatusPagamento,
+          String(data.id),
+          pedidoId,
+          novoStatusPagamento,
+          String(data.id),
+        ]
       );
 
       await conn.query(
