@@ -93,6 +93,11 @@ const authenticateToken = require("../middleware/authenticateToken");
  *         total:
  *           type: number
  *           example: 1890.88
+ *         cupom_codigo:
+ *           type: string
+ *           nullable: true
+ *           example: "PROMO10"
+ *           description: Código de cupom de desconto a ser aplicado no pedido.
  *
  *     CheckoutResponse:
  *       type: object
@@ -106,6 +111,27 @@ const authenticateToken = require("../middleware/authenticateToken");
  *         pedido_id:
  *           type: integer
  *           example: 123
+ *         total:
+ *           type: number
+ *           example: 150.5
+ *         total_sem_desconto:
+ *           type: number
+ *           nullable: true
+ *         desconto_total:
+ *           type: number
+ *           nullable: true
+ *         cupom_aplicado:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             id:
+ *               type: integer
+ *             codigo:
+ *               type: string
+ *             tipo:
+ *               type: string
+ *             valor:
+ *               type: number
  */
 
 /**
@@ -122,6 +148,7 @@ const authenticateToken = require("../middleware/authenticateToken");
  *         o carrinho aberto associado pode ser marcado como **recuperado**
  *         na tabela `carrinhos_abandonados` (quando existir), integrando com
  *         o sistema de carrinhos abandonados do admin.
+ *       - Opcionalmente, aplica um **cupom de desconto** informado em `cupom_codigo`.
  *     tags:
  *       - Checkout
  *     security:
@@ -249,6 +276,154 @@ if (typeof controller === "function") {
     });
   };
 }
+
+/* ------------------------------------------------------------------ */
+/*                 Rota de pré-visualização de cupom                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @openapi
+ * /api/checkout/preview-cupom:
+ *   post:
+ *     summary: Valida um cupom de desconto para um determinado total
+ *     description: |
+ *       Verifica se o cupom existe, está ativo, não expirou, não atingiu o limite
+ *       de usos e se o total informado atende ao valor mínimo.
+ *     tags:
+ *       - Checkout
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               codigo:
+ *                 type: string
+ *                 example: "PROMO10"
+ *               total:
+ *                 type: number
+ *                 example: 189.9
+ *     responses:
+ *       200:
+ *         description: Cupom válido e desconto calculado
+ *       400:
+ *         description: Cupom inválido ou não aplicável
+ */
+router.post("/preview-cupom", authenticateToken, async (req, res) => {
+  const { codigo, total } = req.body || {};
+  const subtotal = Number(total || 0);
+
+  if (!codigo || !String(codigo).trim()) {
+    return res.status(400).json({
+      success: false,
+      message: "Informe o código do cupom.",
+    });
+  }
+
+  if (!Number.isFinite(subtotal) || subtotal <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Total inválido para cálculo do cupom.",
+    });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, ativo
+        FROM cupons
+        WHERE codigo = ?
+        LIMIT 1
+      `,
+      [String(codigo).trim()]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Cupom inválido ou não encontrado.",
+      });
+    }
+
+    const cupom = rows[0];
+
+    if (!cupom.ativo) {
+      return res.status(400).json({
+        success: false,
+        message: "Este cupom está inativo.",
+      });
+    }
+
+    if (cupom.expiracao) {
+      const agora = new Date();
+      const exp = new Date(cupom.expiracao);
+      if (exp.getTime() < agora.getTime()) {
+        return res.status(400).json({
+          success: false,
+          message: "Este cupom está expirado.",
+        });
+      }
+    }
+
+    const usos = Number(cupom.usos || 0);
+    const maxUsos =
+      cupom.max_usos === null || cupom.max_usos === undefined
+        ? null
+        : Number(cupom.max_usos);
+
+    if (maxUsos !== null && usos >= maxUsos) {
+      return res.status(400).json({
+        success: false,
+        message: "Este cupom já atingiu o limite de usos.",
+      });
+    }
+
+    const minimo = Number(cupom.minimo || 0);
+    if (minimo > 0 && subtotal < minimo) {
+      return res.status(400).json({
+        success: false,
+        message: `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(2)}.`,
+      });
+    }
+
+    const valor = Number(cupom.valor || 0);
+    let desconto = 0;
+
+    if (cupom.tipo === "percentual") {
+      desconto = (subtotal * valor) / 100;
+    } else {
+      desconto = valor;
+    }
+
+    if (desconto < 0) desconto = 0;
+    if (desconto > subtotal) desconto = subtotal;
+
+    const totalComDesconto = subtotal - desconto;
+
+    return res.status(200).json({
+      success: true,
+      message: "Cupom aplicado com sucesso.",
+      desconto,
+      total_original: subtotal,
+      total_com_desconto: totalComDesconto,
+      cupom: {
+        id: cupom.id,
+        codigo: cupom.codigo,
+        tipo: cupom.tipo,
+        valor: valor,
+      },
+    });
+  } catch (err) {
+    console.error("[checkoutRoutes] Erro em /preview-cupom:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao validar o cupom.",
+    });
+  }
+});
 
 /* ------------------------------------------------------------------ */
 /*                               Rota                                 */

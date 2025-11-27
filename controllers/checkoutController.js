@@ -21,6 +21,7 @@ async function create(req, res) {
     cpf,
     telefone,
     email,
+    cupom_codigo, // <-- NOVO: código do cupom enviado pelo front
   } = req.body || {};
 
   // Segurança extra: se por algum motivo não vier nada, evita quebrar
@@ -66,9 +67,6 @@ async function create(req, res) {
       if (cpf && String(cpf).trim()) {
         const cpfDigits = String(cpf).replace(/\D/g, "");
         if (cpfDigits) {
-          // aqui você poderia limitar para 11 dígitos, se quiser ser mais rígido
-          // const normalizado = cpfDigits.slice(0, 11);
-          // valores.push(normalizado);
           campos.push("cpf = ?");
           valores.push(cpfDigits);
         }
@@ -218,13 +216,129 @@ async function create(req, res) {
     }
 
     /* ------------------------------------------------------------------ */
-    /* 6) Atualiza total do pedido                                        */
+    /* 6.1) Aplicar cupom de desconto (opcional)                          */
     /* ------------------------------------------------------------------ */
 
-    await connection.query(
-      "UPDATE pedidos SET total = ? WHERE id = ?",
-      [totalPedido, pedidoId]
-    );
+    let totalFinal = totalPedido;
+    let descontoTotal = 0;
+    let cupomAplicado = null;
+
+    if (cupom_codigo && String(cupom_codigo).trim()) {
+      const codigo = String(cupom_codigo).trim();
+
+      try {
+        const [rowsCupom] = await connection.query(
+          `
+            SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, ativo
+            FROM cupons
+            WHERE codigo = ?
+            LIMIT 1
+            FOR UPDATE
+          `,
+          [codigo]
+        );
+
+        if (!rowsCupom || rowsCupom.length === 0) {
+          await connection.rollback();
+          return res.status(400).json({
+            success: false,
+            message: "Cupom inválido ou não encontrado.",
+          });
+        }
+
+        const cupom = rowsCupom[0];
+
+        if (!cupom.ativo) {
+          await connection.rollback();
+          return res.status(400).json({
+            success: false,
+            message: "Este cupom está inativo.",
+          });
+        }
+
+        if (cupom.expiracao) {
+          const agora = new Date();
+          const exp = new Date(cupom.expiracao);
+          if (exp.getTime() < agora.getTime()) {
+            await connection.rollback();
+            return res.status(400).json({
+              success: false,
+              message: "Este cupom está expirado.",
+            });
+          }
+        }
+
+        const usos = Number(cupom.usos || 0);
+        const maxUsos =
+          cupom.max_usos === null || cupom.max_usos === undefined
+            ? null
+            : Number(cupom.max_usos);
+
+        if (maxUsos !== null && usos >= maxUsos) {
+          await connection.rollback();
+          return res.status(400).json({
+            success: false,
+            message: "Este cupom já atingiu o limite de usos.",
+          });
+        }
+
+        const minimo = Number(cupom.minimo || 0);
+        if (minimo > 0 && totalPedido < minimo) {
+          await connection.rollback();
+          return res.status(400).json({
+            success: false,
+            message: `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(
+              2
+            )}.`,
+          });
+        }
+
+        const valor = Number(cupom.valor || 0);
+        let desconto = 0;
+
+        if (cupom.tipo === "percentual") {
+          desconto = (totalPedido * valor) / 100;
+        } else {
+          // tipo "valor" (desconto fixo em R$)
+          desconto = valor;
+        }
+
+        if (desconto < 0) desconto = 0;
+        if (desconto > totalPedido) desconto = totalPedido;
+
+        descontoTotal = desconto;
+        totalFinal = totalPedido - descontoTotal;
+
+        cupomAplicado = {
+          id: cupom.id,
+          codigo: cupom.codigo,
+          tipo: cupom.tipo,
+          valor: valor,
+        };
+
+        // incrementa usos do cupom
+        await connection.query(
+          "UPDATE cupons SET usos = usos + 1 WHERE id = ?",
+          [cupom.id]
+        );
+      } catch (errCupom) {
+        console.error("[checkout] Erro ao aplicar cupom:", errCupom);
+        await connection.rollback();
+        return res.status(500).json({
+          success: false,
+          message: "Erro ao aplicar o cupom de desconto.",
+        });
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 6) Atualiza total do pedido (já com desconto, se houver)           */
+    /* ------------------------------------------------------------------ */
+
+    await connection.query("UPDATE pedidos SET total = ? WHERE id = ?", [
+      totalFinal,
+      pedidoId,
+    ]);
 
     /* ------------------------------------------------------------------ */
     /* 7) Integração com carrinhos_abandonados                            */
@@ -295,7 +409,10 @@ async function create(req, res) {
       success: true,
       message: "Pedido criado com sucesso",
       pedido_id: pedidoId,
-      total: totalPedido,
+      total: totalFinal,
+      total_sem_desconto: totalPedido,
+      desconto_total: descontoTotal,
+      cupom_aplicado: cupomAplicado,
     });
   } catch (err) {
     console.error("[checkout] Erro geral no checkout:", err);
