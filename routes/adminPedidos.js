@@ -3,6 +3,9 @@ const router = express.Router();
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const { parseAddress } = require("../utils/address");
+const {
+  dispararEventoComunicacao,
+} = require("../services/comunicacaoService"); // ⬅️ novo import
 
 // 🔄 Função utilitária para tratar erros e exibir logs contextuais
 const handleErroInterno = (res, err, contexto = "erro") => {
@@ -297,7 +300,7 @@ router.get("/:id", verifyAdmin, async (req, res) => {
  * /api/admin/pedidos/{id}/pagamento:
  *   put:
  *     tags: [Admin, Pedidos]
- *     summary: Atualiza o status de pagamento de um pedido
+ *     summary: Atualiza o status de pagamento de um pedido (dispara comunicação automática quando marcado como pago)
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -349,6 +352,18 @@ router.put("/:id/pagamento", verifyAdmin, async (req, res) => {
       return res.status(404).json({ message: "Pedido não encontrado" });
     }
 
+    // 🔔 Se o pagamento foi marcado como "pago", dispara comunicação automática
+    if (status_pagamento === "pago") {
+      try {
+        await dispararEventoComunicacao("pagamento_aprovado", Number(id));
+      } catch (errCom) {
+        console.error(
+          "[adminPedidos] Erro ao disparar comunicação de pagamento aprovado:",
+          errCom
+        );
+      }
+    }
+
     res.json({ message: "Status de pagamento atualizado com sucesso" });
   } catch (err) {
     handleErroInterno(res, err, "atualizar status de pagamento");
@@ -360,7 +375,7 @@ router.put("/:id/pagamento", verifyAdmin, async (req, res) => {
  * /api/admin/pedidos/{id}/entrega:
  *   put:
  *     tags: [Admin, Pedidos]
- *     summary: Atualiza o status de entrega de um pedido
+ *     summary: Atualiza o status de entrega de um pedido (dispara comunicação automática quando marcado como enviado)
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -416,6 +431,18 @@ router.put("/:id/entrega", verifyAdmin, async (req, res) => {
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Pedido não encontrado" });
+    }
+
+    // 🔔 Se o status de entrega foi marcado como "enviado", dispara comunicação automática
+    if (status_entrega === "enviado") {
+      try {
+        await dispararEventoComunicacao("pedido_enviado", Number(id));
+      } catch (errCom) {
+        console.error(
+          "[adminPedidos] Erro ao disparar comunicação de pedido enviado:",
+          errCom
+        );
+      }
     }
 
     res.json({ message: "Status de entrega atualizado com sucesso" });

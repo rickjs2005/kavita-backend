@@ -1,4 +1,5 @@
 const pool = require("../config/pool");
+const { dispararEventoComunicacao } = require("../services/comunicacaoService");
 
 /**
  * Controller de Checkout
@@ -258,6 +259,19 @@ async function create(req, res) {
 
     await connection.commit();
 
+    // ------------------------------------------------------
+    // 8.1) Dispara comunicação automática de "pedido criado"
+    //     (não quebra o fluxo se der erro)
+    // ------------------------------------------------------
+    try {
+      await dispararEventoComunicacao("pedido_criado", pedidoId);
+    } catch (errCom) {
+      console.error(
+        "[checkout] Erro ao disparar comunicação de pedido criado:",
+        errCom
+      );
+    }
+
     /* ------------------------------------------------------------------ */
     /* 9) Fora da transação: fecha qualquer carrinho aberto desse usuário */
     /*    (comportamento antigo preservado)                               */
@@ -265,7 +279,7 @@ async function create(req, res) {
 
     try {
       await pool.query(
-       'UPDATE carrinhos SET status = "convertido" WHERE usuario_id = ? AND status = "aberto"',
+        'UPDATE carrinhos SET status = "convertido" WHERE usuario_id = ? AND status = "aberto"',
         [usuario_id]
       );
     } catch (err) {

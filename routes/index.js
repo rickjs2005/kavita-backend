@@ -48,5 +48,6 @@ loadRoute('/admin/servicos',       './adminServicos');
 loadRoute('/admin/users',          './adminUsers');
 loadRoute('/admin/stats',         './adminStats');
 loadRoute('/admin/carrinhos',         './adminCarts');
+loadRoute('/admin/comunicacao', './adminComunicacao');
 
 module.exports = router;
