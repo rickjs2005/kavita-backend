@@ -11,8 +11,8 @@ const verifyAdmin = require("../middleware/verifyAdmin");
  */
 
 const handleErro = (res, err, contexto) => {
-    console.error(`Erro ao ${contexto}:`, err);
-    res.status(500).json({ message: `Erro ao ${contexto}` });
+  console.error(`Erro ao ${contexto}:`, err);
+  res.status(500).json({ message: `Erro ao ${contexto}` });
 };
 
 /**
@@ -29,8 +29,8 @@ const handleErro = (res, err, contexto) => {
  *         description: Lista de vendas por dia
  */
 router.get("/vendas", verifyAdmin, async (_req, res) => {
-    try {
-        const [rows] = await pool.query(`
+  try {
+    const [rows] = await pool.query(`
       SELECT 
         DATE(p.data_pedido) AS dia,
         SUM(p.total) AS total
@@ -40,14 +40,14 @@ router.get("/vendas", verifyAdmin, async (_req, res) => {
       ORDER BY dia ASC
     `);
 
-        res.json({
-            labels: rows.map((r) => r.dia),
-            values: rows.map((r) => Number(r.total)),
-            rows
-        });
-    } catch (err) {
-        handleErro(res, err, "buscar relatório de vendas");
-    }
+    res.json({
+      labels: rows.map((r) => r.dia),
+      values: rows.map((r) => Number(r.total)),
+      rows,
+    });
+  } catch (err) {
+    handleErro(res, err, "buscar relatório de vendas");
+  }
 });
 
 /**
@@ -60,8 +60,8 @@ router.get("/vendas", verifyAdmin, async (_req, res) => {
  *       - BearerAuth: []
  */
 router.get("/produtos-mais-vendidos", verifyAdmin, async (_req, res) => {
-    try {
-        const [rows] = await pool.query(`
+  try {
+    const [rows] = await pool.query(`
       SELECT 
         pr.id,
         pr.name,
@@ -74,14 +74,14 @@ router.get("/produtos-mais-vendidos", verifyAdmin, async (_req, res) => {
       LIMIT 20
     `);
 
-        res.json({
-            labels: rows.map((r) => r.name),
-            values: rows.map((r) => Number(r.vendidos)),
-            rows
-        });
-    } catch (err) {
-        handleErro(res, err, "buscar produtos mais vendidos");
-    }
+    res.json({
+      labels: rows.map((r) => r.name),
+      values: rows.map((r) => Number(r.vendidos)),
+      rows,
+    });
+  } catch (err) {
+    handleErro(res, err, "buscar produtos mais vendidos");
+  }
 });
 
 /**
@@ -94,8 +94,8 @@ router.get("/produtos-mais-vendidos", verifyAdmin, async (_req, res) => {
  *       - BearerAuth: []
  */
 router.get("/clientes-top", verifyAdmin, async (_req, res) => {
-    try {
-        const [rows] = await pool.query(`
+  try {
+    const [rows] = await pool.query(`
       SELECT
         u.id,
         u.nome,
@@ -110,14 +110,45 @@ router.get("/clientes-top", verifyAdmin, async (_req, res) => {
       LIMIT 20
     `);
 
-        res.json({
-            labels: rows.map((r) => r.nome),
-            values: rows.map((r) => Number(r.total_gasto)),
-            rows
-        });
-    } catch (err) {
-        handleErro(res, err, "buscar top clientes");
-    }
+    res.json({
+      labels: rows.map((r) => r.nome),
+      values: rows.map((r) => Number(r.total_gasto)),
+      rows,
+    });
+  } catch (err) {
+    handleErro(res, err, "buscar top clientes");
+  }
+});
+
+/**
+ * @openapi
+ * /api/admin/relatorios/estoque:
+ *   get:
+ *     tags: [Relatórios]
+ *     summary: Lista todos os produtos com seus estoques
+ *     description: Relatório geral de estoque (todos os produtos).
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de produtos com estoque
+ */
+router.get("/estoque", verifyAdmin, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        id,
+        name,
+        quantity,
+        price
+      FROM products
+      ORDER BY quantity ASC
+    `);
+
+    res.json(rows);
+  } catch (err) {
+    handleErro(res, err, "buscar estoque geral");
+  }
 });
 
 /**
@@ -126,12 +157,13 @@ router.get("/clientes-top", verifyAdmin, async (_req, res) => {
  *   get:
  *     tags: [Relatórios]
  *     summary: Lista produtos com estoque baixo
+ *     description: Apenas produtos com quantidade menor ou igual a 5.
  *     security:
  *       - BearerAuth: []
  */
 router.get("/estoque-baixo", verifyAdmin, async (_req, res) => {
-    try {
-        const [rows] = await pool.query(`
+  try {
+    const [rows] = await pool.query(`
       SELECT 
         id,
         name,
@@ -142,11 +174,12 @@ router.get("/estoque-baixo", verifyAdmin, async (_req, res) => {
       ORDER BY quantity ASC
     `);
 
-        res.json(rows);
-    } catch (err) {
-        handleErro(res, err, "buscar estoque baixo");
-    }
+    res.json(rows);
+  } catch (err) {
+    handleErro(res, err, "buscar estoque baixo");
+  }
 });
+
 /**
  * @openapi
  * /api/admin/relatorios/servicos:
@@ -163,9 +196,8 @@ router.get("/estoque-baixo", verifyAdmin, async (_req, res) => {
  *         description: Erro ao buscar relatório de serviços
  */
 router.get("/servicos", verifyAdmin, async (_req, res) => {
-    try {
-        // Por especialidade
-        const [porEspecialidade] = await pool.query(`
+  try {
+    const [porEspecialidade] = await pool.query(`
       SELECT 
         e.id AS especialidade_id,
         e.nome AS especialidade_nome,
@@ -176,23 +208,22 @@ router.get("/servicos", verifyAdmin, async (_req, res) => {
       ORDER BY total_servicos DESC, especialidade_nome ASC
     `);
 
-        // Total geral de serviços / colaboradores
-        const [[totais]] = await pool.query(`
+    const [[totais]] = await pool.query(`
       SELECT 
         COUNT(*) AS total_servicos
       FROM colaboradores
     `);
 
-        res.json({
-            totalServicos: Number(totais.total_servicos || 0),
-            labels: porEspecialidade.map((r) => r.especialidade_nome || "Sem categoria"),
-            values: porEspecialidade.map((r) => Number(r.total_servicos)),
-            porEspecialidade
-        });
-    } catch (err) {
-        console.error("Erro ao buscar relatório de serviços:", err);
-        res.status(500).json({ message: "Erro ao buscar relatório de serviços." });
-    }
+    res.json({
+      totalServicos: Number(totais.total_servicos || 0),
+      labels: porEspecialidade.map((r) => r.especialidade_nome || "Sem categoria"),
+      values: porEspecialidade.map((r) => Number(r.total_servicos)),
+      porEspecialidade,
+    });
+  } catch (err) {
+    console.error("Erro ao buscar relatório de serviços:", err);
+    res.status(500).json({ message: "Erro ao buscar relatório de serviços." });
+  }
 });
 
 module.exports = router;
