@@ -14,10 +14,9 @@ const IS_DEV = process.env.NODE_ENV !== "production";
 
 /* ---------- Upload Helpers ---------- */
 const upload = mediaService.upload;
-
-const rawFileTargets = (files = []) =>
-  (files || [])
-    .filter((file) => file && file.filename)
+const mapUploadedFiles = (files = []) =>
+  files
+    .filter((file) => !!file?.filename)
     .map((file) => ({ path: mediaService.toPublicPath(file.filename) }));
 
 /* ---------- Função auxiliar para anexar imagens ---------- */
@@ -49,24 +48,44 @@ async function attachImages(rows) {
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: Lista de serviços retornada
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items: { $ref: '#/components/schemas/Service' }
+ *         description: Lista de serviços
  *       401:
  *         description: Não autorizado
  *       500:
  *         description: Erro interno
  */
+router.get("/", verifyAdmin, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        c.id,
+        c.nome,
+        c.cargo,
+        c.whatsapp,
+        c.imagem,
+        c.descricao,
+        c.especialidade_id,
+        c.verificado,
+        e.nome AS especialidade_nome
+      FROM ${COLAB_TABLE} c
+      LEFT JOIN especialidades e ON c.especialidade_id = e.id
+      ORDER BY c.id DESC
+    `);
+    const withImages = await attachImages(rows);
+    res.json(withImages);
+  } catch (err) {
+    console.error("Erro ao buscar serviços:", err);
+    res.status(500).json({ message: "Erro ao buscar serviços." });
+  }
+});
 
-/**
+/** 🔹 POST /api/admin/servicos — Cria novo colaborador + imagens
+ *
  * @openapi
  * /api/admin/servicos:
  *   post:
  *     tags: [Admin, Serviços]
- *     summary: Cadastra um novo serviço/colaborador
+ *     summary: Cria um novo serviço/colaborador
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -85,103 +104,14 @@ async function attachImages(rows) {
  *               images: { type: array, items: { type: string, format: binary } }
  *     responses:
  *       201:
- *         description: Serviço cadastrado
+ *         description: Serviço criado
  *       400:
- *         description: Campos obrigatórios ausentes
+ *         description: Erro de validação
  *       401:
  *         description: Não autorizado
  *       500:
  *         description: Erro interno
  */
-
-/**
- * @openapi
- * /api/admin/servicos/{id}:
- *   put:
- *     tags: [Admin, Serviços]
- *     summary: Atualiza serviço existente (imagens inclusas)
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               nome: { type: string }
- *               cargo: { type: string }
- *               whatsapp: { type: string }
- *               descricao: { type: string }
- *               especialidade_id: { type: integer }
- *               keepImages: { type: string }
- *               images: { type: array, items: { type: string, format: binary } }
- *     responses:
- *       200:
- *         description: Serviço atualizado
- *       404:
- *         description: Serviço não encontrado
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
- */
-
-/**
- * @openapi
- * /api/admin/servicos/{id}:
- *   delete:
- *     tags: [Admin, Serviços]
- *     summary: Remove serviço e apaga imagens relacionadas
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Serviço removido
- *       404:
- *         description: Serviço não encontrado
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
- */
-
-/** 🔹 GET /api/admin/servicos — Lista todos os colaboradores + imagens + especialidade */
-router.get("/", verifyAdmin, async (_req, res) => {
-  try {
-    const [rows] = await pool.query(`
-      SELECT 
-        c.id,
-        c.nome,
-        c.cargo,
-        c.whatsapp,
-        c.imagem,
-        c.descricao,
-        c.especialidade_id,
-        e.nome AS especialidade_nome
-      FROM ${COLAB_TABLE} c
-      LEFT JOIN especialidades e ON c.especialidade_id = e.id
-      ORDER BY c.id DESC
-    `);
-    const withImages = await attachImages(rows);
-    res.json(withImages);
-  } catch (err) {
-    console.error("Erro ao buscar serviços:", err);
-    res.status(500).json({ message: "Erro ao buscar serviços." });
-  }
-});
-
-/** 🔹 POST /api/admin/servicos — Cria colaborador/serviço com múltiplas imagens */
 router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
   const { nome, cargo, whatsapp, descricao, especialidade_id } = req.body;
   const files = req.files || [];
@@ -197,9 +127,10 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
   try {
     await conn.beginTransaction();
 
+    // 🔹 TUDO que for criado via admin já nasce verificado = 1
     const [insert] = await conn.query(
-      `INSERT INTO ${COLAB_TABLE} (nome, cargo, whatsapp, imagem, descricao, especialidade_id)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${COLAB_TABLE} (nome, cargo, whatsapp, imagem, descricao, especialidade_id, verificado)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
       [nome.trim(), cargo || null, whatsapp.trim(), null, descricao || null, especialidade_id]
     );
     const colaboradorId = insert.insertId;
@@ -223,12 +154,14 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     res.status(201).json({ message: "Serviço cadastrado com sucesso.", id: colaboradorId });
   } catch (err) {
     await conn.rollback();
-    const cleanupTargets = [
-      ...uploadedMedia,
-      ...rawFileTargets(files),
-    ];
-    await mediaService.enqueueOrphanCleanup(cleanupTargets);
     console.error("Erro ao cadastrar serviço:", err);
+    if (uploadedMedia.length) {
+      try {
+        await mediaService.cleanupMedia(uploadedMedia);
+      } catch (cleanupErr) {
+        console.error("Erro ao limpar mídia após falha:", cleanupErr);
+      }
+    }
     res.status(500).json({ message: "Erro ao cadastrar serviço." });
   } finally {
     conn.release();
@@ -243,84 +176,119 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
 
   let keep = [];
   try {
-    keep = JSON.parse(keepImages || "[]");
+    keep = JSON.parse(keepImages);
+    if (!Array.isArray(keep)) throw new Error();
   } catch {
-    keep = [];
+    return res.status(400).json({ message: "keepImages precisa ser um array JSON." });
   }
 
   const conn = await pool.getConnection();
-  let uploadedMedia = [];
-  let removedDuringUpdate = [];
+  let newlyUploaded = [];
+
   try {
     await conn.beginTransaction();
 
-    const [exists] = await conn.query(`SELECT id FROM ${COLAB_TABLE} WHERE id = ?`, [id]);
-    if (!exists.length) {
-      await conn.rollback();
-      await mediaService.enqueueOrphanCleanup(rawFileTargets(newFiles));
-      return res.status(404).json({ message: "Serviço não encontrado." });
-    }
-
     await conn.query(
-      `UPDATE ${COLAB_TABLE}
-         SET nome=?, cargo=?, whatsapp=?, descricao=?, especialidade_id=?
-       WHERE id=?`,
-      [nome.trim(), cargo || null, whatsapp.trim(), descricao || null, especialidade_id, id]
+      `
+      UPDATE ${COLAB_TABLE}
+      SET nome = ?, cargo = ?, whatsapp = ?, descricao = ?, especialidade_id = ?
+      WHERE id = ?
+      `,
+      [nome, cargo || null, whatsapp, descricao || null, especialidade_id, id]
     );
 
-    // imagens atuais
-    const [curImgs] = await conn.query(
-      `SELECT path FROM ${IMAGES_TABLE} WHERE colaborador_id = ?`,
+    const [existingImagesRows] = await conn.query(
+      `SELECT id, path FROM ${IMAGES_TABLE} WHERE colaborador_id = ?`,
       [id]
     );
-    const currentPaths = curImgs.map((r) => r.path);
-    const toRemove = currentPaths.filter((p) => !keep.includes(p));
+    const existingImages = existingImagesRows || [];
 
-    if (toRemove.length) {
+    const toKeep = existingImages.filter((img) => keep.includes(img.path));
+    const toRemove = existingImages.filter((img) => !keep.includes(img.path));
+
+    const removeIds = toRemove.map((img) => img.id);
+    const imagesToDeletePaths = toRemove.map((img) => img.path);
+
+    if (removeIds.length) {
       await conn.query(
-        `DELETE FROM ${IMAGES_TABLE} WHERE colaborador_id = ? AND path IN (?)`,
-        [id, toRemove]
+        `DELETE FROM ${IMAGES_TABLE} WHERE id IN (?) AND colaborador_id = ?`,
+        [removeIds, id]
       );
-      removedDuringUpdate = toRemove;
     }
 
     if (newFiles.length) {
-      uploadedMedia = await mediaService.persistMedia(newFiles, { folder: "services" });
-      if (uploadedMedia.length) {
-        const values = uploadedMedia.map((media) => [id, media.path]);
+      newlyUploaded = await mediaService.persistMedia(newFiles, { folder: "services" });
+
+      if (newlyUploaded.length) {
+        const values = newlyUploaded.map((media) => [id, media.path]);
         await conn.query(
           `INSERT INTO ${IMAGES_TABLE} (colaborador_id, path) VALUES ?`,
           [values]
         );
-        keep = [...keep, ...uploadedMedia.map((item) => item.path)];
       }
     }
 
-    const firstImage = keep[0] || null;
-    await conn.query(`UPDATE ${COLAB_TABLE} SET imagem = ? WHERE id = ?`, [firstImage, id]);
+    const finalImages = [...toKeep.map((img) => img.path), ...newlyUploaded.map((m) => m.path)];
+    const mainImage = finalImages.length ? finalImages[0] : null;
+
+    await conn.query(
+      `UPDATE ${COLAB_TABLE} SET imagem = ? WHERE id = ?`,
+      [mainImage, id]
+    );
 
     await conn.commit();
-    if (removedDuringUpdate.length) {
-      mediaService.removeMedia(removedDuringUpdate).catch((error) => {
-        console.error("Falha ao remover mídias antigas de serviço:", error);
-      });
+
+    if (imagesToDeletePaths.length) {
+      try {
+        await mediaService.cleanupMedia(imagesToDeletePaths.map((p) => ({ path: p })));
+      } catch (cleanupErr) {
+        console.error("Erro ao remover arquivos antigos do disco:", cleanupErr);
+      }
     }
+
     res.json({ message: "Serviço atualizado com sucesso." });
   } catch (err) {
     await conn.rollback();
-    const cleanupTargets = [
-      ...uploadedMedia,
-      ...rawFileTargets(newFiles),
-    ];
-    await mediaService.enqueueOrphanCleanup(cleanupTargets);
     console.error("Erro ao atualizar serviço:", err);
+
+    if (newlyUploaded.length) {
+      try {
+        await mediaService.cleanupMedia(newlyUploaded);
+      } catch (cleanupErr) {
+        console.error("Erro ao limpar mídia após falha no update:", cleanupErr);
+      }
+    }
+
     res.status(500).json({ message: "Erro ao atualizar serviço." });
   } finally {
     conn.release();
   }
 });
 
-/** 🔹 DELETE /api/admin/servicos/:id — Exclui colaborador e apaga imagens */
+/**
+ * @openapi
+ * /api/admin/servicos/{id}:
+ *   delete:
+ *     tags: [Admin, Serviços]
+ *     summary: Remove um serviço/colaborador
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Serviço removido
+ *       404:
+ *         description: Serviço não encontrado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
 router.delete("/:id", verifyAdmin, async (req, res) => {
   const { id } = req.params;
   const conn = await pool.getConnection();
@@ -328,11 +296,12 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    const [imgs] = await conn.query(
+    const [images] = await conn.query(
       `SELECT path FROM ${IMAGES_TABLE} WHERE colaborador_id = ?`,
       [id]
     );
 
+    await conn.query(`DELETE FROM ${IMAGES_TABLE} WHERE colaborador_id = ?`, [id]);
     const [result] = await conn.query(`DELETE FROM ${COLAB_TABLE} WHERE id = ?`, [id]);
 
     if (result.affectedRows === 0) {
@@ -342,10 +311,12 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
 
     await conn.commit();
 
-    if (imgs.length) {
-      mediaService.removeMedia(imgs.map((r) => r.path)).catch((error) => {
-        console.error("Falha ao remover mídias de serviço excluído:", error);
-      });
+    if (images.length) {
+      try {
+        await mediaService.cleanupMedia(images.map((img) => ({ path: img.path })));
+      } catch (cleanupErr) {
+        console.error("Erro ao apagar arquivos de mídia:", cleanupErr);
+      }
     }
 
     res.json({ message: "Serviço removido com sucesso." });
@@ -355,6 +326,71 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
     res.status(500).json({ message: "Erro ao remover serviço." });
   } finally {
     conn.release();
+  }
+});
+
+/**
+ * @openapi
+ * /api/admin/servicos/{id}/verificado:
+ *   patch:
+ *     tags: [Admin, Serviços]
+ *     summary: Atualiza status de verificação do serviço/colaborador
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               verificado:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Status de verificação atualizado
+ *       400:
+ *         description: Requisição inválida
+ *       404:
+ *         description: Serviço não encontrado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+router.patch("/:id/verificado", verifyAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { verificado } = req.body || {};
+
+  if (typeof verificado !== "boolean") {
+    return res.status(400).json({ message: "Campo 'verificado' precisa ser boolean." });
+  }
+
+  try {
+    const [result] = await pool.query(
+      `UPDATE ${COLAB_TABLE} SET verificado = ? WHERE id = ?`,
+      [verificado ? 1 : 0, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Serviço não encontrado." });
+    }
+
+    return res.json({
+      message: `Serviço ${verificado ? "verificado" : "marcado como não verificado"} com sucesso.`,
+      verificado,
+    });
+  } catch (err) {
+    console.error("Erro ao atualizar verificado do serviço:", err);
+    return res
+      .status(500)
+      .json({ message: "Erro ao atualizar status de verificação do serviço." });
   }
 });
 

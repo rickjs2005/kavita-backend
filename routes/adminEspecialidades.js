@@ -40,5 +40,48 @@ router.get("/", verifyAdmin, async (req, res) => {
     res.status(500).json({ message: "Erro ao buscar especialidades." });
   }
 });
+/**
+ * @openapi
+ * /api/admin/especialidades/public:
+ *   get:
+ *     tags: [Public, Especialidades]
+ *     summary: Lista especialidades de colaboradores para o site público
+ *     responses:
+ *       200:
+ *         description: Lista de especialidades retornada
+ */
+
+// ✅ GET /api/admin/especialidades/public — uso na página Trabalhe Conosco
+router.get("/public", async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT id, nome FROM especialidades");
+    res.json(rows);
+  } catch (err) {
+    console.error("Erro ao buscar especialidades (público):", err);
+    res.status(500).json({ message: "Erro ao buscar especialidades." });
+  }
+});
+
+// rota protegida (admin)
+router.get("/", verifyAdmin, async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT id, nome FROM especialidades");
+    res.json(rows);
+  } catch (err) {
+    console.error("Erro ao buscar especialidades:", err);
+    res.status(500).json({ message: "Erro ao buscar especialidades." });
+  }
+});
+
+// rota pública (sem verifyAdmin)
+router.get("/public", async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT id, nome FROM especialidades");
+    res.json(rows);
+  } catch (err) {
+    console.error("Erro ao buscar especialidades (público):", err);
+    res.status(500).json({ message: "Erro ao buscar especialidades." });
+  }
+});
 
 module.exports = router;

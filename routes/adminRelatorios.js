@@ -225,5 +225,43 @@ router.get("/servicos", verifyAdmin, async (_req, res) => {
     res.status(500).json({ message: "Erro ao buscar relatório de serviços." });
   }
 });
+/**
+ * @openapi
+ * /api/admin/relatorios/servicos-ranking:
+ *   get:
+ *     tags: [Relatórios]
+ *     summary: Ranking de colaboradores (serviços)
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get("/servicos-ranking", verifyAdmin, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        c.id,
+        c.nome,
+        c.cargo,
+        c.rating_avg,
+        c.rating_count,
+        c.total_servicos,
+        c.views_count,
+        c.whatsapp_clicks,
+        e.nome AS especialidade_nome
+      FROM colaboradores c
+      LEFT JOIN especialidades e ON e.id = c.especialidade_id
+      ORDER BY c.rating_avg DESC, c.total_servicos DESC, c.views_count DESC
+      LIMIT 50
+    `);
+
+    res.json({
+      labels: rows.map((r) => r.nome),
+      values: rows.map((r) => Number(r.total_servicos || 0)),
+      rows,
+    });
+  } catch (err) {
+    console.error("Erro ao buscar ranking de serviços:", err);
+    res.status(500).json({ message: "Erro ao buscar ranking de serviços." });
+  }
+});
 
 module.exports = router;

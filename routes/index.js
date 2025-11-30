@@ -18,6 +18,7 @@ loadRoute('/products', './productById');
 //  Catálogo Público
 loadRoute('/public/categorias', './publicCategorias');
 loadRoute('/public/servicos', './publicServicos');
+loadRoute('/public/servicos', './publicAvaliacaoColaborador');
 loadRoute('/public/destaques', './publicDestaques');
 loadRoute('/public/produtos', './publicProdutos');
 
@@ -47,6 +48,7 @@ loadRoute('/admin/especialidades','./adminEspecialidades');
 loadRoute('/admin/pedidos',       './adminPedidos');
 loadRoute('/admin/produtos',      './adminProdutos');
 loadRoute('/admin/servicos',      './adminServicos');
+loadRoute('/admin/servicos',      './adminSolicitacoesServicos');
 loadRoute('/admin/users',         './adminUsers');
 loadRoute('/admin/stats',         './adminStats');
 loadRoute('/admin/carrinhos',     './adminCarts');
