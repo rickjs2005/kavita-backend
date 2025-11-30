@@ -1,282 +1,179 @@
 const express = require("express");
 const router = express.Router();
+const path = require("path");
+const multer = require("multer");
 
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
 
-/**
- * @openapi
- * tags:
- *   - name: Admin - Colaboradores
- *     description: Gestão de colaboradores (prestadores de serviço) pela área administrativa
- *   - name: Public - Colaboradores
- *     description: Cadastro público de prestadores de serviço via site Kavita
- */
+/* ========================
+   UPLOAD CONFIG - MULTER
+======================== */
 
-/**
- * @openapi
- * /api/admin/colaboradores:
- *   post:
- *     tags: [Admin - Colaboradores]
- *     summary: Cadastra um novo colaborador (admin)
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - nome
- *               - whatsapp
- *               - especialidade_id
- *             properties:
- *               nome:
- *                 type: string
- *               cargo:
- *                 type: string
- *               whatsapp:
- *                 type: string
- *               imagem:
- *                 type: string
- *                 nullable: true
- *               descricao:
- *                 type: string
- *                 nullable: true
- *               especialidade_id:
- *                 type: integer
- *     responses:
- *       201:
- *         description: Colaborador cadastrado com sucesso
- *       400:
- *         description: Campos obrigatórios ausentes ou inválidos
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno no servidor
- */
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/colaboradores");
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const base = path.basename(file.originalname, ext);
+    cb(null, `${base}-${Date.now()}${ext}`);
+  },
+});
 
-// ✅ POST /api/admin/colaboradores — cadastra colaborador via painel admin
-router.post("/", verifyAdmin, async (req, res) => {
-  const { nome, cargo, whatsapp, imagem, descricao, especialidade_id } = req.body;
+const upload = multer({ storage });
 
-  if (!nome || !whatsapp || !especialidade_id) {
-    return res.status(400).json({
-      message: "Campos obrigatórios: nome, WhatsApp e especialidade.",
-    });
-  }
+/* ========================
+   FUNÇÃO MOCK DE E-MAIL
+======================== */
 
+async function sendColaboradorAprovadoEmail(email, nome) {
+  if (!email) return;
+  console.log(
+    `[EMAIL] Enviar para ${email}: Olá ${nome}, seu cadastro na Kavita foi aprovado!`
+  );
+}
+
+/* ========================
+   POST /public  (Trabalhe conosco)
+   - recebe multipart/form-data
+   - salva em colaboradores + colaborador_images
+======================== */
+
+router.post("/public", upload.single("imagem"), async (req, res) => {
   try {
-    const especialidadeId = parseInt(especialidade_id, 10);
+    const {
+      nome,
+      cargo,
+      whatsapp,
+      email,
+      descricao,
+      especialidade_id,
+    } = req.body;
 
-    if (Number.isNaN(especialidadeId)) {
-      return res.status(400).json({ message: "ID da especialidade inválido." });
+    if (!nome || !whatsapp || !especialidade_id || !email) {
+      return res.status(400).json({
+        message:
+          "Campos obrigatórios: nome, WhatsApp, e-mail e especialidade.",
+      });
     }
 
-    await pool.query(
+    const especialidadeId = Number(especialidade_id);
+
+    const [result] = await pool.query(
       `
-        INSERT INTO colaboradores (
-          nome,
-          cargo,
-          whatsapp,
-          imagem,
-          descricao,
-          especialidade_id,
-          verificado
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `,
+      INSERT INTO colaboradores
+      (nome, cargo, whatsapp, email, descricao, especialidade_id, verificado)
+      VALUES (?, ?, ?, ?, ?, ?, 0)
+    `,
       [
         nome,
         cargo || null,
         whatsapp,
-        imagem || null,
+        email,
         descricao || null,
         especialidadeId,
-        1, // ✅ cadastrado pelo admin → já entra verificado
       ]
     );
 
-    return res.status(201).json({ message: "Colaborador cadastrado com sucesso!" });
+    const colaboradorId = result.insertId;
+
+    if (req.file) {
+      const imagePath = `/uploads/colaboradores/${req.file.filename}`;
+
+      await pool.query(
+        "INSERT INTO colaborador_images (colaborador_id, path) VALUES (?, ?)",
+        [colaboradorId, imagePath]
+      );
+    }
+
+    return res.status(201).json({
+      message:
+        "Cadastro enviado! Você será avisado por e-mail quando seu perfil for aprovado.",
+    });
+  } catch (err) {
+    console.error("Erro ao cadastrar colaborador (public):", err);
+    return res
+      .status(500)
+      .json({ message: "Erro interno ao salvar o cadastro." });
+  }
+});
+
+/* ========================
+   POST /  (cadastra via admin)
+======================== */
+
+router.post("/", verifyAdmin, upload.single("imagem"), async (req, res) => {
+  try {
+    const {
+      nome,
+      cargo,
+      whatsapp,
+      email,
+      descricao,
+      especialidade_id,
+    } = req.body;
+
+    if (!nome || !whatsapp || !especialidade_id || !email) {
+      return res.status(400).json({
+        message:
+          "Campos obrigatórios: nome, WhatsApp, e-mail e especialidade.",
+      });
+    }
+
+    const especialidadeId = Number(especialidade_id);
+
+    const [result] = await pool.query(
+      `
+      INSERT INTO colaboradores
+      (nome, cargo, whatsapp, email, descricao, especialidade_id, verificado)
+      VALUES (?, ?, ?, ?, ?, ?, 1)
+    `,
+      [
+        nome,
+        cargo || null,
+        whatsapp,
+        email,
+        descricao || null,
+        especialidadeId,
+      ]
+    );
+
+    const colaboradorId = result.insertId;
+
+    if (req.file) {
+      const imagePath = `/uploads/colaboradores/${req.file.filename}`;
+
+      await pool.query(
+        "INSERT INTO colaborador_images (colaborador_id, path) VALUES (?, ?)",
+        [colaboradorId, imagePath]
+      );
+    }
+
+    return res
+      .status(201)
+      .json({ message: "Colaborador cadastrado com sucesso!" });
   } catch (err) {
     console.error("Erro ao salvar colaborador (admin):", err);
     return res.status(500).json({ message: "Erro ao salvar colaborador." });
   }
 });
 
-/**
- * @openapi
- * /api/admin/colaboradores/public:
- *   post:
- *     tags: [Public - Colaboradores]
- *     summary: Recebe cadastro público de prestador de serviço (Trabalhe Conosco)
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - nome
- *               - whatsapp
- *               - especialidade_id
- *             properties:
- *               nome:
- *                 type: string
- *               cargo:
- *                 type: string
- *               whatsapp:
- *                 type: string
- *               imagem:
- *                 type: string
- *                 nullable: true
- *               descricao:
- *                 type: string
- *                 nullable: true
- *               especialidade_id:
- *                 type: integer
- *     responses:
- *       201:
- *         description: Cadastro recebido para análise
- *       400:
- *         description: Campos obrigatórios ausentes ou inválidos
- *       500:
- *         description: Erro interno no servidor
- */
+/* ========================
+   GET /pending
+======================== */
 
-// ✅ POST /api/admin/colaboradores/public — cadastro vindo do site (sem auth)
-router.post("/public", async (req, res) => {
-  const { nome, cargo, whatsapp, imagem, descricao, especialidade_id } = req.body;
-
-  if (!nome || !whatsapp || !especialidade_id) {
-    return res.status(400).json({
-      message: "Campos obrigatórios: nome, WhatsApp e especialidade.",
-    });
-  }
-
-  try {
-    const especialidadeId = parseInt(especialidade_id, 10);
-
-    if (Number.isNaN(especialidadeId)) {
-      return res.status(400).json({ message: "ID da especialidade inválido." });
-    }
-
-    await pool.query(
-      `
-        INSERT INTO colaboradores (
-          nome,
-          cargo,
-          whatsapp,
-          imagem,
-          descricao,
-          especialidade_id,
-          verificado
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        nome,
-        cargo || null,
-        whatsapp,
-        imagem || null,
-        descricao || null,
-        especialidadeId,
-        0, // ✅ cadastro público → entra como pendente
-      ]
-    );
-
-    return res.status(201).json({
-      message:
-        "Cadastro recebido! A equipe da Kavita vai analisar seus dados e liberar seu perfil.",
-    });
-  } catch (err) {
-    console.error("Erro ao salvar colaborador (public):", err);
-    return res.status(500).json({ message: "Erro ao salvar cadastro." });
-  }
-});
-
-/**
- * @openapi
- * /api/admin/colaboradores/{id}:
- *   delete:
- *     tags: [Admin - Colaboradores]
- *     summary: Exclui colaborador pelo ID
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Colaborador removido com sucesso
- *       404:
- *         description: Colaborador não encontrado
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro ao deletar colaborador
- */
-
-// ✅ DELETE /api/admin/colaboradores/:id — remove colaborador
-router.delete("/:id", verifyAdmin, async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const [result] = await pool.query(
-      "DELETE FROM colaboradores WHERE id = ?",
-      [id]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "Colaborador não encontrado." });
-    }
-
-    return res.status(200).json({ message: "Colaborador removido com sucesso." });
-  } catch (err) {
-    console.error("Erro ao deletar colaborador:", err);
-    return res.status(500).json({ message: "Erro ao deletar colaborador." });
-  }
-});
-
-/**
- * @openapi
- * /api/admin/colaboradores/pending:
- *   get:
- *     tags: [Admin - Colaboradores]
- *     summary: Lista colaboradores ainda não verificados
- *     security:
- *       - BearerAuth: []
- *     responses:
- *       200:
- *         description: Lista de colaboradores pendentes
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro ao listar colaboradores pendentes
- */
-
-// ✅ GET /api/admin/colaboradores/pending — lista não verificados
 router.get("/pending", verifyAdmin, async (_req, res) => {
   try {
     const [rows] = await pool.query(
       `
-        SELECT
-          id,
-          nome,
-          cargo,
-          whatsapp,
-          descricao,
-          especialidade_id,
-          verificado,
-          created_at
-        FROM colaboradores
-        WHERE verificado = 0
-        ORDER BY created_at DESC
-      `
+      SELECT c.*, i.path AS imagem
+      FROM colaboradores c
+      LEFT JOIN colaborador_images i
+        ON i.colaborador_id = c.id
+      WHERE c.verificado = 0
+      ORDER BY c.created_at DESC
+    `
     );
 
     return res.json(rows);
@@ -288,49 +185,62 @@ router.get("/pending", verifyAdmin, async (_req, res) => {
   }
 });
 
-/**
- * @openapi
- * /api/admin/colaboradores/{id}/verify:
- *   put:
- *     tags: [Admin - Colaboradores]
- *     summary: Marca colaborador como verificado
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Colaborador verificado com sucesso
- *       404:
- *         description: Colaborador não encontrado
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro ao verificar colaborador
- */
+/* ========================
+   PUT /:id/verify
+======================== */
 
-// ✅ PUT /api/admin/colaboradores/:id/verify — marca como verificado
 router.put("/:id/verify", verifyAdmin, async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [result] = await pool.query(
+    const [rows] = await pool.query(
+      "SELECT email, nome FROM colaboradores WHERE id = ?",
+      [id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ message: "Colaborador não encontrado." });
+    }
+
+    await pool.query(
       "UPDATE colaboradores SET verificado = 1 WHERE id = ?",
       [id]
     );
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "Colaborador não encontrado." });
-    }
+    await sendColaboradorAprovadoEmail(rows[0].email, rows[0].nome);
 
-    return res.json({ message: "Colaborador verificado com sucesso." });
+    return res.json({ message: "Colaborador verificado com sucesso!" });
   } catch (err) {
     console.error("Erro ao verificar colaborador:", err);
     return res.status(500).json({ message: "Erro ao verificar colaborador." });
+  }
+});
+
+/* ========================
+   DELETE /:id
+======================== */
+
+router.delete("/:id", verifyAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await pool.query("DELETE FROM colaborador_images WHERE colaborador_id = ?", [
+      id,
+    ]);
+
+    const [result] = await pool.query(
+      "DELETE FROM colaboradores WHERE id = ?",
+      [id]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ message: "Colaborador não encontrado." });
+    }
+
+    return res.json({ message: "Colaborador removido com sucesso." });
+  } catch (err) {
+    console.error("Erro ao deletar colaborador:", err);
+    return res.status(500).json({ message: "Erro ao deletar colaborador." });
   }
 });
 
