@@ -1,4 +1,3 @@
-// routes/publicServicos.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool");
@@ -75,7 +74,9 @@ const BASE_SELECT = `
     c.imagem    AS imagem_capa,
     c.descricao AS descricao,
     c.especialidade_id,
-    e.nome      AS especialidade_nome
+    e.nome      AS especialidade_nome,
+    c.rating_avg,
+    c.rating_count
   FROM colaboradores c
   LEFT JOIN especialidades e ON e.id = c.especialidade_id
 `;
@@ -94,8 +95,12 @@ function buildWhereClause({ busca, especialidade }) {
     params.push(term, term, term);
   }
 
-  // CORREÇÃO DEFINITIVA – evita NaN no WHERE
-  if (especialidade !== undefined && especialidade !== null && especialidade !== "") {
+  // evita NaN no WHERE
+  if (
+    especialidade !== undefined &&
+    especialidade !== null &&
+    especialidade !== ""
+  ) {
     const espId = Number(especialidade);
     if (Number.isFinite(espId)) {
       where.push("c.especialidade_id = ?");
@@ -124,6 +129,9 @@ function mapRowToService(row) {
     whatsapp: row.whatsapp,
     especialidade_id: row.especialidade_id,
     especialidade_nome: row.especialidade_nome,
+    // ⭐ campos de avaliação para aparecer na página de serviço e cards
+    rating_avg: row.rating_avg != null ? Number(row.rating_avg) : 0,
+    rating_count: row.rating_count != null ? Number(row.rating_count) : 0,
   };
 }
 
@@ -187,7 +195,10 @@ router.get("/", async (req, res) => {
     const rawLimit = parseInt(limit, 10);
 
     const pageNum = Math.max(!Number.isNaN(rawPage) ? rawPage : 1, 1);
-    const limitNum = Math.min(Math.max(!Number.isNaN(rawLimit) ? rawLimit : 12, 1), 100);
+    const limitNum = Math.min(
+      Math.max(!Number.isNaN(rawLimit) ? rawLimit : 12, 1),
+      100
+    );
     const offset = (pageNum - 1) * limitNum;
 
     // ordenação segura
@@ -319,7 +330,7 @@ router.get("/:id", async (req, res) => {
  *                 description: "Origem da solicitação (ex: 'landing', 'kavita-app')"
  *     responses:
  *       201:
- *         description: Solicitação criada com sucesso
+ *         description: Solicitação criado com sucesso
  *       400:
  *         description: Dados inválidos
  *       500:
@@ -360,6 +371,146 @@ router.post("/solicitacoes", async (req, res) => {
     return res.status(500).json({
       message: "Erro interno ao criar solicitação de serviço.",
     });
+  }
+});
+
+/**
+ * @openapi
+ * /api/public/servicos/avaliacoes:
+ *   post:
+ *     tags: [Public, Serviços]
+ *     summary: Cria uma avaliação para um colaborador e atualiza a média
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [colaborador_id, nota]
+ *             properties:
+ *               colaborador_id:
+ *                 type: integer
+ *               nota:
+ *                 type: integer
+ *               comentario:
+ *                 type: string
+ *               autor_nome:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Avaliação criada com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       500:
+ *         description: Erro interno
+ */
+
+/* =====================================================
+   POST /api/public/servicos/avaliacoes
+   Cria uma avaliação e atualiza a média do colaborador
+===================================================== */
+router.post("/avaliacoes", async (req, res) => {
+  const { colaborador_id, nota, comentario, autor_nome } = req.body || {};
+
+  const n = Number(nota);
+  if (!colaborador_id || !n || n < 1 || n > 5) {
+    return res.status(400).json({
+      message: "Campos obrigatórios: colaborador_id e nota (1 a 5).",
+    });
+  }
+
+  const nomeFinal = (autor_nome || "").toString().trim() || "Cliente Kavita";
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // salva a avaliação (inclui nome de quem avaliou)
+    const [result] = await conn.query(
+      `
+        INSERT INTO avaliacoes_servico (colaborador_id, nota, comentario, autor_nome)
+        VALUES (?, ?, ?, ?)
+      `,
+      [colaborador_id, n, comentario || null, nomeFinal]
+    );
+
+    // atualiza média e contador no colaborador
+    await conn.query(
+      `
+        UPDATE colaboradores
+        SET
+          rating_avg = ((rating_avg * rating_count) + ?) / (rating_count + 1),
+          rating_count = rating_count + 1
+        WHERE id = ?
+      `,
+      [n, colaborador_id]
+    );
+
+    await conn.commit();
+
+    return res.status(201).json({
+      id: result.insertId,
+      message: "Avaliação registrada com sucesso.",
+    });
+  } catch (err) {
+    await conn.rollback();
+    console.error("Erro ao criar avaliação de serviço:", err);
+    return res.status(500).json({
+      message: "Erro interno ao criar avaliação de serviço.",
+    });
+  } finally {
+    conn.release();
+  }
+});
+
+/**
+ * @openapi
+ * /api/public/servicos/{id}/avaliacoes:
+ *   get:
+ *     tags: [Public, Serviços]
+ *     summary: Lista avaliações de um colaborador/serviço
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Lista de avaliações
+ *       500:
+ *         description: Erro interno
+ */
+
+/* =====================================================
+   GET /api/public/servicos/:id/avaliacoes
+   Lista avaliações de um colaborador / serviço
+===================================================== */
+router.get("/:id/avaliacoes", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT 
+          id,
+          colaborador_id,
+          nota,
+          comentario,
+          autor_nome,
+          created_at
+        FROM avaliacoes_servico
+        WHERE colaborador_id = ?
+        ORDER BY created_at DESC
+        LIMIT 50
+      `,
+      [id]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Erro ao listar avaliações de serviço:", err);
+    res.status(500).json({ message: "Erro ao listar avaliações." });
   }
 });
 
