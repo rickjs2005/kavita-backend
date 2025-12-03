@@ -1,15 +1,46 @@
+// routes/adminLogin.js
 const express = require("express");
 const router = express.Router();
-const bcrypt = require("bcrypt"); // Utilizado para verificar senhas criptografadas
-const jwt = require("jsonwebtoken"); // Utilizado para gerar o token de autenticação
-const pool = require("../config/pool"); // Pool de conexão com MySQL
-require("dotenv").config(); // Carrega variáveis de ambiente do arquivo .env
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const pool = require("../config/pool");
+const logAdminAction = require("../utils/adminLogger");
+const verifyAdmin = require("../middleware/verifyAdmin"); 
+require("dotenv").config();
 
-const SECRET_KEY = process.env.JWT_SECRET; // Chave secreta para assinar o token JWT
+const SECRET_KEY = process.env.JWT_SECRET;
 
 // Verificação de segurança: impede que o servidor rode sem chave JWT definida
 if (!SECRET_KEY) {
   throw new Error("❌ JWT_SECRET não definido no .env");
+}
+
+/**
+ * Carrega as permissões granulares do admin com base no role (slug).
+ * Mesma lógica conceitual do verifyAdmin, mas local aqui para evitar dependência cruzada.
+ *
+ * @param {number} adminId - ID do administrador
+ * @returns {Promise<string[]>} - Lista de chaves de permissão (ex: ["admin.logs.view", "admin.config.edit"])
+ */
+async function getAdminPermissions(adminId) {
+  if (!adminId) return [];
+
+  const [rows] = await pool.query(
+    `
+      SELECT DISTINCT p.chave
+      FROM admins a
+      JOIN admin_roles r
+        ON r.slug = a.role
+      JOIN admin_role_permissions rp
+        ON rp.role_id = r.id
+      JOIN admin_permissions p
+        ON p.id = rp.permission_id
+      WHERE a.id = ?
+    `,
+    [adminId]
+  );
+
+  return rows.map((r) => r.chave);
 }
 
 /**
@@ -18,6 +49,11 @@ if (!SECRET_KEY) {
  *   post:
  *     tags: [Public, Login]
  *     summary: Realiza login de administrador e gera token JWT
+ *     description: >
+ *       Autentica um administrador pelo e-mail e senha, gera um token JWT com
+ *       **id**, **email**, **role**, **role_id** e **permissions**, e retorna
+ *       também os dados básicos do admin. Esse token é utilizado pelos middlewares
+ *       de autorização no painel admin.
  *     requestBody:
  *       required: true
  *       content:
@@ -26,8 +62,12 @@ if (!SECRET_KEY) {
  *             type: object
  *             required: [email, senha]
  *             properties:
- *               email: { type: string, example: "admin@kavita.com" }
- *               senha: { type: string, example: "123456" }
+ *               email:
+ *                 type: string
+ *                 example: "admin@kavita.com"
+ *               senha:
+ *                 type: string
+ *                 example: "123456"
  *     responses:
  *       200:
  *         description: Login bem-sucedido, retorna token JWT e dados do admin
@@ -36,14 +76,38 @@ if (!SECRET_KEY) {
  *             schema:
  *               type: object
  *               properties:
- *                 message: { type: string }
- *                 token: { type: string }
+ *                 message:
+ *                   type: string
+ *                   example: "Login realizado com sucesso."
+ *                 token:
+ *                   type: string
+ *                   description: Token JWT com id, email, role, role_id e permissions
  *                 admin:
  *                   type: object
  *                   properties:
- *                     id: { type: integer }
- *                     email: { type: string }
- *                     nome: { type: string }
+ *                     id:
+ *                       type: integer
+ *                       example: 1
+ *                     email:
+ *                       type: string
+ *                       example: "admin@kavita.com"
+ *                     nome:
+ *                       type: string
+ *                       example: "Admin Master"
+ *                     role:
+ *                       type: string
+ *                       example: "master"
+ *                     role_id:
+ *                       type: integer
+ *                       nullable: true
+ *                       example: 1
+ *                     permissions:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example:
+ *                         - "admin.logs.view"
+ *                         - "admin.config.edit"
  *       400:
  *         description: Campos obrigatórios ausentes
  *       404:
@@ -54,53 +118,105 @@ if (!SECRET_KEY) {
  *         description: Erro interno no servidor
  */
 
-// 📌 Rota POST /login — realiza login do administrador
+// 📌 POST /api/admin/login — realiza login do administrador
 router.post("/login", async (req, res) => {
-  const { email, senha } = req.body;
-  
-  // OBTÉM RATE LIMITER: Se o middleware global não foi aplicado, usa funções vazias para evitar quebrar o código.
-  const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} }; 
+  const { email, senha } = req.body || {};
 
-  // 1. Verifica se todos os campos foram preenchidos
+  // Rate limiter vindo do middleware global (fallback vazio para não quebrar)
+  const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
+
+  // 1. Validação básica
   if (!email || !senha) {
-    rateLimit.fail(); // <--- CHAMA FALHA
-    return res.status(400).json({ message: "Email e senha são obrigatórios." });
+    rateLimit.fail();
+    return res
+      .status(400)
+      .json({ message: "Email e senha são obrigatórios." });
   }
 
+  const emailNormalizado = String(email).trim().toLowerCase();
+
   try {
-    console.log("🔐 Tentativa de login de admin:", email);
+    console.log("🔐 Tentativa de login de admin:", emailNormalizado);
 
     // 2. Busca o admin no banco de dados pelo email
-    const [rows] = await pool.query("SELECT * FROM admins WHERE email = ?", [email]);
+    //    Já traz o role_id a partir da tabela admin_roles
+    const [rows] = await pool.query(
+      `
+        SELECT
+          a.id,
+          a.nome,
+          a.email,
+          a.senha,
+          a.role,
+          r.id AS role_id
+        FROM admins a
+        LEFT JOIN admin_roles r
+          ON r.slug = a.role
+        WHERE a.email = ?
+      `,
+      [emailNormalizado]
+    );
 
-    if (rows.length === 0) {
-      rateLimit.fail(); // <--- CHAMA FALHA
-      console.warn("⚠️ Admin não encontrado:", email);
+    if (!rows || rows.length === 0) {
+      rateLimit.fail();
+      console.warn("⚠️ Admin não encontrado:", emailNormalizado);
       return res.status(404).json({ message: "Admin não encontrado." });
     }
 
     const admin = rows[0];
 
     // 3. Compara a senha informada com a hash armazenada no banco
-    const senhaCorreta = await bcrypt.compare(senha, admin.senha);
+    const senhaCorreta = await bcrypt.compare(String(senha), admin.senha);
 
     if (!senhaCorreta) {
-      rateLimit.fail(); // <--- CHAMA FALHA (CRÍTICO)
-      console.warn("⚠️ Senha incorreta para:", email);
+      rateLimit.fail();
+      console.warn("⚠️ Senha incorreta para:", emailNormalizado);
       return res.status(401).json({ message: "Senha incorreta." });
     }
 
-    // 4. SUCESSO!
-    rateLimit.reset(); // <--- CHAMA RESET para limpar o histórico de falhas desse IP
+    // 4. Sucesso: reseta contador de falhas
+    rateLimit.reset();
 
-    // Gera o token JWT válido por 2 horas
-    const token = jwt.sign({ id: admin.id, email: admin.email }, SECRET_KEY, {
-      expiresIn: "2h",
-    });
+    // 5. Carrega permissões corporativas para esse admin
+    const permissions = await getAdminPermissions(admin.id);
+
+    // 6. Gera o token JWT com role_id, role e permissions (2h de duração)
+    const tokenPayload = {
+      id: admin.id,
+      email: admin.email,
+      role: admin.role,
+      role_id: admin.role_id || null,
+      permissions, // array de strings (chaves)
+    };
+
+    const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: "2h" });
+
+    // 6.1 Atualiza último login no banco
+    try {
+      await pool.query(
+        "UPDATE admins SET ultimo_login = NOW() WHERE id = ?",
+        [admin.id]
+      );
+    } catch (updateErr) {
+      console.warn(
+        "⚠️ Não foi possível atualizar ultimo_login para admin:",
+        admin.id,
+        updateErr
+      );
+      // não quebra o fluxo de login por causa disso
+    }
 
     console.log("✅ Login bem-sucedido:", admin.email);
 
-    // Retorna token e dados do admin autenticado
+    // 7. Registra log de auditoria
+    logAdminAction({
+      adminId: admin.id,
+      acao: "login_sucesso",
+      entidade: "admin",
+      entidadeId: admin.id,
+    });
+
+    // 8. Retorna token e dados do admin
     return res.status(200).json({
       message: "Login realizado com sucesso.",
       token,
@@ -108,12 +224,121 @@ router.post("/login", async (req, res) => {
         id: admin.id,
         email: admin.email,
         nome: admin.nome,
+        role: admin.role,
+        role_id: admin.role_id || null,
+        permissions,
       },
     });
   } catch (err) {
-    rateLimit.fail(); // <--- CHAMA FALHA (em caso de erro interno do servidor/banco)
-    console.error("❌ Erro no login do admin:", err.message);
-    return res.status(500).json({ message: "Erro interno no servidor." });
+    // Em caso de erro interno também conta como falha para o rate limit
+    rateLimit.fail();
+    console.error("❌ Erro no login do admin:", err);
+    return res
+      .status(500)
+      .json({ message: "Erro interno no servidor ao fazer login." });
+  }
+});
+
+/**
+ * @openapi
+ * /api/admin/me:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Retorna o administrador autenticado (perfil atual)
+ *     description: >
+ *       Retorna os dados do administrador autenticado com base no token JWT
+ *       (id, nome, email, role, role_id e array de permissões). Útil para
+ *       configurar o contexto do front-end.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Dados do administrador autenticado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                   example: 1
+ *                 nome:
+ *                   type: string
+ *                   example: "Admin Master"
+ *                 email:
+ *                   type: string
+ *                   example: "admin@kavita.com"
+ *                 role:
+ *                   type: string
+ *                   example: "master"
+ *                 role_id:
+ *                   type: integer
+ *                   nullable: true
+ *                   example: 1
+ *                 permissions:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   example:
+ *                     - "admin.logs.view"
+ *                     - "admin.config.edit"
+ *       401:
+ *         description: Token ausente ou inválido
+ *       404:
+ *         description: Admin não encontrado
+ *       500:
+ *         description: Erro interno no servidor
+ */
+
+// 📌 GET /api/admin/me — retorna o administrador logado
+router.get("/me", verifyAdmin, async (req, res) => {
+  try {
+    const adminId = req.admin && req.admin.id;
+
+    if (!adminId) {
+      return res
+        .status(401)
+        .json({ message: "Token inválido ou administrador não autenticado." });
+    }
+
+    const [rows] = await pool.query(
+      `
+        SELECT
+          a.id,
+          a.nome,
+          a.email,
+          a.role,
+          r.id AS role_id
+        FROM admins a
+        LEFT JOIN admin_roles r
+          ON r.slug = a.role
+        WHERE a.id = ?
+      `,
+      [adminId]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ message: "Admin não encontrado." });
+    }
+
+    const admin = rows[0];
+
+    // Recarrega as permissões para garantir que estejam atualizadas
+    const permissions = await getAdminPermissions(admin.id);
+
+    return res.status(200).json({
+      id: admin.id,
+      nome: admin.nome,
+      email: admin.email,
+      role: admin.role,
+      role_id: admin.role_id || null,
+      permissions,
+    });
+  } catch (err) {
+    console.error("❌ Erro ao carregar perfil do admin (/me):", err);
+    return res
+      .status(500)
+      .json({ message: "Erro interno ao carregar perfil do admin." });
   }
 });
 
