@@ -61,7 +61,7 @@ router.get("/resumo", verifyAdmin, async (_req, res) => {
 
     // total de destaques
     const [[destRow]] = await pool.query(
-      "SELECT COUNT(*) AS total FROM destaques"
+      "SELECT COUNT(*) AS total FROM product_promotions"
     );
     const totalDestaques = Number(destRow.total || 0);
 

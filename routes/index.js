@@ -1,3 +1,4 @@
+// routes/index.js
 const router = require("express").Router();
 
 // Middlewares / auth
@@ -27,7 +28,13 @@ loadRoute("/products", "./productById");
 loadRoute("/public/categorias", "./publicCategorias");
 loadRoute("/public/servicos", "./publicServicos");
 loadRoute("/public/servicos", "./publicAvaliacaoColaborador");
-loadRoute("/public/destaques", "./publicDestaques");
+
+// 🔁 ANTIGO: /public/destaques -> agora usamos /public/promocoes
+// loadRoute("/public/destaques", "./publicDestaques");
+
+// ✅ NOVO: rota pública de promoções (Marketing)
+loadRoute("/public/promocoes", "./publicPromocoes");
+
 loadRoute("/public/produtos", "./publicProdutos");
 
 //  Autenticação e Usuários
@@ -51,7 +58,13 @@ loadRoute("/pedidos", "./pedidos");
 loadRoute("/admin", "./adminLogin");
 loadRoute("/admin/categorias", "./adminCategorias");
 loadRoute("/admin/colaboradores", "./adminColaboradores");
-loadRoute("/admin/destaques", "./adminDestaques");
+
+// 🔁 ANTIGO: /admin/destaques -> agora módulo de Marketing/Promoções
+// loadRoute("/admin/destaques", "./adminDestaques");
+
+// ✅ NOVO: módulo Marketing > Promoções
+loadRoute("/admin/marketing/promocoes", "./adminMarketingPromocoes");
+
 loadRoute("/admin/especialidades", "./adminEspecialidades");
 loadRoute("/admin/pedidos", "./adminPedidos");
 loadRoute("/admin/produtos", "./adminProdutos");
