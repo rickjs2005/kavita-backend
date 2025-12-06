@@ -1,204 +1,157 @@
-# 🐮 Kavita Backend - API RESTful para E-commerce Agropecuário
+Kavita Backend
 
-Este é o backend da aplicação **Kavita**, um sistema completo de e-commerce voltado para produtos e serviços agropecuários. Essa API foi construída com Node.js, Express, MySQL e autenticação JWT.
+Este repositório contém a API do Kavita, um projeto de e‑commerce voltado à venda de produtos e serviços.
+O backend foi construído com Node.js e Express, utiliza MySQL como banco de dados relacional e implementa autenticação via JWT para administração e usuários.
 
----
+Principais funcionalidades
 
-## 🚀 Tecnologias Utilizadas
+Produtos e serviços: cadastro e consulta pública de produtos, categorias, serviços e promoções.
 
-- **Node.js + Express**: servidor e rotas
-- **MySQL**: banco de dados relacional
-- **JWT**: autenticação de administradores
-- **bcrypt**: criptografia de senhas
-- **dotenv**: variáveis de ambiente
-- **nodemailer**: envio de e-mails (recuperação de senha)
+Carrinho de compras: criação, adição, atualização e remoção de itens do carrinho para usuários autenticados.
 
----
+Pedidos e checkout: cálculo de total, aplicação de cupons, registro de pagamento e acompanhamento de status de pedidos.
 
-## 📂 Estrutura de Pastas
+Gerenciamento de usuários: registro, login (gerando token JWT), recuperação de senha, perfis de usuário e endereços.
 
-```
-.
-├── config/
-│   └── pool.js            # Conexão com o banco de dados
-├── controllers/           # Lógica de autenticação e recuperação de senha
-├── middleware/
-│   └── verifyAdmin.js     # Proteção de rotas administrativas via token
-├── routes/
-│   ├── admin*.js          # Todas as rotas privadas de administração
-│   ├── public*.js         # Rotas públicas (serviços, destaques)
-│   ├── checkoutRoutes.js  # Finalização de pedidos
-│   └── users.js           # Cadastro, login, recuperação de senha
-├── mailService.js         # Serviço de envio de e-mails via Gmail
-├── server.js              # Entrada principal da aplicação
-└── .env                   # Variáveis sensíveis (NUNCA subir para o GitHub)
-```
+Área administrativa: painel completo para gerenciar produtos, serviços, pedidos, cupons, usuários, cargos/permissões e administradores.
 
----
+Documentação Swagger: todas as rotas estão documentadas e podem ser visualizadas em /docs.
 
-## 🗺️ Mapa das Rotas
+Segurança: proteção CORS configurável, rate limiter adaptativo, hashes de senha com bcrypt e acesso restrito via JWT.
 
-A API monta todas as rotas a partir de `routes/index.js`, que agrega módulos especializados. Os caminhos abaixo já incluem o prefixo `/api` definido no `server.js`:
+Requisitos
 
-- **Produtos**: `/products` (listagem e filtros) e `/products/:id` (detalhe).
-- **Catálogo público**: `/public/categorias`, `/public/destaques`, `/public/produtos` (busca) e `/public/servicos` (lista, avaliações e solicitações).
-- **Autenticação e usuários**: `/login`, `/users` (cadastro/reset de senha), `/users/addresses`, `/users/profile` e `/favorites`.
-- **Carrinho e pedidos**: `/cart`, `/checkout`, `/payment`, `/pedidos`.
-- **Administração**: `/admin` e subrotas para produtos, categorias, serviços, pedidos, cupons, relatórios, comunicação e configurações.
+Node.js 16 ou superior
 
----
+MySQL 5.7 ou superior
 
-## 🔐 Autenticação
+Variáveis de ambiente definidas (conforme config/env.js):
 
-- **Admins** fazem login em `/api/admin/login` e recebem um token JWT
-- Esse token deve ser enviado no `Authorization` header como: `Bearer <token>`
-- Usuários comuns usam `/api/login` para autenticação simples (sem token por enquanto)
+JWT_SECRET: segredo usado para assinar tokens JWT
 
----
+EMAIL_USER / EMAIL_PASS: credenciais para envio de e‑mails via SMTP
 
-## 🛠️ Rotas Administrativas (protegidas por token)
+APP_URL: URL pública do frontend (usada em links de e‑mail)
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| POST   | /api/admin/login | Login do administrador |
-| GET    | /api/admin/categorias | Lista categorias |
-| GET    | /api/admin/produtos | Lista produtos com paginação |
-| POST   | /api/admin/produtos | Cria produto com imagens |
-| PUT    | /api/admin/produtos/:id | Atualiza produto e imagens |
-| DELETE | /api/admin/produtos/:id | Remove produto |
-| GET    | /api/admin/servicos | Lista serviços (com mídias) |
-| POST   | /api/admin/servicos | Cria serviço com imagens |
-| PUT    | /api/admin/servicos/:id | Atualiza serviço |
-| DELETE | /api/admin/servicos/:id | Remove serviço |
-| PATCH  | /api/admin/servicos/:id/verificado | Marca serviço como verificado |
-| GET    | /api/admin/servicos/solicitacoes | Lista solicitações de serviço recebidas |
-| PATCH  | /api/admin/servicos/solicitacoes/:id/status | Atualiza status da solicitação |
-| GET    | /api/admin/destaques | Lista destaques |
-| POST   | /api/admin/destaques | Adiciona destaque |
-| DELETE | /api/admin/destaques/:id | Remove destaque |
-| POST   | /api/admin/colaboradores | Cadastra colaborador verificado |
-| GET    | /api/admin/colaboradores/pending | Lista cadastros pendentes |
-| PUT    | /api/admin/colaboradores/:id/verify | Aprova colaborador |
-| DELETE | /api/admin/colaboradores/:id | Remove colaborador |
-| GET    | /api/admin/especialidades | Lista especialidades (para gestão) |
-| GET    | /api/admin/especialidades/public | Lista especialidades (uso público) |
-| GET    | /api/admin/pedidos | Lista pedidos |
-| GET    | /api/admin/pedidos/:id | Detalha pedido |
-| PUT    | /api/admin/pedidos/:id/pagamento | Atualiza status de pagamento |
-| PUT    | /api/admin/pedidos/:id/entrega | Atualiza status de entrega |
-| GET    | /api/admin/carrinhos | Lista carrinhos ativos |
-| POST   | /api/admin/carrinhos/:id/notificar | Dispara aviso de carrinho abandonado |
-| GET    | /api/admin/users | Lista usuários |
-| PUT    | /api/admin/users/:id/block | Bloqueia/desbloqueia usuário |
-| DELETE | /api/admin/users/:id | Remove usuário |
-| GET    | /api/admin/cupons | Lista cupons |
-| POST   | /api/admin/cupons | Cria cupom |
-| PUT    | /api/admin/cupons/:id | Atualiza cupom |
-| DELETE | /api/admin/cupons/:id | Exclui cupom |
-| GET    | /api/admin/comunicacao/templates | Lista templates de comunicação |
-| POST   | /api/admin/comunicacao/email | Envia campanha por e-mail |
-| POST   | /api/admin/comunicacao/whatsapp | Envia campanha por WhatsApp |
-| GET    | /api/admin/config | Lê configurações gerais |
-| PUT    | /api/admin/config | Atualiza configurações gerais |
-| GET    | /api/admin/config/categories | Lista configurações de categorias |
-| POST   | /api/admin/config/categories | Cria configuração de categoria |
-| PUT    | /api/admin/config/categories/:id | Atualiza configuração de categoria |
-| GET    | /api/admin/stats/resumo | Indicadores gerais de vendas |
-| GET    | /api/admin/stats/vendas | Curva de vendas |
-| GET    | /api/admin/stats/produtos-mais-vendidos | Ranking de produtos |
-| GET    | /api/admin/relatorios/vendas | Relatório detalhado de vendas |
-| GET    | /api/admin/relatorios/produtos-mais-vendidos | Relatório de produtos |
-| GET    | /api/admin/relatorios/clientes-top | Top clientes |
-| GET    | /api/admin/relatorios/estoque | Níveis de estoque |
-| GET    | /api/admin/relatorios/estoque-baixo | Alertas de estoque baixo |
-| GET    | /api/admin/relatorios/servicos | Relatório de serviços |
-| GET    | /api/admin/relatorios/servicos-ranking | Ranking de serviços |
+BACKEND_URL: URL pública do backend
 
----
+DB_HOST, DB_USER, DB_PASSWORD, DB_NAME: dados de conexão com o banco
 
-## 🌐 Rotas Públicas (acessíveis sem autenticação)
+Opcional:
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET    | /api/products | Lista paginada de produtos (filtros: categoria, busca, ordenação) |
-| GET    | /api/products/:id | Detalha produto e imagens |
-| GET    | /api/public/categorias | Lista categorias para navegação |
-| GET    | /api/public/destaques | Lista destaques publicados |
-| GET    | /api/public/produtos | Busca dinâmica de produtos |
-| GET    | /api/public/servicos | Lista serviços e colaboradores |
-| GET    | /api/public/servicos/:id | Detalha serviço específico |
-| POST   | /api/public/servicos/solicitacoes | Abre solicitação de serviço |
-| POST   | /api/public/servicos/avaliacoes | Avalia colaborador/serviço |
-| GET    | /api/public/servicos/:id/avaliacoes | Lista avaliações do serviço |
-| POST   | /api/public/servicos/:id/view | Registra visualização do perfil |
-| POST   | /api/public/servicos/:id/whatsapp | Gera link de contato via WhatsApp |
-| POST   | /api/public/servicos/trabalhe-conosco | Envia candidatura de colaborador |
-| POST   | /api/admin/colaboradores/public | Cadastra colaborador via formulário público |
-| GET    | /api/admin/especialidades/public | Lista especialidades para formulário público |
+DB_PORT: porta do MySQL (padrão 3306)
 
----
+DISABLE_NOTIFICATIONS: se definido como true, o serviço de notificações (WhatsApp/e‑mail) entra em modo mock e apenas faz console.log
 
-## 👤 Autenticação de Usuário (cliente final)
+Instalação
 
-| Método | Rota              | Descrição                            |
-|--------|-------------------|---------------------------------------|
-| POST   | /api/login        | Login do usuário comum                |
-| POST   | /api/users/register | Cadastro de novo usuário            |
-| POST   | /api/users/forgot-password | Solicita link de redefinição  |
-| POST   | /api/users/reset-password  | Redefine senha com token       |
+Clone o repositório
 
----
-
-## 💳 Checkout
-
-| Método | Rota          | Descrição                                |
-|--------|---------------|-------------------------------------------|
-| POST   | /api/checkout | Finaliza pedido (salva dados e itens)     |
-| POST   | /api/checkout/preview-cupom | Valida cupom antes do checkout |
-
----
-
-## 📄 Documentação automática (Swagger)
-
-Os módulos de rotas já trazem anotações `@openapi` (ex.: `routes/products.js`), o que permite gerar documentação interativa. Para automatizar, você pode integrar [swagger-jsdoc](https://github.com/Surnet/swagger-jsdoc) + [swagger-ui-express](https://github.com/scottie1984/swagger-ui-express) no `server.js`, apontando para os arquivos de rotas, e então expor um endpoint como `/api/docs` referenciado aqui no README.
-
----
+git clone https://github.com/rickjs2005/kavita-backend.git
+cd kavita-backend
 
 
+Instale as dependências
 
-## 📬 Envio de E-mail
-
-A API usa `nodemailer` com Gmail para envio de link de redefinição de senha:
-- Endereço de envio: `EMAIL_USER`
-- Token de redefinição tem validade de 1 hora
-- Rota: `POST /api/users/forgot-password`
-
----
-
-## 📌 Requisitos para rodar o projeto
-
-1. Node.js instalado
-2. MySQL rodando e banco `kavita` criado
-3. Arquivo `.env` configurado com dados corretos
-
----
-
-## ▶️ Executar localmente
-
-```bash
 npm install
-node server.js
-```
 
-Servidor será iniciado em `http://localhost:5000`
 
----
+Configure o banco de dados
 
-## ✉️ Contato
+Crie um banco de dados MySQL e ajuste as variáveis de ambiente (DB_HOST, DB_USER, DB_PASSWORD, DB_NAME).
 
-Se você tiver dúvidas ou quiser contribuir, entre em contato:
-- Email: suporte@kavita.com
+Execute os scripts SQL correspondentes para criar as tabelas necessárias (pode ser fornecido em outro diretório ou migrado manualmente).
 
----
+Crie um arquivo .env com todas as variáveis obrigatórias mencionadas em config/env.js.
 
-Desenvolvido com ❤️ para gestão de produtos agropecuários.
+Inicie a aplicação
+
+npm start
+
+
+A API iniciará na porta definida em PORT (padrão 5000).
+A documentação Swagger estará disponível em http://localhost:5000/docs.
+
+Estrutura de pastas
+├── controllers      # Lógica dos controllers (auth, relatórios, etc.)
+├── routes           # Definição das rotas públicas e privadas
+│   ├── admin        # Rotas exclusivas do painel de administração
+│   ├── public       # Rotas públicas (produtos, serviços, promoções)
+│   └── ...
+├── middleware       # Middlewares de autenticação, CORS, rate limiter, etc.
+├── services         # Serviços de e‑mail, notificações e tokens
+├── utils            # Funções auxiliares (validação de CPF, etc.)
+├── docs             # Configuração do Swagger
+├── config           # Configurações de ambiente e de conexão
+├── server.js        # Ponto de entrada principal
+└── package.json
+
+Uso da API
+
+Abaixo está um resumo de alguns endpoints importantes (todos documentados via Swagger):
+
+Autenticação
+
+POST /api/users – Registro de novo usuário.
+
+POST /api/login – Login do usuário. Retorna um token JWT para autenticação subsequente.
+
+POST /api/forgot-password / POST /api/reset-password – Fluxo de recuperação de senha.
+
+Produtos e serviços (público)
+
+GET /api/products – Lista produtos com paginação e ordenação.
+
+GET /api/products/:id – Detalhes de um produto.
+
+GET /api/services – Lista serviços e colaboradores.
+
+GET /api/promocoes – Lista promoções destacadas.
+
+Carrinho e favoritos (privado)
+
+GET /api/cart – Retorna o carrinho aberto do usuário autenticado.
+
+POST /api/cart/items – Adiciona ou incrementa item ao carrinho.
+
+PATCH /api/cart/items – Atualiza quantidade de um item.
+
+DELETE /api/cart/items/:produtoId – Remove item específico do carrinho.
+
+GET /api/favorites / POST /api/favorites / DELETE /api/favorites/:productId – Manipula lista de favoritos do usuário.
+
+Checkout e pedidos (privado)
+
+POST /api/checkout – Realiza checkout de um carrinho, calcula frete e aplica cupons.
+
+POST /api/pedidos – Cria um pedido a partir de um carrinho fechado.
+
+GET /api/pedidos – Lista pedidos do usuário ou retorna detalhes de um pedido específico.
+
+Administração (requer token de administrador)
+
+POST /api/admin/products, PUT /api/admin/products/:id, DELETE /api/admin/products/:id – Gerencia produtos.
+
+POST /api/admin/services, PUT /api/admin/services/:id, DELETE /api/admin/services/:id – Gerencia serviços.
+
+GET /api/admin/users, PUT /api/admin/users/:id – Lista e edita usuários.
+
+GET /api/admin/stats – Relatórios de faturamento e métricas.
+
+POST /api/admin/cupons – Cria cupons de desconto.
+
+Considerações de segurança
+
+O login de usuários gera um token JWT; utilize o cabeçalho Authorization: Bearer <token> para chamadas autenticadas.
+
+A rota de perfil (/api/users/me) atualmente utiliza um header x-user-id para identificação. Para produção, recomenda‑se substituir esse método por autenticação real com JWT (removendo a função getUserId) e proteger a rota com o middleware authenticateToken para evitar acesso não autorizado.
+
+O rate limiter adapta-se ao número de falhas de login e protege contra força bruta.
+
+Contribuição
+
+Contribuições são bem-vindas! Sinta‑se à vontade para abrir issues e pull requests. Antes de contribuir, certifique‑se de verificar se sua alteração segue o padrão do projeto e se a documentação das rotas está atualizada.
+
+Licença
+
+Este projeto está licenciado sob os termos especificados no arquivo LICENSE deste repositório.
