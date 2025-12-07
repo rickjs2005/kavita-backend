@@ -1,15 +1,18 @@
 // routes/favorites.js
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const pool = require("../config/pool");
-const authenticateToken = require("../middleware/authenticateToken");
+const pool = require('../config/pool');
+const authenticateToken = require('../middleware/authenticateToken');
+
+// Todas as rotas de favoritos exigem usuário autenticado
+router.use(authenticateToken);
 
 // mesma ideia do attachImages de routes/products.js
 async function attachImages(products) {
   if (!products?.length) return products;
 
   const ids = products.map((p) => p.id);
-  const placeholders = ids.map(() => "?").join(",");
+  const placeholders = ids.map(() => '?').join(',');
 
   const [rows] = await pool.query(
     `SELECT product_id, path AS image_url
@@ -49,7 +52,7 @@ async function attachImages(products) {
  */
 
 // GET /api/favorites -> lista produtos favoritos
-router.get("/", authenticateToken, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const userId = req.user.id;
 
@@ -67,61 +70,61 @@ router.get("/", authenticateToken, async (req, res) => {
     const data = await attachImages(rows);
     return res.json({ data });
   } catch (err) {
-    console.error("[GET /api/favorites] Erro:", err);
-    return res.status(500).json({ message: "Erro interno no servidor." });
+    console.error('[GET /api/favorites] Erro:', err);
+    return res.status(500).json({ message: 'Erro interno no servidor.' });
   }
 });
 
 // POST /api/favorites  { productId }
-router.post("/", authenticateToken, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const userId = req.user.id;
     const { productId } = req.body;
 
     if (!productId) {
-      return res.status(400).json({ message: "productId é obrigatório." });
+      return res.status(400).json({ message: 'productId é obrigatório.' });
     }
 
     // garante que o produto existe
     const [products] = await pool.query(
-      "SELECT id FROM products WHERE id = ?",
+      'SELECT id FROM products WHERE id = ?',
       [productId]
     );
     if (!products.length) {
-      return res.status(404).json({ message: "Produto não encontrado." });
+      return res.status(404).json({ message: 'Produto não encontrado.' });
     }
 
     await pool.query(
-      "INSERT IGNORE INTO favorites (user_id, product_id) VALUES (?, ?)",
+      'INSERT IGNORE INTO favorites (user_id, product_id) VALUES (?, ?)',
       [userId, productId]
     );
 
     return res.status(201).json({ success: true });
   } catch (err) {
-    console.error("[POST /api/favorites] Erro:", err);
-    return res.status(500).json({ message: "Erro interno no servidor." });
+    console.error('[POST /api/favorites] Erro:', err);
+    return res.status(500).json({ message: 'Erro interno no servidor.' });
   }
 });
 
 // DELETE /api/favorites/:productId
-router.delete("/:productId", authenticateToken, async (req, res) => {
+router.delete('/:productId', async (req, res) => {
   try {
     const userId = req.user.id;
     const productId = Number(req.params.productId);
 
     if (!Number.isInteger(productId)) {
-      return res.status(400).json({ message: "productId inválido." });
+      return res.status(400).json({ message: 'productId inválido.' });
     }
 
     await pool.query(
-      "DELETE FROM favorites WHERE user_id = ? AND product_id = ?",
+      'DELETE FROM favorites WHERE user_id = ? AND product_id = ?',
       [userId, productId]
     );
 
     return res.status(200).json({ success: true });
   } catch (err) {
-    console.error("[DELETE /api/favorites/:productId] Erro:", err);
-    return res.status(500).json({ message: "Erro interno no servidor." });
+    console.error('[DELETE /api/favorites/:productId] Erro:', err);
+    return res.status(500).json({ message: 'Erro interno no servidor.' });
   }
 });
 

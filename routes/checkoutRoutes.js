@@ -1,9 +1,9 @@
 // routes/checkoutRoutes.js
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const pool = require("../config/pool");
-const controller = require("../controllers/checkoutController");
-const authenticateToken = require("../middleware/authenticateToken");
+const pool = require('../config/pool');
+const controller = require('../controllers/checkoutController');
+const authenticateToken = require('../middleware/authenticateToken');
 
 /* ------------------------------------------------------------------ */
 /*                               Swagger                              */
@@ -68,18 +68,15 @@ const authenticateToken = require("../middleware/authenticateToken");
  *     CheckoutBody:
  *       type: object
  *       required:
- *         - usuario_id
  *         - formaPagamento
  *         - endereco
  *         - produtos
- *         - total
  *       properties:
- *         usuario_id:
- *           type: integer
- *           example: 1
- *           description: >
- *             ID do usuário que está realizando o pedido.
- *             Se o usuário estiver autenticado via JWT, o backend irá usar o ID do token.
+ *         // usuario_id:
+ *         //   type: integer
+ *         //   example: 1
+ *         //   description: >
+ *          # (DEPRECATED) ID do usuário. Agora o backend usa apenas o ID do JWT
  *         formaPagamento:
  *           type: string
  *           enum: [pix, boleto, mercadopago, prazo]
@@ -143,11 +140,10 @@ const authenticateToken = require("../middleware/authenticateToken");
  *       Cria um pedido a partir do carrinho do usuário autenticado.
  *
  *       - Valida estoque e estrutura dos dados do checkout.
- *       - Usa o `usuario_id` do token JWT quando disponível.
+ *       - Usa SEMPRE o `id` vindo do token JWT (cookie HttpOnly ou Bearer).
  *       - Dentro do controller de checkout, após a criação do pedido,
  *         o carrinho aberto associado pode ser marcado como **recuperado**
- *         na tabela `carrinhos_abandonados` (quando existir), integrando com
- *         o sistema de carrinhos abandonados do admin.
+ *         na tabela `carrinhos_abandonados`.
  *       - Opcionalmente, aplica um **cupom de desconto** informado em `cupom_codigo`.
  *     tags:
  *       - Checkout
@@ -170,8 +166,6 @@ const authenticateToken = require("../middleware/authenticateToken");
  *         description: Erro de validação ou estoque insuficiente
  *       401:
  *         description: Usuário não autenticado
- *       403:
- *         description: usuario_id não corresponde ao usuário autenticado
  *       500:
  *         description: Erro interno do servidor
  */
@@ -184,46 +178,26 @@ function validateCheckoutBody(req, res, next) {
   const { formaPagamento, endereco, produtos } = req.body || {};
   const errors = [];
 
-  // Determina o usuário a partir do token ou do body (compatibilidade)
+  // Agora o usuário vem exclusivamente do token
   const usuarioIdFromToken = req.user && req.user.id;
-  const usuarioIdFromBody = req.body && req.body.usuario_id;
 
-  let resolvedUsuarioId = usuarioIdFromToken || usuarioIdFromBody;
-
-  if (!resolvedUsuarioId) {
-    errors.push("usuario_id é obrigatório e/ou usuário não autenticado.");
-  }
-
-  // Se vier no body e também no token, eles devem coincidir
-  if (
-    usuarioIdFromToken &&
-    usuarioIdFromBody &&
-    Number(usuarioIdFromBody) !== Number(usuarioIdFromToken)
-  ) {
-    errors.push(
-      "usuario_id no corpo não corresponde ao usuário autenticado (token)."
-    );
-  }
-
-  const formasValidas = ["pix", "boleto", "mercadopago", "prazo"];
-  if (!formaPagamento || !formasValidas.includes(formaPagamento)) {
-    errors.push(
-      `formaPagamento é obrigatória e deve ser uma destas: ${formasValidas.join(
-        ", "
-      )}`
-    );
+  if (!usuarioIdFromToken) {
+    return res.status(401).json({
+      success: false,
+      message: "Usuário não autenticado para realizar o checkout.",
+    });
   }
 
   if (!endereco) {
-    errors.push("endereco é obrigatório.");
+    errors.push('endereco é obrigatório.');
   } else {
-    ["cep", "rua", "numero", "bairro", "cidade", "estado"].forEach((campo) => {
+    ['cep', 'rua', 'numero', 'bairro', 'cidade', 'estado'].forEach((campo) => {
       if (!endereco[campo]) errors.push(`endereco.${campo} é obrigatório.`);
     });
   }
 
   if (!Array.isArray(produtos) || produtos.length === 0) {
-    errors.push("produtos deve ser um array com ao menos um item.");
+    errors.push('produtos deve ser um array com ao menos um item.');
   } else {
     produtos.forEach((p, i) => {
       if (!p.id) errors.push(`produtos[${i}].id é obrigatório.`);
@@ -235,18 +209,9 @@ function validateCheckoutBody(req, res, next) {
     });
   }
 
-  if (errors.length) {
-    return res.status(400).json({
-      success: false,
-      message: "Erro de validação no checkout.",
-      errors,
-    });
-  }
-
-  // Garante que o controller receba usuario_id correto (do token, se existir)
-  if (resolvedUsuarioId) {
-    req.body.usuario_id = resolvedUsuarioId;
-  }
+  // Preenche o body.usuario_id só para compatibilidade com o controller / logs
+  if (!req.body) req.body = {};
+  req.body.usuario_id = usuarioIdFromToken;
 
   next();
 }
@@ -257,22 +222,22 @@ function validateCheckoutBody(req, res, next) {
 
 let checkoutHandler;
 
-if (typeof controller === "function") {
+if (typeof controller === 'function') {
   // caso o controller exporte diretamente uma função
   checkoutHandler = controller;
-} else if (controller && typeof controller.create === "function") {
+} else if (controller && typeof controller.create === 'function') {
   // caso padrão: module.exports = { create }
   checkoutHandler = controller.create;
 } else {
   // fallback caso o controller não esteja configurado
   checkoutHandler = (req, res) => {
     console.error(
-      "[checkoutRoutes] checkoutController não configurado corretamente. Esperado função ou { create }."
+      '[checkoutRoutes] checkoutController não configurado corretamente. Esperado função ou { create }.'
     );
     res.status(500).json({
       success: false,
       message:
-        "Checkout não está configurado corretamente no servidor. Avise o administrador.",
+        'Checkout não está configurado corretamente no servidor. Avise o administrador.',
     });
   };
 }
@@ -312,21 +277,21 @@ if (typeof controller === "function") {
  *       400:
  *         description: Cupom inválido ou não aplicável
  */
-router.post("/preview-cupom", authenticateToken, async (req, res) => {
+router.post('/preview-cupom', authenticateToken, async (req, res) => {
   const { codigo, total } = req.body || {};
   const subtotal = Number(total || 0);
 
   if (!codigo || !String(codigo).trim()) {
     return res.status(400).json({
       success: false,
-      message: "Informe o código do cupom.",
+      message: 'Informe o código do cupom.',
     });
   }
 
   if (!Number.isFinite(subtotal) || subtotal <= 0) {
     return res.status(400).json({
       success: false,
-      message: "Total inválido para cálculo do cupom.",
+      message: 'Total inválido para cálculo do cupom.',
     });
   }
 
@@ -344,7 +309,7 @@ router.post("/preview-cupom", authenticateToken, async (req, res) => {
     if (!rows || rows.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Cupom inválido ou não encontrado.",
+        message: 'Cupom inválido ou não encontrado.',
       });
     }
 
@@ -353,7 +318,7 @@ router.post("/preview-cupom", authenticateToken, async (req, res) => {
     if (!cupom.ativo) {
       return res.status(400).json({
         success: false,
-        message: "Este cupom está inativo.",
+        message: 'Este cupom está inativo.',
       });
     }
 
@@ -363,7 +328,7 @@ router.post("/preview-cupom", authenticateToken, async (req, res) => {
       if (exp.getTime() < agora.getTime()) {
         return res.status(400).json({
           success: false,
-          message: "Este cupom está expirado.",
+          message: 'Este cupom está expirado.',
         });
       }
     }
@@ -377,7 +342,7 @@ router.post("/preview-cupom", authenticateToken, async (req, res) => {
     if (maxUsos !== null && usos >= maxUsos) {
       return res.status(400).json({
         success: false,
-        message: "Este cupom já atingiu o limite de usos.",
+        message: 'Este cupom já atingiu o limite de usos.',
       });
     }
 
@@ -385,14 +350,16 @@ router.post("/preview-cupom", authenticateToken, async (req, res) => {
     if (minimo > 0 && subtotal < minimo) {
       return res.status(400).json({
         success: false,
-        message: `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(2)}.`,
+        message: `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(
+          2
+        )}.`,
       });
     }
 
     const valor = Number(cupom.valor || 0);
     let desconto = 0;
 
-    if (cupom.tipo === "percentual") {
+    if (cupom.tipo === 'percentual') {
       desconto = (subtotal * valor) / 100;
     } else {
       desconto = valor;
@@ -405,7 +372,7 @@ router.post("/preview-cupom", authenticateToken, async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Cupom aplicado com sucesso.",
+      message: 'Cupom aplicado com sucesso.',
       desconto,
       total_original: subtotal,
       total_com_desconto: totalComDesconto,
@@ -417,10 +384,10 @@ router.post("/preview-cupom", authenticateToken, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("[checkoutRoutes] Erro em /preview-cupom:", err);
+    console.error('[checkoutRoutes] Erro em /preview-cupom:', err);
     return res.status(500).json({
       success: false,
-      message: "Erro ao validar o cupom.",
+      message: 'Erro ao validar o cupom.',
     });
   }
 });
@@ -430,6 +397,6 @@ router.post("/preview-cupom", authenticateToken, async (req, res) => {
 /* ------------------------------------------------------------------ */
 
 // POST /api/checkout
-router.post("/", authenticateToken, validateCheckoutBody, checkoutHandler);
+router.post('/', authenticateToken, validateCheckoutBody, checkoutHandler);
 
 module.exports = router;

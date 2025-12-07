@@ -1,3 +1,4 @@
+// middleware/verifyAdmin.js
 const jwt = require("jsonwebtoken");
 const pool = require("../config/pool");
 
@@ -57,7 +58,8 @@ async function getAdminPermissions(adminId) {
 /**
  * Middleware de autenticação/autorizarção para rotas admin.
  *
- * - Lê o token (Authorization: Bearer ou cookie adminToken)
+ * - Prioriza o token vindo do cookie HttpOnly `adminToken`
+ * - Fallback: Authorization: Bearer <token>
  * - Decodifica o JWT => decoded (id, email, role, role_id, permissions)
  * - Revalida o admin no banco (existência e ativo)
  * - Recalcula permissões atuais
@@ -68,13 +70,14 @@ async function verifyAdmin(req, res, next) {
   const authHeader = req.headers.authorization || "";
   let token = null;
 
-  if (authHeader.startsWith("Bearer ")) {
-    token = authHeader.slice(7);
+  // 1) Prioriza cookie HttpOnly (modelo mais seguro para o painel admin)
+  if (req.cookies && req.cookies.adminToken) {
+    token = req.cookies.adminToken;
   }
 
-  // fallback: cookie
-  if (!token && req.cookies?.adminToken) {
-    token = req.cookies.adminToken;
+  // 2) Fallback: header Authorization: Bearer <token> (útil para testes via Swagger)
+  if (!token && authHeader.startsWith("Bearer ")) {
+    token = authHeader.slice(7);
   }
 
   if (!token) {
@@ -105,7 +108,7 @@ async function verifyAdmin(req, res, next) {
     // Permissões "oficiais" vindas do banco
     const dbPermissions = await getAdminPermissions(admin.id);
 
-    // Começa pelo payload do token (como você descreveu)
+    // Começa pelo payload do token
     const baseFromToken = { ...decoded };
 
     // Monta o objeto final do admin na request
@@ -126,11 +129,11 @@ async function verifyAdmin(req, res, next) {
       // permissões oficiais do banco têm prioridade;
       // se der algum problema, usa as do token como fallback
       permissions:
-        (dbPermissions && dbPermissions.length > 0
+        dbPermissions && dbPermissions.length > 0
           ? dbPermissions
           : Array.isArray(baseFromToken.permissions)
           ? baseFromToken.permissions
-          : []),
+          : [],
     };
 
     return next();

@@ -12,8 +12,8 @@ const { dispararEventoComunicacao } = require("../services/comunicacaoService");
  *     esse carrinho como "recuperado" na tabela `carrinhos_abandonados`.
  */
 async function create(req, res) {
+  // Agora só pegamos dados “de conteúdo” do body
   const {
-    usuario_id,
     formaPagamento,
     endereco,
     produtos,
@@ -21,14 +21,18 @@ async function create(req, res) {
     cpf,
     telefone,
     email,
-    cupom_codigo, // <-- NOVO: código do cupom enviado pelo front
+    cupom_codigo, // código do cupom enviado pelo front
   } = req.body || {};
 
-  // Segurança extra: se por algum motivo não vier nada, evita quebrar
+  // ID do usuário vem EXCLUSIVAMENTE do token
+  const usuario_id = req.user && req.user.id;
+
+  // Segurança extra
   if (!usuario_id || !Array.isArray(produtos) || produtos.length === 0) {
     return res.status(400).json({
       success: false,
-      message: "Dados de checkout inválidos.",
+      message:
+        "Dados de checkout inválidos ou usuário não autenticado.",
     });
   }
 

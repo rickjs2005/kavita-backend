@@ -1,34 +1,66 @@
 // middleware/authenticateToken.js
-const jwt = require("jsonwebtoken");
+const jwt = require('jsonwebtoken');
 
 /**
  * Middleware de autenticação com JWT.
- * Espera header: Authorization: Bearer <token>
- * Se o token for válido, preenche req.user = payload e chama next().
+ *
+ * Estratégia:
+ * - Primeiro tenta ler o token do cookie HttpOnly: auth_token
+ * - Caso não exista, aceita Authorization: Bearer <token> (compatibilidade)
+ * - Se o token for válido, preenche req.user = payload e chama next().
  */
 function authenticateToken(req, res, next) {
-  const authHeader = req.headers["authorization"] || req.headers.authorization;
-
-  if (!authHeader) {
-    return res.status(401).json({ message: "Token não fornecido." });
+  const SECRET = process.env.JWT_SECRET;
+  if (!SECRET) {
+    console.error('JWT_SECRET não definido no .env');
+    return res
+      .status(500)
+      .json({ message: 'Erro de configuração de autenticação.' });
   }
 
-  const [scheme, token] = authHeader.split(" ");
+  let token = null;
 
-  if (scheme !== "Bearer" || !token) {
-    return res.status(401).json({ message: "Formato de token inválido." });
+  // 1) Tenta pegar do cookie HttpOnly (via cookie-parser)
+  if (req.cookies && req.cookies.auth_token) {
+    token = req.cookies.auth_token;
+  }
+
+  // 2) Fallback: Authorization: Bearer <token>
+  if (!token) {
+    const authHeader = req.headers['authorization'] || req.headers.authorization;
+
+    if (authHeader && typeof authHeader === 'string') {
+      const [scheme, value] = authHeader.split(' ');
+      if (scheme === 'Bearer' && value) {
+        token = value;
+      }
+    }
+  }
+
+  if (!token) {
+    // Log detalhado no servidor
+    console.warn('authenticateToken: token ausente na requisição');
+    return res.status(401).json({
+      message: 'Você precisa estar logado para acessar esta área.',
+    });
   }
 
   try {
-    // Usa o mesmo segredo que você já usa no authConfig e nos testes
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, SECRET);
+    // Exemplo de payload esperado: { id: 123, role?: '...' , iat, exp }
+    req.user = {
+      id: payload.id,
+      role: payload.role || null,
+      // Se quiser preservar tudo:
+      // ...payload,
+    };
 
-    // payload deve ter pelo menos { id: user.id }
-    req.user = payload;
     return next();
   } catch (error) {
-    console.error("Erro ao verificar token JWT:", error);
-    return res.status(403).json({ message: "Token inválido ou expirado." });
+    console.error('authenticateToken: falha ao verificar token JWT:', error);
+    return res.status(401).json({
+      message: 'Sua sessão expirou ou é inválida. Faça login novamente.',
+    });
   }
 }
 

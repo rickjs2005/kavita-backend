@@ -1,178 +1,263 @@
-// routes/userAddresses.js
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/pool');
 const authenticateToken = require('../middleware/authenticateToken');
 
+// Todas as rotas de pedidos exigem usuário autenticado
 router.use(authenticateToken);
 
-// Lista endereços do usuário (padrão primeiro)
+// Se quiser usar depois para formatar o endereço como objeto:
+// const { parseAddress } = require("../utils/address");
+
+/* ----------------------------- Swagger ----------------------------- */
+/**
+ * @openapi
+ * tags:
+ *   - name: Pedidos
+ *     description: Endpoints para consulta de pedidos do cliente autenticado
+ */
+
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     PedidoResumo:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 42
+ *         usuario_id:
+ *           type: integer
+ *           example: 11
+ *         forma_pagamento:
+ *           type: string
+ *           example: "pix"
+ *         status:
+ *           type: string
+ *           example: "pendente"
+ *         data_pedido:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-11-08T15:23:00Z"
+ *         total:
+ *           type: number
+ *           format: float
+ *           example: 199.9
+ *
+ *     PedidoItem:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 10
+ *         produto_id:
+ *           type: integer
+ *           example: 93
+ *         nome:
+ *           type: string
+ *           example: "Vermífugo Oral para Bezerros 1L"
+ *         preco:
+ *           type: number
+ *           format: float
+ *           example: 55.0
+ *         quantidade:
+ *           type: integer
+ *           example: 2
+ *         imagem:
+ *           type: string
+ *           nullable: true
+ *           example: "/uploads/produto.jpg"
+ *
+ *     PedidoDetalhe:
+ *       allOf:
+ *         - $ref: '#/components/schemas/PedidoResumo'
+ *         - type: object
+ *           properties:
+ *             endereco:
+ *               type: string
+ *               nullable: true
+ *               description: Endereço de entrega (string formatada ou JSON serializado)
+ *             itens:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/PedidoItem'
+ */
+
+/**
+ * @openapi
+ * /api/pedidos:
+ *   get:
+ *     summary: Lista pedidos do usuário autenticado
+ *     tags: [Pedidos]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de pedidos (pode ser vazia)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/PedidoResumo'
+ *       401:
+ *         description: Token não fornecido ou inválido
+ *       500:
+ *         description: Erro ao listar pedidos
+ */
+
+/* ------------------------ GET /api/pedidos ------------------------- */
 router.get('/', async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT * FROM enderecos_usuario WHERE usuario_id = ? ORDER BY is_default DESC, created_at DESC',
-      [req.user.id]
-    );
-    res.json(rows);
-  } catch (e) {
-    console.error('Erro ao listar endereços:', e);
-    res.status(500).json({ message: 'Erro ao listar endereços' });
-  }
-});
+    const usuarioId = req.user?.id;
 
-// Cria novo endereço
-router.post('/', async (req, res) => {
-  const {
-    apelido,
-    cep,
-    endereco,
-    numero,
-    bairro,
-    cidade,
-    estado,
-    complemento,
-    ponto_referencia,
-    telefone,
-    is_default,
-  } = req.body;
-
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
-    // se marcar como padrão, remove padrão anterior
-    if (is_default) {
-      await conn.query(
-        'UPDATE enderecos_usuario SET is_default = 0 WHERE usuario_id = ?',
-        [req.user.id]
-      );
+    if (!usuarioId) {
+      return res
+        .status(401)
+        .json({ message: 'Usuário não autenticado ou token inválido.' });
     }
 
-    // ⚠️ AQUI estava o bug: 12 colunas, então 12 "?" e 12 valores
-    const [result] = await conn.query(
-      `INSERT INTO enderecos_usuario (
-         usuario_id,
-         apelido,
-         cep,
-         endereco,
-         numero,
-         bairro,
-         cidade,
-         estado,
-         complemento,
-         ponto_referencia,
-         telefone,
-         is_default
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        req.user.id,
-        apelido,
-        cep,
-        endereco,
-        numero,
-        bairro,
-        cidade,
-        estado,
-        complemento,
-        ponto_referencia,
-        telefone,
-        is_default ? 1 : 0,
-      ]
-    );
+    // Aqui é só RESUMO do pedido, não precisamos de produto_id
+    const sql = `
+      SELECT
+        p.id,
+        p.usuario_id,
+        p.forma_pagamento,
+        p.status,
+        p.data_pedido,
+        SUM(pp.quantidade * pp.valor_unitario) AS total
+      FROM pedidos p
+      LEFT JOIN pedidos_produtos pp ON pp.pedido_id = p.id
+      WHERE p.usuario_id = ?
+      GROUP BY p.id
+      ORDER BY p.data_pedido DESC
+    `;
 
-    await conn.commit();
-    res.status(201).json({ id: result.insertId });
-  } catch (e) {
-    console.error('Erro ao adicionar endereço:', e);
-    await conn.rollback();
-    res.status(500).json({ message: 'Erro ao adicionar endereço' });
-  } finally {
-    conn.release();
+    const [rows] = await pool.query(sql, [usuarioId]);
+    res.json(rows); // sempre array (pode ser vazio)
+  } catch (error) {
+    console.error('Erro ao listar pedidos:', error);
+    res.status(500).json({ message: 'Erro ao listar pedidos' });
   }
 });
 
-// Atualiza endereço
-router.put('/:id', async (req, res) => {
-  const {
-    apelido,
-    cep,
-    endereco,
-    numero,
-    bairro,
-    cidade,
-    estado,
-    complemento,
-    ponto_referencia,
-    telefone,
-    is_default,
-  } = req.body;
-  const { id } = req.params;
+/**
+ * @openapi
+ * /api/pedidos/{id}:
+ *   get:
+ *     summary: Obtém detalhes de um pedido do usuário autenticado
+ *     tags: [Pedidos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do pedido
+ *     responses:
+ *       200:
+ *         description: Detalhe do pedido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PedidoDetalhe'
+ *       400:
+ *         description: Parâmetro inválido
+ *       401:
+ *         description: Token não fornecido ou inválido
+ *       403:
+ *         description: Pedido não pertence ao usuário autenticado
+ *       404:
+ *         description: Pedido não encontrado
+ *       500:
+ *         description: Erro ao buscar pedido
+ */
 
-  const conn = await pool.getConnection();
+/* --------------------- GET /api/pedidos/:id ------------------------ */
+router.get('/:id', async (req, res) => {
   try {
-    await conn.beginTransaction();
-
-    if (is_default) {
-      await conn.query(
-        'UPDATE enderecos_usuario SET is_default = 0 WHERE usuario_id = ?',
-        [req.user.id]
-      );
+    const usuarioId = req.user?.id;
+    if (!usuarioId) {
+      return res
+        .status(401)
+        .json({ message: 'Usuário não autenticado ou token inválido.' });
     }
 
-    await conn.query(
-      `UPDATE enderecos_usuario
-         SET apelido = ?,
-             cep = ?,
-             endereco = ?,
-             numero = ?,
-             bairro = ?,
-             cidade = ?,
-             estado = ?,
-             complemento = ?,
-             ponto_referencia = ?,
-             telefone = ?,
-             is_default = ?
-       WHERE id = ? AND usuario_id = ?`,
-      [
-        apelido,
-        cep,
-        endereco,
-        numero,
-        bairro,
-        cidade,
-        estado,
-        complemento,
-        ponto_referencia,
-        telefone,
-        is_default ? 1 : 0,
-        id,
-        req.user.id,
-      ]
+    const pedidoId = Number(String(req.params.id).replace(/\D/g, ''));
+    if (!pedidoId) {
+      return res.status(400).json({ message: 'id inválido' });
+    }
+
+    // Cabeçalho do pedido + total calculado, garantindo que o pedido é do usuário logado
+    const [[pedido]] = await pool.query(
+      `
+      SELECT
+        p.id,
+        p.usuario_id,
+        p.forma_pagamento,
+        p.status,
+        p.data_pedido,
+        p.endereco,
+        SUM(pp.quantidade * pp.valor_unitario) AS total
+      FROM pedidos p
+      LEFT JOIN pedidos_produtos pp ON pp.pedido_id = p.id
+      WHERE p.id = ? AND p.usuario_id = ?
+      GROUP BY p.id
+      `,
+      [pedidoId, usuarioId]
     );
 
-    await conn.commit();
-    res.json({ message: 'Endereço atualizado' });
-  } catch (e) {
-    console.error('Erro ao atualizar endereço:', e);
-    await conn.rollback();
-    res.status(500).json({ message: 'Erro ao atualizar endereço' });
-  } finally {
-    conn.release();
-  }
-});
+    if (!pedido) {
+      return res.status(404).json({ message: 'Pedido não encontrado' });
+    }
 
-// Remove endereço
-router.delete('/:id', async (req, res) => {
-  try {
-    await pool.query(
-      'DELETE FROM enderecos_usuario WHERE id = ? AND usuario_id = ?',
-      [req.params.id, req.user.id]
+    // Itens do pedido (agora trazendo também o produto_id)
+    const [itens] = await pool.query(
+      `
+      SELECT
+        pp.id,
+        pp.produto_id,
+        pp.quantidade,
+        pp.valor_unitario AS preco,
+        pr.name AS nome,
+        pr.image AS imagem
+      FROM pedidos_produtos pp
+      JOIN products pr ON pr.id = pp.produto_id
+      WHERE pp.pedido_id = ?
+      `,
+      [pedidoId]
     );
-    res.json({ message: 'Endereço removido' });
-  } catch (e) {
-    console.error('Erro ao remover endereço:', e);
-    res.status(500).json({ message: 'Erro ao remover endereço' });
+
+    const itensFormatados = itens.map((i) => ({
+      id: i.id, // id do item em pedidos_produtos
+      produto_id: i.produto_id, // id REAL do produto (products.id)
+      nome: i.nome,
+      preco: Number(i.preco),
+      quantidade: i.quantidade,
+      imagem: i.imagem,
+    }));
+
+    const totalCalculado = itensFormatados.reduce(
+      (sum, i) => sum + i.preco * i.quantidade,
+      0
+    );
+
+    res.json({
+      id: pedido.id,
+      usuario_id: pedido.usuario_id,
+      forma_pagamento: pedido.forma_pagamento,
+      status: pedido.status,
+      data_pedido: pedido.data_pedido,
+      endereco: pedido.endereco ?? null, // mantém string
+      total: totalCalculado,
+      itens: itensFormatados,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar pedido:', error);
+    res.status(500).json({ message: 'Erro ao buscar pedido' });
   }
 });
 

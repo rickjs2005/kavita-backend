@@ -5,7 +5,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const pool = require("../config/pool");
 const logAdminAction = require("../utils/adminLogger");
-const verifyAdmin = require("../middleware/verifyAdmin"); 
+const verifyAdmin = require("../middleware/verifyAdmin");
 require("dotenv").config();
 
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -15,9 +15,11 @@ if (!SECRET_KEY) {
   throw new Error("❌ JWT_SECRET não definido no .env");
 }
 
+const COOKIE_NAME = "adminToken";
+const COOKIE_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2h
+
 /**
  * Carrega as permissões granulares do admin com base no role (slug).
- * Mesma lógica conceitual do verifyAdmin, mas local aqui para evitar dependência cruzada.
  *
  * @param {number} adminId - ID do administrador
  * @returns {Promise<string[]>} - Lista de chaves de permissão (ex: ["admin.logs.view", "admin.config.edit"])
@@ -49,11 +51,14 @@ async function getAdminPermissions(adminId) {
  *   post:
  *     tags: [Public, Login]
  *     summary: Realiza login de administrador e gera token JWT
- *     description: >
+ *     description: |
  *       Autentica um administrador pelo e-mail e senha, gera um token JWT com
- *       **id**, **email**, **role**, **role_id** e **permissions**, e retorna
- *       também os dados básicos do admin. Esse token é utilizado pelos middlewares
- *       de autorização no painel admin.
+ *       **id**, **email**, **role**, **role_id** e **permissions** e o envia em um
+ *       **cookie HttpOnly (`adminToken`)**, recomendado para uso no painel admin.
+ *
+ *       O corpo da resposta ainda traz o campo `token` apenas por compatibilidade,
+ *       mas o front-end do painel **não deve armazená-lo** – toda autenticação
+ *       deve depender exclusivamente do cookie HttpOnly.
  *     requestBody:
  *       required: true
  *       content:
@@ -70,7 +75,7 @@ async function getAdminPermissions(adminId) {
  *                 example: "123456"
  *     responses:
  *       200:
- *         description: Login bem-sucedido, retorna token JWT e dados do admin
+ *         description: Login bem-sucedido, retorna token JWT (apenas informativo) e dados do admin
  *         content:
  *           application/json:
  *             schema:
@@ -81,7 +86,7 @@ async function getAdminPermissions(adminId) {
  *                   example: "Login realizado com sucesso."
  *                 token:
  *                   type: string
- *                   description: Token JWT com id, email, role, role_id e permissions
+ *                   description: Token JWT (também enviado em cookie HttpOnly `adminToken`)
  *                 admin:
  *                   type: object
  *                   properties:
@@ -138,8 +143,7 @@ router.post("/login", async (req, res) => {
   try {
     console.log("🔐 Tentativa de login de admin:", emailNormalizado);
 
-    // 2. Busca o admin no banco de dados pelo email
-    //    Já traz o role_id a partir da tabela admin_roles
+    // 2. Busca o admin no banco de dados pelo email + role_id via admin_roles
     const [rows] = await pool.query(
       `
         SELECT
@@ -216,7 +220,18 @@ router.post("/login", async (req, res) => {
       entidadeId: admin.id,
     });
 
-    // 8. Retorna token e dados do admin
+    // 8. Define cookie HttpOnly com o token JWT
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: COOKIE_MAX_AGE_MS,
+      path: "/",
+    };
+
+    res.cookie(COOKIE_NAME, token, cookieOptions);
+
+    // 9. Retorna token e dados do admin (token é apenas informativo para outros clientes)
     return res.status(200).json({
       message: "Login realizado com sucesso.",
       token,
@@ -247,8 +262,7 @@ router.post("/login", async (req, res) => {
  *     summary: Retorna o administrador autenticado (perfil atual)
  *     description: >
  *       Retorna os dados do administrador autenticado com base no token JWT
- *       (id, nome, email, role, role_id e array de permissões). Útil para
- *       configurar o contexto do front-end.
+ *       enviado em cookie HttpOnly (`adminToken`) ou no header Authorization.
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -318,7 +332,7 @@ router.get("/me", verifyAdmin, async (req, res) => {
     );
 
     if (!rows || rows.length === 0) {
-      return res.status(404).json({ message: "Admin não encontrado." });
+      return res.status(404).json({ message: "Admin não encontrado" });
     }
 
     const admin = rows[0];
@@ -340,6 +354,33 @@ router.get("/me", verifyAdmin, async (req, res) => {
       .status(500)
       .json({ message: "Erro interno ao carregar perfil do admin." });
   }
+});
+
+/**
+ * @openapi
+ * /api/admin/logout:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Faz logout do administrador
+ *     description: >
+ *       Limpa o cookie HttpOnly (`adminToken`) e encerra a sessão do administrador.
+ *     responses:
+ *       200:
+ *         description: Logout realizado com sucesso.
+ */
+router.post("/logout", (req, res) => {
+  const clearOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+  };
+
+  res.clearCookie(COOKIE_NAME, clearOptions);
+
+  return res.status(200).json({
+    message: "Logout realizado com sucesso.",
+  });
 });
 
 module.exports = router;
