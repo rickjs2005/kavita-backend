@@ -1,18 +1,18 @@
 const pool = require("../config/pool");
 const { dispararEventoComunicacao } = require("../services/comunicacaoService");
 
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
+
 /**
  * Controller de Checkout
  *
  * - Cria um novo pedido.
  * - Atualiza dados básicos do usuário (nome, email, telefone, cpf).
  * - Valida estoque e atualiza quantity dos produtos.
- * - Integra com o sistema de carrinhos abandonados:
- *   - Se existir um carrinho "aberto" para o usuário, tenta marcar
- *     esse carrinho como "recuperado" na tabela `carrinhos_abandonados`.
+ * - Integra com carrinhos abandonados.
  */
-async function create(req, res) {
-  // Agora só pegamos dados “de conteúdo” do body
+async function create(req, res, next) {
   const {
     formaPagamento,
     endereco,
@@ -21,19 +21,30 @@ async function create(req, res) {
     cpf,
     telefone,
     email,
-    cupom_codigo, // código do cupom enviado pelo front
+    cupom_codigo,
   } = req.body || {};
 
-  // ID do usuário vem EXCLUSIVAMENTE do token
   const usuario_id = req.user && req.user.id;
 
-  // Segurança extra
-  if (!usuario_id || !Array.isArray(produtos) || produtos.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "Dados de checkout inválidos ou usuário não autenticado.",
-    });
+  // Segurança extra (auth + payload)
+  if (!usuario_id) {
+    return next(
+      new AppError(
+        "Você precisa estar logado para finalizar o checkout.",
+        ERROR_CODES.AUTH_ERROR,
+        401
+      )
+    );
+  }
+
+  if (!Array.isArray(produtos) || produtos.length === 0) {
+    return next(
+      new AppError(
+        "Dados de checkout inválidos.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400
+      )
+    );
   }
 
   let connection;
@@ -42,10 +53,7 @@ async function create(req, res) {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    /* ------------------------------------------------------------------ */
-    /* 1) (Opcional) Atualiza informações do usuário (CRM básico)         */
-    /* ------------------------------------------------------------------ */
-
+    /* 1) Atualiza informações do usuário (não bloqueia pedido) */
     try {
       const campos = [];
       const valores = [];
@@ -84,14 +92,10 @@ async function create(req, res) {
       }
     } catch (err) {
       console.error("[checkout] Erro ao atualizar dados do usuário:", err);
-      // não damos throw aqui para não impedir o pedido;
-      // se preferir ser mais rígido, pode lançar o erro.
+      // não bloqueia o pedido
     }
 
-    /* ------------------------------------------------------------------ */
-    /* 2) (Novo) Descobre um carrinho aberto do usuário, se existir       */
-    /* ------------------------------------------------------------------ */
-
+    /* 2) Descobre carrinho aberto (não bloqueia pedido) */
     let carrinhoAberto = null;
 
     try {
@@ -107,20 +111,13 @@ async function create(req, res) {
       );
 
       if (rowsCarrinho && rowsCarrinho.length > 0) {
-        carrinhoAberto = rowsCarrinho[0]; // { id: ... }
+        carrinhoAberto = rowsCarrinho[0];
       }
     } catch (err) {
-      console.error(
-        "[checkout] Erro ao buscar carrinho aberto do usuário:",
-        err
-      );
-      // não bloqueia o fluxo do pedido
+      console.error("[checkout] Erro ao buscar carrinho aberto:", err);
     }
 
-    /* ------------------------------------------------------------------ */
-    /* 3) Cria o pedido (registro principal)                              */
-    /* ------------------------------------------------------------------ */
-
+    /* 3) Cria pedido */
     const enderecoStr = JSON.stringify(endereco || {});
 
     const [pedidoIns] = await connection.query(
@@ -128,9 +125,9 @@ async function create(req, res) {
         usuario_id,
         endereco,
         forma_pagamento,
-        status,             -- legado
-        status_pagamento,   -- financeiro
-        status_entrega,     -- logístico
+        status,
+        status_pagamento,
+        status_entrega,
         total,
         data_pedido,
         pagamento_id
@@ -140,20 +137,17 @@ async function create(req, res) {
         usuario_id,
         enderecoStr,
         formaPagamento,
-        "pendente",      // coluna antiga
-        "pendente",      // aguardando pagamento
-        "em_separacao",  // fluxo logístico
-        0,               // total será atualizado depois
-        null,            // pagamento_id (pode receber id do MP futuramente)
+        "pendente",
+        "pendente",
+        "em_separacao",
+        0,
+        null,
       ]
     );
 
     const pedidoId = pedidoIns.insertId;
 
-    /* ------------------------------------------------------------------ */
-    /* 4) Busca os produtos no banco para validar preço e estoque         */
-    /* ------------------------------------------------------------------ */
-
+    /* 4) Busca produtos para validar preço/estoque */
     const ids = produtos.map((p) => Number(p.id));
     const [prodRows] = await connection.query(
       "SELECT id, price, quantity FROM products WHERE id IN (?) FOR UPDATE",
@@ -168,10 +162,7 @@ async function create(req, res) {
       };
     });
 
-    /* ------------------------------------------------------------------ */
-    /* 5) Insere itens do pedido e atualiza estoque                       */
-    /* ------------------------------------------------------------------ */
-
+    /* 5) Insere itens e atualiza estoque */
     let totalPedido = 0;
 
     for (const item of produtos) {
@@ -179,28 +170,28 @@ async function create(req, res) {
       const qtd = Number(item.quantidade || 0);
 
       if (!produtoId || !Number.isFinite(qtd) || qtd <= 0) {
-        await connection.rollback();
-        return res.status(400).json({
-          success: false,
-          message: "Produto inválido no checkout.",
-        });
+        throw new AppError(
+          "Produto inválido no checkout.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        );
       }
 
       const info = mapProdutos[produtoId];
       if (!info) {
-        await connection.rollback();
-        return res.status(400).json({
-          success: false,
-          message: `Produto ${produtoId} não encontrado.`,
-        });
+        throw new AppError(
+          `Produto ${produtoId} não encontrado.`,
+          ERROR_CODES.NOT_FOUND,
+          404
+        );
       }
 
       if (info.stock < qtd) {
-        await connection.rollback();
-        return res.status(400).json({
-          success: false,
-          message: `Estoque insuficiente para o produto ${produtoId}.`,
-        });
+        throw new AppError(
+          `Estoque insuficiente para o produto ${produtoId}.`,
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        );
       }
 
       const valorUnitario = info.price;
@@ -219,10 +210,7 @@ async function create(req, res) {
       totalPedido += valorUnitario * qtd;
     }
 
-    /* ------------------------------------------------------------------ */
-    /* 6.1) Aplicar cupom de desconto (opcional)                          */
-    /* ------------------------------------------------------------------ */
-
+    /* 6) Cupom (opcional) */
     let totalFinal = totalPedido;
     let descontoTotal = 0;
     let cupomAplicado = null;
@@ -243,32 +231,32 @@ async function create(req, res) {
         );
 
         if (!rowsCupom || rowsCupom.length === 0) {
-          await connection.rollback();
-          return res.status(400).json({
-            success: false,
-            message: "Cupom inválido ou não encontrado.",
-          });
+          throw new AppError(
+            "Cupom inválido ou não encontrado.",
+            ERROR_CODES.VALIDATION_ERROR,
+            400
+          );
         }
 
         const cupom = rowsCupom[0];
 
         if (!cupom.ativo) {
-          await connection.rollback();
-          return res.status(400).json({
-            success: false,
-            message: "Este cupom está inativo.",
-          });
+          throw new AppError(
+            "Este cupom está inativo.",
+            ERROR_CODES.VALIDATION_ERROR,
+            400
+          );
         }
 
         if (cupom.expiracao) {
           const agora = new Date();
           const exp = new Date(cupom.expiracao);
           if (exp.getTime() < agora.getTime()) {
-            await connection.rollback();
-            return res.status(400).json({
-              success: false,
-              message: "Este cupom está expirado.",
-            });
+            throw new AppError(
+              "Este cupom está expirado.",
+              ERROR_CODES.VALIDATION_ERROR,
+              400
+            );
           }
         }
 
@@ -279,22 +267,20 @@ async function create(req, res) {
             : Number(cupom.max_usos);
 
         if (maxUsos !== null && usos >= maxUsos) {
-          await connection.rollback();
-          return res.status(400).json({
-            success: false,
-            message: "Este cupom já atingiu o limite de usos.",
-          });
+          throw new AppError(
+            "Este cupom já atingiu o limite de usos.",
+            ERROR_CODES.VALIDATION_ERROR,
+            400
+          );
         }
 
         const minimo = Number(cupom.minimo || 0);
         if (minimo > 0 && totalPedido < minimo) {
-          await connection.rollback();
-          return res.status(400).json({
-            success: false,
-            message: `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(
-              2
-            )}.`,
-          });
+          throw new AppError(
+            `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(2)}.`,
+            ERROR_CODES.VALIDATION_ERROR,
+            400
+          );
         }
 
         const valor = Number(cupom.valor || 0);
@@ -303,7 +289,6 @@ async function create(req, res) {
         if (cupom.tipo === "percentual") {
           desconto = (totalPedido * valor) / 100;
         } else {
-          // tipo "valor" (desconto fixo em R$)
           desconto = valor;
         }
 
@@ -317,40 +302,32 @@ async function create(req, res) {
           id: cupom.id,
           codigo: cupom.codigo,
           tipo: cupom.tipo,
-          valor: valor,
+          valor,
         };
 
-        // incrementa usos do cupom
-        await connection.query(
-          "UPDATE cupons SET usos = usos + 1 WHERE id = ?",
-          [cupom.id]
-        );
+        await connection.query("UPDATE cupons SET usos = usos + 1 WHERE id = ?", [
+          cupom.id,
+        ]);
       } catch (errCupom) {
+        // Se já for AppError, respeita. Se não, vira erro interno de cupom
+        if (errCupom instanceof AppError) throw errCupom;
+
         console.error("[checkout] Erro ao aplicar cupom:", errCupom);
-        await connection.rollback();
-        return res.status(500).json({
-          success: false,
-          message: "Erro ao aplicar o cupom de desconto.",
-        });
+        throw new AppError(
+          "Erro ao aplicar o cupom de desconto.",
+          ERROR_CODES.SERVER_ERROR,
+          500
+        );
       }
     }
 
-    /* ------------------------------------------------------------------ */
-    /* 6) Atualiza total do pedido (já com desconto, se houver)           */
-    /* ------------------------------------------------------------------ */
-
+    /* 7) Atualiza total do pedido */
     await connection.query("UPDATE pedidos SET total = ? WHERE id = ?", [
       totalFinal,
       pedidoId,
     ]);
 
-    /* ------------------------------------------------------------------ */
-    /* 7) Integração com carrinhos_abandonados                            */
-    /*    - Se houver um carrinho aberto para o usuário e ele estiver     */
-    /*      registrado em carrinhos_abandonados, marcamos como            */
-    /*      recuperado = 1.                                               */
-    /* ------------------------------------------------------------------ */
-
+    /* 8) Marca carrinho abandonado como recuperado (não bloqueia) */
     try {
       if (carrinhoAberto && carrinhoAberto.id) {
         await connection.query(
@@ -364,51 +341,30 @@ async function create(req, res) {
         );
       }
     } catch (err) {
-      console.error(
-        "[checkout] Erro ao marcar carrinho abandonado como recuperado:",
-        err
-      );
-      // não impede o pedido; se der erro aqui, apenas não marca como recuperado
+      console.error("[checkout] Erro ao marcar carrinho como recuperado:", err);
     }
 
-    /* ------------------------------------------------------------------ */
-    /* 8) Commit na transação principal                                   */
-    /* ------------------------------------------------------------------ */
-
+    /* 9) Commit */
     await connection.commit();
 
-    // ------------------------------------------------------
-    // 8.1) Dispara comunicação automática de "pedido criado"
-    //     (não quebra o fluxo se der erro)
-    // ------------------------------------------------------
+    /* 9.1) Comunicação (não bloqueia) */
     try {
       await dispararEventoComunicacao("pedido_criado", pedidoId);
     } catch (errCom) {
-      console.error(
-        "[checkout] Erro ao disparar comunicação de pedido criado:",
-        errCom
-      );
+      console.error("[checkout] Erro ao disparar comunicação:", errCom);
     }
 
-    /* ------------------------------------------------------------------ */
-    /* 9) Fora da transação: fecha qualquer carrinho aberto desse usuário */
-    /*    (comportamento antigo preservado)                               */
-    /* ------------------------------------------------------------------ */
-
+    /* 10) Fecha carrinho aberto (fora da transação, não bloqueia) */
     try {
       await pool.query(
         'UPDATE carrinhos SET status = "convertido" WHERE usuario_id = ? AND status = "aberto"',
         [usuario_id]
       );
     } catch (err) {
-      console.error("[checkout] Erro ao fechar carrinho após checkout:", err);
-      // não lançamos erro aqui para não quebrar a resposta
+      console.error("[checkout] Erro ao fechar carrinho:", err);
     }
 
-    /* ------------------------------------------------------------------ */
-    /* 10) Resposta final                                                 */
-    /* ------------------------------------------------------------------ */
-
+    /* 11) Resposta final */
     return res.status(201).json({
       success: true,
       message: "Pedido criado com sucesso",
@@ -429,10 +385,18 @@ async function create(req, res) {
       }
     }
 
-    return res.status(500).json({
-      success: false,
-      message: "Erro interno ao processar checkout.",
-    });
+    // Se já é AppError, repassa; se não, padroniza como SERVER_ERROR
+    if (err instanceof AppError) {
+      return next(err);
+    }
+
+    return next(
+      new AppError(
+        "Erro interno ao processar checkout.",
+        ERROR_CODES.SERVER_ERROR,
+        500
+      )
+    );
   } finally {
     if (connection) {
       connection.release();

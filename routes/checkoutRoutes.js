@@ -1,9 +1,12 @@
 // routes/checkoutRoutes.js
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const pool = require('../config/pool');
-const controller = require('../controllers/checkoutController');
-const authenticateToken = require('../middleware/authenticateToken');
+const pool = require("../config/pool");
+const controller = require("../controllers/checkoutController");
+const authenticateToken = require("../middleware/authenticateToken");
+
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 /* ------------------------------------------------------------------ */
 /*                               Swagger                              */
@@ -174,46 +177,53 @@ const authenticateToken = require('../middleware/authenticateToken');
 /*                           Validação básica                         */
 /* ------------------------------------------------------------------ */
 
-function validateCheckoutBody(req, res, next) {
-  const { formaPagamento, endereco, produtos } = req.body || {};
+function validateCheckoutBody(req, _res, next) {
+  const { endereco, produtos } = req.body || {};
   const errors = [];
 
-  // Agora o usuário vem exclusivamente do token
-  const usuarioIdFromToken = req.user && req.user.id;
+  // usuário vem exclusivamente do token
+  const usuarioIdFromToken = req.user?.id;
 
   if (!usuarioIdFromToken) {
-    return res.status(401).json({
-      success: false,
-      message: "Usuário não autenticado para realizar o checkout.",
-    });
+    return next(
+      new AppError(
+        "Usuário não autenticado para realizar o checkout.",
+        ERROR_CODES.AUTH_ERROR,
+        401
+      )
+    );
   }
 
   if (!endereco) {
-    errors.push('endereco é obrigatório.');
+    errors.push("endereco é obrigatório.");
   } else {
-    ['cep', 'rua', 'numero', 'bairro', 'cidade', 'estado'].forEach((campo) => {
+    ["cep", "rua", "numero", "bairro", "cidade", "estado"].forEach((campo) => {
       if (!endereco[campo]) errors.push(`endereco.${campo} é obrigatório.`);
     });
   }
 
   if (!Array.isArray(produtos) || produtos.length === 0) {
-    errors.push('produtos deve ser um array com ao menos um item.');
+    errors.push("produtos deve ser um array com ao menos um item.");
   } else {
     produtos.forEach((p, i) => {
       if (!p.id) errors.push(`produtos[${i}].id é obrigatório.`);
       if (!Number.isInteger(p.quantidade) || p.quantidade <= 0) {
-        errors.push(
-          `produtos[${i}].quantidade deve ser um inteiro maior que zero.`
-        );
+        errors.push(`produtos[${i}].quantidade deve ser um inteiro maior que zero.`);
       }
     });
   }
 
-  // Preenche o body.usuario_id só para compatibilidade com o controller / logs
+  if (errors.length > 0) {
+    return next(
+      new AppError(errors.join(" "), ERROR_CODES.VALIDATION_ERROR, 400)
+    );
+  }
+
+  // compatibilidade com controller/logs (deprecated)
   if (!req.body) req.body = {};
   req.body.usuario_id = usuarioIdFromToken;
 
-  next();
+  return next();
 }
 
 /* ------------------------------------------------------------------ */
@@ -222,23 +232,22 @@ function validateCheckoutBody(req, res, next) {
 
 let checkoutHandler;
 
-if (typeof controller === 'function') {
-  // caso o controller exporte diretamente uma função
+if (typeof controller === "function") {
   checkoutHandler = controller;
-} else if (controller && typeof controller.create === 'function') {
-  // caso padrão: module.exports = { create }
+} else if (controller && typeof controller.create === "function") {
   checkoutHandler = controller.create;
 } else {
-  // fallback caso o controller não esteja configurado
-  checkoutHandler = (req, res) => {
+  checkoutHandler = (_req, _res, next) => {
     console.error(
-      '[checkoutRoutes] checkoutController não configurado corretamente. Esperado função ou { create }.'
+      "[checkoutRoutes] checkoutController não configurado corretamente. Esperado função ou { create }."
     );
-    res.status(500).json({
-      success: false,
-      message:
-        'Checkout não está configurado corretamente no servidor. Avise o administrador.',
-    });
+    return next(
+      new AppError(
+        "Checkout não está configurado corretamente no servidor.",
+        ERROR_CODES.SERVER_ERROR,
+        500
+      )
+    );
   };
 }
 
@@ -277,22 +286,28 @@ if (typeof controller === 'function') {
  *       400:
  *         description: Cupom inválido ou não aplicável
  */
-router.post('/preview-cupom', authenticateToken, async (req, res) => {
+router.post("/preview-cupom", authenticateToken, async (req, res, next) => {
   const { codigo, total } = req.body || {};
   const subtotal = Number(total || 0);
 
   if (!codigo || !String(codigo).trim()) {
-    return res.status(400).json({
-      success: false,
-      message: 'Informe o código do cupom.',
-    });
+    return next(
+      new AppError(
+        "Informe o código do cupom.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400
+      )
+    );
   }
 
   if (!Number.isFinite(subtotal) || subtotal <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Total inválido para cálculo do cupom.',
-    });
+    return next(
+      new AppError(
+        "Total inválido para cálculo do cupom.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400
+      )
+    );
   }
 
   try {
@@ -307,29 +322,38 @@ router.post('/preview-cupom', authenticateToken, async (req, res) => {
     );
 
     if (!rows || rows.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cupom inválido ou não encontrado.',
-      });
+      return next(
+        new AppError(
+          "Cupom inválido ou não encontrado.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
     }
 
     const cupom = rows[0];
 
     if (!cupom.ativo) {
-      return res.status(400).json({
-        success: false,
-        message: 'Este cupom está inativo.',
-      });
+      return next(
+        new AppError(
+          "Este cupom está inativo.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
     }
 
     if (cupom.expiracao) {
       const agora = new Date();
       const exp = new Date(cupom.expiracao);
       if (exp.getTime() < agora.getTime()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Este cupom está expirado.',
-        });
+        return next(
+          new AppError(
+            "Este cupom está expirado.",
+            ERROR_CODES.VALIDATION_ERROR,
+            400
+          )
+        );
       }
     }
 
@@ -340,26 +364,30 @@ router.post('/preview-cupom', authenticateToken, async (req, res) => {
         : Number(cupom.max_usos);
 
     if (maxUsos !== null && usos >= maxUsos) {
-      return res.status(400).json({
-        success: false,
-        message: 'Este cupom já atingiu o limite de usos.',
-      });
+      return next(
+        new AppError(
+          "Este cupom já atingiu o limite de usos.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
     }
 
     const minimo = Number(cupom.minimo || 0);
     if (minimo > 0 && subtotal < minimo) {
-      return res.status(400).json({
-        success: false,
-        message: `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(
-          2
-        )}.`,
-      });
+      return next(
+        new AppError(
+          `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(2)}.`,
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
     }
 
     const valor = Number(cupom.valor || 0);
     let desconto = 0;
 
-    if (cupom.tipo === 'percentual') {
+    if (cupom.tipo === "percentual") {
       desconto = (subtotal * valor) / 100;
     } else {
       desconto = valor;
@@ -372,7 +400,7 @@ router.post('/preview-cupom', authenticateToken, async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Cupom aplicado com sucesso.',
+      message: "Cupom aplicado com sucesso.",
       desconto,
       total_original: subtotal,
       total_com_desconto: totalComDesconto,
@@ -384,11 +412,17 @@ router.post('/preview-cupom', authenticateToken, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[checkoutRoutes] Erro em /preview-cupom:', err);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao validar o cupom.',
-    });
+    console.error("[checkoutRoutes] Erro em /preview-cupom:", err);
+
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao validar o cupom.",
+            ERROR_CODES.SERVER_ERROR,
+            500
+          )
+    );
   }
 });
 
@@ -397,6 +431,6 @@ router.post('/preview-cupom', authenticateToken, async (req, res) => {
 /* ------------------------------------------------------------------ */
 
 // POST /api/checkout
-router.post('/', authenticateToken, validateCheckoutBody, checkoutHandler);
+router.post("/", authenticateToken, validateCheckoutBody, checkoutHandler);
 
 module.exports = router;

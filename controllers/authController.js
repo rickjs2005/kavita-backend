@@ -1,155 +1,104 @@
-const bcrypt = require('bcrypt');
-const pool = require('../config/pool');
-const authConfig = require('../config/auth');
-const passwordResetTokens = require('../services/passwordResetTokenService');
-const { sendResetPasswordEmail } = require('../services/mailService');
+// controllers/authController.js
+const bcrypt = require("bcrypt");
+const pool = require("../config/pool");
+const authConfig = require("../config/auth");
+const passwordResetTokens = require("../services/passwordResetTokenService");
+const { sendResetPasswordEmail } = require("../services/mailService");
 
-function ensureRateLimit(req) {
-  if (!req.rateLimit) {
-    req.rateLimit = {
-      fail: () => {},
-      reset: () => {},
-    };
-  }
-}
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
-/**
- * Opções padrão do cookie de autenticação.
- * - Em produção: Secure + SameSite=Strict
- * - Em desenvolvimento: sem secure e SameSite=Lax para funcionar em http://localhost
- */
 function getAuthCookieOptions() {
-  const isProduction = process.env.NODE_ENV === 'production';
-
+  const isProduction = process.env.NODE_ENV === "production";
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
-    path: '/',
+    sameSite: isProduction ? "strict" : "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/",
   };
 }
 
 function buildSafeUserResponse(user) {
-  return {
-    id: user.id,
-    nome: user.nome,
-    email: user.email,
-    // Se no futuro você tiver "role" na tabela usuarios, pode expor aqui:
-    // role: user.role,
-  };
+  return { id: user.id, nome: user.nome, email: user.email };
 }
 
 const AuthController = {
-  async login(req, res) {
+  async login(req, res, next) {
     const { email, senha } = req.body;
 
     try {
-      const [users] = await pool.query(
-        'SELECT * FROM usuarios WHERE email = ?',
-        [email]
-      );
+      const [users] = await pool.query("SELECT * FROM usuarios WHERE email = ?", [email]);
 
       if (users.length === 0) {
         req.rateLimit?.fail?.();
-        return res.status(400).json({ message: 'Usuário não encontrado.' });
+        return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
       }
 
       const user = users[0];
 
-      const isPasswordValid = await bcrypt.compare(senha, user.senha);
-      if (!isPasswordValid) {
+      const ok = await bcrypt.compare(senha, user.senha);
+      if (!ok) {
         req.rateLimit?.fail?.();
-        return res.status(400).json({ message: 'Credenciais inválidas.' });
+        return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
       }
 
-      // Payload mínimo: id (e opcionalmente role, se existir)
-      const payload = { id: user.id };
-      // Exemplo se tiver role: payload.role = user.role;
-
-      const token = authConfig.sign(payload);
+      const token = authConfig.sign({ id: user.id });
       req.rateLimit?.reset?.();
 
-      // Grava o token no cookie HttpOnly
-      res.cookie('auth_token', token, getAuthCookieOptions());
+      res.cookie("auth_token", token, getAuthCookieOptions());
 
-      // NÃO devolve o token para o front (só dados básicos do usuário)
       return res.status(200).json({
-        message: 'Login bem-sucedido!',
+        message: "Login bem-sucedido!",
         user: buildSafeUserResponse(user),
       });
     } catch (error) {
-      console.error('Erro no login:', error);
-      return res
-        .status(500)
-        .json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+      return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
 
-  async register(req, res) {
+  async register(req, res, next) {
     const { nome, email, senha } = req.body;
 
     try {
-      const [users] = await pool.query(
-        'SELECT id FROM usuarios WHERE email = ?',
-        [email]
-      );
-
+      const [users] = await pool.query("SELECT id FROM usuarios WHERE email = ?", [email]);
       if (users.length > 0) {
-        return res.status(400).json({ message: 'Este email já está cadastrado.' });
+        return next(new AppError("Este email já está cadastrado.", ERROR_CODES.VALIDATION_ERROR, 400));
       }
 
-      const hashedPassword = await bcrypt.hash(senha, 10);
+      const hashed = await bcrypt.hash(senha, 10);
+      await pool.query("INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?)", [nome, email, hashed]);
 
-      await pool.query(
-        'INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?)',
-        [nome, email, hashedPassword]
-      );
-
-      return res
-        .status(201)
-        .json({ message: 'Usuário cadastrado com sucesso!' });
+      return res.status(201).json({ message: "Usuário cadastrado com sucesso!" });
     } catch (error) {
-      console.error('Erro no registro:', error);
-      return res
-        .status(500)
-        .json({ message: 'Erro no servidor. Tente novamente mais tarde.' });
+      return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
 
-  async logout(_req, res) {
+  async logout(_req, res, next) {
     try {
-      // Limpa o cookie de autenticação
-      res.clearCookie('auth_token', getAuthCookieOptions());
-      return res.status(200).json({ message: 'Logout bem-sucedido!' });
+      res.clearCookie("auth_token", getAuthCookieOptions());
+      return res.status(200).json({ message: "Logout bem-sucedido!" });
     } catch (error) {
-      console.error('Erro no logout:', error);
-      return res
-        .status(500)
-        .json({ message: 'Erro no servidor ao fazer logout.' });
+      return next(new AppError("Erro no servidor ao fazer logout.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
 
-  async forgotPassword(req, res) {
-    ensureRateLimit(req);
-
+  async forgotPassword(req, res, next) {
     try {
       const { email } = req.body;
-
       if (!email) {
-        req.rateLimit.fail();
-        return res.status(400).json({ mensagem: 'Email é obrigatório.' });
+        req.rateLimit?.fail?.();
+        return next(new AppError("Email é obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400));
       }
 
-      const [rows] = await pool.execute(
-        'SELECT id FROM usuarios WHERE email = ?',
-        [email]
-      );
+      const [rows] = await pool.execute("SELECT id FROM usuarios WHERE email = ?", [email]);
+
+      // segurança: resposta neutra
       if (!rows || rows.length === 0) {
-        req.rateLimit.reset();
+        req.rateLimit?.reset?.();
         return res.status(200).json({
-          mensagem:
-            'Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.',
+          mensagem: "Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.",
         });
       }
 
@@ -161,64 +110,43 @@ const AuthController = {
       await passwordResetTokens.storeToken(user.id, token, expires);
       await sendResetPasswordEmail(email, token);
 
-      req.rateLimit.reset();
+      req.rateLimit?.reset?.();
 
       return res.status(200).json({
-        mensagem:
-          'Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.',
+        mensagem: "Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.",
       });
     } catch (error) {
-      console.error('Erro em forgot-password:', error);
-      req.rateLimit.fail();
-      return res.status(500).json({
-        mensagem: 'Erro no servidor. Tente novamente mais tarde.',
-      });
+      req.rateLimit?.fail?.();
+      return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
 
-  async resetPassword(req, res) {
-    ensureRateLimit(req);
-
+  async resetPassword(req, res, next) {
     try {
       const { token, novaSenha } = req.body;
-
       if (!token || !novaSenha) {
-        req.rateLimit.fail();
-        return res
-          .status(400)
-          .json({ mensagem: 'Token e nova senha são obrigatórios.' });
+        req.rateLimit?.fail?.();
+        return next(new AppError("Token e nova senha são obrigatórios.", ERROR_CODES.VALIDATION_ERROR, 400));
       }
 
       const record = await passwordResetTokens.findValidToken(token);
-
       if (!record) {
-        req.rateLimit.fail();
-        return res
-          .status(400)
-          .json({ mensagem: 'Token inválido ou expirado.' });
+        req.rateLimit?.fail?.();
+        return next(new AppError("Token inválido ou expirado.", ERROR_CODES.AUTH_ERROR, 401));
       }
 
       const novaSenhaHash = await bcrypt.hash(novaSenha, 10);
-
-      await pool.execute(
-        'UPDATE usuarios SET senha = ? WHERE id = ?',
-        [novaSenhaHash, record.user_id]
-      );
+      await pool.execute("UPDATE usuarios SET senha = ? WHERE id = ?", [novaSenhaHash, record.user_id]);
 
       await passwordResetTokens.revokeToken(record.id);
       await passwordResetTokens.revokeAllForUser(record.user_id);
 
-      req.rateLimit.reset();
+      req.rateLimit?.reset?.();
 
-      return res
-        .status(200)
-        .json({ mensagem: 'Senha redefinida com sucesso!' });
+      return res.status(200).json({ mensagem: "Senha redefinida com sucesso!" });
     } catch (error) {
-      console.error('Erro em reset-password:', error);
-      req.rateLimit.fail();
-      return res.status(500).json({
-        mensagem: 'Erro no servidor. Tente novamente mais tarde.',
-      });
+      req.rateLimit?.fail?.();
+      return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
 };

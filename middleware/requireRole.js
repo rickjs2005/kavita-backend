@@ -1,4 +1,6 @@
 // middleware/requireRole.js
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 /**
  * Exemplo de uso:
@@ -6,14 +8,20 @@
  *   router.delete('/produtos/:id', verifyAdmin, requireRole(['master', 'gerente']), handler);
  */
 function requireRole(allowedRoles = []) {
-  return function (req, res, next) {
+  return function (req, _res, next) {
     const role = req.admin?.role;
 
     if (!role || !allowedRoles.includes(role)) {
-      return res.status(403).json({ message: 'Permissão insuficiente.' });
+      return next(
+        new AppError(
+          "Permissão insuficiente para executar esta ação.",
+          ERROR_CODES.AUTH_ERROR,
+          403
+        )
+      );
     }
 
-    next();
+    return next();
   };
 }
 

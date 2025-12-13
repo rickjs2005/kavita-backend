@@ -1,66 +1,79 @@
 // middleware/authenticateToken.js
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 /**
  * Middleware de autenticação com JWT.
  *
  * Estratégia:
  * - Primeiro tenta ler o token do cookie HttpOnly: auth_token
- * - Caso não exista, aceita Authorization: Bearer <token> (compatibilidade)
- * - Se o token for válido, preenche req.user = payload e chama next().
+ * - Fallback: Authorization: Bearer <token>
+ * - Se válido, popula req.user
  */
-function authenticateToken(req, res, next) {
+function authenticateToken(req, _res, next) {
   const SECRET = process.env.JWT_SECRET;
+
   if (!SECRET) {
-    console.error('JWT_SECRET não definido no .env');
-    return res
-      .status(500)
-      .json({ message: 'Erro de configuração de autenticação.' });
+    console.error("JWT_SECRET não definido no .env");
+    return next(
+      new AppError(
+        "Erro de configuração de autenticação.",
+        ERROR_CODES.SERVER_ERROR,
+        500
+      )
+    );
   }
 
   let token = null;
 
-  // 1) Tenta pegar do cookie HttpOnly (via cookie-parser)
-  if (req.cookies && req.cookies.auth_token) {
+  // 1) Cookie HttpOnly
+  if (req.cookies?.auth_token) {
     token = req.cookies.auth_token;
   }
 
-  // 2) Fallback: Authorization: Bearer <token>
+  // 2) Fallback Authorization header
   if (!token) {
-    const authHeader = req.headers['authorization'] || req.headers.authorization;
+    const authHeader =
+      req.headers.authorization || req.headers["authorization"];
 
-    if (authHeader && typeof authHeader === 'string') {
-      const [scheme, value] = authHeader.split(' ');
-      if (scheme === 'Bearer' && value) {
+    if (typeof authHeader === "string") {
+      const [scheme, value] = authHeader.split(" ");
+      if (scheme === "Bearer" && value) {
         token = value;
       }
     }
   }
 
   if (!token) {
-    // Log detalhado no servidor
-    console.warn('authenticateToken: token ausente na requisição');
-    return res.status(401).json({
-      message: 'Você precisa estar logado para acessar esta área.',
-    });
+    console.warn("authenticateToken: token ausente");
+    return next(
+      new AppError(
+        "Você precisa estar logado para acessar esta área.",
+        ERROR_CODES.AUTH_ERROR,
+        401
+      )
+    );
   }
 
   try {
     const payload = jwt.verify(token, SECRET);
-    // Exemplo de payload esperado: { id: 123, role?: '...' , iat, exp }
+
     req.user = {
       id: payload.id,
       role: payload.role || null,
-      // Se quiser preservar tudo:
-      // ...payload,
     };
 
     return next();
   } catch (error) {
-    console.error('authenticateToken: falha ao verificar token JWT:', error);
-    return res.status(401).json({
-      message: 'Sua sessão expirou ou é inválida. Faça login novamente.',
-    });
+    console.warn("authenticateToken: token inválido ou expirado", error.message);
+    return next(
+      new AppError(
+        "Sua sessão expirou ou é inválida. Faça login novamente.",
+        ERROR_CODES.AUTH_ERROR,
+        401
+      )
+    );
   }
 }
 

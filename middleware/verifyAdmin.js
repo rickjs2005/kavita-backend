@@ -1,11 +1,10 @@
 // middleware/verifyAdmin.js
 const jwt = require("jsonwebtoken");
 const pool = require("../config/pool");
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 const SECRET_KEY = process.env.JWT_SECRET;
-if (!SECRET_KEY) {
-  throw new Error("❌ JWT_SECRET não definido no .env");
-}
 
 /**
  * Busca o admin no banco (incluindo role_id via admin_roles).
@@ -56,67 +55,89 @@ async function getAdminPermissions(adminId) {
 }
 
 /**
- * Middleware de autenticação/autorizarção para rotas admin.
- *
- * - Prioriza o token vindo do cookie HttpOnly `adminToken`
- * - Fallback: Authorization: Bearer <token>
- * - Decodifica o JWT => decoded (id, email, role, role_id, permissions)
- * - Revalida o admin no banco (existência e ativo)
- * - Recalcula permissões atuais
- * - Injeta req.admin com:
- *    { id, email, nome, role, role_id, permissions, ...payloadDoToken }
+ * Middleware de autenticação/autorização do admin.
  */
-async function verifyAdmin(req, res, next) {
-  const authHeader = req.headers.authorization || "";
+async function verifyAdmin(req, _res, next) {
+  if (!SECRET_KEY) {
+    console.error("JWT_SECRET não definido no .env");
+    return next(
+      new AppError(
+        "Erro de configuração de autenticação.",
+        ERROR_CODES.SERVER_ERROR,
+        500
+      )
+    );
+  }
+
   let token = null;
 
-  // 1) Prioriza cookie HttpOnly (modelo mais seguro para o painel admin)
-  if (req.cookies && req.cookies.adminToken) {
+  // 1) Cookie HttpOnly (prioridade)
+  if (req.cookies?.adminToken) {
     token = req.cookies.adminToken;
   }
 
-  // 2) Fallback: header Authorization: Bearer <token> (útil para testes via Swagger)
-  if (!token && authHeader.startsWith("Bearer ")) {
-    token = authHeader.slice(7);
+  // 2) Fallback: Authorization header
+  if (!token) {
+    const authHeader =
+      req.headers.authorization || req.headers["authorization"];
+    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+      token = authHeader.slice(7);
+    }
   }
 
   if (!token) {
-    return res.status(401).json({ message: "Token não fornecido" });
+    return next(
+      new AppError(
+        "Token não fornecido.",
+        ERROR_CODES.AUTH_ERROR,
+        401
+      )
+    );
   }
 
   let decoded;
   try {
-    decoded = jwt.verify(token, SECRET_KEY); // { id, email, role, role_id?, permissions? }
+    decoded = jwt.verify(token, SECRET_KEY);
   } catch (err) {
     console.warn("verifyAdmin: token inválido:", err.message);
-    return res.status(401).json({ message: "Token inválido ou expirado" });
+    return next(
+      new AppError(
+        "Token inválido ou expirado.",
+        ERROR_CODES.AUTH_ERROR,
+        401
+      )
+    );
   }
 
   try {
-    // Revalida o admin no banco e garante dados frescos
     const admin = await findAdminById(decoded.id);
 
     if (!admin) {
-      return res.status(401).json({ message: "Admin não encontrado." });
+      return next(
+        new AppError(
+          "Admin não encontrado.",
+          ERROR_CODES.AUTH_ERROR,
+          401
+        )
+      );
     }
 
-    // Se a coluna ativo existir e for 0, bloqueia
     if (typeof admin.ativo !== "undefined" && admin.ativo === 0) {
-      return res.status(401).json({ message: "Admin inativo." });
+      return next(
+        new AppError(
+          "Admin inativo.",
+          ERROR_CODES.AUTH_ERROR,
+          401
+        )
+      );
     }
 
-    // Permissões "oficiais" vindas do banco
     const dbPermissions = await getAdminPermissions(admin.id);
 
-    // Começa pelo payload do token
     const baseFromToken = { ...decoded };
 
-    // Monta o objeto final do admin na request
     req.admin = {
-      // tudo que estava no token vem primeiro
       ...baseFromToken,
-
-      // mas garantimos dados frescos do banco (override)
       id: admin.id,
       email: admin.email,
       nome: admin.nome,
@@ -125,9 +146,6 @@ async function verifyAdmin(req, res, next) {
         admin.role_id != null
           ? admin.role_id
           : baseFromToken.role_id ?? null,
-
-      // permissões oficiais do banco têm prioridade;
-      // se der algum problema, usa as do token como fallback
       permissions:
         dbPermissions && dbPermissions.length > 0
           ? dbPermissions
@@ -139,9 +157,13 @@ async function verifyAdmin(req, res, next) {
     return next();
   } catch (err) {
     console.error("Erro ao validar admin no banco:", err.message);
-    return res
-      .status(500)
-      .json({ message: "Erro ao validar admin no banco." });
+    return next(
+      new AppError(
+        "Erro ao validar admin no banco.",
+        ERROR_CODES.SERVER_ERROR,
+        500
+      )
+    );
   }
 }
 

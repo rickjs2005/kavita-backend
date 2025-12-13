@@ -3,8 +3,11 @@ const crypto = require("crypto");
 const router = express.Router();
 const pool = require("../config/pool");
 
-// 👉 NOVO SDK Mercado Pago (v2)
+// 👉 SDK Mercado Pago (v2)
 const { MercadoPagoConfig, Preference, Payment } = require("mercadopago");
+
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 // Configuração do cliente do Mercado Pago
 const mpClient = new MercadoPagoConfig({
@@ -32,9 +35,6 @@ async function calcularTotalPedido(conn, pedidoId) {
 
 // =====================================================
 // Helper: monta o body da Preference do Mercado Pago
-// - Configura back_urls
-// - Configura payment_methods de acordo com forma_pagamento
-// - Em produção, adiciona auto_return + notification_url
 // =====================================================
 function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
   const appUrl = process.env.APP_URL;
@@ -59,19 +59,6 @@ function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
     metadata: { pedidoId },
   };
 
-  /**
-   * 💳 Alinhando com a forma de pagamento escolhida no checkout:
-   *
-   * - PIX:
-   *    - Exclui cartão de crédito, débito e boleto (ticket)
-   *    - Sobra principalmente bank_transfer (Pix)
-   *
-   * - BOLETO:
-   *    - Exclui cartão de crédito, débito e bank_transfer (Pix)
-   *
-   * - CARTÃO / MERCADOPAGO:
-   *    - Exclui Pix (bank_transfer) e boleto (ticket)
-   */
   if (tipo === "pix") {
     body.payment_methods = {
       excluded_payment_types: [
@@ -97,19 +84,8 @@ function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
     };
   }
 
-  /**
-   * ⚠️ IMPORTANTE:
-   * Em ambiente local (localhost / IP interno), o Mercado Pago costuma
-   * rejeitar:
-   *   - auto_return com back_urls locais
-   *   - notification_url apontando para IP privado / localhost
-   *
-   * Por isso, deixamos auto_return + notification_url **apenas em produção**,
-   * quando APP_URL e BACKEND_URL apontam para domínios públicos HTTPS.
-   */
   if (process.env.NODE_ENV === "production") {
     body.auto_return = "approved";
-
     if (backendUrl) {
       body.notification_url = `${backendUrl}/api/payment/webhook`;
     }
@@ -118,9 +94,28 @@ function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
   return body;
 }
 
-// =====================================================
-// ROTA /start
-// =====================================================
+/* ------------------------------------------------------------------ */
+/*                               Swagger                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @openapi
+ * tags:
+ *   - name: Pagamentos
+ *     description: Integração Mercado Pago (start e webhook)
+ *
+ * components:
+ *   schemas:
+ *     ApiError:
+ *       type: object
+ *       properties:
+ *         code:
+ *           type: string
+ *           example: VALIDATION_ERROR
+ *         message:
+ *           type: string
+ *           example: "pedidoId é obrigatório."
+ */
 
 /**
  * @openapi
@@ -149,18 +144,38 @@ function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
  *                 init_point: { type: string }
  *                 sandbox_init_point: { type: string }
  *       400:
- *         description: Campo pedidoId ausente
+ *         description: Campo pedidoId ausente/inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
  *       404:
  *         description: Pedido não encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
  *       500:
  *         description: Erro ao iniciar pagamento
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
  */
 
 // inicia pagamento para um pedido existente
-router.post("/start", async (req, res) => {
+router.post("/start", async (req, res, next) => {
   const { pedidoId } = req.body || {};
-  if (!pedidoId) {
-    return res.status(400).json({ message: "pedidoId é obrigatório." });
+  const pedidoIdNum = Number(pedidoId);
+
+  if (!Number.isFinite(pedidoIdNum) || pedidoIdNum <= 0) {
+    return next(
+      new AppError(
+        "pedidoId é obrigatório.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400
+      )
+    );
   }
 
   const conn = await pool.getConnection();
@@ -170,21 +185,27 @@ router.post("/start", async (req, res) => {
       `SELECT id, forma_pagamento
          FROM pedidos
         WHERE id = ?`,
-      [pedidoId]
+      [pedidoIdNum]
     );
 
     if (!pedido) {
-      return res.status(404).json({ message: "Pedido não encontrado." });
+      return next(
+        new AppError(
+          "Pedido não encontrado.",
+          ERROR_CODES.NOT_FOUND,
+          404
+        )
+      );
     }
 
     const formaPagamento = (pedido.forma_pagamento || "").toLowerCase();
 
     // pega total pelo banco
-    const total = await calcularTotalPedido(conn, pedidoId);
+    const total = await calcularTotalPedido(conn, pedidoIdNum);
 
     // cria a preference
     const preference = new Preference(mpClient);
-    const body = buildPreferenceBody({ total, pedidoId, formaPagamento });
+    const body = buildPreferenceBody({ total, pedidoId: pedidoIdNum, formaPagamento });
 
     const pref = await preference.create({ body });
 
@@ -193,7 +214,7 @@ router.post("/start", async (req, res) => {
       `UPDATE pedidos
           SET status_pagamento = 'pendente'
         WHERE id = ?`,
-      [pedidoId]
+      [pedidoIdNum]
     );
 
     const { id, init_point, sandbox_init_point } = pref;
@@ -205,7 +226,6 @@ router.post("/start", async (req, res) => {
     });
   } catch (err) {
     console.error("[payment/start] erro bruto:", err);
-
     if (err?.message || err?.status || err?.error) {
       console.error("[payment/start] detalhes:", {
         message: err.message,
@@ -215,17 +235,19 @@ router.post("/start", async (req, res) => {
       });
     }
 
-    return res
-      .status(500)
-      .json({ message: "Erro ao iniciar pagamento com o Mercado Pago." });
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao iniciar pagamento com o Mercado Pago.",
+            ERROR_CODES.SERVER_ERROR,
+            500
+          )
+    );
   } finally {
     conn.release();
   }
 });
-
-// =====================================================
-// ROTA /webhook
-// =====================================================
 
 /**
  * @openapi
@@ -233,7 +255,9 @@ router.post("/start", async (req, res) => {
  *   post:
  *     tags: [Pagamentos]
  *     summary: Webhook de notificação do Mercado Pago
- *     description: Atualiza automaticamente o status dos pedidos conforme o pagamento.
+ *     description: |
+ *       Atualiza automaticamente o status dos pedidos conforme o pagamento.
+ *       Observação: para evitar redelivery, normalmente respondemos 200 mesmo em falhas em produção.
  *     requestBody:
  *       required: true
  *       content:
@@ -249,8 +273,10 @@ router.post("/start", async (req, res) => {
  *     responses:
  *       200:
  *         description: Notificação recebida e processada
+ *       401:
+ *         description: Assinatura inválida
  *       500:
- *         description: Erro interno (geralmente ainda retorna 200 para evitar redelivery)
+ *         description: Erro interno (em development pode retornar 500)
  */
 
 // webhook Mercado Pago
@@ -258,6 +284,7 @@ router.post("/webhook", async (req, res) => {
   const signatureHeader = req.get("x-signature");
   const idempotencyKey = req.get("x-idempotency-key");
   const secret = process.env.MP_WEBHOOK_SECRET;
+
   const unauthorized = () => res.status(401).json({ ok: false });
 
   if (!signatureHeader || !idempotencyKey) {
@@ -360,14 +387,11 @@ router.post("/webhook", async (req, res) => {
       const paymentClient = new Payment(mpClient);
       const payment = await paymentClient.get({ id: data.id });
 
-      const status = payment.status; // approved | pending | rejected | cancelled | in_process ...
+      const status = payment.status;
       const pedidoId = payment.metadata?.pedidoId;
 
       if (!pedidoId) {
-        console.warn(
-          "[payment/webhook] pagamento sem metadata.pedidoId",
-          data.id
-        );
+        console.warn("[payment/webhook] pagamento sem metadata.pedidoId", data.id);
         await conn.query(
           `UPDATE webhook_events
               SET status = 'ignored', processed_at = NOW(), updated_at = NOW()
@@ -378,7 +402,6 @@ router.post("/webhook", async (req, res) => {
         return res.status(200).json({ ok: true });
       }
 
-      // mapeia status MP -> status_pagamento local
       let novoStatusPagamento = "pendente";
       if (status === "approved") novoStatusPagamento = "pago";
       else if (status === "rejected" || status === "cancelled")
@@ -421,6 +444,8 @@ router.post("/webhook", async (req, res) => {
     }
   } catch (err) {
     console.error("[payment/webhook] erro:", err, err?.stack);
+
+    // Webhook: em produção, responder 200 mesmo com erro evita redelivery infinita
     const status = process.env.NODE_ENV === "development" ? 500 : 200;
     return res.status(status).json({ ok: status === 200 });
   }
