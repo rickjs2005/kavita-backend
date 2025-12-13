@@ -33,9 +33,6 @@ loadRoute("/public/categorias", "./publicCategorias");
 loadRoute("/public/servicos", "./publicServicos");
 loadRoute("/public/servicos", "./publicAvaliacaoColaborador");
 
-// 🔁 ANTIGO: /public/destaques -> agora usamos /public/promocoes
-// loadRoute("/public/destaques", "./publicDestaques");
-
 // ✅ NOVO: rota pública de promoções (Marketing)
 loadRoute("/public/promocoes", "./publicPromocoes");
 
@@ -52,8 +49,7 @@ loadRoute("/users/addresses", "./userAddresses");
 loadRoute("/cart", "./cart");
 loadRoute("/favorites", "./favorites");
 
-// Esta rota estava como "/api" no server.js, então aqui ela fica na raiz "/"
-// pois este arquivo inteiro será montado em "/api"
+// Este arquivo inteiro será montado em "/api"
 loadRoute("/", "./authRoutes");
 
 /* ============================
@@ -68,18 +64,13 @@ loadRoute("/pedidos", "./pedidos");
  * Área Admin - Rotas Públicas (Login)
  * ============================ */
 
-// Login / logout / me do admin
-// Mantém SEM verifyAdmin, pois é a porta de entrada do painel
 loadRoute("/admin", "./adminLogin");
 
 /* ============================
  * Área Admin - Rotas Protegidas
  * ============================ */
 
-// A partir daqui, TUDO que é /admin/... de painel
-// fica protegido com verifyAdmin (JWT em cookie HttpOnly).
-
-// Categorias (admin/configuração de categorias)
+// Categorias
 try {
   const adminCategoriasRoutes = require("./adminCategorias");
   router.use("/admin/categorias", verifyAdmin, adminCategoriasRoutes);
@@ -87,7 +78,7 @@ try {
   console.error("❌ Erro ao carregar ./adminCategorias:", err.message);
 }
 
-// Colaboradores (prestadores de serviço, equipe, etc.)
+// Colaboradores
 try {
   const adminColaboradoresRoutes = require("./adminColaboradores");
   router.use("/admin/colaboradores", verifyAdmin, adminColaboradoresRoutes);
@@ -110,19 +101,15 @@ try {
   );
 }
 
-// Especialidades de serviços/profissionais
+// Especialidades
 try {
   const adminEspecialidadesRoutes = require("./adminEspecialidades");
-  router.use(
-    "/admin/especialidades",
-    verifyAdmin,
-    adminEspecialidadesRoutes
-  );
+  router.use("/admin/especialidades", verifyAdmin, adminEspecialidadesRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminEspecialidades:", err.message);
 }
 
-// Pedidos (admin/painel de pedidos)
+// Pedidos
 try {
   const adminPedidosRoutes = require("./adminPedidos");
   router.use("/admin/pedidos", verifyAdmin, adminPedidosRoutes);
@@ -130,7 +117,7 @@ try {
   console.error("❌ Erro ao carregar ./adminPedidos:", err.message);
 }
 
-// Produtos (admin/cadastro, edição, estoque etc.)
+// Produtos
 try {
   const adminProdutosRoutes = require("./adminProdutos");
   router.use("/admin/produtos", verifyAdmin, adminProdutosRoutes);
@@ -138,7 +125,7 @@ try {
   console.error("❌ Erro ao carregar ./adminProdutos:", err.message);
 }
 
-// Serviços (cadastro e gestão de serviços)
+// Serviços
 try {
   const adminServicosRoutes = require("./adminServicos");
   router.use("/admin/servicos", verifyAdmin, adminServicosRoutes);
@@ -146,7 +133,7 @@ try {
   console.error("❌ Erro ao carregar ./adminServicos:", err.message);
 }
 
-// Solicitações de serviços (separado, mas ainda sob /admin/servicos)
+// Solicitações de serviços
 try {
   const adminSolicitacoesServicosRoutes = require("./adminSolicitacoesServicos");
   router.use(
@@ -161,7 +148,7 @@ try {
   );
 }
 
-// Usuários (painel de clientes / admins, conforme seu módulo)
+// Usuários
 try {
   const adminUsersRoutes = require("./adminUsers");
   router.use("/admin/users", verifyAdmin, adminUsersRoutes);
@@ -169,7 +156,7 @@ try {
   console.error("❌ Erro ao carregar ./adminUsers:", err.message);
 }
 
-// Stats / Dashboard de admin
+// Stats
 try {
   const adminStatsRoutes = require("./adminStats");
   router.use("/admin/stats", verifyAdmin, adminStatsRoutes);
@@ -177,7 +164,7 @@ try {
   console.error("❌ Erro ao carregar ./adminStats:", err.message);
 }
 
-// Carrinhos (admin visualiza carrinhos abandonados, etc.)
+// Carrinhos
 try {
   const adminCartsRoutes = require("./adminCarts");
   router.use("/admin/carrinhos", verifyAdmin, adminCartsRoutes);
@@ -185,19 +172,15 @@ try {
   console.error("❌ Erro ao carregar ./adminCarts:", err.message);
 }
 
-// Comunicação (e-mail / WhatsApp templates, disparos, etc.)
+// Comunicação
 try {
   const adminComunicacaoRoutes = require("./adminComunicacao");
-  router.use(
-    "/admin/comunicacao",
-    verifyAdmin,
-    adminComunicacaoRoutes
-  );
+  router.use("/admin/comunicacao", verifyAdmin, adminComunicacaoRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminComunicacao:", err.message);
 }
 
-// Cupons (admin/cupons)
+// Cupons
 try {
   const adminCuponsRoutes = require("./adminCupons");
   router.use("/admin/cupons", verifyAdmin, adminCuponsRoutes);
@@ -205,7 +188,7 @@ try {
   console.error("❌ Erro ao carregar ./adminCupons:", err.message);
 }
 
-// Configurações gerais da loja (admin/config)
+// Configurações
 try {
   const adminConfigRoutes = require("./adminConfigRoutes");
   router.use("/admin/config", verifyAdmin, adminConfigRoutes);
@@ -213,7 +196,7 @@ try {
   console.error("❌ Erro ao carregar ./adminConfigRoutes:", err.message);
 }
 
-// Relatórios (vendas, clientes, estoque, serviços, etc.)
+// Relatórios
 try {
   const adminRelatoriosRoutes = require("./adminRelatorios");
   router.use("/admin/relatorios", verifyAdmin, adminRelatoriosRoutes);
@@ -222,20 +205,12 @@ try {
 }
 
 /* ============================
- * Área Admin — rotas específicas com verifyAdmin na frente
- * (já existiam e continuam protegidas)
+ * Rotas Admin específicas (continuam protegidas)
  * ============================ */
 
-// /api/admin/logs
 router.use("/admin/logs", verifyAdmin, adminLogsRoutes);
-
-// /api/admin/permissions
 router.use("/admin/permissions", verifyAdmin, adminPermissionsRoutes);
-
-// /api/admin/roles
 router.use("/admin/roles", verifyAdmin, adminRolesRoutes);
-
-// /api/admin/admins
 router.use("/admin/admins", verifyAdmin, adminAdminsRoutes);
 
 module.exports = router;
