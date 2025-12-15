@@ -1,14 +1,60 @@
-// routes/products.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool");
 
-// normaliza slug -> nome (ou retorna id numérico como string)
+/**
+ * normaliza slug -> nome (ou retorna id numérico como string)
+ * ex: "pragas-e-insetos" -> "pragas e insetos"
+ */
 function normalize(input) {
   if (!input) return "";
   const s = String(input).trim();
   if (/^\d+$/.test(s)) return s; // id numérico
-  return s.replace(/-/g, " ").trim(); // pragas-e-insetos -> pragas e insetos
+  return s.replace(/-/g, " ").trim();
+}
+
+/** parse "1,2,3" -> [1,2,3] */
+function parseCsvIntList(value) {
+  if (!value) return [];
+  return String(value)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((s) => /^\d+$/.test(s))
+    .map((s) => Number(s))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+/**
+ * Compat de categoria:
+ * - categories=1,2,3 (principal)
+ * - category_id=7 (fallback)
+ * - category=7 (fallback)
+ */
+function parseCategoryIds(query) {
+  const ids = parseCsvIntList(query.categories);
+  if (ids.length) return ids;
+
+  const cid = query.category_id;
+  if (cid != null && cid !== "") {
+    const n = Number(cid);
+    if (Number.isFinite(n) && n > 0) return [n];
+  }
+
+  const c = query.category;
+  if (c != null && c !== "") {
+    const n = Number(c);
+    if (Number.isFinite(n) && n > 0) return [n];
+  }
+
+  return [];
+}
+
+/** number | null, com validação */
+function parseNumberOrNull(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
 }
 
 // Agrega imagens por product_id usando product_images.path
@@ -70,12 +116,10 @@ router.get("/", async (req, res) => {
       order = "desc",
     } = req.query;
 
-    // paginação segura
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 100);
     const offset = (pageNum - 1) * limitNum;
 
-    // ordenação segura
     const sortKey = String(sort).toLowerCase();
     const sortCol = LIST_SORT_MAP[sortKey] || LIST_SORT_MAP.id;
     const orderDir = String(order).toUpperCase() === "ASC" ? "ASC" : "DESC";
@@ -83,7 +127,6 @@ router.get("/", async (req, res) => {
     const where = [];
     const params = [];
 
-    // filtro de categoria (modelo 1:N -> products.category_id)
     if (category !== "all") {
       if (/^\d+$/.test(category)) {
         where.push("p.category_id = ?");
@@ -94,24 +137,24 @@ router.get("/", async (req, res) => {
           "SELECT id FROM categories WHERE LOWER(name) = LOWER(?)",
           [name]
         );
+
         if (!cat.length) {
           return res.status(404).json({ message: "Categoria não encontrada." });
         }
+
         where.push("p.category_id = ?");
         params.push(cat[0].id);
       }
     }
 
-    // filtro de busca
     if (search && String(search).trim() !== "") {
-      const like = `%${search}%`;
+      const like = `%${String(search).trim()}%`;
       where.push("(p.name LIKE ? OR p.description LIKE ?)");
       params.push(like, like);
     }
 
     const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
 
-    // total para paginação
     const [[{ total }]] = await pool.query(
       `SELECT COUNT(*) AS total
          FROM products p
@@ -119,7 +162,6 @@ router.get("/", async (req, res) => {
       params
     );
 
-    // dados paginados + ordenados
     const [rows] = await pool.query(
       `
       SELECT p.*
@@ -133,7 +175,7 @@ router.get("/", async (req, res) => {
 
     const data = await attachImages(rows);
 
-    res.json({
+    return res.json({
       data,
       page: pageNum,
       limit: limitNum,
@@ -144,7 +186,7 @@ router.get("/", async (req, res) => {
     });
   } catch (err) {
     console.error("[GET /api/products] Erro:", err);
-    res.status(500).json({ message: "Erro interno no servidor." });
+    return res.status(500).json({ message: "Erro interno no servidor." });
   }
 });
 
@@ -156,34 +198,96 @@ const SEARCH_SORT_MAP = {
   price_desc: "final_price DESC, p.id DESC",
   newest: "p.created_at DESC, p.id DESC",
   discount: "discount_percent DESC, p.id DESC",
-  best_sellers: "p.sold_count DESC, p.id DESC", // requer coluna/materialização
+  best_sellers: "p.sold_count DESC, p.id DESC",
 };
 
-function parseCsvIntList(value) {
-  if (!value) return [];
-  return String(value)
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .filter((s) => /^\d+$/.test(s))
-    .map((s) => Number(s));
-}
-
 /**
- * GET /api/products/search
- * Query:
- *  - q: termo de busca (name/description)
- *  - categories: "1,2,3" (ids)
- *  - minPrice / maxPrice
- *  - promo=true
- *  - sort: newest | price_asc | price_desc | discount | best_sellers
- *  - page / limit
+ * @openapi
+ * /api/products/search:
+ *   get:
+ *     tags:
+ *       - Produtos
+ *     summary: Busca avançada de produtos
+ *     description: Busca por termo (nome/descrição) e filtra por categorias, preço e promoções, com paginação.
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *         description: Termo de busca aplicado em name e description.
+ *         example: fertilizante
+ *       - in: query
+ *         name: categories
+ *         schema:
+ *           type: string
+ *         description: Lista CSV de IDs de categorias (exemplo 1,2,3).
+ *         example: 3
+ *       - in: query
+ *         name: category_id
+ *         schema:
+ *           type: integer
+ *         description: Alternativa compatível para filtrar por uma categoria.
+ *         example: 3
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: integer
+ *         description: Alternativa compatível para filtrar por uma categoria.
+ *         example: 3
+ *       - in: query
+ *         name: minPrice
+ *         schema:
+ *           type: number
+ *         description: Preço mínimo (aplicado sobre final_price).
+ *         example: 10
+ *       - in: query
+ *         name: maxPrice
+ *         schema:
+ *           type: number
+ *         description: Preço máximo (aplicado sobre final_price).
+ *         example: 200
+ *       - in: query
+ *         name: promo
+ *         schema:
+ *           type: boolean
+ *         description: Se true, retorna apenas produtos com promoção ativa.
+ *         example: true
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [newest, price_asc, price_desc, discount, best_sellers]
+ *         description: Ordenação (whitelist).
+ *         example: newest
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Página.
+ *         example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 60
+ *           default: 12
+ *         description: Itens por página.
+ *         example: 12
+ *     responses:
+ *       200:
+ *         description: Lista paginada de produtos
+ *       400:
+ *         description: Parâmetros inválidos
+ *       500:
+ *         description: Erro interno
  */
 router.get("/search", async (req, res) => {
   try {
     const {
       q,
-      categories,
       minPrice,
       maxPrice,
       promo,
@@ -192,40 +296,38 @@ router.get("/search", async (req, res) => {
       limit = "12",
     } = req.query;
 
-    // Paginação (limites conservadores)
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 60);
     const offset = (pageNum - 1) * limitNum;
 
-    // Sanitização de filtros numéricos
-    const minP = minPrice != null && minPrice !== "" ? Number(minPrice) : null;
-    const maxP = maxPrice != null && maxPrice !== "" ? Number(maxPrice) : null;
-    if (minP != null && Number.isNaN(minP))
+    const minP = parseNumberOrNull(minPrice);
+    const maxP = parseNumberOrNull(maxPrice);
+    if (minP != null && Number.isNaN(minP)) {
       return res.status(400).json({ message: "minPrice inválido" });
-    if (maxP != null && Number.isNaN(maxP))
+    }
+    if (maxP != null && Number.isNaN(maxP)) {
       return res.status(400).json({ message: "maxPrice inválido" });
+    }
 
-    const catIds = parseCsvIntList(categories);
+    // ✅ aqui está o “filtro por categoria” definitivo (sem quebrar nada)
+    const catIds = parseCategoryIds(req.query);
 
-    // WHERE dinâmico com placeholders
     const where = [];
     const params = [];
 
-    // Busca textual (nome + descrição) – LIKE parcial
     if (q && String(q).trim()) {
       const like = `%${String(q).trim()}%`;
       where.push("(p.name LIKE ? OR p.description LIKE ?)");
       params.push(like, like);
     }
 
-    // Categorias múltiplas
     if (catIds.length) {
       const placeholders = catIds.map(() => "?").join(",");
       where.push(`p.category_id IN (${placeholders})`);
       params.push(...catIds);
     }
 
-    // Promo subquery (1 promo ativa por produto)
+    // promo subquery (1 promo ativa por produto)
     const promoJoin = `
       LEFT JOIN (
         SELECT d.*
@@ -241,7 +343,6 @@ router.get("/search", async (req, res) => {
       ) promo ON promo.product_id = p.id
     `;
 
-    // Campos calculados (final_price/discount)
     const calcFinalPrice = `
       CAST(
         CASE
@@ -265,12 +366,10 @@ router.get("/search", async (req, res) => {
       AS DECIMAL(10,2))
     `;
 
-    // Filtro promo=true
     if (String(promo).toLowerCase() === "true") {
       where.push(`promo.id IS NOT NULL AND ${calcFinalPrice} < p.price`);
     }
 
-    // Filtro preço usando final_price (não price base)
     if (minP != null) {
       where.push(`${calcFinalPrice} >= ?`);
       params.push(minP);
@@ -282,11 +381,9 @@ router.get("/search", async (req, res) => {
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    // ORDER BY via whitelist
     const sortKey = String(sort).toLowerCase();
     const orderBy = SEARCH_SORT_MAP[sortKey] || SEARCH_SORT_MAP.newest;
 
-    // COUNT (para total)
     const [[{ total }]] = await pool.query(
       `
       SELECT COUNT(*) AS total
@@ -297,7 +394,6 @@ router.get("/search", async (req, res) => {
       params
     );
 
-    // SELECT paginado
     const [rows] = await pool.query(
       `
       SELECT
@@ -323,7 +419,7 @@ router.get("/search", async (req, res) => {
 
     const products = await attachImages(rows);
 
-    res.json({
+    return res.json({
       products,
       pagination: {
         page: pageNum,
@@ -334,7 +430,7 @@ router.get("/search", async (req, res) => {
     });
   } catch (err) {
     console.error("[GET /api/products/search] Erro:", err);
-    res.status(500).json({ message: "Erro interno no servidor." });
+    return res.status(500).json({ message: "Erro interno no servidor." });
   }
 });
 
