@@ -66,6 +66,9 @@ loadRoute("/pedidos", "./pedidos");
 
 loadRoute("/admin", "./adminLogin");
 
+// Kavita News (Público)
+loadRoute("/news", "./newsPublicRoutes");
+
 /* ============================
  * Área Admin - Rotas Protegidas
  * ============================ */
@@ -202,6 +205,14 @@ try {
   router.use("/admin/relatorios", verifyAdmin, adminRelatoriosRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminRelatorios:", err.message);
+}
+
+// Kavita News (Admin)
+try {
+  const adminNewsRoutes = require("./adminNewsRoutes");
+  router.use("/admin/news", verifyAdmin, adminNewsRoutes);
+} catch (err) {
+  console.error("❌ Erro ao carregar ./adminNewsRoutes:", err.message);
 }
 
 /* ============================
