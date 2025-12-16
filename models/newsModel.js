@@ -1,10 +1,5 @@
 // models/newsModel.js
-// Centraliza todas as queries SQL do módulo Kavita News.
-//
-// Requisitos atendidos:
-// - Clima: get/list/create/update/delete
-// - Cotações: get/list/create/update/delete
-// - Posts: list public/admin, get by slug, create/update/delete, publish/unpublish (opcional)
+// Centraliza queries do módulo Kavita News (clima, cotações, posts)
 
 const db = require("../config/pool");
 
@@ -33,26 +28,49 @@ async function queryOne(sql, params = []) {
    CLIMA
 ========================= */
 
+const CLIMA_SELECT = `
+  SELECT
+    id,
+    city_name,
+    slug,
+    uf,
+
+    ibge_id,
+
+    station_code,
+    station_name,
+    station_uf,
+    station_lat,
+    station_lon,
+    station_distance,
+
+    ibge_source,
+    station_source,
+
+    last_sync_observed_at,
+    last_sync_forecast_at,
+
+    last_update_at,
+    mm_24h,
+    mm_7d,
+    source,
+
+    ativo,
+    criado_em,
+    atualizado_em
+  FROM news_clima
+`;
+
+async function getClimaById(id) {
+  return queryOne(`${CLIMA_SELECT} WHERE id = ? LIMIT 1`, [id]);
+}
+
 async function getClimaBySlug(slug) {
-  return queryOne(
-    `
-    SELECT id, city_name, slug, uf, mm_24h, mm_7d, source, last_update_at, ativo, criado_em, atualizado_em
-    FROM news_clima
-    WHERE slug = ?
-    LIMIT 1
-    `,
-    [slug]
-  );
+  return queryOne(`${CLIMA_SELECT} WHERE slug = ? LIMIT 1`, [slug]);
 }
 
 async function listClima() {
-  return query(
-    `
-    SELECT id, city_name, slug, uf, mm_24h, mm_7d, source, last_update_at, ativo, criado_em, atualizado_em
-    FROM news_clima
-    ORDER BY ativo DESC, city_name ASC
-    `
-  );
+  return query(`${CLIMA_SELECT} ORDER BY ativo DESC, city_name ASC`);
 }
 
 async function createClima(data) {
@@ -60,26 +78,71 @@ async function createClima(data) {
     city_name: data.city_name ?? null,
     slug: data.slug ?? null,
     uf: data.uf ?? null,
+
+    ibge_id: data.ibge_id ?? null,
+
+    station_code: data.station_code ?? null,
+    station_name: data.station_name ?? null,
+    station_uf: data.station_uf ?? null,
+    station_lat: data.station_lat ?? null,
+    station_lon: data.station_lon ?? null,
+    station_distance: data.station_distance ?? null,
+
+    ibge_source: data.ibge_source ?? null,
+    station_source: data.station_source ?? null,
+
+    last_sync_observed_at: data.last_sync_observed_at ?? null,
+    last_sync_forecast_at: data.last_sync_forecast_at ?? null,
+
+    last_update_at: data.last_update_at ?? null,
     mm_24h: data.mm_24h ?? null,
     mm_7d: data.mm_7d ?? null,
     source: data.source ?? null,
-    last_update_at: data.last_update_at ?? null,
+
     ativo: data.ativo ?? 1,
   };
 
   const res = await query(
     `
-    INSERT INTO news_clima (city_name, slug, uf, mm_24h, mm_7d, source, last_update_at, ativo)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO news_clima (
+      city_name, slug, uf,
+      ibge_id,
+      station_code, station_name, station_uf,
+      station_lat, station_lon, station_distance,
+      ibge_source, station_source,
+      last_sync_observed_at, last_sync_forecast_at,
+      last_update_at,
+      mm_24h, mm_7d,
+      source,
+      ativo
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       payload.city_name,
       payload.slug,
       payload.uf,
+
+      payload.ibge_id,
+
+      payload.station_code,
+      payload.station_name,
+      payload.station_uf,
+      payload.station_lat,
+      payload.station_lon,
+      payload.station_distance,
+
+      payload.ibge_source,
+      payload.station_source,
+
+      payload.last_sync_observed_at,
+      payload.last_sync_forecast_at,
+
+      payload.last_update_at,
       payload.mm_24h,
       payload.mm_7d,
       payload.source,
-      payload.last_update_at,
+
       payload.ativo,
     ]
   );
@@ -95,10 +158,27 @@ async function updateClima(id, data) {
     city_name: "city_name",
     slug: "slug",
     uf: "uf",
+
+    ibge_id: "ibge_id",
+
+    station_code: "station_code",
+    station_name: "station_name",
+    station_uf: "station_uf",
+    station_lat: "station_lat",
+    station_lon: "station_lon",
+    station_distance: "station_distance",
+
+    ibge_source: "ibge_source",
+    station_source: "station_source",
+
+    last_sync_observed_at: "last_sync_observed_at",
+    last_sync_forecast_at: "last_sync_forecast_at",
+
+    last_update_at: "last_update_at",
     mm_24h: "mm_24h",
     mm_7d: "mm_7d",
     source: "source",
-    last_update_at: "last_update_at",
+
     ativo: "ativo",
   };
 
@@ -134,26 +214,34 @@ async function deleteClima(id) {
    COTAÇÕES
 ========================= */
 
+const COTACAO_SELECT = `
+  SELECT
+    id,
+    name,
+    slug,
+    type,
+    price,
+    unit,
+    variation_day,
+    market,
+    source,
+    last_update_at,
+    ativo,
+    criado_em,
+    atualizado_em
+  FROM news_cotacoes
+`;
+
+async function getCotacaoById(id) {
+  return queryOne(`${COTACAO_SELECT} WHERE id = ? LIMIT 1`, [id]);
+}
+
 async function getCotacaoBySlug(slug) {
-  return queryOne(
-    `
-    SELECT id, name, slug, type, price, unit, variation_day, market, source, last_update_at, ativo, criado_em, atualizado_em
-    FROM news_cotacoes
-    WHERE slug = ?
-    LIMIT 1
-    `,
-    [slug]
-  );
+  return queryOne(`${COTACAO_SELECT} WHERE slug = ? LIMIT 1`, [slug]);
 }
 
 async function listCotacoes() {
-  return query(
-    `
-    SELECT id, name, slug, type, price, unit, variation_day, market, source, last_update_at, ativo, criado_em, atualizado_em
-    FROM news_cotacoes
-    ORDER BY ativo DESC, type ASC, name ASC
-    `
-  );
+  return query(`${COTACAO_SELECT} ORDER BY ativo DESC, type ASC, name ASC`);
 }
 
 async function createCotacao(data) {
@@ -172,7 +260,13 @@ async function createCotacao(data) {
 
   const res = await query(
     `
-    INSERT INTO news_cotacoes (name, slug, type, price, unit, variation_day, market, source, last_update_at, ativo)
+    INSERT INTO news_cotacoes (
+      name, slug, type,
+      price, unit, variation_day,
+      market, source,
+      last_update_at,
+      ativo
+    )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
@@ -241,101 +335,59 @@ async function deleteCotacao(id) {
    POSTS
 ========================= */
 
-async function listPostsPublic({ status = "published", limit = 10, offset = 0 } = {}) {
-  const lim = clampInt(limit, 10, 1, 50);
-  const off = clampInt(offset, 0, 0, 100000);
+const POST_SELECT = `
+  SELECT
+    id,
+    title,
+    slug,
+    excerpt,
+    content,
+    cover_image_url,
+    category,
+    tags,
+    status,
+    published_at,
+    author_admin_id,
+    ativo,
+    criado_em,
+    atualizado_em
+  FROM news_posts
+`;
 
-  const rows = await query(
-    `
-    SELECT
-      id, title, slug, excerpt, cover_image_url, category, tags,
-      status, published_at, views, criado_em, atualizado_em
-    FROM news_posts
-    WHERE status = ?
-    ORDER BY published_at DESC, id DESC
-    LIMIT ? OFFSET ?
-    `,
-    [status, lim, off]
-  );
-
-  const totalRow = await queryOne(
-    `SELECT COUNT(*) AS total FROM news_posts WHERE status = ?`,
-    [status]
-  );
-
-  return {
-    rows,
-    meta: { status, limit: lim, offset: off, total: Number(totalRow?.total || 0) },
-  };
+async function getPostById(id) {
+  return queryOne(`${POST_SELECT} WHERE id = ? LIMIT 1`, [id]);
 }
 
 async function getPostBySlug(slug) {
-  return queryOne(
-    `
-    SELECT
-      id, title, slug, excerpt, content, cover_image_url,
-      category, tags, status, published_at, author_admin_id,
-      views, criado_em, atualizado_em
-    FROM news_posts
-    WHERE slug = ?
-    LIMIT 1
-    `,
-    [slug]
-  );
+  return queryOne(`${POST_SELECT} WHERE slug = ? LIMIT 1`, [slug]);
 }
 
-async function listPostsAdmin({ status, limit = 20, offset = 0, search } = {}) {
-  const lim = clampInt(limit, 20, 1, 100);
-  const off = clampInt(offset, 0, 0, 100000);
-
+async function listPosts({ status, search, limit, offset }) {
   const where = [];
   const params = [];
 
   if (status) {
-    where.push(`p.status = ?`);
+    where.push(`status = ?`);
     params.push(status);
   }
 
-  const q = normalizeLike(search);
-  if (q) {
-    where.push(`(p.title LIKE ? ESCAPE '\\\\' OR p.excerpt LIKE ? ESCAPE '\\\\' OR p.content LIKE ? ESCAPE '\\\\')`);
-    const like = `%${q}%`;
-    params.push(like, like, like);
+  const like = normalizeLike(search);
+  if (like) {
+    where.push(`(title LIKE ? ESCAPE '\\\\' OR slug LIKE ? ESCAPE '\\\\')`);
+    params.push(`%${like}%`, `%${like}%`);
   }
 
-  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const lim = clampInt(limit, 20, 1, 200);
+  const off = clampInt(offset, 0, 0, 1000000);
 
-  const rows = await query(
-    `
-    SELECT
-      p.id, p.title, p.slug, p.excerpt, p.cover_image_url, p.category, p.tags,
-      p.status, p.published_at, p.author_admin_id, p.views, p.criado_em, p.atualizado_em,
-      a.nome AS author_nome, a.email AS author_email
-    FROM news_posts p
-    LEFT JOIN admins a ON a.id = p.author_admin_id
-    ${whereSql}
-    ORDER BY
-      (p.status = 'published') DESC,
-      p.published_at DESC,
-      p.id DESC
+  const sql = `
+    ${POST_SELECT}
+    ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+    ORDER BY criado_em DESC, id DESC
     LIMIT ? OFFSET ?
-    `,
-    [...params, lim, off]
-  );
+  `;
 
-  const totalRow = await queryOne(
-    `
-    SELECT COUNT(*) AS total
-    FROM news_posts p
-    ${whereSql}
-    `,
-    params
-  );
-
-  return {
-    rows,
-    meta: { status: status || null, search: search || null, limit: lim, offset: off, total: Number(totalRow?.total || 0) },
-  };
+  return query(sql, [...params, lim, off]);
 }
 
 async function createPost(data) {
@@ -350,14 +402,19 @@ async function createPost(data) {
     status: data.status ?? "draft",
     published_at: data.published_at ?? null,
     author_admin_id: data.author_admin_id ?? null,
+    ativo: data.ativo ?? 1,
   };
 
   const res = await query(
     `
-    INSERT INTO news_posts
-      (title, slug, excerpt, content, cover_image_url, category, tags, status, published_at, author_admin_id)
-    VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO news_posts (
+      title, slug, excerpt, content,
+      cover_image_url, category, tags,
+      status, published_at,
+      author_admin_id,
+      ativo
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       payload.title,
@@ -370,6 +427,7 @@ async function createPost(data) {
       payload.status,
       payload.published_at,
       payload.author_admin_id,
+      payload.ativo,
     ]
   );
 
@@ -391,7 +449,7 @@ async function updatePost(id, data) {
     status: "status",
     published_at: "published_at",
     author_admin_id: "author_admin_id",
-    views: "views",
+    ativo: "ativo",
   };
 
   for (const [k, col] of Object.entries(map)) {
@@ -422,52 +480,28 @@ async function deletePost(id) {
   return { affectedRows: res.affectedRows ?? 0 };
 }
 
-async function publishPost(id) {
-  const res = await query(
-    `
-    UPDATE news_posts
-    SET status = 'published', published_at = COALESCE(published_at, NOW())
-    WHERE id = ?
-    `,
-    [id]
-  );
-  return { affectedRows: res.affectedRows ?? 0 };
-}
-
-async function unpublishPost(id) {
-  const res = await query(
-    `
-    UPDATE news_posts
-    SET status = 'draft', published_at = NULL
-    WHERE id = ?
-    `,
-    [id]
-  );
-  return { affectedRows: res.affectedRows ?? 0 };
-}
-
 module.exports = {
-  // clima
+  // Clima
+  getClimaById,
   getClimaBySlug,
   listClima,
   createClima,
   updateClima,
   deleteClima,
 
-  // cotacoes
+  // Cotações
+  getCotacaoById,
   getCotacaoBySlug,
   listCotacoes,
   createCotacao,
   updateCotacao,
   deleteCotacao,
 
-  // posts
-  listPostsPublic,
+  // Posts
+  getPostById,
   getPostBySlug,
-  listPostsAdmin,
+  listPosts,
   createPost,
   updatePost,
   deletePost,
-  publishPost,
-  unpublishPost,
 };
