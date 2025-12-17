@@ -263,5 +263,35 @@ router.get("/produtos-mais-vendidos", verifyAdmin, async (req, res) => {
     res.status(500).json({ message: "Erro ao buscar produtos mais vendidos." });
   }
 });
+/**
+ * @openapi
+ * /api/admin/stats/alertas:
+ *   get:
+ *     tags: [AdminStats]
+ *     summary: Lista alertas operacionais do painel admin
+ *     description: Alertas do sistema para o dashboard (inicialmente retorna lista vazia).
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de alertas
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   key: { type: string, example: "pagamentos_desativados" }
+ *                   level: { type: string, example: "warning" }
+ *                   title: { type: string, example: "Pagamentos desativados" }
+ *                   message: { type: string, example: "Configure o gateway de pagamento." }
+ *       401:
+ *         description: Não autorizado
+ */
+router.get("/alertas", verifyAdmin, async (_req, res) => {
+  // Placeholder: você pode evoluir depois com regras reais/consultas no banco.
+  res.json([]);
+});
 
 module.exports = router;

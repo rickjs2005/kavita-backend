@@ -34,30 +34,22 @@ const CLIMA_SELECT = `
     city_name,
     slug,
     uf,
-
     ibge_id,
-
     station_code,
     station_name,
     station_uf,
     station_lat,
     station_lon,
     station_distance,
-
     ibge_source,
     station_source,
-
     last_sync_observed_at,
     last_sync_forecast_at,
-
     last_update_at,
     mm_24h,
     mm_7d,
     source,
-
-    ativo,
-    criado_em,
-    atualizado_em
+    ativo
   FROM news_clima
 `;
 
