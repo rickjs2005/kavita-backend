@@ -5,6 +5,205 @@ const newsModel = require("../../models/newsModel");
 const pool = require("../../config/pool");
 
 /* =========================
+ * Swagger (OpenAPI)
+ * ========================= */
+/**
+ * @swagger
+ * tags:
+ *   - name: Admin News - Posts
+ *     description: CRUD de posts do Kavita News (Admin)
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     AdminOkResponse:
+ *       type: object
+ *       properties:
+ *         ok:
+ *           type: boolean
+ *           example: true
+ *         data:
+ *           nullable: true
+ *         meta:
+ *           nullable: true
+ *     AdminErrorResponse:
+ *       type: object
+ *       properties:
+ *         ok:
+ *           type: boolean
+ *           example: false
+ *         code:
+ *           type: string
+ *           example: VALIDATION_ERROR
+ *         message:
+ *           type: string
+ *           example: title é obrigatório (máx 200).
+ *         details:
+ *           nullable: true
+ *     NewsPost:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 123
+ *         title:
+ *           type: string
+ *           example: "Café sobe com clima seco"
+ *         slug:
+ *           type: string
+ *           nullable: true
+ *           example: "cafe-sobe-com-clima-seco"
+ *         excerpt:
+ *           type: string
+ *           nullable: true
+ *           example: "Resumo curto do post..."
+ *         content:
+ *           type: string
+ *           nullable: true
+ *           example: "<p>Conteúdo longo...</p>"
+ *         cover_image_url:
+ *           type: string
+ *           nullable: true
+ *           example: "https://site.com/imagem.jpg"
+ *         category:
+ *           type: string
+ *           nullable: true
+ *           example: "café"
+ *         tags:
+ *           type: string
+ *           nullable: true
+ *           description: CSV (ex: "milho,soja,dolar")
+ *           example: "cafe,clima,mercado"
+ *         status:
+ *           type: string
+ *           enum: [draft, published]
+ *           example: "published"
+ *         published_at:
+ *           type: string
+ *           nullable: true
+ *           description: "YYYY-MM-DD HH:mm:ss"
+ *           example: "2025-12-18 10:00:00"
+ *         author_admin_id:
+ *           type: integer
+ *           nullable: true
+ *           example: 1
+ *         ativo:
+ *           type: integer
+ *           enum: [0, 1]
+ *           example: 1
+ *         criado_em:
+ *           type: string
+ *           nullable: true
+ *           example: "2025-12-18 10:00:00"
+ *         atualizado_em:
+ *           type: string
+ *           nullable: true
+ *           example: "2025-12-18 10:05:00"
+ *     NewsPostCreateInput:
+ *       type: object
+ *       required:
+ *         - title
+ *       properties:
+ *         title:
+ *           type: string
+ *           maxLength: 200
+ *           example: "Café sobe com clima seco"
+ *         slug:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 220
+ *           example: "cafe-sobe-com-clima-seco"
+ *         excerpt:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 1000
+ *           example: "Resumo curto do post..."
+ *         content:
+ *           type: string
+ *           nullable: true
+ *           example: "<p>Conteúdo...</p>"
+ *         cover_image_url:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 500
+ *           example: "https://site.com/imagem.jpg"
+ *         category:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 120
+ *           example: "café"
+ *         tags:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 255
+ *           description: CSV (ex: "milho,soja,dolar")
+ *           example: "cafe,clima,mercado"
+ *         status:
+ *           type: string
+ *           enum: [draft, published]
+ *           example: "draft"
+ *         published_at:
+ *           type: string
+ *           nullable: true
+ *           description: "YYYY-MM-DD HH:mm:ss"
+ *           example: "2025-12-18 10:00:00"
+ *         ativo:
+ *           type: integer
+ *           enum: [0, 1]
+ *           example: 1
+ *     NewsPostUpdateInput:
+ *       type: object
+ *       description: "Patch parcial: envie só os campos que deseja alterar"
+ *       properties:
+ *         title:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 200
+ *         slug:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 220
+ *         excerpt:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 1000
+ *         content:
+ *           type: string
+ *           nullable: true
+ *         cover_image_url:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 500
+ *         category:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 120
+ *         tags:
+ *           type: string
+ *           nullable: true
+ *           maxLength: 255
+ *         status:
+ *           type: string
+ *           nullable: true
+ *           enum: [draft, published]
+ *         published_at:
+ *           type: string
+ *           nullable: true
+ *           description: "YYYY-MM-DD HH:mm:ss"
+ *         ativo:
+ *           type: integer
+ *           enum: [0, 1]
+ *
+ * securitySchemes:
+ *   cookieAuth:
+ *     type: apiKey
+ *     in: cookie
+ *     name: adminToken
+ */
+
+/* =========================
  * Helpers: respostas padrão
  * ========================= */
 function ok(res, data, meta) {
@@ -97,6 +296,76 @@ async function logAdmin(req, acao, entidade, entidade_id = null) {
  * ========================= */
 
 /**
+ * @swagger
+ * /api/admin/news/posts:
+ *   get:
+ *     tags: [Admin News - Posts]
+ *     summary: Lista posts (Admin)
+ *     description: Lista posts com filtros por status e busca textual.
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [draft, published]
+ *         description: Filtra por status
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Busca em título/trecho (dependendo do model)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           example: 20
+ *         description: Quantidade de itens
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           example: 0
+ *         description: Offset de paginação
+ *     responses:
+ *       200:
+ *         description: Lista retornada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/AdminOkResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/NewsPost'
+ *                     meta:
+ *                       type: object
+ *                       properties:
+ *                         status: { type: string, nullable: true }
+ *                         search: { type: string, nullable: true }
+ *                         limit:  { type: integer }
+ *                         offset: { type: integer }
+ *       401:
+ *         description: Não autenticado
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       403:
+ *         description: Sem permissão
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       500:
+ *         description: Erro interno
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ */
+/**
  * GET /api/admin/news/posts?status=draft|published&search=...&limit=20&offset=0
  */
 async function listPosts(req, res) {
@@ -114,6 +383,57 @@ async function listPosts(req, res) {
   }
 }
 
+/**
+ * @swagger
+ * /api/admin/news/posts:
+ *   post:
+ *     tags: [Admin News - Posts]
+ *     summary: Cria post (Admin)
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { $ref: '#/components/schemas/NewsPostCreateInput' }
+ *     responses:
+ *       201:
+ *         description: Post criado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/AdminOkResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/NewsPost'
+ *       400:
+ *         description: Erro de validação
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       401:
+ *         description: Não autenticado
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       403:
+ *         description: Sem permissão
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       409:
+ *         description: Conflito (slug duplicado)
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       500:
+ *         description: Erro interno
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ */
 /**
  * POST /api/admin/news/posts
  */
@@ -179,6 +499,63 @@ async function createPost(req, res) {
   }
 }
 
+/**
+ * @swagger
+ * /api/admin/news/posts/{id}:
+ *   put:
+ *     tags: [Admin News - Posts]
+ *     summary: Atualiza post (Admin)
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: ID do post
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { $ref: '#/components/schemas/NewsPostUpdateInput' }
+ *     responses:
+ *       200:
+ *         description: Post atualizado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/AdminOkResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       nullable: true
+ *       400:
+ *         description: Erro de validação
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       401:
+ *         description: Não autenticado
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       403:
+ *         description: Sem permissão
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       409:
+ *         description: Conflito (slug duplicado)
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       500:
+ *         description: Erro interno
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ */
 /**
  * PUT /api/admin/news/posts/:id
  */
@@ -248,6 +625,47 @@ async function updatePost(req, res) {
   }
 }
 
+/**
+ * @swagger
+ * /api/admin/news/posts/{id}:
+ *   delete:
+ *     tags: [Admin News - Posts]
+ *     summary: Remove post (Admin)
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: ID do post
+ *     responses:
+ *       200:
+ *         description: Post removido
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminOkResponse' }
+ *       400:
+ *         description: Erro de validação
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       401:
+ *         description: Não autenticado
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       403:
+ *         description: Sem permissão
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ *       500:
+ *         description: Erro interno
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/AdminErrorResponse' }
+ */
 /**
  * DELETE /api/admin/news/posts/:id
  */
