@@ -206,8 +206,6 @@ async function deleteClima(id) {
    COTAÇÕES
 ========================= */
 
-// Mantém "type" para não quebrar rotas/páginas atuais,
-// e adiciona o novo padrão do MVP: group_key + unit + status de sync.
 const COTACAO_SELECT = `
   SELECT
     id,
@@ -238,10 +236,9 @@ async function getCotacaoBySlug(slug) {
 }
 
 async function listCotacoes() {
-  return query(
-    `${COTACAO_SELECT} ORDER BY ativo DESC, group_key ASC, type ASC, name ASC`
-  );
+  return query(`${COTACAO_SELECT} ORDER BY ativo DESC, group_key ASC, type ASC, name ASC`);
 }
+
 async function cotacoesMeta() {
   const markets = await query(
     `SELECT DISTINCT market FROM news_cotacoes WHERE market IS NOT NULL AND market <> '' ORDER BY market ASC`
@@ -268,11 +265,7 @@ async function createCotacao(data) {
   const payload = {
     name: data.name ?? null,
     slug: data.slug ?? null,
-
-    // MVP (novo)
     group_key: data.group_key ?? "graos",
-
-    // legado (mantido)
     type: data.type ?? null,
 
     price: data.price ?? null,
@@ -283,7 +276,6 @@ async function createCotacao(data) {
 
     last_update_at: data.last_update_at ?? null,
 
-    // novo (sync)
     last_sync_status: data.last_sync_status ?? null,
     last_sync_message: data.last_sync_message ?? null,
 
@@ -337,24 +329,16 @@ async function updateCotacao(id, data) {
   const map = {
     name: "name",
     slug: "slug",
-
-    // MVP (novo)
     group_key: "group_key",
-
-    // legado
     type: "type",
-
     price: "price",
     unit: "unit",
     variation_day: "variation_day",
     market: "market",
     source: "source",
     last_update_at: "last_update_at",
-
-    // novo (sync)
     last_sync_status: "last_sync_status",
     last_sync_message: "last_sync_message",
-
     ativo: "ativo",
   };
 
@@ -390,15 +374,6 @@ async function deleteCotacao(id) {
    HISTÓRICO DE COTAÇÕES
 ========================= */
 
-/**
- * Insere uma amostra no histórico de cotações.
- *
- * IMPORTANTE:
- * - Ajuste o nome da tabela/colunas se o seu schema estiver diferente.
- * - Recomendo uma tabela: news_cotacoes_history (ou news_cotacoes_historico)
- *   com colunas:
- *   id, cotacao_id, price, variation_day, source, observed_at, sync_status, sync_message, created_at
- */
 async function insertCotacaoHistory({
   cotacao_id,
   price,
@@ -462,6 +437,7 @@ const POST_SELECT = `
     status,
     published_at,
     author_admin_id,
+    views,
     ativo,
     criado_em,
     atualizado_em
@@ -594,8 +570,73 @@ async function deletePost(id) {
   return { affectedRows: res.affectedRows ?? 0 };
 }
 
+/* =========================
+   PUBLIC HELPERS (NOVO)
+   - Protege o site: só expõe ativo=1 e posts publicados
+========================= */
+
+// CLIMA público
+async function listClimaPublic() {
+  return query(`${CLIMA_SELECT} WHERE ativo = 1 ORDER BY city_name ASC`);
+}
+
+async function getClimaPublicBySlug(slug) {
+  return queryOne(`${CLIMA_SELECT} WHERE slug = ? AND ativo = 1 LIMIT 1`, [slug]);
+}
+
+// Cotações público
+async function listCotacoesPublic({ group_key } = {}) {
+  const where = ["ativo = 1"];
+  const params = [];
+
+  if (group_key) {
+    where.push("group_key = ?");
+    params.push(group_key);
+  }
+
+  return query(
+    `
+    ${COTACAO_SELECT}
+    WHERE ${where.join(" AND ")}
+    ORDER BY group_key ASC, type ASC, name ASC
+    `,
+    params
+  );
+}
+
+async function getCotacaoPublicBySlug(slug) {
+  return queryOne(`${COTACAO_SELECT} WHERE slug = ? AND ativo = 1 LIMIT 1`, [slug]);
+}
+
+// Posts público
+async function listPostsPublic({ limit = 10, offset = 0 } = {}) {
+  const lim = clampInt(limit, 10, 1, 50);
+  const off = clampInt(offset, 0, 0, 1000000);
+
+  return query(
+    `
+    ${POST_SELECT}
+    WHERE status = 'published' AND (ativo = 1 OR ativo IS NULL)
+    ORDER BY published_at DESC, id DESC
+    LIMIT ? OFFSET ?
+    `,
+    [lim, off]
+  );
+}
+
+async function getPostPublicBySlug(slug) {
+  return queryOne(
+    `
+    ${POST_SELECT}
+    WHERE slug = ? AND status = 'published' AND (ativo = 1 OR ativo IS NULL)
+    LIMIT 1
+    `,
+    [slug]
+  );
+}
+
 module.exports = {
-  // Clima
+  // Clima (admin/internal)
   getClimaById,
   getClimaBySlug,
   listClima,
@@ -603,7 +644,7 @@ module.exports = {
   updateClima,
   deleteClima,
 
-  // Cotações
+  // Cotações (admin/internal)
   getCotacaoById,
   getCotacaoBySlug,
   listCotacoes,
@@ -615,11 +656,19 @@ module.exports = {
   // Histórico
   insertCotacaoHistory,
 
-  // Posts
+  // Posts (admin/internal)
   getPostById,
   getPostBySlug,
   listPosts,
   createPost,
   updatePost,
   deletePost,
+
+  // Público (NOVO)
+  listClimaPublic,
+  getClimaPublicBySlug,
+  listCotacoesPublic,
+  getCotacaoPublicBySlug,
+  listPostsPublic,
+  getPostPublicBySlug,
 };

@@ -13,6 +13,42 @@ const newsPublicController = require("../controllers/newsPublicController");
 
 /**
  * @openapi
+ * /api/news/overview:
+ *   get:
+ *     tags:
+ *       - Kavita News (Public)
+ *     summary: Overview para homepage (clima + cotações + posts)
+ *     parameters:
+ *       - in: query
+ *         name: posts_limit
+ *         schema:
+ *           type: integer
+ *           default: 6
+ *     responses:
+ *       200:
+ *         description: Overview carregado
+ *       500:
+ *         description: Erro interno
+ */
+router.get("/overview", newsPublicController.overview);
+
+/**
+ * @openapi
+ * /api/news/clima:
+ *   get:
+ *     tags:
+ *       - Kavita News (Public)
+ *     summary: Lista cidades de clima ativas
+ *     responses:
+ *       200:
+ *         description: Lista de clima
+ *       500:
+ *         description: Erro interno
+ */
+router.get("/clima", newsPublicController.listClima);
+
+/**
+ * @openapi
  * /api/news/clima/{slug}:
  *   get:
  *     tags:
@@ -36,6 +72,27 @@ const newsPublicController = require("../controllers/newsPublicController");
  *         description: Erro interno
  */
 router.get("/clima/:slug", newsPublicController.getClima);
+
+/**
+ * @openapi
+ * /api/news/cotacoes:
+ *   get:
+ *     tags:
+ *       - Kavita News (Public)
+ *     summary: Lista cotações ativas (opcional por group_key)
+ *     parameters:
+ *       - in: query
+ *         name: group_key
+ *         schema:
+ *           type: string
+ *         description: "Filtro por group_key (ex: graos, boi, moedas)."
+ *     responses:
+ *       200:
+ *         description: Lista de cotações
+ *       500:
+ *         description: Erro interno
+ */
+router.get("/cotacoes", newsPublicController.listCotacoes);
 
 /**
  * @openapi
@@ -99,7 +156,7 @@ router.get("/posts", newsPublicController.listPosts);
  *   get:
  *     tags:
  *       - Kavita News (Public)
- *     summary: Busca um post publicado por slug
+ *     summary: Busca um post publicado por slug (incrementa views)
  *     parameters:
  *       - in: path
  *         name: slug
