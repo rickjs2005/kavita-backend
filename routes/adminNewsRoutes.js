@@ -1,7 +1,8 @@
 const express = require("express");
 const router = express.Router();
-
 const newsAdmin = require("../controllers/adminNewsController");
+const adminNewsUploadRoutes = require("./adminNewsUploadRoutes");
+router.use("/upload", adminNewsUploadRoutes);
 
 // CLIMA
 router.get("/clima", newsAdmin.listClima);
