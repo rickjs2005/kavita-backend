@@ -33,8 +33,9 @@ loadRoute("/public/categorias", "./publicCategorias");
 loadRoute("/public/servicos", "./publicServicos");
 loadRoute("/public/servicos", "./publicAvaliacaoColaborador");
 
-// Promoções (Marketing)
+// ✅ NOVO: rota pública de promoções (Marketing)
 loadRoute("/public/promocoes", "./publicPromocoes");
+
 loadRoute("/public/produtos", "./publicProdutos");
 
 /* ============================
@@ -51,10 +52,8 @@ loadRoute("/favorites", "./favorites");
 // Este arquivo inteiro será montado em "/api"
 loadRoute("/", "./authRoutes");
 
-/* ============================
- * Checkout e Pagamento
- * ============================ */
-
+// checkout,pedidos e frete
+loadRoute("/shipping", "./shippingRoutes");
 loadRoute("/checkout", "./checkoutRoutes");
 loadRoute("/payment", "./payment");
 loadRoute("/pedidos", "./pedidos");
@@ -67,33 +66,6 @@ loadRoute("/admin", "./adminLogin");
 
 // Kavita News (Público)
 loadRoute("/news", "./newsPublicRoutes");
-
-/* ======================================================
- * CONFIGURAÇÕES DA LOJA (PÚBLICO)
- * ======================================================
- *
- * ✅ Frontend usa: GET /api/config
- * ✅ Mantém compat: GET /api/public/shop-config
- */
-
-// ✅ rota legada (mantida para compatibilidade)
-loadRoute("/public/shop-config", "./publicShopConfigRoutes");
-
-// ✅ rota padrão usada pelo frontend (fetchPublicShopSettings)
-loadRoute("/config", "./publicShopConfigRoutes");
-
-/* ======================================================
- * CONFIGURAÇÕES DA LOJA (ADMIN) - UPLOAD DE LOGO
- * ======================================================
- *
- * ✅ Frontend usa: POST /api/admin/shop-config/upload/logo
- *
- * IMPORTANTE:
- * - Como a base aqui é "/admin/shop-config/upload",
- *   dentro de "./adminConfigUploadRoutes" a rota deve ser:
- *     router.post("/logo", ...)
- */
-loadRoute("/admin/shop-config/upload", "./adminConfigUploadRoutes");
 
 /* ============================
  * Área Admin - Rotas Protegidas
@@ -217,7 +189,7 @@ try {
   console.error("❌ Erro ao carregar ./adminCupons:", err.message);
 }
 
-// Configurações (ADMIN)
+// Configurações
 try {
   const adminConfigRoutes = require("./adminConfigRoutes");
   router.use("/admin/config", verifyAdmin, adminConfigRoutes);
@@ -242,7 +214,7 @@ try {
 }
 
 /* ============================
- * Rotas Admin específicas
+ * Rotas Admin específicas (continuam protegidas)
  * ============================ */
 
 router.use("/admin/logs", verifyAdmin, adminLogsRoutes);

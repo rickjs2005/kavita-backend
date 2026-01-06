@@ -1,4 +1,3 @@
-// routes/adminProdutos.js — versão robusta e configurável
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool");
@@ -12,6 +11,11 @@ const PRODUCTS_TABLE = "products";
 const PRODUCT_IMAGES_TABLE = "product_images";
 const CATEGORY_COL = "category_id";
 const IMAGE_COL = "image";
+
+// Novas colunas (frete por produto)
+const SHIPPING_FREE_COL = "shipping_free";
+const SHIPPING_FREE_FROM_QTY_COL = "shipping_free_from_qty";
+
 const IS_DEV = process.env.NODE_ENV !== "production";
 
 /* ============ Upload Helpers ============ */
@@ -46,27 +50,99 @@ const toInt = (v, def = 0) => {
   return Number.isInteger(n) ? n : def;
 };
 
+const parseBoolLike = (v) => {
+  if (typeof v === "boolean") return v;
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
+};
+
+const parseNullablePositiveInt = (v) => {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.floor(n);
+  return i > 0 ? i : null;
+};
+
 async function attachImages(rows) {
   if (!rows.length) return rows;
+
   const ids = rows.map((r) => r.id);
   const [imgs] = await pool.query(
     `SELECT product_id, path FROM ${PRODUCT_IMAGES_TABLE} WHERE product_id IN (?)`,
     [ids]
   );
+
   const bucket = imgs.reduce((acc, r) => {
     (acc[r.product_id] ||= []).push(r.path);
     return acc;
   }, {});
-  return rows.map((r) => ({ ...r, images: bucket[r.id] || [] }));
+
+  return rows.map((r) => ({
+    ...r,
+    images: bucket[r.id] || [],
+  }));
 }
 
-/* ============ Rotas ============ */
+function normalizeShippingFields(row) {
+  if (!row) return row;
+  // Garantir consistência para o frontend:
+  // shipping_free => 0/1
+  // shipping_free_from_qty => int ou null
+  const sf = row[SHIPPING_FREE_COL];
+  const sfq = row[SHIPPING_FREE_FROM_QTY_COL];
+
+  return {
+    ...row,
+    [SHIPPING_FREE_COL]: sf === null || sf === undefined ? 0 : Number(sf) ? 1 : 0,
+    [SHIPPING_FREE_FROM_QTY_COL]:
+      sfq === null || sfq === undefined || sfq === "" ? null : Number(sfq),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*                               Swagger                              */
+/* ------------------------------------------------------------------ */
+/**
+ * @openapi
+ * tags:
+ *   - name: Admin Produtos
+ *     description: Gestão de produtos no painel admin
+ */
+
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     Product:
+ *       type: object
+ *       properties:
+ *         id: { type: integer, example: 10 }
+ *         name: { type: string, example: "Ração Premium 10kg" }
+ *         description: { type: string, nullable: true, example: "Detalhes do produto..." }
+ *         price: { type: number, example: 199.9 }
+ *         quantity: { type: integer, example: 10 }
+ *         category_id: { type: integer, example: 3 }
+ *         image: { type: string, nullable: true, example: "/uploads/products/abc.jpg" }
+ *         images:
+ *           type: array
+ *           items: { type: string }
+ *           example: ["/uploads/products/abc.jpg", "/uploads/products/def.jpg"]
+ *         shipping_free: { type: integer, example: 1, description: "1 = frete grátis por produto" }
+ *         shipping_free_from_qty:
+ *           type: integer
+ *           nullable: true
+ *           example: 3
+ *           description: "Quantidade mínima para frete grátis (se shipping_free=1)."
+ */
 
 /**
  * @openapi
  * /api/admin/produtos:
  *   get:
- *     tags: [Admin, Produtos]
+ *     tags: [Admin Produtos]
  *     summary: Lista todos os produtos cadastrados
  *     security:
  *       - BearerAuth: []
@@ -86,10 +162,37 @@ async function attachImages(rows) {
 
 /**
  * @openapi
+ * /api/admin/produtos/{id}:
+ *   get:
+ *     tags: [Admin Produtos]
+ *     summary: Busca um produto por id (para edição no admin)
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Produto retornado
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Product' }
+ *       404:
+ *         description: Produto não encontrado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno
+ */
+
+/**
+ * @openapi
  * /api/admin/produtos:
  *   post:
- *     tags: [Admin, Produtos]
- *     summary: Cadastra um novo produto com imagens
+ *     tags: [Admin Produtos]
+ *     summary: Cadastra um novo produto com imagens (opcional) e frete por produto
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -102,10 +205,20 @@ async function attachImages(rows) {
  *             properties:
  *               name: { type: string }
  *               description: { type: string, nullable: true }
- *               price: { type: number }
+ *               price: { type: string, example: "199,90" }
  *               quantity: { type: integer }
  *               category_id: { type: integer }
- *               images: { type: array, items: { type: string, format: binary } }
+ *               shippingFree:
+ *                 type: string
+ *                 example: "1"
+ *                 description: 'Aceita "1"/"0", "true"/"false", "on"/"off".'
+ *               shippingFreeFromQtyStr:
+ *                 type: string
+ *                 example: "3"
+ *                 description: "Quantidade mínima para frete grátis (opcional)."
+ *               images:
+ *                 type: array
+ *                 items: { type: string, format: binary }
  *     responses:
  *       201:
  *         description: Produto criado com sucesso
@@ -121,8 +234,8 @@ async function attachImages(rows) {
  * @openapi
  * /api/admin/produtos/{id}:
  *   put:
- *     tags: [Admin, Produtos]
- *     summary: Atualiza um produto existente
+ *     tags: [Admin Produtos]
+ *     summary: Atualiza um produto existente (imagens + keepImages + frete por produto)
  *     security:
  *       - BearerAuth: []
  *     parameters:
@@ -139,11 +252,21 @@ async function attachImages(rows) {
  *             properties:
  *               name: { type: string }
  *               description: { type: string }
- *               price: { type: number }
+ *               price: { type: string, example: "199,90" }
  *               quantity: { type: integer }
  *               category_id: { type: integer }
- *               keepImages: { type: string, example: '["/uploads/abc.jpg"]' }
- *               images: { type: array, items: { type: string, format: binary } }
+ *               keepImages: { type: string, example: '["/uploads/products/abc.jpg"]' }
+ *               shippingFree:
+ *                 type: string
+ *                 example: "0"
+ *                 description: 'Aceita "1"/"0", "true"/"false", "on"/"off".'
+ *               shippingFreeFromQtyStr:
+ *                 type: string
+ *                 example: "10"
+ *                 description: "Quantidade mínima para frete grátis (opcional)."
+ *               images:
+ *                 type: array
+ *                 items: { type: string, format: binary }
  *     responses:
  *       200:
  *         description: Produto atualizado
@@ -159,7 +282,7 @@ async function attachImages(rows) {
  * @openapi
  * /api/admin/produtos/{id}:
  *   delete:
- *     tags: [Admin, Produtos]
+ *     tags: [Admin Produtos]
  *     summary: Remove um produto e suas imagens
  *     security:
  *       - BearerAuth: []
@@ -179,11 +302,18 @@ async function attachImages(rows) {
  *         description: Erro interno
  */
 
+/* ============ Rotas ============ */
+
 // GET /api/admin/produtos
 router.get("/", verifyAdmin, async (_req, res) => {
   try {
-    const [rows] = await pool.query(`SELECT * FROM ${PRODUCTS_TABLE} ORDER BY id DESC`);
-    const withImages = await attachImages(rows);
+    const [rows] = await pool.query(
+      `SELECT * FROM ${PRODUCTS_TABLE} ORDER BY id DESC`
+    );
+
+    const normalized = (rows || []).map(normalizeShippingFields);
+    const withImages = await attachImages(normalized);
+
     res.json(withImages);
   } catch (err) {
     console.error("Erro ao buscar produtos:", err);
@@ -194,36 +324,101 @@ router.get("/", verifyAdmin, async (_req, res) => {
   }
 });
 
-// POST /api/admin/produtos (múltiplas imagens OPCIONAIS)
+// GET /api/admin/produtos/:id  (necessário para edição consistente no admin)
+router.get("/:id", verifyAdmin, async (req, res) => {
+  try {
+    const id = toInt(req.params.id, -1);
+    if (id <= 0) {
+      return res.status(400).json({ message: "ID inválido." });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT * FROM ${PRODUCTS_TABLE} WHERE id = ? LIMIT 1`,
+      [id]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ message: "Produto não encontrado." });
+    }
+
+    const normalized = normalizeShippingFields(rows[0]);
+    const [withImagesArr] = await attachImages([normalized]);
+
+    return res.json(withImagesArr);
+  } catch (err) {
+    console.error("Erro ao buscar produto:", err);
+    res.status(500).json({
+      message: "Erro ao buscar produto",
+      ...(IS_DEV && { error: err.message, code: err.code }),
+    });
+  }
+});
+
+// POST /api/admin/produtos (múltiplas imagens OPCIONAIS + frete por produto)
 router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
-  const { name = "", description = "", price = "", quantity = "", category_id = "" } = req.body;
+  const {
+    name = "",
+    description = "",
+    price = "",
+    quantity = "",
+    category_id = "",
+    shippingFree = "0",
+    shippingFreeFromQtyStr = "",
+  } = req.body;
 
   const priceNum = parseMoneyBR(price);
-  const qtyNum   = toInt(quantity, -1);
+  const qtyNum = toInt(quantity, -1);
   const catIdNum = toInt(category_id, -1);
 
-  if (!name.trim())            return res.status(400).json({ message: "Nome é obrigatório." });
+  // shippingFree aceita "1"/"0", "true"/"false" etc. (false cai como false aqui)
+  const shippingFreeBool = parseBoolLike(shippingFree);
+
+  // shippingFreeFromQtyStr normaliza para INT (>0) ou NULL.
+  // Só faz sentido se shippingFree=1; caso contrário, força NULL.
+  const shippingFreeFromQty = shippingFreeBool
+    ? parseNullablePositiveInt(shippingFreeFromQtyStr)
+    : null;
+
+  if (!name.trim())
+    return res.status(400).json({ message: "Nome é obrigatório." });
   if (!Number.isFinite(priceNum) || priceNum <= 0)
     return res.status(400).json({ message: "Preço inválido." });
-  if (qtyNum < 0)              return res.status(400).json({ message: "Quantidade inválida." });
-  if (catIdNum <= 0)           return res.status(400).json({ message: "Categoria inválida." });
+  if (qtyNum < 0)
+    return res.status(400).json({ message: "Quantidade inválida." });
+  if (catIdNum <= 0)
+    return res.status(400).json({ message: "Categoria inválida." });
 
   const files = req.files || [];
   const conn = await pool.getConnection();
   let uploadedMedia = [];
+
   try {
     await conn.beginTransaction();
 
-    // Atenção: usa o nome da coluna de categoria vindo da ENV (CATEGORY_COL)
     const [ins] = await conn.query(
-      `INSERT INTO ${PRODUCTS_TABLE} (name, description, price, quantity, ${CATEGORY_COL}, ${IMAGE_COL})
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [name.trim(), description?.trim() || null, priceNum, qtyNum, catIdNum, null]
+      `INSERT INTO ${PRODUCTS_TABLE} (
+        name, description, price, quantity, ${CATEGORY_COL}, ${IMAGE_COL},
+        ${SHIPPING_FREE_COL}, ${SHIPPING_FREE_FROM_QTY_COL}
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        name.trim(),
+        description?.trim() || null,
+        priceNum,
+        qtyNum,
+        catIdNum,
+        null,
+        shippingFreeBool ? 1 : 0,
+        shippingFreeFromQty,
+      ]
     );
+
     const productId = ins.insertId;
 
     if (files.length) {
-      uploadedMedia = await mediaService.persistMedia(files, { folder: "products" });
+      uploadedMedia = await mediaService.persistMedia(files, {
+        folder: "products",
+      });
 
       if (uploadedMedia.length) {
         const values = uploadedMedia.map((media) => [productId, media.path]);
@@ -231,6 +426,7 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
           `INSERT INTO ${PRODUCT_IMAGES_TABLE} (product_id, path) VALUES ?`,
           [values]
         );
+
         // define a primeira imagem como “capa”
         await conn.query(
           `UPDATE ${PRODUCTS_TABLE} SET ${IMAGE_COL} = ? WHERE id = ?`,
@@ -240,13 +436,12 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     }
 
     await conn.commit();
-    res.status(201).json({ message: "Produto adicionado com sucesso.", id: productId });
+    res
+      .status(201)
+      .json({ message: "Produto adicionado com sucesso.", id: productId });
   } catch (err) {
     await conn.rollback();
-    const cleanupTargets = [
-      ...uploadedMedia,
-      ...rawFileTargets(files),
-    ];
+    const cleanupTargets = [...uploadedMedia, ...rawFileTargets(files)];
     await mediaService.enqueueOrphanCleanup(cleanupTargets);
     console.error("POST /produtos erro:", err);
     res.status(500).json({
@@ -258,7 +453,7 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
   }
 });
 
-// PUT /api/admin/produtos/:id (múltiplas imagens + keepImages[])
+// PUT /api/admin/produtos/:id (múltiplas imagens + keepImages[] + frete por produto)
 router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
   const { id } = req.params;
   const {
@@ -268,20 +463,35 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     quantity = "",
     category_id = "",
     keepImages = "[]",
+    shippingFree = "0",
+    shippingFreeFromQtyStr = "",
   } = req.body;
 
   const priceNum = parseMoneyBR(price);
-  const qtyNum   = toInt(quantity, -1);
+  const qtyNum = toInt(quantity, -1);
   const catIdNum = toInt(category_id, -1);
 
-  if (!name.trim())            return res.status(400).json({ message: "Nome é obrigatório." });
+  const shippingFreeBool = parseBoolLike(shippingFree);
+  const shippingFreeFromQty = shippingFreeBool
+    ? parseNullablePositiveInt(shippingFreeFromQtyStr)
+    : null;
+
+  if (!name.trim())
+    return res.status(400).json({ message: "Nome é obrigatório." });
   if (!Number.isFinite(priceNum) || priceNum <= 0)
     return res.status(400).json({ message: "Preço inválido." });
-  if (qtyNum < 0)              return res.status(400).json({ message: "Quantidade inválida." });
-  if (catIdNum <= 0)           return res.status(400).json({ message: "Categoria inválida." });
+  if (qtyNum < 0)
+    return res.status(400).json({ message: "Quantidade inválida." });
+  if (catIdNum <= 0)
+    return res.status(400).json({ message: "Categoria inválida." });
 
   let keep = [];
-  try { keep = JSON.parse(keepImages || "[]"); } catch (_) { keep = []; }
+  try {
+    keep = JSON.parse(keepImages || "[]");
+    if (!Array.isArray(keep)) keep = [];
+  } catch (_) {
+    keep = [];
+  }
 
   const newFiles = req.files || [];
   const conn = await pool.getConnection();
@@ -291,20 +501,37 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    const [exists] = await conn.query(`SELECT id FROM ${PRODUCTS_TABLE} WHERE id = ?`, [id]);
+    const [exists] = await conn.query(
+      `SELECT id FROM ${PRODUCTS_TABLE} WHERE id = ?`,
+      [id]
+    );
     if (!exists.length) {
       await conn.rollback();
-      await mediaService.enqueueOrphanCleanup([
-        ...rawFileTargets(newFiles),
-      ]);
+      await mediaService.enqueueOrphanCleanup([...rawFileTargets(newFiles)]);
       return res.status(404).json({ message: "Produto não encontrado." });
     }
 
     await conn.query(
       `UPDATE ${PRODUCTS_TABLE}
-         SET name=?, description=?, price=?, quantity=?, ${CATEGORY_COL}=?
+       SET
+         name=?,
+         description=?,
+         price=?,
+         quantity=?,
+         ${CATEGORY_COL}=?,
+         ${SHIPPING_FREE_COL}=?,
+         ${SHIPPING_FREE_FROM_QTY_COL}=?
        WHERE id=?`,
-      [name.trim(), description?.trim() || null, priceNum, qtyNum, catIdNum, id]
+      [
+        name.trim(),
+        description?.trim() || null,
+        priceNum,
+        qtyNum,
+        catIdNum,
+        shippingFreeBool ? 1 : 0,
+        shippingFreeFromQty,
+        id,
+      ]
     );
 
     const [curImgs] = await conn.query(
@@ -323,13 +550,17 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     }
 
     if (newFiles.length) {
-      uploadedMedia = await mediaService.persistMedia(newFiles, { folder: "products" });
+      uploadedMedia = await mediaService.persistMedia(newFiles, {
+        folder: "products",
+      });
+
       if (uploadedMedia.length) {
         const values = uploadedMedia.map((media) => [id, media.path]);
         await conn.query(
           `INSERT INTO ${PRODUCT_IMAGES_TABLE} (product_id, path) VALUES ?`,
           [values]
         );
+
         const uploadedPaths = uploadedMedia.map((item) => item.path);
         keep = [...keep, ...uploadedPaths];
       }
@@ -342,18 +573,17 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     );
 
     await conn.commit();
+
     if (removedDuringUpdate.length) {
       mediaService.removeMedia(removedDuringUpdate).catch((error) => {
         console.error("Falha ao remover mídias antigas de produto:", error);
       });
     }
+
     res.json({ message: "Produto atualizado com sucesso." });
   } catch (err) {
     await conn.rollback();
-    const cleanupTargets = [
-      ...uploadedMedia,
-      ...rawFileTargets(newFiles),
-    ];
+    const cleanupTargets = [...uploadedMedia, ...rawFileTargets(newFiles)];
     await mediaService.enqueueOrphanCleanup(cleanupTargets);
     console.error("PUT /produtos erro:", err);
     res.status(500).json({
@@ -378,7 +608,10 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
       [id]
     );
 
-    const [result] = await conn.query(`DELETE FROM ${PRODUCTS_TABLE} WHERE id = ?`, [id]);
+    const [result] = await conn.query(
+      `DELETE FROM ${PRODUCTS_TABLE} WHERE id = ?`,
+      [id]
+    );
 
     if (result.affectedRows === 0) {
       await conn.rollback();

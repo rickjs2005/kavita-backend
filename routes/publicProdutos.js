@@ -9,7 +9,9 @@ const PUBLIC_PRODUCT_FIELDS = `
   CAST(price AS DECIMAL(10,2)) AS price,
   image,
   rating_avg,
-  rating_count
+  rating_count,
+  shipping_free,
+  shipping_free_from_qty
 `;
 
 /**
@@ -62,6 +64,13 @@ const PUBLIC_PRODUCT_FIELDS = `
  *                   rating_count:
  *                     type: integer
  *                     description: Quantidade de avaliações do produto.
+ *                   shipping_free:
+ *                     type: boolean
+ *                     description: Se o produto tem frete grátis.
+ *                   shipping_free_from_qty:
+ *                     type: integer
+ *                     nullable: true
+ *                     description: Quantidade mínima para frete grátis (se aplicável).
  *       500:
  *         description: Erro interno ao buscar produtos
  */
