@@ -37,13 +37,17 @@ const { getQuote, parseCep, normalizeItems } = require("../services/shippingQuot
  *
  *     Endereco:
  *       type: object
- *       required:
- *         - cep
- *         - rua
- *         - numero
- *         - bairro
- *         - cidade
- *         - estado
+ *       description: |
+ *         Endereço do pedido.
+ *
+ *         Regras por tipo_localidade:
+ *         - URBANA (padrão):
+ *           - obrigatórios: cep, rua (ou endereco/logradouro), bairro, cidade, estado
+ *           - numero é obrigatório, mas pode usar sem_numero=true (o backend normaliza numero para "S/N")
+ *           - ponto_referencia/complemento opcionais
+ *         - RURAL:
+ *           - obrigatórios: cep, cidade, estado, comunidade, observacoes_acesso (ou ponto_referencia)
+ *           - rua/bairro/numero NÃO são obrigatórios
  *       properties:
  *         cep:
  *           type: string
@@ -51,11 +55,30 @@ const { getQuote, parseCep, normalizeItems } = require("../services/shippingQuot
  *         rua:
  *           type: string
  *           example: "Rua das Flores"
+ *           description: |
+ *             Aceita aliases: rua | endereco | logradouro (o backend normaliza).
+ *         endereco:
+ *           type: string
+ *           nullable: true
+ *           example: "Rua das Flores"
+ *           description: Alias aceito para "rua".
+ *         logradouro:
+ *           type: string
+ *           nullable: true
+ *           example: "Rua das Flores"
+ *           description: Alias aceito para "rua".
  *         numero:
  *           type: string
+ *           nullable: true
  *           example: "288"
+ *         sem_numero:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Quando true e tipo_localidade=URBANA, o backend normaliza numero para "S/N".
  *         bairro:
  *           type: string
+ *           nullable: true
  *           example: "Centro"
  *         cidade:
  *           type: string
@@ -65,21 +88,63 @@ const { getQuote, parseCep, normalizeItems } = require("../services/shippingQuot
  *           example: "MG"
  *         complemento:
  *           type: string
+ *           nullable: true
  *           example: "Perto da pracinha"
+ *         ponto_referencia:
+ *           type: string
+ *           nullable: true
+ *           example: "Depois do mercado, casa amarela"
+ *           description: |
+ *             Opcional em URBANA. Em RURAL pode ser usado como alternativa a observacoes_acesso.
+ *         observacoes_acesso:
+ *           type: string
+ *           nullable: true
+ *           example: "Após a ponte, seguir 2km de estrada de chão; entrada à direita."
+ *           description: Obrigatório quando tipo_localidade = RURAL (ou informe ponto_referencia).
+ *         tipo_localidade:
+ *           type: string
+ *           enum: [URBANA, RURAL]
+ *           example: "URBANA"
+ *           description: |
+ *             Tipo de localidade do endereço.
+ *             - URBANA: padrão (campos urbanos normais)
+ *             - RURAL: exige comunidade + observacoes_acesso (ou ponto_referencia)
+ *         comunidade:
+ *           type: string
+ *           nullable: true
+ *           example: "Córrego do Cedro"
+ *           description: Obrigatório quando tipo_localidade = RURAL
  *
  *     CheckoutBody:
  *       type: object
  *       required:
  *         - formaPagamento
- *         - endereco
  *         - produtos
  *       properties:
+ *         entrega_tipo:
+ *           type: string
+ *           enum: [ENTREGA, RETIRADA]
+ *           example: "ENTREGA"
+ *           description: |
+ *             Tipo de atendimento:
+ *             - ENTREGA: calcula frete e prazo via /services/shippingQuoteService (fonte da verdade).
+ *             - RETIRADA: NÃO calcula frete, NÃO tem prazo (frete=0).
  *         formaPagamento:
  *           type: string
- *           enum: [pix, boleto, mercadopago, prazo]
- *           example: pix
+ *           example: "Cartão (Mercado Pago)"
+ *           description: |
+ *             Forma de pagamento escolhida no checkout.
+ *             Valores aceitos (case-insensitive):
+ *             - Pix
+ *             - Boleto
+ *             - Cartão (Mercado Pago)
+ *             - Prazo
  *         endereco:
  *           $ref: "#/components/schemas/Endereco"
+ *           nullable: true
+ *           description: |
+ *             Obrigatório quando entrega_tipo=ENTREGA.
+ *             Em RETIRADA, pode ser omitido.
  *         produtos:
  *           type: array
  *           items:
@@ -108,6 +173,9 @@ const { getQuote, parseCep, normalizeItems } = require("../services/shippingQuot
  *         total:
  *           type: number
  *           example: 150.5
+ *         nota_fiscal_aviso:
+ *           type: string
+ *           example: "Nota fiscal será entregue junto com o produto."
  *         total_sem_desconto:
  *           type: number
  *           nullable: true
@@ -141,12 +209,12 @@ const { getQuote, parseCep, normalizeItems } = require("../services/shippingQuot
  *       - NÃO confia em frete enviado pelo frontend.
  *       - Salva no pedido: shipping_price, shipping_rule_applied, shipping_prazo_dias, shipping_cep.
  *
- *       - Valida estoque e estrutura dos dados do checkout.
- *       - Usa SEMPRE o `id` vindo do token JWT (cookie HttpOnly ou Bearer).
- *       - Dentro do controller de checkout, após a criação do pedido,
- *         o carrinho aberto associado pode ser marcado como **recuperado**
- *         na tabela `carrinhos_abandonados`.
- *       - Opcionalmente, aplica um **cupom de desconto** informado em `cupom_codigo`.
+ *       Regras de entrega:
+ *       - entrega_tipo=ENTREGA: exige endereço e calcula frete/prazo.
+ *       - entrega_tipo=RETIRADA: não exige endereço; frete=0 e sem prazo.
+ *
+ *       Aviso:
+ *       - Nota fiscal será entregue junto com o produto (sempre).
  *     tags:
  *       - Checkout
  *     security:
@@ -169,11 +237,77 @@ const { getQuote, parseCep, normalizeItems } = require("../services/shippingQuot
  */
 
 /* ------------------------------------------------------------------ */
+/*                           Helpers / Normalização                    */
+/* ------------------------------------------------------------------ */
+
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
+function asStr(v) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function upper(v, fallback) {
+  const s = asStr(v) || (fallback || "");
+  return s.toUpperCase();
+}
+
+function normalizeEntregaTipo(raw) {
+  const tipo = upper(raw, "ENTREGA");
+  if (tipo !== "ENTREGA" && tipo !== "RETIRADA") return "ENTREGA";
+  return tipo;
+}
+
+/**
+ * Normaliza "endereco" aceitando aliases do frontend e do legado:
+ * - rua | endereco | logradouro
+ * - ponto_referencia | referencia | complemento
+ */
+function normalizeCheckoutEndereco(rawEndereco) {
+  const e = rawEndereco && typeof rawEndereco === "object" ? rawEndereco : {};
+
+  const tipo_localidade = upper(e.tipo_localidade, "URBANA") === "RURAL" ? "RURAL" : "URBANA";
+
+  const rua = asStr(e.rua) || asStr(e.endereco) || asStr(e.logradouro);
+
+  const ponto_referencia =
+    asStr(e.ponto_referencia) ||
+    asStr(e.referencia) ||
+    asStr(e.complemento);
+
+  const observacoes_acesso = asStr(e.observacoes_acesso);
+  const comunidade = asStr(e.comunidade);
+
+  const sem_numero =
+    e.sem_numero === true ||
+    upper(e.sem_numero) === "TRUE" ||
+    upper(e.sem_numero) === "1";
+
+  const numero = asStr(e.numero);
+
+  return {
+    ...e,
+    cep: asStr(e.cep),
+    cidade: asStr(e.cidade),
+    estado: upper(e.estado),
+    tipo_localidade,
+    rua,
+    bairro: asStr(e.bairro),
+    numero,
+    sem_numero,
+    ponto_referencia,
+    observacoes_acesso,
+    comunidade,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /*                           Validação básica                         */
 /* ------------------------------------------------------------------ */
 
 function validateCheckoutBody(req, _res, next) {
-  const { endereco, produtos } = req.body || {};
+  const body = req.body || {};
   const errors = [];
 
   // usuário vem exclusivamente do token
@@ -189,35 +323,80 @@ function validateCheckoutBody(req, _res, next) {
     );
   }
 
-  if (!endereco) {
-    errors.push("endereco é obrigatório.");
+  // normaliza entrega_tipo (default ENTREGA)
+  body.entrega_tipo = normalizeEntregaTipo(body.entrega_tipo);
+
+  const { endereco, produtos } = body;
+
+  // ENTREGA => endereço obrigatório; RETIRADA => endereço opcional
+  if (body.entrega_tipo === "ENTREGA") {
+    if (!endereco) {
+      errors.push("endereco é obrigatório quando entrega_tipo = ENTREGA.");
+    } else {
+      const endNorm = normalizeCheckoutEndereco(endereco);
+      body.endereco = endNorm; // normaliza no payload (compatível com controller)
+
+      // obrigatórios comuns
+      if (!endNorm.cep) errors.push("endereco.cep é obrigatório.");
+      if (!endNorm.cidade) errors.push("endereco.cidade é obrigatório.");
+      if (!endNorm.estado) errors.push("endereco.estado é obrigatório.");
+
+      // valida tipo_localidade
+      if (endNorm.tipo_localidade !== "URBANA" && endNorm.tipo_localidade !== "RURAL") {
+        errors.push("endereco.tipo_localidade deve ser 'URBANA' ou 'RURAL'.");
+      }
+
+      if (endNorm.tipo_localidade === "URBANA") {
+        // URBANA: rua + bairro obrigatórios
+        if (!endNorm.rua) errors.push("endereco.rua é obrigatório.");
+        if (!endNorm.bairro) errors.push("endereco.bairro é obrigatório.");
+
+        // número obrigatório, com opção "não tem número"
+        if (!endNorm.sem_numero && !endNorm.numero) {
+          errors.push("endereco.numero é obrigatório.");
+        }
+        if (endNorm.sem_numero && !endNorm.numero) {
+          body.endereco.numero = "S/N";
+        }
+      } else {
+        // RURAL: exige comunidade + observacoes_acesso (ou ponto_referencia)
+        if (!isNonEmptyString(endNorm.comunidade)) {
+          errors.push("endereco.comunidade é obrigatório quando tipo_localidade = RURAL.");
+        }
+
+        const ref = endNorm.observacoes_acesso || endNorm.ponto_referencia;
+        if (!isNonEmptyString(ref)) {
+          errors.push(
+            "endereco.observacoes_acesso (ou ponto_referencia) é obrigatório quando tipo_localidade = RURAL."
+          );
+        }
+      }
+    }
   } else {
-    ["cep", "rua", "numero", "bairro", "cidade", "estado"].forEach((campo) => {
-      if (!endereco[campo]) errors.push(`endereco.${campo} é obrigatório.`);
-    });
+    // RETIRADA: se vier endereco, normaliza para consistência, mas não exige campos
+    if (endereco) {
+      body.endereco = normalizeCheckoutEndereco(endereco);
+    }
   }
 
+  // produtos obrigatórios sempre (ENTREGA e RETIRADA)
   if (!Array.isArray(produtos) || produtos.length === 0) {
     errors.push("produtos deve ser um array com ao menos um item.");
   } else {
     produtos.forEach((p, i) => {
       if (!p.id) errors.push(`produtos[${i}].id é obrigatório.`);
       if (!Number.isInteger(p.quantidade) || p.quantidade <= 0) {
-        errors.push(
-          `produtos[${i}].quantidade deve ser um inteiro maior que zero.`
-        );
+        errors.push(`produtos[${i}].quantidade deve ser um inteiro maior que zero.`);
       }
     });
   }
 
   if (errors.length > 0) {
-    return next(
-      new AppError(errors.join(" "), ERROR_CODES.VALIDATION_ERROR, 400)
-    );
+    return next(new AppError(errors.join(" "), ERROR_CODES.VALIDATION_ERROR, 400));
   }
 
   // compatibilidade com controller/logs (deprecated)
-  if (!req.body) req.body = {};
+  req.body = body;
   req.body.usuario_id = usuarioIdFromToken;
 
   return next();
@@ -254,14 +433,38 @@ if (typeof controller === "function") {
 
 /**
  * Middleware obrigatório:
- * - Recalcula frete no backend usando o mesmo motor do quote (service único)
+ * - ENTREGA: recalcula frete no backend usando o mesmo motor do quote (service único)
+ * - RETIRADA: força frete=0 e sem prazo
  * - Ignora qualquer frete enviado pelo frontend
  * - Injeta no req.body para o controller
  * - Guarda em req.__shippingCalc para persistência pós-criação
  */
 async function recalcShippingMiddleware(req, _res, next) {
   try {
-    const { endereco, produtos } = req.body || {};
+    const body = req.body || {};
+    const entregaTipo = normalizeEntregaTipo(body.entrega_tipo);
+
+    // RETIRADA: sem frete e sem prazo
+    if (entregaTipo === "RETIRADA") {
+      req.body.shipping_price = 0;
+      req.body.shipping_rule_applied = "PICKUP";
+      req.body.shipping_prazo_dias = null;
+      req.body.shipping_cep = null;
+
+      req.__shippingCalc = {
+        shipping_price: 0,
+        shipping_rule_applied: "PICKUP",
+        shipping_prazo_dias: null,
+        shipping_cep: null,
+        freeItems: [],
+        entrega_tipo: "RETIRADA",
+      };
+
+      return next();
+    }
+
+    // ENTREGA (padrão)
+    const { endereco, produtos } = body;
 
     const cep = parseCep(endereco?.cep);
     if (!cep || cep.length !== 8) {
@@ -305,6 +508,7 @@ async function recalcShippingMiddleware(req, _res, next) {
       shipping_prazo_dias: req.body.shipping_prazo_dias,
       shipping_cep: req.body.shipping_cep,
       freeItems: quote.freeItems || [],
+      entrega_tipo: "ENTREGA",
     };
 
     return next();
@@ -316,13 +520,25 @@ async function recalcShippingMiddleware(req, _res, next) {
 /**
  * Persistência obrigatória no pedido sem depender do controller:
  * intercepta o res.json para pegar pedido_id e fazer UPDATE.
+ *
+ * Também injeta aviso fixo de Nota Fiscal (sempre).
  */
 function persistShippingOnResponse(req, res, next) {
   const originalJson = res.json.bind(res);
 
   res.json = async (body) => {
+    const safeBody =
+      body && typeof body === "object"
+        ? { ...body }
+        : { success: true, message: "OK" };
+
+    // Aviso fixo para qualquer opção
+    if (!safeBody.nota_fiscal_aviso) {
+      safeBody.nota_fiscal_aviso = "Nota fiscal será entregue junto com o produto.";
+    }
+
     try {
-      const pedidoId = body?.pedido_id;
+      const pedidoId = safeBody?.pedido_id;
 
       if (pedidoId && req.__shippingCalc) {
         const s = req.__shippingCalc;
@@ -346,7 +562,9 @@ function persistShippingOnResponse(req, res, next) {
             s.shipping_prazo_dias === null || s.shipping_prazo_dias === undefined
               ? null
               : Number(s.shipping_prazo_dias),
-            String(s.shipping_cep || ""),
+            s.shipping_cep === null || s.shipping_cep === undefined
+              ? null
+              : String(s.shipping_cep),
             Number(pedidoId),
           ]
         );
@@ -355,7 +573,6 @@ function persistShippingOnResponse(req, res, next) {
       console.error("[checkoutRoutes] Falha ao salvar frete no pedido:", e);
 
       // Para manter segurança/consistência, não devolve sucesso sem persistir.
-      // (o pedido pode ter sido criado, mas sem frete salvo o sistema fica inconsistente)
       if (!res.headersSent) {
         res.status(500);
       }
@@ -364,10 +581,11 @@ function persistShippingOnResponse(req, res, next) {
         message:
           "Pedido criado, mas falhou ao persistir dados de frete. Verifique colunas shipping_* em pedidos.",
         error: e?.message || "Erro ao salvar frete",
+        nota_fiscal_aviso: "Nota fiscal será entregue junto com o produto.",
       });
     }
 
-    return originalJson(body);
+    return originalJson(safeBody);
   };
 
   return next();
@@ -529,8 +747,8 @@ router.post("/preview-cupom", authenticateToken, async (req, res, next) => {
 // POST /api/checkout
 // Ordem intencional:
 // - autentica
-// - valida body
-// - recalcula frete (fonte da verdade) via service único
+// - valida body (inclui regras URBANA/RURAL e RETIRADA)
+// - recalcula frete (ENTREGA) ou força pickup (RETIRADA)
 // - intercepta resposta para persistir shipping_* no pedido (sem mudar controller)
 // - chama controller atual
 router.post(

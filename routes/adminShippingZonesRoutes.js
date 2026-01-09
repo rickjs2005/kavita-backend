@@ -35,7 +35,9 @@ router.get("/zones", async (req, res, next) => {
 
     const ids = zones.map((z) => z.id);
     const [citiesRows] = await pool.query(
-      `SELECT zone_id, city FROM shipping_zone_cities WHERE zone_id IN (${ids.map(() => "?").join(",")})`,
+      `SELECT zone_id, city FROM shipping_zone_cities WHERE zone_id IN (${ids
+        .map(() => "?")
+        .join(",")})`,
       ids
     );
 
@@ -52,7 +54,7 @@ router.get("/zones", async (req, res, next) => {
       is_free: Boolean(z.is_free),
       is_active: Boolean(z.is_active),
       price: Number(z.price || 0),
-      cities: z.all_cities ? [] : (map.get(Number(z.id)) || []),
+      cities: z.all_cities ? [] : map.get(Number(z.id)) || [],
       prazo_dias: z.prazo_dias === null ? null : Number(z.prazo_dias),
     }));
 
@@ -79,16 +81,8 @@ router.get("/zones", async (req, res, next) => {
  */
 router.post("/zones", async (req, res, next) => {
   try {
-    const {
-      name,
-      state,
-      all_cities,
-      cities,
-      is_free,
-      price,
-      prazo_dias,
-      is_active,
-    } = req.body || {};
+    const { name, state, all_cities, cities, is_free, price, prazo_dias, is_active } =
+      req.body || {};
 
     const uf = String(state || "").trim().toUpperCase();
     const nm = String(name || "").trim();
@@ -97,7 +91,9 @@ router.post("/zones", async (req, res, next) => {
       return next(new AppError("Informe um nome para a regra.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
     if (!uf || uf.length !== 2) {
-      return next(new AppError("Informe o estado (UF) com 2 letras.", ERROR_CODES.VALIDATION_ERROR, 400));
+      return next(
+        new AppError("Informe o estado (UF) com 2 letras.", ERROR_CODES.VALIDATION_ERROR, 400)
+      );
     }
 
     const all = Boolean(all_cities);
@@ -106,14 +102,22 @@ router.post("/zones", async (req, res, next) => {
 
     const priceNum = free ? 0 : Number(price || 0);
     if (!free && (!Number.isFinite(priceNum) || priceNum <= 0)) {
-      return next(new AppError("Informe um preço válido (ou marque frete grátis).", ERROR_CODES.VALIDATION_ERROR, 400));
+      return next(
+        new AppError(
+          "Informe um preço válido (ou marque frete grátis).",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
     }
 
     let prazo = null;
     if (prazo_dias !== null && prazo_dias !== undefined && String(prazo_dias).trim() !== "") {
       prazo = Math.floor(Number(prazo_dias));
       if (!Number.isFinite(prazo) || prazo <= 0) {
-        return next(new AppError("Prazo deve ser um número >= 1 ou vazio.", ERROR_CODES.VALIDATION_ERROR, 400));
+        return next(
+          new AppError("Prazo deve ser um número >= 1 ou vazio.", ERROR_CODES.VALIDATION_ERROR, 400)
+        );
       }
     }
 
@@ -135,10 +139,10 @@ router.post("/zones", async (req, res, next) => {
         const list = Array.isArray(cities) ? cities : [];
         const cleaned = Array.from(new Set(list.map((c) => String(c || "").trim()).filter(Boolean)));
         for (const city of cleaned) {
-          await conn.query(
-            `INSERT IGNORE INTO shipping_zone_cities (zone_id, city) VALUES (?, ?)`,
-            [zoneId, city]
-          );
+          await conn.query(`INSERT IGNORE INTO shipping_zone_cities (zone_id, city) VALUES (?, ?)`, [
+            zoneId,
+            city,
+          ]);
         }
       }
 
@@ -179,16 +183,8 @@ router.put("/zones/:id", async (req, res, next) => {
       return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
 
-    const {
-      name,
-      state,
-      all_cities,
-      cities,
-      is_free,
-      price,
-      prazo_dias,
-      is_active,
-    } = req.body || {};
+    const { name, state, all_cities, cities, is_free, price, prazo_dias, is_active } =
+      req.body || {};
 
     const uf = String(state || "").trim().toUpperCase();
     const nm = String(name || "").trim();
@@ -197,7 +193,9 @@ router.put("/zones/:id", async (req, res, next) => {
       return next(new AppError("Informe um nome para a regra.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
     if (!uf || uf.length !== 2) {
-      return next(new AppError("Informe o estado (UF) com 2 letras.", ERROR_CODES.VALIDATION_ERROR, 400));
+      return next(
+        new AppError("Informe o estado (UF) com 2 letras.", ERROR_CODES.VALIDATION_ERROR, 400)
+      );
     }
 
     const all = Boolean(all_cities);
@@ -206,14 +204,22 @@ router.put("/zones/:id", async (req, res, next) => {
 
     const priceNum = free ? 0 : Number(price || 0);
     if (!free && (!Number.isFinite(priceNum) || priceNum <= 0)) {
-      return next(new AppError("Informe um preço válido (ou marque frete grátis).", ERROR_CODES.VALIDATION_ERROR, 400));
+      return next(
+        new AppError(
+          "Informe um preço válido (ou marque frete grátis).",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
     }
 
     let prazo = null;
     if (prazo_dias !== null && prazo_dias !== undefined && String(prazo_dias).trim() !== "") {
       prazo = Math.floor(Number(prazo_dias));
       if (!Number.isFinite(prazo) || prazo <= 0) {
-        return next(new AppError("Prazo deve ser um número >= 1 ou vazio.", ERROR_CODES.VALIDATION_ERROR, 400));
+        return next(
+          new AppError("Prazo deve ser um número >= 1 ou vazio.", ERROR_CODES.VALIDATION_ERROR, 400)
+        );
       }
     }
 
@@ -236,17 +242,16 @@ router.put("/zones/:id", async (req, res, next) => {
         [nm, uf, all ? 1 : 0, free ? 1 : 0, priceNum, prazo, active ? 1 : 0, id]
       );
 
-      // atualiza cidades
       await conn.query(`DELETE FROM shipping_zone_cities WHERE zone_id=?`, [id]);
 
       if (!all) {
         const list = Array.isArray(cities) ? cities : [];
         const cleaned = Array.from(new Set(list.map((c) => String(c || "").trim()).filter(Boolean)));
         for (const city of cleaned) {
-          await conn.query(
-            `INSERT IGNORE INTO shipping_zone_cities (zone_id, city) VALUES (?, ?)`,
-            [id, city]
-          );
+          await conn.query(`INSERT IGNORE INTO shipping_zone_cities (zone_id, city) VALUES (?, ?)`, [
+            id,
+            city,
+          ]);
         }
       }
 

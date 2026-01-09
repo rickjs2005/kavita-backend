@@ -4,6 +4,18 @@ const { dispararEventoComunicacao } = require("../services/comunicacaoService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 
+function isFormaPagamentoValida(value) {
+  const s = String(value || "").trim().toLowerCase();
+  if (!s) return false;
+
+  if (s === "pix") return true;
+  if (s === "boleto") return true;
+  if (s.includes("cart") && s.includes("mercado")) return true;
+  if (s === "prazo") return true;
+
+  return false;
+}
+
 /**
  * Controller de Checkout
  *
@@ -33,6 +45,17 @@ async function create(req, res, next) {
         "Você precisa estar logado para finalizar o checkout.",
         ERROR_CODES.AUTH_ERROR,
         401
+      )
+    );
+  }
+
+  // ✅ Defesa extra: se alguém burlar a validação do router, não cria pedido "sem pagamento"
+  if (!isFormaPagamentoValida(formaPagamento)) {
+    return next(
+      new AppError(
+        "Forma de pagamento inválida. Use: Pix, Boleto, Cartão (Mercado Pago) ou Prazo.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400
       )
     );
   }
@@ -136,7 +159,7 @@ async function create(req, res, next) {
       [
         usuario_id,
         enderecoStr,
-        formaPagamento,
+        formaPagamento, // mantém exatamente como já estava (não quebra lógica atual)
         "pendente",
         "pendente",
         "em_separacao",
@@ -309,7 +332,6 @@ async function create(req, res, next) {
           cupom.id,
         ]);
       } catch (errCupom) {
-        // Se já for AppError, respeita. Se não, vira erro interno de cupom
         if (errCupom instanceof AppError) throw errCupom;
 
         console.error("[checkout] Erro ao aplicar cupom:", errCupom);
@@ -385,7 +407,6 @@ async function create(req, res, next) {
       }
     }
 
-    // Se já é AppError, repassa; se não, padroniza como SERVER_ERROR
     if (err instanceof AppError) {
       return next(err);
     }

@@ -50,11 +50,21 @@ function normalizeItems(raw) {
 /**
  * ViaCEP com fetch (Node 18+)
  * Retorna { state, city } ou null
+ *
+ * Observação: adicionamos timeout defensivo para não travar requisições
+ * em caso de instabilidade externa.
  */
 async function lookupCep(cep) {
+  const controller = new AbortController();
+  const timeoutMs = 3500;
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const url = `https://viacep.com.br/ws/${cep}/json/`;
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
 
     if (!res.ok) return null;
 
@@ -67,6 +77,8 @@ async function lookupCep(cep) {
     };
   } catch {
     return null;
+  } finally {
+    clearTimeout(t);
   }
 }
 
@@ -102,6 +114,30 @@ function qualifiesProductFree({ shipping_free, shipping_free_from_qty }, quantid
   }
 
   return { ok: false, reason: null };
+}
+
+/**
+ * Converte prazo para number|null de forma segura.
+ */
+function toPrazo(v) {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Consolida o prazo final:
+ * - pega o maior prazo entre a base (zona/faixa CEP) e o maior prazo de produto do carrinho.
+ * - se ambos forem null, retorna null.
+ */
+function mergePrazo(basePrazo, productMaxPrazo) {
+  const b = toPrazo(basePrazo);
+  const p = toPrazo(productMaxPrazo);
+
+  if (b === null && p === null) return null;
+  if (b === null) return p;
+  if (p === null) return b;
+  return Math.max(b, p);
 }
 
 /* ------------------------------------------------------------------ */
@@ -143,12 +179,17 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
 
   // ------------------------------------------------------------
   // 1) REGRA DO PRODUTO (avaliar primeiro)
+  //    + Coleta prazo máximo por produto (shipping_prazo_dias)
   // ------------------------------------------------------------
   const uniqueIds = Array.from(new Set(items.map((i) => i.id)));
 
+  // Mudança cuidadosa: adicionamos shipping_prazo_dias no SELECT.
+  // Se a coluna existir (como esperado pelo seu admin), ok.
+  // Se não existir, o MySQL vai erro 1054. Nesse caso, você deve garantir a coluna
+  // (o ideal é já existir, pois seu admin já expõe esse campo).
   const [products] = await pool.query(
     `
-      SELECT id, shipping_free, shipping_free_from_qty
+      SELECT id, shipping_free, shipping_free_from_qty, shipping_prazo_dias
       FROM products
       WHERE id IN (?)
     `,
@@ -170,6 +211,9 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
   const freeItems = [];
   let productFree = false;
 
+  // prazo máximo dentre os produtos do carrinho (ignora null)
+  let productMaxPrazo = null;
+
   for (const it of items) {
     const p = byId.get(Number(it.id));
     const q = Number(it.quantidade);
@@ -179,6 +223,11 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
     if (qual.ok) {
       productFree = true;
       freeItems.push({ id: Number(it.id), quantidade: q, reason: qual.reason });
+    }
+
+    const pp = toPrazo(p?.shipping_prazo_dias);
+    if (pp !== null) {
+      productMaxPrazo = productMaxPrazo === null ? pp : Math.max(productMaxPrazo, pp);
     }
   }
 
@@ -228,7 +277,7 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
           source: "ZONE",
           cep,
           price: Number(z.is_free ? 0 : z.price || 0),
-          prazo_dias: z.prazo_dias === null ? null : Number(z.prazo_dias),
+          prazo_dias: toPrazo(z.prazo_dias),
           is_free: Boolean(z.is_free),
           zone: {
             id: z.id,
@@ -249,7 +298,7 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
           source: "ZONE",
           cep,
           price: Number(zAll.is_free ? 0 : zAll.price || 0),
-          prazo_dias: zAll.prazo_dias === null ? null : Number(zAll.prazo_dias),
+          prazo_dias: toPrazo(zAll.prazo_dias),
           is_free: Boolean(zAll.is_free),
           zone: {
             id: zAll.id,
@@ -287,11 +336,17 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
       source: "CEP_RANGE",
       cep,
       price: Number(rate.preco || 0),
-      prazo_dias: Number(rate.prazo_dias || 0),
+      prazo_dias: toPrazo(rate.prazo_dias),
       is_free: Number(rate.preco || 0) === 0,
       zone: null,
     };
   }
+
+  // ------------------------------------------------------------
+  // 3.1) CONSOLIDA PRAZO FINAL (zona/faixa CEP) vs (produtos)
+  //      Regra: prazo final = MAIOR dos dois (como e-commerce grande).
+  // ------------------------------------------------------------
+  const prazoFinal = mergePrazo(baseQuote.prazo_dias, productMaxPrazo);
 
   // ------------------------------------------------------------
   // 4) PRIORIDADE FINAL (aplica regra do produto antes de retornar)
@@ -300,7 +355,7 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
     return {
       cep: baseQuote.cep,
       price: 0,
-      prazo_dias: baseQuote.prazo_dias === undefined ? null : baseQuote.prazo_dias,
+      prazo_dias: prazoFinal,
       is_free: true,
       ruleApplied: "PRODUCT_FREE",
       freeItems,
@@ -311,7 +366,7 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
   return {
     cep: baseQuote.cep,
     price: baseQuote.price,
-    prazo_dias: baseQuote.prazo_dias === undefined ? null : baseQuote.prazo_dias,
+    prazo_dias: prazoFinal,
     is_free: Boolean(baseQuote.is_free),
     ruleApplied: baseQuote.source === "ZONE" ? "ZONE" : "CEP_RANGE",
     freeItems,

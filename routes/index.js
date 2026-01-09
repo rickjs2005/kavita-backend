@@ -213,6 +213,16 @@ try {
   console.error("❌ Erro ao carregar ./adminNewsRoutes:", err.message);
 }
 
+/** ✅ NOVO: Admin Shipping (Frete por zonas UF/cidades)
+ * O arquivo define rotas /zones, então montamos em /admin/shipping
+ */
+try {
+  const adminShippingZonesRoutes = require("./adminShippingZonesRoutes");
+  router.use("/admin/shipping", verifyAdmin, adminShippingZonesRoutes);
+} catch (err) {
+  console.error("❌ Erro ao carregar ./adminShippingZonesRoutes:", err.message);
+}
+
 /* ============================
  * Rotas Admin específicas (continuam protegidas)
  * ============================ */
