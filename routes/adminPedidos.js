@@ -14,6 +14,22 @@ const handleErroInterno = (res, err, contexto = "erro") => {
 };
 
 /**
+ * Helpers: normalização de CEP no endereço parseado
+ * Mantém compatibilidade com o objeto retornado por parseAddress
+ */
+const onlyDigits = (v) => String(v ?? "").replace(/\D/g, "");
+const formatCep = (cep) => {
+  const d = onlyDigits(cep);
+  if (d.length === 8) return `${d.slice(0, 5)}-${d.slice(5)}`;
+  return cep;
+};
+const normalizeEndereco = (endereco) => {
+  if (!endereco || typeof endereco !== "object") return endereco;
+  if (!("cep" in endereco)) return endereco;
+  return { ...endereco, cep: formatCep(endereco.cep) };
+};
+
+/**
  * @openapi
  * tags:
  *   - name: Admin
@@ -169,27 +185,31 @@ router.get("/", verifyAdmin, async (req, res) => {
       JOIN products pr ON pp.produto_id = pr.id
     `);
 
-    const pedidosComItens = pedidos.map((p) => ({
-      id: p.pedido_id,
-      usuario_id: p.usuario_id,
-      usuario: p.usuario_nome,
-      email: p.usuario_email ?? null,
-      telefone: p.usuario_telefone ?? null,
-      cpf: p.usuario_cpf ?? null,
-      endereco: parseAddress(p.endereco),
-      forma_pagamento: p.forma_pagamento,
-      status_pagamento: p.status_pagamento,
-      status_entrega: p.status_entrega,
-      total: Number(p.total ?? 0),
-      data_pedido: p.data_pedido,
-      itens: itens
-        .filter((i) => i.pedido_id === p.pedido_id)
-        .map((i) => ({
-          produto: i.produto_nome,
-          quantidade: i.quantidade,
-          preco_unitario: Number(i.preco_unitario),
-        })),
-    }));
+    const pedidosComItens = pedidos.map((p) => {
+      const endereco = normalizeEndereco(parseAddress(p.endereco));
+
+      return {
+        id: p.pedido_id,
+        usuario_id: p.usuario_id,
+        usuario: p.usuario_nome,
+        email: p.usuario_email ?? null,
+        telefone: p.usuario_telefone ?? null,
+        cpf: p.usuario_cpf ?? null,
+        endereco,
+        forma_pagamento: p.forma_pagamento,
+        status_pagamento: p.status_pagamento,
+        status_entrega: p.status_entrega,
+        total: Number(p.total ?? 0),
+        data_pedido: p.data_pedido,
+        itens: itens
+          .filter((i) => i.pedido_id === p.pedido_id)
+          .map((i) => ({
+            produto: i.produto_nome,
+            quantidade: i.quantidade,
+            preco_unitario: Number(i.preco_unitario),
+          })),
+      };
+    });
 
     res.json(pedidosComItens);
   } catch (err) {
@@ -278,7 +298,7 @@ router.get("/:id", verifyAdmin, async (req, res) => {
       email: pedido.usuario_email ?? null,
       telefone: pedido.usuario_telefone ?? null,
       cpf: pedido.usuario_cpf ?? null,
-      endereco: parseAddress(pedido.endereco),
+      endereco: normalizeEndereco(parseAddress(pedido.endereco)),
       forma_pagamento: pedido.forma_pagamento,
       status_pagamento: pedido.status_pagamento,
       status_entrega: pedido.status_entrega,

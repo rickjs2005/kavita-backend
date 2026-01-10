@@ -18,6 +18,17 @@ const errorHandler = require("./middleware/errorHandler");
 const AppError = require("./errors/AppError");
 const ERROR_CODES = require("./constants/ErrorCodes");
 
+// ✅ WORKER: notificações de carrinho abandonado (email automático)
+let startAbandonedCartNotificationsWorker;
+try {
+  ({ startAbandonedCartNotificationsWorker } = require("./workers/abandonedCartNotificationsWorker"));
+} catch (err) {
+  logger.warn(
+    "⚠️ Worker de notificações não carregado (arquivo ausente ou erro no require):",
+    err.message
+  );
+}
+
 const app = express();
 
 /* ============================
@@ -111,14 +122,34 @@ app.use((req, _res, next) => {
 app.use(errorHandler);
 
 /* ============================
- * Inicialização do Servidor
+ * Inicialização do Servidor + Workers
  * ============================ */
 if (process.env.NODE_ENV !== "test") {
   const PORT = process.env.PORT || 5000;
+
   app.listen(PORT, () => {
     logger.info(`✅ Server rodando em http://localhost:${PORT}`);
     logger.info(`📚 Swagger em: http://localhost:${PORT}/docs`);
     logger.info(`🌐 APP_URL configurada: ${config.appUrl}`);
+
+    // ============================
+    // WORKERS
+    // ============================
+    const disableNotifs = String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
+
+    if (disableNotifs) {
+      logger.warn("🚫 Notificações automáticas DESABILITADAS (DISABLE_NOTIFICATIONS=true)");
+      return;
+    }
+
+    if (typeof startAbandonedCartNotificationsWorker === "function") {
+      startAbandonedCartNotificationsWorker();
+      logger.info("📨 Worker de notificações de carrinho abandonado iniciado");
+    } else {
+      logger.warn(
+        "⚠️ Worker de notificações NÃO iniciado (função startAbandonedCartNotificationsWorker indisponível)."
+      );
+    }
   });
 }
 

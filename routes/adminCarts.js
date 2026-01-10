@@ -7,6 +7,8 @@ const verifyAdmin = require("../middleware/verifyAdmin");
 const DEFAULT_ABANDON_THRESHOLD_HOURS =
   Number(process.env.ABANDON_CART_HOURS) || 24;
 
+const PUBLIC_SITE_URL = (process.env.PUBLIC_SITE_URL || "").replace(/\/+$/, "");
+
 /* ------------------------------------------------------------------ */
 /*                               Swagger                              */
 /* ------------------------------------------------------------------ */
@@ -70,6 +72,23 @@ const DEFAULT_ABANDON_THRESHOLD_HOURS =
  *         recuperado:
  *           type: boolean
  *
+ *     WhatsAppLinkResponse:
+ *       type: object
+ *       properties:
+ *         wa_link:
+ *           type: string
+ *           example: "https://wa.me/5531999999999?text=Ol%C3%A1..."
+ *         message_text:
+ *           type: string
+ *           example: "Olá Fulano! Você deixou itens no carrinho..."
+ *
+ *     GenericMessage:
+ *       type: object
+ *       properties:
+ *         message:
+ *           type: string
+ *           example: "OK"
+ *
  *   parameters:
  *     AbandonCartHoursQuery:
  *       in: query
@@ -91,11 +110,9 @@ const DEFAULT_ABANDON_THRESHOLD_HOURS =
  *     summary: Lista carrinhos abandonados
  *     description: |
  *       1. Registra carrinhos **abertos** e antigos em `carrinhos_abandonados`
- *          (se ainda não existirem lá).
- *       2. Agenda notificações padrão em
- *          `carrinhos_abandonados_notifications` (se a tabela existir).
- *       3. Retorna todos os registros de `carrinhos_abandonados` com dados
- *          do usuário.
+ *          (se ainda não existirem lá), **apenas se houver itens**.
+ *       2. Agenda notificações padrão em `carrinhos_abandonados_notifications` (se existir).
+ *       3. Retorna todos os registros de `carrinhos_abandonados` com dados do usuário.
  *     tags:
  *       - AdminCarrinhos
  *     security:
@@ -127,8 +144,9 @@ const DEFAULT_ABANDON_THRESHOLD_HOURS =
  *     summary: Registra notificação de carrinho abandonado
  *     description: |
  *       Cria um registro em `carrinhos_abandonados_notifications` com
- *       `scheduled_at = NOW()` e `status = 'pending'` para o worker
- *       processar (WhatsApp ou e-mail).
+ *       `scheduled_at = NOW()` e `status = 'pending'`.
+ *       - Para **email**: o worker envia automaticamente e marca `sent/failed`.
+ *       - Para **whatsapp** (MVP sem API paga): use o endpoint `/whatsapp-link` para abrir o WhatsApp com texto pronto.
  *     tags:
  *       - AdminCarrinhos
  *     security:
@@ -156,6 +174,10 @@ const DEFAULT_ABANDON_THRESHOLD_HOURS =
  *     responses:
  *       200:
  *         description: Notificação registrada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/GenericMessage"
  *       400:
  *         description: Requisição inválida (tipo/ID/carrinho recuperado)
  *       404:
@@ -164,17 +186,113 @@ const DEFAULT_ABANDON_THRESHOLD_HOURS =
  *         description: Erro interno ao registrar notificação
  */
 
+/**
+ * @openapi
+ * /api/admin/carrinhos/{id}/whatsapp-link:
+ *   get:
+ *     summary: Gera link de WhatsApp (wa.me) com mensagem pronta (MVP sem API paga)
+ *     description: |
+ *       Gera o texto com itens + total + link de recuperação (MVP: /checkout?cartId=...),
+ *       e retorna um link `wa.me` para o admin abrir a conversa e enviar manualmente.
+ *     tags:
+ *       - AdminCarrinhos
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do carrinho abandonado
+ *     responses:
+ *       200:
+ *         description: Link e texto gerados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: "#/components/schemas/WhatsAppLinkResponse"
+ *       400:
+ *         description: Carrinho recuperado ou sem telefone
+ *       404:
+ *         description: Carrinho abandonado não encontrado
+ *       500:
+ *         description: Erro interno ao gerar link
+ */
+
 /* ------------------------------------------------------------------ */
 /*                           Funções auxiliares                       */
 /* ------------------------------------------------------------------ */
 
-function parseItens(row) {
-  try {
-    const itens = JSON.parse(row.itens || "[]");
-    return Array.isArray(itens) ? itens : [];
-  } catch {
+function parseItensValue(itensValue) {
+  if (!itensValue) return [];
+  if (Array.isArray(itensValue)) return itensValue;
+
+  if (typeof itensValue === "object") {
     return [];
   }
+
+  if (typeof itensValue === "string") {
+    try {
+      const parsed = JSON.parse(itensValue || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function normalizePhoneBR(phone) {
+  const digits = String(phone || "").replace(/\D+/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("55")) return digits;
+  return `55${digits}`;
+}
+
+function formatMoneyBR(value) {
+  const n = Number(value || 0);
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function buildRecoveryLink({ carrinho_id }) {
+  if (!PUBLIC_SITE_URL) return "";
+  return `${PUBLIC_SITE_URL}/checkout?cartId=${encodeURIComponent(carrinho_id)}`;
+}
+
+function buildMessageText({ usuario_nome, carrinho_id, itens, total_estimado }) {
+  const firstName = String(usuario_nome || "").trim().split(/\s+/)[0] || "Olá";
+  const lines = [];
+
+  lines.push(`Olá ${firstName}!`);
+  lines.push("");
+  lines.push("Percebemos que você deixou estes itens no carrinho:");
+
+  if (!Array.isArray(itens) || itens.length === 0) {
+    lines.push("- (sem itens no snapshot)");
+  } else {
+    for (const item of itens) {
+      const qtd = Number(item.quantidade || 0);
+      const nome = String(item.produto || "Produto");
+      const preco = formatMoneyBR(item.preco_unitario || 0);
+      lines.push(`- ${qtd}x ${nome} — ${preco}`);
+    }
+  }
+
+  lines.push("");
+  lines.push(`Total estimado: ${formatMoneyBR(total_estimado)}`);
+
+  const link = buildRecoveryLink({ carrinho_id });
+  if (link) {
+    lines.push("");
+    lines.push(`Finalizar em 1 clique: ${link}`);
+  }
+
+  lines.push("");
+  lines.push("Se precisar de ajuda, responda esta mensagem.");
+
+  return lines.join("\n");
 }
 
 /* ------------------------------------------------------------------ */
@@ -191,7 +309,6 @@ router.get("/", verifyAdmin, async (req, res) => {
         ? horasParam
         : DEFAULT_ABANDON_THRESHOLD_HOURS;
 
-    // 1) Buscar carrinhos "abertos" e antigos que ainda não estão em carrinhos_abandonados
     const [carts] = await conn.query(
       `
       SELECT
@@ -209,14 +326,13 @@ router.get("/", verifyAdmin, async (req, res) => {
       [thresholdHours]
     );
 
-    // 2) Para cada carrinho, gerar o registro de abandonado + tentar agendar notificações
     for (const cart of carts) {
       try {
         const [itensRows] = await conn.query(
           `
           SELECT
             ci.produto_id,
-            p.title AS produto,
+            p.name AS produto,
             ci.quantidade,
             ci.valor_unitario AS preco_unitario
           FROM carrinho_itens ci
@@ -225,6 +341,8 @@ router.get("/", verifyAdmin, async (req, res) => {
           `,
           [cart.id]
         );
+
+        if (!itensRows || itensRows.length === 0) continue;
 
         const itens = itensRows.map((row) => {
           const preco =
@@ -235,7 +353,7 @@ router.get("/", verifyAdmin, async (req, res) => {
           return {
             produto_id: row.produto_id,
             produto: row.produto,
-            quantidade: row.quantidade,
+            quantidade: Number(row.quantidade || 0),
             preco_unitario: preco,
           };
         });
@@ -269,7 +387,8 @@ router.get("/", verifyAdmin, async (req, res) => {
 
         const abandonedId = abandonRes.insertId;
 
-        // 2.1) Tentar agendar notificações padrão — se der erro, só loga
+        // ✅ Com UNIQUE (carrinho_abandonado_id, tipo, scheduled_at), use INSERT IGNORE
+        // para não dar erro em corrida/duplicidade.
         try {
           const now = new Date();
           const in1Hour = new Date(now.getTime() + 1 * 60 * 60 * 1000);
@@ -284,7 +403,7 @@ router.get("/", verifyAdmin, async (req, res) => {
 
           await conn.query(
             `
-            INSERT INTO carrinhos_abandonados_notifications (
+            INSERT IGNORE INTO carrinhos_abandonados_notifications (
               carrinho_abandonado_id,
               tipo,
               scheduled_at,
@@ -310,7 +429,6 @@ router.get("/", verifyAdmin, async (req, res) => {
       }
     }
 
-    // 3) Buscar todos os carrinhos abandonados existentes
     const [rows] = await conn.query(
       `
       SELECT
@@ -331,19 +449,23 @@ router.get("/", verifyAdmin, async (req, res) => {
       `
     );
 
-    const carrinhos = rows.map((row) => ({
-      id: row.id,
-      carrinho_id: row.carrinho_id,
-      usuario_id: row.usuario_id,
-      usuario_nome: row.usuario_nome,
-      usuario_email: row.usuario_email,
-      usuario_telefone: row.usuario_telefone,
-      itens: parseItens(row),
-      total_estimado: Number(row.total_estimado || 0),
-      criado_em: row.criado_em,
-      atualizado_em: row.atualizado_em,
-      recuperado: !!row.recuperado,
-    }));
+    const carrinhos = rows.map((row) => {
+      const itens = parseItensValue(row.itens);
+
+      return {
+        id: row.id,
+        carrinho_id: row.carrinho_id,
+        usuario_id: row.usuario_id,
+        usuario_nome: row.usuario_nome,
+        usuario_email: row.usuario_email,
+        usuario_telefone: row.usuario_telefone,
+        itens,
+        total_estimado: Number(row.total_estimado || 0),
+        criado_em: row.criado_em,
+        atualizado_em: row.atualizado_em,
+        recuperado: !!row.recuperado,
+      };
+    });
 
     return res.json({ carrinhos });
   } catch (err) {
@@ -427,13 +549,91 @@ router.post("/:id/notificar", verifyAdmin, async (req, res) => {
     );
 
     return res.json({
-      message: `Notificação de carrinho abandonado via ${tipo} registrada e será processada pelo worker.`,
+      message:
+        tipo === "email"
+          ? "Notificação via email registrada e será enviada automaticamente pelo worker."
+          : "Notificação via whatsapp registrada. Use /whatsapp-link para abrir a conversa com texto pronto.",
     });
   } catch (err) {
     console.error("Erro em POST /api/admin/carrinhos/:id/notificar:", err);
     return res
       .status(500)
       .json({ message: "Erro ao notificar carrinho abandonado" });
+  } finally {
+    conn.release();
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*     GET /api/admin/carrinhos/:id/whatsapp-link (MVP manual)         */
+/* ------------------------------------------------------------------ */
+
+router.get("/:id/whatsapp-link", verifyAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "ID inválido." });
+
+  const conn = await pool.getConnection();
+
+  try {
+    const [[row]] = await conn.query(
+      `
+      SELECT
+        ca.id,
+        ca.carrinho_id,
+        ca.usuario_id,
+        ca.itens,
+        ca.total_estimado,
+        ca.recuperado,
+        u.nome     AS usuario_nome,
+        u.telefone AS usuario_telefone
+      FROM carrinhos_abandonados ca
+      JOIN usuarios u ON u.id = ca.usuario_id
+      WHERE ca.id = ?
+      `,
+      [id]
+    );
+
+    if (!row) {
+      return res
+        .status(404)
+        .json({ message: "Carrinho abandonado não encontrado." });
+    }
+
+    if (row.recuperado) {
+      return res.status(400).json({
+        message: "Este carrinho já foi marcado como recuperado.",
+      });
+    }
+
+    if (!row.usuario_telefone) {
+      return res.status(400).json({
+        message: "Usuário não possui telefone cadastrado.",
+      });
+    }
+
+    const phone = normalizePhoneBR(row.usuario_telefone);
+    if (!phone) {
+      return res.status(400).json({
+        message: "Telefone do usuário inválido.",
+      });
+    }
+
+    const itens = parseItensValue(row.itens);
+    const messageText = buildMessageText({
+      usuario_nome: row.usuario_nome,
+      carrinho_id: row.carrinho_id,
+      itens,
+      total_estimado: Number(row.total_estimado || 0),
+    });
+
+    const waLink = `https://wa.me/${encodeURIComponent(
+      phone
+    )}?text=${encodeURIComponent(messageText)}`;
+
+    return res.json({ wa_link: waLink, message_text: messageText });
+  } catch (err) {
+    console.error("Erro em GET /api/admin/carrinhos/:id/whatsapp-link:", err);
+    return res.status(500).json({ message: "Erro ao gerar link de WhatsApp" });
   } finally {
     conn.release();
   }

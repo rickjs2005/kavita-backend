@@ -52,10 +52,8 @@ loadRoute("/favorites", "./favorites");
 // Este arquivo inteiro será montado em "/api"
 loadRoute("/", "./authRoutes");
 
-/* ============================
- * Checkout e Pagamento
- * ============================ */
-
+// checkout,pedidos e frete
+loadRoute("/shipping", "./shippingRoutes");
 loadRoute("/checkout", "./checkoutRoutes");
 loadRoute("/payment", "./payment");
 loadRoute("/pedidos", "./pedidos");
@@ -213,6 +211,16 @@ try {
   router.use("/admin/news", verifyAdmin, adminNewsRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminNewsRoutes:", err.message);
+}
+
+/** ✅ NOVO: Admin Shipping (Frete por zonas UF/cidades)
+ * O arquivo define rotas /zones, então montamos em /admin/shipping
+ */
+try {
+  const adminShippingZonesRoutes = require("./adminShippingZonesRoutes");
+  router.use("/admin/shipping", verifyAdmin, adminShippingZonesRoutes);
+} catch (err) {
+  console.error("❌ Erro ao carregar ./adminShippingZonesRoutes:", err.message);
 }
 
 /* ============================
