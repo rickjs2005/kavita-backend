@@ -1,5 +1,79 @@
-# Ignorar arquivos de ambiente
+# =========================
+# ENV / SECRETS (NUNCA COMMITAR)
+# =========================
 .env
 .env.local
 .env.*.local
-".env" 
+.env.*.backup
+.env.*.bak
+.env.*.tmp
+.env.*.swp
+
+# Permitir versionar exemplo (sem segredos)
+!.env.example
+
+# =========================
+# DEPENDÊNCIAS
+# =========================
+node_modules/
+
+# =========================
+# LOGS / DEBUG
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =========================
+# TESTES / COVERAGE
+# =========================
+coverage/
+.nyc_output/
+
+# =========================
+# BUILD / OUTPUT
+# =========================
+dist/
+build/
+out/
+
+# =========================
+# CACHE / TEMP
+# =========================
+.tmp/
+temp/
+.cache/
+.eslintcache
+*.tsbuildinfo
+
+# =========================
+# RUNTIME / PID
+# =========================
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# =========================
+# UPLOADS / ARQUIVOS LOCAIS
+# (Se sua app salva arquivos em disco localmente, ignore)
+# =========================
+uploads/
+public/uploads/
+
+# =========================
+# IDE / OS
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# =========================
+# DOCKER (opcional: se gerar local)
+# =========================
+*.local.yml
