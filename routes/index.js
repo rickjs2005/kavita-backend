@@ -87,7 +87,7 @@ try {
   console.error("❌ Erro ao carregar ./adminColaboradores:", err.message);
 }
 
-// Marketing > Promoções
+/// Marketing > Promoções
 try {
   const adminMarketingPromocoesRoutes = require("./adminMarketingPromocoes");
   router.use(
