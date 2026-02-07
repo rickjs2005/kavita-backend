@@ -38,6 +38,9 @@ loadRoute("/public/promocoes", "./publicPromocoes");
 
 loadRoute("/public/produtos", "./publicProdutos");
 
+// ✅ FIX: Configuração pública da loja (já existe o arquivo, faltava montar)
+loadRoute("/config", "./publicShopConfigRoutes");
+
 /* ============================
  * Autenticação e Usuários
  * ============================ */
@@ -66,6 +69,13 @@ loadRoute("/admin", "./adminLogin");
 
 // Kavita News (Público)
 loadRoute("/news", "./newsPublicRoutes");
+
+/* ============================
+ * Módulo Kavita Drones
+ * ============================ */
+loadRoute("/public/drones", "./publicDrones");
+
+console.log("✅ publicDrones montado!");
 
 /* ============================
  * Área Admin - Rotas Protegidas
@@ -211,6 +221,14 @@ try {
   router.use("/admin/news", verifyAdmin, adminNewsRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminNewsRoutes:", err.message);
+}
+
+// ✅ NOVO: Admin Drones (Kavita Drones)
+try {
+  const adminDronesRoutes = require("./adminDrones");
+  router.use("/admin/drones", verifyAdmin, adminDronesRoutes);
+} catch (err) {
+  console.error("❌ Erro ao carregar ./adminDrones:", err.message);
 }
 
 /** ✅ NOVO: Admin Shipping (Frete por zonas UF/cidades)
