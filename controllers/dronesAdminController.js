@@ -578,41 +578,30 @@ async function setModelMediaSelection(req, res) {
     const items = extractItems(galleryResult);
 
     const found = items.find((x) => Number(x.id) === id);
-    if (!found) {
-      throw new AppError("Mídia não encontrada.", 404, "NOT_FOUND", { id });
-    }
+    if (!found) throw new AppError("Mídia não encontrada.", 404, "NOT_FOUND", { id });
 
     if (String(found.model_key || "").trim().toLowerCase() !== modelKey) {
-      throw new AppError("Mídia não pertence a este modelo.", 403, "FORBIDDEN", {
-        id,
-        modelKey,
-      });
+      throw new AppError("Mídia não pertence a este modelo.", 403, "FORBIDDEN", { id, modelKey });
     }
 
-    const cur = await dronesService.getPageSettings();
-    const models_json = parseJsonField(cur?.models_json) || {};
+    // ✅ NOVO: salva no drone_models
+    await dronesService.upsertModelSelection(modelKey, t, id);
 
-    models_json[modelKey] = {
-      ...(models_json[modelKey] || {}),
-      ...(t === "HERO" ? { current_hero_media_id: id } : { current_card_media_id: id }),
-      updated_at: new Date().toISOString(),
-    };
-
-    const saved = await dronesService.upsertPageSettings({ models_json });
+    // devolve o model atualizado (pra UI refletir)
+    const updated = await dronesService.getDroneModelByKey(modelKey);
 
     return res.json({
       message: "Seleção salva.",
       modelKey,
       target: t,
       media_id: id,
-      models_json: parseJsonField(saved?.models_json) || models_json,
+      model: updated,
     });
   } catch (e) {
     console.error("[drones/admin] setModelMediaSelection error:", e);
     return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar seleção.", 500));
   }
 }
-
 
 /**
  * =========================================================

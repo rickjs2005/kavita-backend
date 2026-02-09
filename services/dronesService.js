@@ -12,6 +12,9 @@ const pool = require("../config/pool");
  * - drone_comments (status='PENDENTE'|'APROVADO'|'REPROVADO' — não existe is_approved)
  * - drone_comment_media (FK comment_id -> drone_comments.id)
  * - drone_representatives (não tem model_key)
+ *
+ * NOVO (robusto p/ Card e Destaque):
+ * - drone_model_media_selections (model_key + target(HERO|CARD) + media_id)
  */
 
 // =====================
@@ -117,7 +120,7 @@ async function upsertPageSettings(payload = {}) {
   const benefits_items_json = jsonToDb(valueOrCurrent("benefits_items_json"));
   const sections_order_json = jsonToDb(valueOrCurrent("sections_order_json"));
 
-  // NOVO (por modelo)
+  // NOVO (por modelo) - apenas specs/features/benefits
   const models_json = jsonToDb(valueOrCurrent("models_json"));
 
   if (!current) {
@@ -254,12 +257,30 @@ async function upsertModelInfo(modelKey, payload = {}) {
   const current = normalizeModelInfoObject(modelsJson?.[modelKey] || {});
 
   const next = {
-    specs_title: Object.prototype.hasOwnProperty.call(payload, "specs_title") ? sanitizeText(payload.specs_title, 120) : current.specs_title,
-    features_title: Object.prototype.hasOwnProperty.call(payload, "features_title") ? sanitizeText(payload.features_title, 120) : current.features_title,
-    benefits_title: Object.prototype.hasOwnProperty.call(payload, "benefits_title") ? sanitizeText(payload.benefits_title, 120) : current.benefits_title,
-    specs_items: Object.prototype.hasOwnProperty.call(payload, "specs_items") ? (Array.isArray(payload.specs_items) ? payload.specs_items : safeParseJson(payload.specs_items, [])) : current.specs_items,
-    features_items: Object.prototype.hasOwnProperty.call(payload, "features_items") ? (Array.isArray(payload.features_items) ? payload.features_items : safeParseJson(payload.features_items, [])) : current.features_items,
-    benefits_items: Object.prototype.hasOwnProperty.call(payload, "benefits_items") ? (Array.isArray(payload.benefits_items) ? payload.benefits_items : safeParseJson(payload.benefits_items, [])) : current.benefits_items,
+    specs_title: Object.prototype.hasOwnProperty.call(payload, "specs_title")
+      ? sanitizeText(payload.specs_title, 120)
+      : current.specs_title,
+    features_title: Object.prototype.hasOwnProperty.call(payload, "features_title")
+      ? sanitizeText(payload.features_title, 120)
+      : current.features_title,
+    benefits_title: Object.prototype.hasOwnProperty.call(payload, "benefits_title")
+      ? sanitizeText(payload.benefits_title, 120)
+      : current.benefits_title,
+    specs_items: Object.prototype.hasOwnProperty.call(payload, "specs_items")
+      ? Array.isArray(payload.specs_items)
+        ? payload.specs_items
+        : safeParseJson(payload.specs_items, [])
+      : current.specs_items,
+    features_items: Object.prototype.hasOwnProperty.call(payload, "features_items")
+      ? Array.isArray(payload.features_items)
+        ? payload.features_items
+        : safeParseJson(payload.features_items, [])
+      : current.features_items,
+    benefits_items: Object.prototype.hasOwnProperty.call(payload, "benefits_items")
+      ? Array.isArray(payload.benefits_items)
+        ? payload.benefits_items
+        : safeParseJson(payload.benefits_items, [])
+      : current.benefits_items,
   };
 
   const merged = { ...modelsJson, [modelKey]: next };
@@ -274,6 +295,128 @@ async function upsertModelInfo(modelKey, payload = {}) {
   );
 
   return result.affectedRows || 0;
+}
+
+// =====================
+// NOVO: Seleção robusta de mídia por modelo (HERO/CARD)
+// =====================
+async function hasSelectionsTable() {
+  try {
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'drone_model_media_selections'`
+    );
+    return Number(rows?.[0]?.total || 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function setDroneModelSelection(modelKey, target, mediaId) {
+  return upsertModelSelection(modelKey, target, mediaId);
+}
+
+function normalizeTarget(target) {
+  const t = String(target || "").trim().toUpperCase();
+  return t === "HERO" || t === "CARD" ? t : null;
+}
+
+async function getModelSelections(modelKey) {
+  const k = sanitizeText(modelKey, 20);
+  if (!k) return { HERO: null, CARD: null };
+
+  // Se a tabela ainda não existir (ambiente antigo), não explode.
+  if (!(await hasSelectionsTable())) return { HERO: null, CARD: null };
+
+  const [rows] = await pool.query(
+    `SELECT target, media_id
+     FROM drone_model_media_selections
+     WHERE model_key = ?`,
+    [k]
+  );
+
+  const out = { HERO: null, CARD: null };
+  for (const r of rows) {
+    const t = normalizeTarget(r.target);
+    if (!t) continue;
+    out[t] = r.media_id == null ? null : Number(r.media_id);
+  }
+  return out;
+}
+
+async function upsertModelSelection(modelKey, target, mediaId) {
+  const k = sanitizeText(modelKey, 20);
+  const t = normalizeTarget(target);
+
+  // mediaId pode ser null (limpar)
+  const id = mediaId == null ? null : clampInt(mediaId, null, 1, 999999999);
+
+  if (!k) {
+    const err = new Error("modelKey inválido");
+    err.code = "VALIDATION_ERROR";
+    throw err;
+  }
+
+  if (!t) {
+    const err = new Error("target inválido");
+    err.code = "VALIDATION_ERROR";
+    throw err;
+  }
+
+  if (mediaId != null && !id) {
+    const err = new Error("media_id inválido");
+    err.code = "VALIDATION_ERROR";
+    throw err;
+  }
+
+  if (!(await hasSelectionsTable())) {
+    const err = new Error("Tabela drone_model_media_selections não existe. Rode a migration.");
+    err.code = "MIGRATION_REQUIRED";
+    throw err;
+  }
+
+  const [result] = await pool.query(
+    `INSERT INTO drone_model_media_selections (model_key, target, media_id)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE media_id = VALUES(media_id)`,
+    [k, t, id]
+  );
+
+  return result.affectedRows || 0;
+}
+
+/**
+ * Busca em lote (pra public listModels ou admin dashboards).
+ * Retorna mapa: { [model_key]: { HERO: number|null, CARD: number|null } }
+ */
+async function getSelectionsMapForModels(modelKeys = []) {
+  if (!(await hasSelectionsTable())) return {};
+
+  const keys = Array.isArray(modelKeys)
+    ? modelKeys
+        .map((x) => sanitizeText(x, 20))
+        .filter(Boolean)
+    : [];
+
+  if (!keys.length) return {};
+
+  const [rows] = await pool.query(
+    `SELECT model_key, target, media_id
+     FROM drone_model_media_selections
+     WHERE model_key IN (?)`,
+    [keys]
+  );
+
+  return rows.reduce((acc, r) => {
+    const mk = String(r.model_key || "").trim();
+    const t = normalizeTarget(r.target);
+    if (!mk || !t) return acc;
+    if (!acc[mk]) acc[mk] = { HERO: null, CARD: null };
+    acc[mk][t] = r.media_id == null ? null : Number(r.media_id);
+    return acc;
+  }, {});
 }
 
 // =====================
@@ -414,7 +557,10 @@ async function createGalleryItem({ model_key = null, media_type, media_path, tit
 
   const placeholders = cols.map(() => "?").join(", ");
 
-  const [result] = await pool.query(`INSERT INTO drone_gallery_items (${cols.join(", ")}) VALUES (${placeholders})`, vals);
+  const [result] = await pool.query(
+    `INSERT INTO drone_gallery_items (${cols.join(", ")}) VALUES (${placeholders})`,
+    vals
+  );
   return result.insertId;
 }
 
@@ -984,6 +1130,25 @@ async function setCommentApproval(id, isApproved) {
  * MODELS
  * ===================== */
 
+async function getGalleryItemsByIds(ids = []) {
+  const list = Array.isArray(ids)
+    ? ids.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0)
+    : [];
+
+  if (!list.length) return [];
+
+  const [rows] = await pool.query(
+    `SELECT id, model_key, media_type, media_path, is_active
+     FROM drone_gallery_items
+     WHERE id IN (?)
+     LIMIT 5000`,
+    [list]
+  );
+
+  return rows || [];
+}
+
+
 async function listDroneModels({ includeInactive } = {}) {
   const inc = Number(includeInactive) ? 1 : 0;
 
@@ -1113,10 +1278,16 @@ module.exports = {
   getPageSettings,
   upsertPageSettings,
 
-  // models json (por modelo)
+  // models json (por modelo) - specs/features/benefits
   getModelsJsonFromPage,
   getModelInfo,
   upsertModelInfo,
+
+  // ✅ NOVO: seleções hero/card por modelo (tabela robusta)
+  getModelSelections,
+  upsertModelSelection,
+  getSelectionsMapForModels,
+  setDroneModelSelection,
 
   // gallery
   listGalleryPublic,
@@ -1124,6 +1295,7 @@ module.exports = {
   createGalleryItem,
   updateGalleryItem,
   deleteGalleryItem,
+  getGalleryItemsByIds,
 
   // reps
   listRepresentativesPublic,

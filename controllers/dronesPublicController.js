@@ -31,7 +31,7 @@ const DEFAULT_DRONE_MODELS = [
 function safeUnlink(file) {
   try {
     if (file?.path) fs.unlinkSync(file.path);
-  } catch {}
+  } catch { }
 }
 
 function classifyMedia(file) {
@@ -217,222 +217,275 @@ async function listModels(req, res) {
   try {
     const items = await safeListModelsFromDb();
 
+    // 1) Fonte robusta (tabela drone_model_media_selections)
+    //    - pega em lote pra evitar N+1
+    const keys = items
+      .map((m) => String(m.key || "").trim().toLowerCase())
+      .filter(Boolean);
+
+    let selectionsMap = {};
+    try {
+      selectionsMap = await dronesService.getSelectionsMapForModels(keys);
+    } catch (err) {
+      // se a migration ainda não existe em algum ambiente, não quebra o endpoint público
+      selectionsMap = {};
+    }
+
+    // 2) Fallback legado (page_settings.models_json)
     const landing = await dronesService.getPageSettings();
     const models_json = parseJson(landing?.models_json) || {};
 
     const withSelection = items.map((m) => {
       const key = String(m.key || "").trim().toLowerCase();
-      const data = models_json?.[key] || {};
+
+      const sel = selectionsMap?.[key] || null;
+      const heroFromTable = sel?.HERO ?? null;
+      const cardFromTable = sel?.CARD ?? null;
+
+      const legacy = models_json?.[key] || {};
+      const heroLegacy = legacy.current_hero_media_id ?? null;
+      const cardLegacy = legacy.current_card_media_id ?? null;
+
       return {
         ...m,
-        current_hero_media_id: data.current_hero_media_id ?? null,
-        current_card_media_id: data.current_card_media_id ?? null,
+        current_hero_media_id: heroFromTable ?? heroLegacy,
+        current_card_media_id: cardFromTable ?? cardLegacy,
       };
     });
 
-    return res.json({ items: withSelection });
-  } catch (e) {
-    console.error("[drones/public] listModels error:", e);
-    return sendError(res, new AppError("Erro ao listar modelos.", 500, "SERVER_ERROR"));
-  }
-}
+    // ✅ NOVO: resolver ids -> media_path/media_type
+    const wantedIds = withSelection
+      .flatMap((m) => [m.current_card_media_id, m.current_hero_media_id])
+      .filter((x) => Number.isFinite(Number(x)) && Number(x) > 0)
+      .map((x) => Number(x));
 
-/**
- * =========================================================
- * ✅ NOVO: agregado por modelo (dinâmico via DB)
- * GET /api/public/drones/models/:modelKey
- * =========================================================
- */
-async function getModelAggregate(req, res) {
-  try {
-    const modelKey = parseModelKey(req.params.modelKey);
-    const modelRow = await ensureModelExists(modelKey);
+    const mediaRows = await dronesService.getGalleryItemsByIds(wantedIds);
 
-    const landing = await dronesService.getPageSettings();
-    if (!landing) return res.json(null);
+    // mapa por id
+    const mediaById = mediaRows.reduce((acc, r) => {
+      acc[String(r.id)] = r;
+      return acc;
+    }, {});
 
-    const models_json = parseJson(landing.models_json) || {};
-    const modelData = models_json?.[modelKey] || null;
+    const enriched = withSelection.map((m) => {
+      const card = m.current_card_media_id ? mediaById[String(m.current_card_media_id)] : null;
+      const hero = m.current_hero_media_id ? mediaById[String(m.current_hero_media_id)] : null;
 
-    const galleryResult = await dronesService.listGalleryPublic({ page: 1, limit: 1000, model_key: modelKey });
-    const gallery = extractItems(galleryResult).filter((g) => String(g.model_key || "") === modelKey);
+      return {
+        ...m,
 
-    const comments = await dronesService.listApprovedComments({
-      page: req.query.page,
-      limit: req.query.limit,
-      model_key: modelKey, // se o service suportar
+        // ✅ O SEU FRONT JÁ SUPORTA ISSO:
+        card_media_path: card?.media_path || null,
+        card_media_type: card?.media_type || null,
+
+        hero_media_path: hero?.media_path || null,
+        hero_media_type: hero?.media_type || null,
+      };
     });
 
-    return res.json({
-      landing: {
-        hero_title: landing.hero_title || null,
-        hero_subtitle: landing.hero_subtitle || null,
-        hero_video_path: landing.hero_video_path || null,
-        hero_image_fallback_path: landing.hero_image_fallback_path || null,
-        cta_title: landing.cta_title || null,
-        cta_message_template: landing.cta_message_template || null,
-        cta_button_label: landing.cta_button_label || null,
-        sections_order_json: parseJson(landing.sections_order_json),
-      },
-      model: { key: modelRow.key, label: modelRow.label },
-      model_data: modelData,
-      gallery,
-      comments,
-    });
-  } catch (e) {
-    console.error("[drones/public] getModelAggregate error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao carregar modelo público.", 500, "SERVER_ERROR"));
-  }
-}
-
-/**
- * =========================================================
- * LEGADO: GALERIA (mantém compatibilidade)
- * GET /api/public/drones/galeria
- * =========================================================
- */
-async function getGallery(req, res) {
-  try {
-    const rows = await dronesService.listGalleryPublic();
-    return res.json(rows);
-  } catch (e) {
-    console.error("[drones/public] getGallery error:", e);
-    return sendError(res, new AppError("Erro ao carregar galeria.", 500, "SERVER_ERROR"));
-  }
-}
-
-async function listRepresentatives(req, res) {
-  try {
-    const data = await dronesService.listRepresentativesPublic({
-      page: req.query.page,
-      limit: req.query.limit,
-      busca: req.query.busca,
-      orderBy: req.query.orderBy,
-      orderDir: req.query.orderDir,
-    });
-    return res.json(data);
-  } catch (e) {
-    console.error("[drones/public] listRepresentatives error:", e);
-    return sendError(res, new AppError("Erro ao listar representantes.", 500, "SERVER_ERROR"));
-  }
-}
-
-async function listApprovedComments(req, res) {
-  try {
-    const model_key = req.query.model ? parseModelKey(req.query.model) : null;
-
-    // se pedir model, garante que existe (pra não ficar retornando vazio e confundir)
-    if (model_key) await ensureModelExists(model_key);
-
-    const data = await dronesService.listApprovedComments({
-      page: req.query.page,
-      limit: req.query.limit,
-      model_key, // opcional (não quebra)
-    });
-
-    return res.json(data);
-  } catch (e) {
-    console.error("[drones/public] listApprovedComments error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao listar comentários.", 500, "SERVER_ERROR"));
-  }
-}
-
-async function createComment(req, res) {
-  const files = Array.isArray(req.files) ? req.files : [];
-
-  try {
-    // LOGIN obrigatório (verifyUser deve setar req.user)
-    if (!req.user) {
-      files.forEach(safeUnlink);
-      throw new AppError("Usuário não autenticado.", 401, "UNAUTHORIZED");
-    }
-
-    // Nome vem do usuário logado
-    const display_name = req.user.nome || req.user.name || req.user.email;
-    if (!display_name) {
-      files.forEach(safeUnlink);
-      throw new AppError("Não foi possível identificar o nome do usuário logado.", 400, "VALIDATION_ERROR");
-    }
-
-    // model opcional (dinâmico)
-    const model_key = req.body?.model_key ? parseModelKey(req.body.model_key) : null;
-    if (model_key) await ensureModelExists(model_key);
-
-    const comment_text = req.body?.comment_text;
-    const textSan = dronesService.sanitizeText(comment_text, 1000);
-    if (!textSan) {
-      files.forEach(safeUnlink);
-      throw new AppError("comment_text é obrigatório.", 400, "VALIDATION_ERROR", { field: "comment_text" });
-    }
-
-    // Valida arquivos antes de persistir
-    if (files.length) {
-      for (const f of files) {
-        const info = classifyMedia(f);
-        if (!info) {
-          files.forEach(safeUnlink);
-          throw new AppError("Arquivo inválido. Aceito: jpg/png/webp/mp4.", 400, "VALIDATION_ERROR");
-        }
-        if (Number(f.size || 0) > info.max) {
-          files.forEach(safeUnlink);
-          throw new AppError(info.media_type === "VIDEO" ? "Vídeo excede 30MB." : "Imagem excede 5MB.", 400, "VALIDATION_ERROR");
-        }
+        return res.json({ items: enriched });
+      } catch (e) {
+        console.error("[drones/public] listModels error:", e);
+        return sendError(res, new AppError("Erro ao listar modelos.", 500, "SERVER_ERROR"));
       }
     }
+  
+      /**
+       * =========================================================
+       * ✅ NOVO: agregado por modelo (dinâmico via DB)
+       * GET /api/public/drones/models/:modelKey
+       * =========================================================
+       */
+      async function getModelAggregate(req, res) {
+      try {
+        const modelKey = parseModelKey(req.params.modelKey);
+        const modelRow = await ensureModelExists(modelKey);
 
-    const mediaItems = [];
+        const landing = await dronesService.getPageSettings();
+        if (!landing) return res.json(null);
 
-    if (files.length) {
-      const saved = await mediaService.persistMedia(files, { folder: "drones" });
-      const len = Math.min(files.length, Array.isArray(saved) ? saved.length : 0);
+        const models_json = parseJson(landing.models_json) || {};
+        const modelData = models_json?.[modelKey] || null;
 
-      for (let i = 0; i < len; i++) {
-        const f = files[i];
-        const s = saved[i];
-        const info = classifyMedia(f);
-        if (!info) continue;
-        if (!s?.path) continue;
+        const galleryResult = await dronesService.listGalleryPublic({ page: 1, limit: 1000, model_key: modelKey });
+        const gallery = extractItems(galleryResult).filter((g) => String(g.model_key || "") === modelKey);
 
-        mediaItems.push({
-          media_type: info.media_type,
-          media_path: s.path,
+        const comments = await dronesService.listApprovedComments({
+          page: req.query.page,
+          limit: req.query.limit,
+          model_key: modelKey, // se o service suportar
         });
+
+        return res.json({
+          landing: {
+            hero_title: landing.hero_title || null,
+            hero_subtitle: landing.hero_subtitle || null,
+            hero_video_path: landing.hero_video_path || null,
+            hero_image_fallback_path: landing.hero_image_fallback_path || null,
+            cta_title: landing.cta_title || null,
+            cta_message_template: landing.cta_message_template || null,
+            cta_button_label: landing.cta_button_label || null,
+            sections_order_json: parseJson(landing.sections_order_json),
+          },
+          model: { key: modelRow.key, label: modelRow.label },
+          model_data: modelData,
+          gallery,
+          comments,
+        });
+      } catch (e) {
+        console.error("[drones/public] getModelAggregate error:", e);
+        return sendError(res, e instanceof AppError ? e : new AppError("Erro ao carregar modelo público.", 500, "SERVER_ERROR"));
       }
     }
 
-    const id = await dronesService.createComment({
-      model_key, // ✅ alinhado com admin
-      display_name,
-      comment_text: textSan,
-      status: "APROVADO",
-      approved_at: new Date(),
-      ip: req.ip,
-      user_agent: req.get("user-agent"),
-      mediaItems,
-    });
+    /**
+     * =========================================================
+     * LEGADO: GALERIA (mantém compatibilidade)
+     * GET /api/public/drones/galeria
+     * =========================================================
+     */
+    async function getGallery(req, res) {
+      try {
+        const rows = await dronesService.listGalleryPublic();
+        return res.json(rows);
+      } catch (e) {
+        console.error("[drones/public] getGallery error:", e);
+        return sendError(res, new AppError("Erro ao carregar galeria.", 500, "SERVER_ERROR"));
+      }
+    }
 
-    return res.status(201).json({
-      message: "Comentário publicado com sucesso.",
-      id,
-      status: "APROVADO",
-    });
-  } catch (e) {
-    console.error("[drones/public] createComment error:", e);
-    files.forEach(safeUnlink);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao enviar comentário.", 500, "SERVER_ERROR"));
-  }
-}
+    async function listRepresentatives(req, res) {
+      try {
+        const data = await dronesService.listRepresentativesPublic({
+          page: req.query.page,
+          limit: req.query.limit,
+          busca: req.query.busca,
+          orderBy: req.query.orderBy,
+          orderDir: req.query.orderDir,
+        });
+        return res.json(data);
+      } catch (e) {
+        console.error("[drones/public] listRepresentatives error:", e);
+        return sendError(res, new AppError("Erro ao listar representantes.", 500, "SERVER_ERROR"));
+      }
+    }
+  
+    async function listApprovedComments(req, res) {
+      try {
+        const model_key = req.query.model ? parseModelKey(req.query.model) : null;
 
-module.exports = {
-  // legado
-  getPage,
-  getGallery,
-  listRepresentatives,
-  listApprovedComments,
-  createComment,
+        // se pedir model, garante que existe (pra não ficar retornando vazio e confundir)
+        if (model_key) await ensureModelExists(model_key);
 
-  // novo
-  getRoot,
-  listModels,
-  getModelAggregate,
-};
+        const data = await dronesService.listApprovedComments({
+          page: req.query.page,
+          limit: req.query.limit,
+          model_key, // opcional (não quebra)
+        });
+
+        return res.json(data);
+      } catch (e) {
+        console.error("[drones/public] listApprovedComments error:", e);
+        return sendError(res, e instanceof AppError ? e : new AppError("Erro ao listar comentários.", 500, "SERVER_ERROR"));
+      }
+    }
+
+    async function createComment(req, res) {
+      const files = Array.isArray(req.files) ? req.files : [];
+  
+      try {
+        // LOGIN obrigatório (verifyUser deve setar req.user)
+        if (!req.user) {
+          files.forEach(safeUnlink);
+          throw new AppError("Usuário não autenticado.", 401, "UNAUTHORIZED");
+        }
+  
+        // Nome vem do usuário logado
+        const display_name = req.user.nome || req.user.name || req.user.email;
+        if (!display_name) {
+          files.forEach(safeUnlink);
+          throw new AppError("Não foi possível identificar o nome do usuário logado.", 400, "VALIDATION_ERROR");
+        }
+  
+        // model opcional (dinâmico)
+        const model_key = req.body?.model_key ? parseModelKey(req.body.model_key) : null;
+        if (model_key) await ensureModelExists(model_key);
+  
+        const comment_text = req.body?.comment_text;
+        const textSan = dronesService.sanitizeText(comment_text, 1000);
+        if (!textSan) {
+          files.forEach(safeUnlink);
+          throw new AppError("comment_text é obrigatório.", 400, "VALIDATION_ERROR", { field: "comment_text" });
+        }
+  
+        // Valida arquivos antes de persistir
+        if (files.length) {
+          for (const f of files) {
+            const info = classifyMedia(f);
+            if (!info) {
+              files.forEach(safeUnlink);
+              throw new AppError("Arquivo inválido. Aceito: jpg/png/webp/mp4.", 400, "VALIDATION_ERROR");
+            }
+            if (Number(f.size || 0) > info.max) {
+              files.forEach(safeUnlink);
+              throw new AppError(info.media_type === "VIDEO" ? "Vídeo excede 30MB." : "Imagem excede 5MB.", 400, "VALIDATION_ERROR");
+            }
+          }
+        }
+  
+        const mediaItems = [];
+  
+        if (files.length) {
+          const saved = await mediaService.persistMedia(files, { folder: "drones" });
+          const len = Math.min(files.length, Array.isArray(saved) ? saved.length : 0);
+  
+          for (let i = 0; i < len; i++) {
+            const f = files[i];
+            const s = saved[i];
+            const info = classifyMedia(f);
+            if (!info) continue;
+            if (!s?.path) continue;
+  
+            mediaItems.push({
+              media_type: info.media_type,
+              media_path: s.path,
+            });
+          }
+        }
+  
+        const id = await dronesService.createComment({
+          model_key, // ✅ alinhado com admin
+          display_name,
+          comment_text: textSan,
+          status: "APROVADO",
+          approved_at: new Date(),
+          ip: req.ip,
+          user_agent: req.get("user-agent"),
+          mediaItems,
+        });
+  
+        return res.status(201).json({
+          message: "Comentário publicado com sucesso.",
+          id,
+          status: "APROVADO",
+        });
+      } catch (e) {
+        console.error("[drones/public] createComment error:", e);
+        files.forEach(safeUnlink);
+        return sendError(res, e instanceof AppError ? e : new AppError("Erro ao enviar comentário.", 500, "SERVER_ERROR"));
+      }
+    }
+  
+    module.exports = {
+      // legado
+      getPage,
+      getGallery,
+      listRepresentatives,
+      listApprovedComments,
+      createComment,
+
+      // novo
+      getRoot,
+      listModels,
+      getModelAggregate,
+    };
