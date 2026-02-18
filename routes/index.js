@@ -51,6 +51,7 @@ loadRoute("/users", "./userProfile");
 loadRoute("/users/addresses", "./userAddresses");
 loadRoute("/cart", "./cart");
 loadRoute("/favorites", "./favorites");
+loadRoute("/public/site-hero", "./publicSiteHero");
 
 // Este arquivo inteiro será montado em "/api"
 loadRoute("/", "./authRoutes");
@@ -239,6 +240,13 @@ try {
   router.use("/admin/shipping", verifyAdmin, adminShippingZonesRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminShippingZonesRoutes:", err.message);
+}
+// Site Hero (Admin)
+try {
+  const adminSiteHeroRoutes = require("./adminSiteHero");
+  router.use("/admin/site-hero", verifyAdmin, adminSiteHeroRoutes);
+} catch (err) {
+  console.error("❌ Erro ao carregar ./adminSiteHero:", err.message);
 }
 
 /* ============================
