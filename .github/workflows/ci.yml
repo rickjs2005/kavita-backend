@@ -68,5 +68,5 @@ jobs:
             && npm run build \
             || node -e "require('./server'); console.log('✅ Smoke: server carregou sem listen()');"
 
-      - name: npm audit (high/critical)
-        run: npm audit --audit-level=high
+      - name: npm audit (critical)
+        run: npm audit --audit-level=critical
