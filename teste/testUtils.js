@@ -11,16 +11,11 @@ function makeTestApp(mountPath, router) {
 
   app.use(mountPath, router);
 
-  // Error handler de teste:
-  // - Se a rota chamar next(AppError), responde JSON com { code, message }
-  // - Se vier algo inesperado, responde 500 padronizado
-  // Obs: não acopla a implementação interna, mas garante contrato estável.
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     const status = err?.status || err?.statusCode || 500;
     const code = err?.code || "SERVER_ERROR";
     const message = err?.message || "Erro interno.";
-
     return res.status(status).json({ code, message });
   });
 

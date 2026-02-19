@@ -1,21 +1,54 @@
 // routes/userProfile.js
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const pool = require('../config/pool');
-const { sanitizeCPF, isValidCPF } = require('../utils/cpf');
-const authenticateToken = require('../middleware/authenticateToken');
+const pool = require("../config/pool");
+const { sanitizeCPF, isValidCPF } = require("../utils/cpf");
+const authenticateToken = require("../middleware/authenticateToken");
+
+/**
+ * ✅ Fallback local (não quebra nada):
+ * Se você já tiver um middleware verifyAdmin no projeto,
+ * troque este bloco por:
+ *   const verifyAdmin = require("../middleware/verifyAdmin");
+ */
+function verifyAdmin(req, res, next) {
+  try {
+    // depende de como seu authenticateToken popula req.user
+    // suportar várias formas comuns sem quebrar:
+    const u = req.user || {};
+    const role = (u.role || u.papel || u.tipo || "").toString().toLowerCase();
+    const isAdmin =
+      u.is_admin === true ||
+      u.is_admin === 1 ||
+      u.admin === true ||
+      u.admin === 1 ||
+      role === "admin" ||
+      role === "administrator";
+
+    if (!req.user) {
+      return res.status(401).json({ mensagem: "Não autenticado." });
+    }
+    if (!isAdmin) {
+      return res.status(403).json({ mensagem: "Acesso negado." });
+    }
+    return next();
+  } catch (e) {
+    console.error("verifyAdmin erro:", e);
+    return res.status(500).json({ mensagem: "Erro interno." });
+  }
+}
 
 // Campos permitidos para edição
 const EDITABLE = new Set([
-  'nome',
-  'telefone',
-  'endereco',
-  'cidade',
-  'estado',
-  'cep',
-  'pais',
-  'ponto_referencia',
-  'cpf', // 👈 agora também CPF
+  "nome",
+  "telefone",
+  "endereco",
+  "cidade",
+  "estado",
+  "cep",
+  "pais",
+  "ponto_referencia",
+  "cpf", // 👈 agora também CPF
 ]);
 
 /**
@@ -80,10 +113,10 @@ const EDITABLE = new Set([
 // -----------------------------------------------------
 // GET /api/users/me  -> retorna dados do usuário logado
 // -----------------------------------------------------
-router.get('/me', authenticateToken, async (req, res) => {
+router.get("/me", authenticateToken, async (req, res) => {
   const userId = req.user && req.user.id;
   if (!userId) {
-    return res.status(401).json({ mensagem: 'Não autenticado.' });
+    return res.status(401).json({ mensagem: "Não autenticado." });
   }
 
   try {
@@ -98,14 +131,13 @@ router.get('/me', authenticateToken, async (req, res) => {
     );
 
     if (!rows.length) {
-      return res.status(404).json({ mensagem: 'Usuário não encontrado.' });
+      return res.status(404).json({ mensagem: "Usuário não encontrado." });
     }
 
-    // Retorna nulos para campos não preenchidos (compatível com a sua UI)
     return res.json(rows[0]);
   } catch (e) {
-    console.error('GET /me erro:', e);
-    return res.status(500).json({ mensagem: 'Erro interno.' });
+    console.error("GET /me erro:", e);
+    return res.status(500).json({ mensagem: "Erro interno." });
   }
 });
 
@@ -114,10 +146,10 @@ router.get('/me', authenticateToken, async (req, res) => {
 // - string vazia "" limpa o campo (vira NULL)
 // - CPF é validado e checado se não está em outro usuário
 // -----------------------------------------------------
-router.put('/me', authenticateToken, async (req, res) => {
+router.put("/me", authenticateToken, async (req, res) => {
   const userId = req.user && req.user.id;
   if (!userId) {
-    return res.status(401).json({ mensagem: 'Não autenticado.' });
+    return res.status(401).json({ mensagem: "Não autenticado." });
   }
 
   const body = req.body || {};
@@ -125,39 +157,38 @@ router.put('/me', authenticateToken, async (req, res) => {
   const values = [];
 
   try {
-    // trata CPF separado, pois precisa de validação + consulta
-    if (Object.prototype.hasOwnProperty.call(body, 'cpf')) {
+    // trata CPF separado
+    if (Object.prototype.hasOwnProperty.call(body, "cpf")) {
       const v = body.cpf;
-      if (v === '') {
-        sets.push('cpf = NULL');
+      if (v === "") {
+        sets.push("cpf = NULL");
       } else {
         const cpfLimpo = sanitizeCPF(v);
         if (!isValidCPF(cpfLimpo)) {
-          return res.status(400).json({ mensagem: 'CPF inválido.' });
+          return res.status(400).json({ mensagem: "CPF inválido." });
         }
 
         const [outros] = await pool.query(
-          'SELECT id FROM usuarios WHERE cpf = ? AND id <> ?',
+          "SELECT id FROM usuarios WHERE cpf = ? AND id <> ?",
           [cpfLimpo, userId]
         );
         if (outros.length > 0) {
           return res
             .status(409)
-            .json({ mensagem: 'CPF já cadastrado para outro usuário.' });
+            .json({ mensagem: "CPF já cadastrado para outro usuário." });
         }
 
-        sets.push('cpf = ?');
+        sets.push("cpf = ?");
         values.push(cpfLimpo);
       }
     }
 
     // demais campos dinâmicos
     for (const k of Object.keys(body)) {
-      if (k === 'cpf') continue;
+      if (k === "cpf") continue;
       if (!EDITABLE.has(k)) continue;
       const v = body[k];
-      // "" -> NULL ; demais valores mantidos
-      if (v === '') {
+      if (v === "") {
         sets.push(`${k} = NULL`);
       } else {
         sets.push(`${k} = ?`);
@@ -166,10 +197,10 @@ router.put('/me', authenticateToken, async (req, res) => {
     }
 
     if (sets.length === 0) {
-      return res.status(400).json({ mensagem: 'Nada para atualizar.' });
+      return res.status(400).json({ mensagem: "Nada para atualizar." });
     }
 
-    await pool.query(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = ?`, [
+    await pool.query(`UPDATE usuarios SET ${sets.join(", ")} WHERE id = ?`, [
       ...values,
       userId,
     ]);
@@ -186,20 +217,20 @@ router.put('/me', authenticateToken, async (req, res) => {
 
     return res.json(rows[0]);
   } catch (e) {
-    console.error('PUT /me erro:', e);
-    return res.status(500).json({ mensagem: 'Erro interno ao salvar.' });
+    console.error("PUT /me erro:", e);
+    return res.status(500).json({ mensagem: "Erro interno ao salvar." });
   }
 });
 
 // -----------------------------------------------------
-// (Opcional) Rotas de ADMIN para editar qualquer usuário
+// ✅ Rotas de ADMIN (endurecidas)
 // GET /api/users/admin/:id
 // PUT /api/users/admin/:id
-// (aqui você pode integrar com verifyAdmin se quiser endurecer)
 // -----------------------------------------------------
-router.get('/admin/:id', async (req, res) => {
+router.get("/admin/:id", authenticateToken, verifyAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ mensagem: 'ID inválido.' });
+  if (!id) return res.status(400).json({ mensagem: "ID inválido." });
+
   try {
     const [rows] = await pool.query(
       `
@@ -210,19 +241,21 @@ router.get('/admin/:id', async (req, res) => {
     `,
       [id]
     );
+
     if (!rows.length) {
-      return res.status(404).json({ mensagem: 'Usuário não encontrado.' });
+      return res.status(404).json({ mensagem: "Usuário não encontrado." });
     }
+
     return res.json(rows[0]);
   } catch (e) {
-    console.error('ADMIN GET erro:', e);
-    return res.status(500).json({ mensagem: 'Erro interno.' });
+    console.error("ADMIN GET erro:", e);
+    return res.status(500).json({ mensagem: "Erro interno." });
   }
 });
 
-router.put('/admin/:id', async (req, res) => {
+router.put("/admin/:id", authenticateToken, verifyAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ mensagem: 'ID inválido.' });
+  if (!id) return res.status(400).json({ mensagem: "ID inválido." });
 
   const body = req.body || {};
   const sets = [];
@@ -230,36 +263,39 @@ router.put('/admin/:id', async (req, res) => {
 
   try {
     // CPF com validação e verificação de duplicidade
-    if (Object.prototype.hasOwnProperty.call(body, 'cpf')) {
+    if (Object.prototype.hasOwnProperty.call(body, "cpf")) {
       const v = body.cpf;
-      if (v === '') {
-        sets.push('cpf = NULL');
+      if (v === "") {
+        sets.push("cpf = NULL");
       } else {
         const cpfLimpo = sanitizeCPF(v);
         if (!isValidCPF(cpfLimpo)) {
-          return res.status(400).json({ mensagem: 'CPF inválido.' });
+          return res.status(400).json({ mensagem: "CPF inválido." });
         }
 
         const [outros] = await pool.query(
-          'SELECT id FROM usuarios WHERE cpf = ? AND id <> ?',
+          "SELECT id FROM usuarios WHERE cpf = ? AND id <> ?",
           [cpfLimpo, id]
         );
         if (outros.length > 0) {
           return res
             .status(409)
-            .json({ mensagem: 'CPF já cadastrado para outro usuário.' });
+            .json({ mensagem: "CPF já cadastrado para outro usuário." });
         }
 
-        sets.push('cpf = ?');
+        sets.push("cpf = ?");
         values.push(cpfLimpo);
       }
     }
 
     for (const k of Object.keys(body)) {
-      if (k === 'cpf') continue;
-      if (!EDITABLE.has(k)) return;
+      if (k === "cpf") continue;
+
+      // ✅ não “mata” a request do nada
+      if (!EDITABLE.has(k)) continue;
+
       const v = body[k];
-      if (v === '') {
+      if (v === "") {
         sets.push(`${k} = NULL`);
       } else {
         sets.push(`${k} = ?`);
@@ -268,13 +304,14 @@ router.put('/admin/:id', async (req, res) => {
     }
 
     if (!sets.length) {
-      return res.status(400).json({ mensagem: 'Nada para atualizar.' });
+      return res.status(400).json({ mensagem: "Nada para atualizar." });
     }
 
-    await pool.query(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = ?`, [
+    await pool.query(`UPDATE usuarios SET ${sets.join(", ")} WHERE id = ?`, [
       ...values,
       id,
     ]);
+
     const [rows] = await pool.query(
       `
       SELECT 
@@ -284,10 +321,15 @@ router.put('/admin/:id', async (req, res) => {
     `,
       [id]
     );
+
+    if (!rows.length) {
+      return res.status(404).json({ mensagem: "Usuário não encontrado." });
+    }
+
     return res.json(rows[0]);
   } catch (e) {
-    console.error('ADMIN PUT erro:', e);
-    return res.status(500).json({ mensagem: 'Erro interno.' });
+    console.error("ADMIN PUT erro:", e);
+    return res.status(500).json({ mensagem: "Erro interno." });
   }
 });
 
