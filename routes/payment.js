@@ -1,3 +1,6 @@
+// routes/payment.js
+"use strict";
+
 const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
@@ -8,6 +11,10 @@ const { MercadoPagoConfig, Preference, Payment } = require("mercadopago");
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+
+// ✅ ACL (Broken Access Control fix)
+const authenticateToken = require("../middleware/authenticateToken");
+const verifyAdmin = require("../middleware/verifyAdmin"); // ✅ sem fallback: falhar cedo se estiver faltando
 
 // Configuração do cliente do Mercado Pago
 const mpClient = new MercadoPagoConfig({
@@ -40,14 +47,13 @@ async function calcularTotalPedido(conn, pedidoId) {
 // =====================================================
 function normalizeFormaPagamento(raw) {
   const s = String(raw || "").trim().toLowerCase();
-
   const noAccents = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   // Codes estáveis (preferidos)
   if (noAccents === "pix") return "pix";
   if (noAccents === "boleto") return "boleto";
   if (noAccents === "prazo") return "prazo";
-  if (noAccents === "cartao_mp" || noAccents === "cartao-mp") return "cartao"; // mp -> cartao (para filtro MP)
+  if (noAccents === "cartao_mp" || noAccents === "cartao-mp") return "cartao"; // mp -> cartao
 
   // Compat: textos / variações
   if (noAccents.includes("pix") || noAccents.includes("bank_transfer")) return "pix";
@@ -185,97 +191,36 @@ function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
 
 /**
  * @openapi
- * /api/admin/payment-methods:
+ * /api/payment/admin/payment-methods:
  *   get:
  *     tags: [Pagamentos]
  *     summary: (Admin) Lista todos os métodos (ativos e inativos)
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Lista completa ordenada por sort_order
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 methods:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/PaymentMethod'
  *
  *   post:
  *     tags: [Pagamentos]
  *     summary: (Admin) Cria um método de pagamento
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [code, label]
- *             properties:
- *               code: { type: string, example: "pix" }
- *               label: { type: string, example: "Pix" }
- *               description: { type: string, nullable: true }
- *               is_active: { type: integer, example: 1 }
- *               sort_order: { type: integer, example: 10 }
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       201:
  *         description: Criado
- *       400:
- *         description: Validação
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/ApiError' }
- */
-
-/**
- * @openapi
- * /api/admin/payment-methods/{id}:
+ *
+ * /api/payment/admin/payment-methods/{id}:
  *   put:
  *     tags: [Pagamentos]
  *     summary: (Admin) Atualiza um método
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               code: { type: string, example: "pix" }
- *               label: { type: string, example: "Pix" }
- *               description: { type: string, nullable: true }
- *               is_active: { type: integer, example: 1 }
- *               sort_order: { type: integer, example: 10 }
- *     responses:
- *       200:
- *         description: Atualizado
- *       404:
- *         description: Não encontrado
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/ApiError' }
- *
+ *     security:
+ *       - bearerAuth: []
  *   delete:
  *     tags: [Pagamentos]
  *     summary: (Admin) Desativa (soft delete) um método
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Desativado
- *       404:
- *         description: Não encontrado
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/ApiError' }
+ *     security:
+ *       - bearerAuth: []
  */
 
 /**
@@ -331,11 +276,7 @@ router.get("/methods", async (req, res, next) => {
     return next(
       err instanceof AppError
         ? err
-        : new AppError(
-            "Erro ao listar métodos de pagamento.",
-            ERROR_CODES.SERVER_ERROR,
-            500
-          )
+        : new AppError("Erro ao listar métodos de pagamento.", ERROR_CODES.SERVER_ERROR, 500)
     );
   } finally {
     conn.release();
@@ -344,9 +285,12 @@ router.get("/methods", async (req, res, next) => {
 
 /* ------------------------------------------------------------------ */
 /*                    ADMIN: CRUD PAYMENT METHODS                       */
+/*  ✅ FIX: Broken Access Control (exige auth + role admin)             */
+/*  Obs: como o router é montado em /api/payment no index.js,           */
+/*       o caminho final fica /api/payment/admin/payment-methods        */
 /* ------------------------------------------------------------------ */
 
-router.get("/admin/payment-methods", async (req, res, next) => {
+router.get("/admin/payment-methods", authenticateToken, verifyAdmin, async (req, res, next) => {
   const conn = await pool.getConnection();
   try {
     const [rows] = await conn.query(
@@ -370,7 +314,7 @@ router.get("/admin/payment-methods", async (req, res, next) => {
   }
 });
 
-router.post("/admin/payment-methods", async (req, res, next) => {
+router.post("/admin/payment-methods", authenticateToken, verifyAdmin, async (req, res, next) => {
   const { code, label, description = null, is_active = 1, sort_order = 0 } = req.body || {};
 
   const codeStr = String(code || "").trim();
@@ -378,11 +322,7 @@ router.post("/admin/payment-methods", async (req, res, next) => {
 
   if (!codeStr || !labelStr) {
     return next(
-      new AppError(
-        "code e label são obrigatórios.",
-        ERROR_CODES.VALIDATION_ERROR,
-        400
-      )
+      new AppError("code e label são obrigatórios.", ERROR_CODES.VALIDATION_ERROR, 400)
     );
   }
 
@@ -403,37 +343,26 @@ router.post("/admin/payment-methods", async (req, res, next) => {
 
     return res.status(201).json({ method: created });
   } catch (err) {
-    // erro comum: duplicate code
     if (err && String(err.code || "").toLowerCase().includes("er_dup")) {
       return next(
-        new AppError(
-          "Já existe um método com esse code.",
-          ERROR_CODES.VALIDATION_ERROR,
-          400
-        )
+        new AppError("Já existe um método com esse code.", ERROR_CODES.VALIDATION_ERROR, 400)
       );
     }
 
     return next(
       err instanceof AppError
         ? err
-        : new AppError(
-            "Erro ao criar método de pagamento.",
-            ERROR_CODES.SERVER_ERROR,
-            500
-          )
+        : new AppError("Erro ao criar método de pagamento.", ERROR_CODES.SERVER_ERROR, 500)
     );
   } finally {
     conn.release();
   }
 });
 
-router.put("/admin/payment-methods/:id", async (req, res, next) => {
+router.put("/admin/payment-methods/:id", authenticateToken, verifyAdmin, async (req, res, next) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id) || id <= 0) {
-    return next(
-      new AppError("id inválido.", ERROR_CODES.VALIDATION_ERROR, 400)
-    );
+    return next(new AppError("id inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
   }
 
   const { code, label, description, is_active, sort_order } = req.body || {};
@@ -444,9 +373,7 @@ router.put("/admin/payment-methods/:id", async (req, res, next) => {
   if (code !== undefined) {
     const codeStr = String(code || "").trim();
     if (!codeStr) {
-      return next(
-        new AppError("code não pode ser vazio.", ERROR_CODES.VALIDATION_ERROR, 400)
-      );
+      return next(new AppError("code não pode ser vazio.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
     fields.push("code = ?");
     values.push(codeStr);
@@ -455,9 +382,7 @@ router.put("/admin/payment-methods/:id", async (req, res, next) => {
   if (label !== undefined) {
     const labelStr = String(label || "").trim();
     if (!labelStr) {
-      return next(
-        new AppError("label não pode ser vazio.", ERROR_CODES.VALIDATION_ERROR, 400)
-      );
+      return next(new AppError("label não pode ser vazio.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
     fields.push("label = ?");
     values.push(labelStr);
@@ -480,25 +405,16 @@ router.put("/admin/payment-methods/:id", async (req, res, next) => {
 
   if (fields.length === 0) {
     return next(
-      new AppError(
-        "Nenhum campo para atualizar.",
-        ERROR_CODES.VALIDATION_ERROR,
-        400
-      )
+      new AppError("Nenhum campo para atualizar.", ERROR_CODES.VALIDATION_ERROR, 400)
     );
   }
 
   const conn = await pool.getConnection();
   try {
-    const [[exists]] = await conn.query(
-      `SELECT id FROM payment_methods WHERE id = ?`,
-      [id]
-    );
+    const [[exists]] = await conn.query(`SELECT id FROM payment_methods WHERE id = ?`, [id]);
 
     if (!exists) {
-      return next(
-        new AppError("Método não encontrado.", ERROR_CODES.NOT_FOUND, 404)
-      );
+      return next(new AppError("Método não encontrado.", ERROR_CODES.NOT_FOUND, 404));
     }
 
     await conn.query(
@@ -519,72 +435,62 @@ router.put("/admin/payment-methods/:id", async (req, res, next) => {
   } catch (err) {
     if (err && String(err.code || "").toLowerCase().includes("er_dup")) {
       return next(
-        new AppError(
-          "Já existe um método com esse code.",
-          ERROR_CODES.VALIDATION_ERROR,
-          400
-        )
+        new AppError("Já existe um método com esse code.", ERROR_CODES.VALIDATION_ERROR, 400)
       );
     }
 
     return next(
       err instanceof AppError
         ? err
-        : new AppError(
-            "Erro ao atualizar método de pagamento.",
-            ERROR_CODES.SERVER_ERROR,
-            500
-          )
+        : new AppError("Erro ao atualizar método de pagamento.", ERROR_CODES.SERVER_ERROR, 500)
     );
   } finally {
     conn.release();
   }
 });
 
-router.delete("/admin/payment-methods/:id", async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!Number.isFinite(id) || id <= 0) {
-    return next(
-      new AppError("id inválido.", ERROR_CODES.VALIDATION_ERROR, 400)
-    );
-  }
+router.delete(
+  "/admin/payment-methods/:id",
+  authenticateToken,
+  verifyAdmin,
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return next(new AppError("id inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
+    }
 
-  const conn = await pool.getConnection();
-  try {
-    const [[exists]] = await conn.query(
-      `SELECT id FROM payment_methods WHERE id = ?`,
-      [id]
-    );
+    const conn = await pool.getConnection();
+    try {
+      const [[exists]] = await conn.query(`SELECT id FROM payment_methods WHERE id = ?`, [id]);
 
-    if (!exists) {
+      if (!exists) {
+        return next(new AppError("Método não encontrado.", ERROR_CODES.NOT_FOUND, 404));
+      }
+
+      // Soft delete: desativa
+      await conn.query(
+        `UPDATE payment_methods
+            SET is_active = 0, updated_at = NOW()
+          WHERE id = ?`,
+        [id]
+      );
+
+      return res.json({ ok: true });
+    } catch (err) {
       return next(
-        new AppError("Método não encontrado.", ERROR_CODES.NOT_FOUND, 404)
+        err instanceof AppError
+          ? err
+          : new AppError(
+              "Erro ao desativar método de pagamento.",
+              ERROR_CODES.SERVER_ERROR,
+              500
+            )
       );
+    } finally {
+      conn.release();
     }
-
-    // Soft delete: desativa
-    await conn.query(
-      `UPDATE payment_methods
-          SET is_active = 0, updated_at = NOW()
-        WHERE id = ?`,
-      [id]
-    );
-
-    return res.json({ ok: true });
-  } catch (err) {
-    return next(
-      err instanceof AppError
-        ? err
-        : new AppError(
-            "Erro ao desativar método de pagamento.",
-            ERROR_CODES.SERVER_ERROR,
-            500
-          )
-    );
-  } finally {
-    conn.release();
   }
-});
+);
 
 /* ------------------------------------------------------------------ */
 /*                          MERCADO PAGO FLOW                           */
@@ -596,14 +502,11 @@ router.post("/start", async (req, res, next) => {
   const pedidoIdNum = Number(pedidoId);
 
   if (!Number.isFinite(pedidoIdNum) || pedidoIdNum <= 0) {
-    return next(
-      new AppError("pedidoId é obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400)
-    );
+    return next(new AppError("pedidoId é obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400));
   }
 
   const conn = await pool.getConnection();
   try {
-    // garante que o pedido existe e traz a forma_pagamento
     const [[pedido]] = await conn.query(
       `SELECT id, forma_pagamento
          FROM pedidos
