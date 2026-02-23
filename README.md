@@ -1,6 +1,8 @@
 
 Documentação e contratos do backend Kavita
+
 Resumo executivo
+
 A análise do branch main do repositório kavita-backend mostra um backend Node.js/Express com roteamento centralizado sob o prefixo /api, CORS habilitado para credenciais (necessário para cookies) e Swagger UI servido em /docs com spec em /api-docs.json. 
 
 O mecanismo de autenticação implementado é JWT armazenado em cookie HttpOnly: para usuário (auth_token, com maxAge de 7 dias) e para admin (adminToken, com maxAge de 2 horas). 
