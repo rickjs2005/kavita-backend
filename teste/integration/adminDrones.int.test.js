@@ -64,6 +64,7 @@
 const request = require("supertest");
 const express = require("express");
 const { makeTestApp, makeMockConn } = require("../testUtils");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 describe("Admin Drones routes (routes/adminDrones.js)", () => {
   const originalEnv = process.env;
@@ -251,7 +252,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
       const { app, verifyAdminMock, controllerMock } = setupModuleWithMocks();
 
       verifyAdminMock.mockImplementationOnce((_req, res, _next) => {
-        return res.status(403).json({ code: "FORBIDDEN", message: "Acesso negado." });
+        return res.status(403).json({ code: ERROR_CODES.FORBIDDEN, message: "Acesso negado." });
       });
 
       // Act
@@ -259,7 +260,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ code: "FORBIDDEN", message: "Acesso negado." });
+      expect(res.body).toEqual({ code: ERROR_CODES.FORBIDDEN, message: "Acesso negado." });
       expect(controllerMock.getPage).not.toHaveBeenCalled();
     });
   });
