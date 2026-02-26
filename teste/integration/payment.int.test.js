@@ -23,6 +23,7 @@
 const request = require("supertest");
 const { makeTestApp, makeMockConn } = require("../testUtils");
 const { makeMockPool } = require("../mocks/pool.mock");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 /** helpers */
 function normalizeSql(sql) {
@@ -70,9 +71,9 @@ function setupModuleWithMocks({ asAdmin = true } = {}) {
 
   // ✅ verifyAdmin mock (gate)
   jest.doMock(adminPath, () => (req, res, next) => {
-    if (!req.user) return res.status(401).json({ code: "UNAUTHORIZED", message: "Não autenticado." });
+    if (!req.user) return res.status(401).json({ code: ERROR_CODES.UNAUTHORIZED, message: "Não autenticado." });
     if (req.user.role !== "admin") {
-      return res.status(403).json({ code: "FORBIDDEN", message: "Sem permissão." });
+      return res.status(403).json({ code: ERROR_CODES.FORBIDDEN, message: "Sem permissão." });
     }
     next();
   });

@@ -20,6 +20,7 @@
 const request = require("supertest");
 const express = require("express");
 const { makeTestApp } = require("../../testUtils");
+const ERROR_CODES = require("../../../constants/ErrorCodes");
 
 /** helpers (obrigatórios no teste) */
 function normalizeSql(sql) {
@@ -73,10 +74,10 @@ function authAsGuest() {
 
 function requireAdmin(req, res, next) {
   if (!req.user) {
-    return res.status(401).json({ code: "UNAUTHORIZED", message: "Não autenticado." });
+    return res.status(401).json({ code: ERROR_CODES.UNAUTHORIZED, message: "Não autenticado." });
   }
   if (req.user.role !== "admin") {
-    return res.status(403).json({ code: "FORBIDDEN", message: "Sem permissão." });
+    return res.status(403).json({ code: ERROR_CODES.FORBIDDEN, message: "Sem permissão." });
   }
   next();
 }

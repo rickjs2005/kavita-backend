@@ -36,6 +36,7 @@
 
 const request = require("supertest");
 const { makeTestApp, makeMockConn } = require("../testUtils");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 describe("Public Drones routes (routes/publicDrones.js)", () => {
   const originalEnv = process.env;
@@ -470,7 +471,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
       const { app, verifyUserMock, controllerMock } = setupModuleWithMocks();
 
       verifyUserMock.mockImplementationOnce((_req, res, _next) => {
-        return res.status(401).json({ code: "UNAUTHORIZED", message: "Login obrigatório." });
+        return res.status(401).json({ code: ERROR_CODES.UNAUTHORIZED, message: "Login obrigatório." });
       });
 
       // Act
@@ -478,7 +479,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(401);
-      expect(res.body).toEqual({ code: "UNAUTHORIZED", message: "Login obrigatório." });
+      expect(res.body).toEqual({ code: ERROR_CODES.UNAUTHORIZED, message: "Login obrigatório." });
       expect(controllerMock.createComment).not.toHaveBeenCalled();
     });
 
@@ -487,7 +488,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
       const { app, throttleMock, controllerMock } = setupModuleWithMocks();
 
       throttleMock.mockImplementationOnce((_req, res, _next) => {
-        return res.status(429).json({ code: "RATE_LIMIT", message: "Aguarde antes de comentar novamente." });
+        return res.status(429).json({ code: ERROR_CODES.RATE_LIMIT, message: "Aguarde antes de comentar novamente." });
       });
 
       // Act
@@ -495,7 +496,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(429);
-      expect(res.body).toEqual({ code: "RATE_LIMIT", message: "Aguarde antes de comentar novamente." });
+      expect(res.body).toEqual({ code: ERROR_CODES.RATE_LIMIT, message: "Aguarde antes de comentar novamente." });
       expect(controllerMock.createComment).not.toHaveBeenCalled();
     });
 
