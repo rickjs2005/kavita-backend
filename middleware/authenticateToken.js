@@ -1,10 +1,8 @@
 // middleware/authenticateToken.js
-const jwt = require("jsonwebtoken");
+const authConfig = require("../config/auth");
 const pool = require("../config/pool");
 
 module.exports = async function authenticateToken(req, res, next) {
-  const SECRET = process.env.JWT_SECRET;
-
   let token = null;
 
   // 1) Cookie httpOnly
@@ -19,22 +17,18 @@ module.exports = async function authenticateToken(req, res, next) {
   }
 
   if (!token) {
-    return res.status(401).json({
-      message: "Usuário não autenticado.",
-    });
+    return res.status(401).json({ message: "Usuário não autenticado." });
   }
 
   try {
-    const payload = jwt.verify(token, SECRET);
+    // ✅ usa a mesma config (secret) do authConfig
+    const payload = authConfig.verify(token);
 
-    // Base do usuário (mínimo garantido)
-    const userId = payload.id;
-
+    const userId = payload?.id;
     if (!userId) {
       return res.status(401).json({ message: "Token inválido." });
     }
 
-    // 🔥 BUSCA DIRETA NA TABELA CORRETA
     const [rows] = await pool.query(
       `
       SELECT id, nome, email
@@ -46,14 +40,11 @@ module.exports = async function authenticateToken(req, res, next) {
     );
 
     if (!rows.length) {
-      return res.status(401).json({
-        message: "Usuário não encontrado.",
-      });
+      return res.status(401).json({ message: "Usuário não encontrado." });
     }
 
     const user = rows[0];
 
-    // ✅ req.user COMPLETO E CONFIÁVEL
     req.user = {
       id: user.id,
       nome: user.nome,
@@ -61,11 +52,16 @@ module.exports = async function authenticateToken(req, res, next) {
       role: payload.role || "user",
     };
 
-    next();
+    return next();
   } catch (err) {
-    console.error("authenticateToken error:", err.message);
+    // ✅ diferencia expirado vs inválido (melhor UX e debug)
+    const isExpired = err?.name === "TokenExpiredError";
+    console.error("authenticateToken error:", err?.message);
+
     return res.status(401).json({
-      message: "Sessão expirada. Faça login novamente.",
+      message: isExpired
+        ? "Sessão expirada. Faça login novamente."
+        : "Token inválido.",
     });
   }
 };

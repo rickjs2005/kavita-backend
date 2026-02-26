@@ -2,6 +2,7 @@
 const bcrypt = require("bcrypt");
 const pool = require("../config/pool");
 const authConfig = require("../config/auth");
+const jwt = require("jsonwebtoken");
 const passwordResetTokens = require("../services/passwordResetTokenService");
 const { sendResetPasswordEmail } = require("../services/mailService");
 
@@ -14,8 +15,28 @@ function getAuthCookieOptions() {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? "strict" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    // ⛔ NÃO deixa fixo aqui se você quer alinhar com o JWT
+    // maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/",
+  };
+}
+
+/**
+ * ✅ Retorna options do cookie com maxAge alinhado ao "exp" do JWT
+ * (cookie e token expiram juntos)
+ */
+function getAuthCookieOptionsAlignedToToken(token) {
+  const base = getAuthCookieOptions();
+
+  // jwt.decode não valida assinatura, mas aqui o token acabou de ser gerado no servidor
+  const decoded = jwt.decode(token); // { exp: seconds, iat: seconds, ... }
+
+  const msToExpire =
+    decoded?.exp ? decoded.exp * 1000 - Date.now() : 7 * 24 * 60 * 60 * 1000;
+
+  return {
+    ...base,
+    maxAge: Math.max(0, msToExpire),
   };
 }
 
@@ -46,7 +67,8 @@ const AuthController = {
       const token = authConfig.sign({ id: user.id });
       req.rateLimit?.reset?.();
 
-      res.cookie("auth_token", token, getAuthCookieOptions());
+      // ✅ AQUI: usar a função alinhada ao token
+      res.cookie("auth_token", token, getAuthCookieOptionsAlignedToToken(token));
 
       return res.status(200).json({
         message: "Login bem-sucedido!",
@@ -58,6 +80,7 @@ const AuthController = {
   },
 
   async register(req, res, next) {
+    // ... (sem mudança)
     const { nome, email, senha } = req.body;
 
     try {
@@ -77,6 +100,8 @@ const AuthController = {
 
   async logout(_req, res, next) {
     try {
+      // ✅ pode continuar usando getAuthCookieOptions()
+      // (clearCookie precisa bater path/samesite/secure, maxAge não importa)
       res.clearCookie("auth_token", getAuthCookieOptions());
       return res.status(200).json({ message: "Logout bem-sucedido!" });
     } catch (error) {
