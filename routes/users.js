@@ -7,6 +7,7 @@ const pool = require("../config/pool");
 const createAdaptiveRateLimiter = require("../middleware/adaptiveRateLimiter");
 const AuthController = require("../controllers/authController");
 const { sanitizeCPF, isValidCPF } = require("../utils/cpf"); // 👈 AQUI
+const { registerValidators } = require("../validators/authValidator");
 
 const router = express.Router();
 
@@ -24,23 +25,20 @@ const resetPasswordLimiter = createAdaptiveRateLimiter({
   },
 });
 
+const registerLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => {
+    const email = req.body.email ? req.body.email.toLowerCase() : "anon";
+    return `register:${req.ip}:${email}`;
+  },
+});
+
 // ===========================================================
 // ✅ POST /register — Cadastro com CPF obrigatório
 // ===========================================================
-router.post("/register", async (req, res) => {
+router.post("/register", registerLimiter, registerValidators, async (req, res) => {
   const { nome, email, senha, cpf } = req.body || {};
 
-  if (!nome || !email || !senha || !cpf) {
-    return res.status(400).json({
-      mensagem: "Nome, email, senha e CPF são obrigatórios.",
-    });
-  }
-
   const cpfLimpo = sanitizeCPF(cpf);
-
-  if (!isValidCPF(cpfLimpo)) {
-    return res.status(400).json({ mensagem: "CPF inválido." });
-  }
 
   try {
     // verifica se já existe usuário com mesmo email OU mesmo CPF
