@@ -16,7 +16,7 @@ function createAdaptiveRateLimiter({
   const store = new Map();
 
   return function adaptiveRateLimiter(req, res, next) {
-    req.rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
+    req.rateLimit = req.rateLimit || { fail: () => { }, reset: () => { } };
 
     const key = keyGenerator(req);
     if (!key) return next();
@@ -33,7 +33,7 @@ function createAdaptiveRateLimiter({
       res.set("Retry-After", String(retryAfter));
 
       return res.status(429).json({
-        code: "RATE_LIMIT", // ou: ERROR_CODES.VALIDATION_ERROR (mas o ideal é RATE_LIMIT)
+        code: ERROR_CODES.RATE_LIMIT,
         message: "Muitas tentativas. Tente novamente mais tarde.",
         retryAfter,
       });

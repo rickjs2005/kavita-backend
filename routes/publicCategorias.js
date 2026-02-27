@@ -23,6 +23,7 @@ const pool = require("../config/pool");
  *                   name: { type: string }
  *                   slug: { type: string }
  *                   is_active: { type: boolean }
+ *                   sort_order: { type: integer }
  *                   total_products: { type: integer }
  *       500:
  *         description: Erro interno no servidor
@@ -36,12 +37,13 @@ router.get("/", async (_req, res) => {
         c.name,
         c.slug,
         c.is_active,
+        c.sort_order,
         COUNT(p.id) AS total_products
       FROM categories c
       LEFT JOIN products p
         ON p.category_id = c.id
       WHERE c.is_active = 1
-      GROUP BY c.id, c.name, c.slug, c.is_active
+      GROUP BY c.id, c.name, c.slug, c.is_active, c.sort_order
       ORDER BY c.sort_order ASC, c.name ASC
     `);
 

@@ -1,12 +1,9 @@
-function browserslist() {
-  return [];
-}
+// teste/mocks/browserslist.mock.js
 
-browserslist.data = { agents: {}, versions: {}, released: {} };
-browserslist.defaults = [];
-browserslist.findConfig = () => null;
-browserslist.findConfigFile = () => null;
-browserslist.loadConfig = () => null;
-browserslist.clearCaches = () => {};
+/**
+ * Mock do browserslist para ambiente de teste.
+ * Evita dependência de ambiente / config externa.
+ * Não afeta lógica de produção.
+ */
 
-module.exports = browserslist;
+module.exports = () => [];

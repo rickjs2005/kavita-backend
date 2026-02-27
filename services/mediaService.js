@@ -360,11 +360,31 @@ const storageAdapter = (() => {
   return diskAdapter;
 })();
 
+/* ====================================================================== */
+/* 🔧 ÚNICO AJUSTE: aceitar vídeo em heroVideo e na galeria (media)        */
+/* ====================================================================== */
 const imageFilter = (_req, file, cb) => {
-  if (!file.mimetype || !file.mimetype.startsWith("image/")) {
+  const mime = String(file.mimetype || "");
+  const isImage = mime.startsWith("image/");
+  const isVideo = mime.startsWith("video/");
+
+  // heroVideo: aceita somente vídeo
+  if (file.fieldname === "heroVideo") {
+    if (!isVideo) return cb(new Error("heroVideo deve ser um vídeo (mp4/webm)."));
+    return cb(null, true);
+  }
+
+  // media (galeria): aceita imagem OU vídeo
+  if (file.fieldname === "media") {
+    if (!isImage && !isVideo) return cb(new Error("Arquivo inválido. Envie imagem ou vídeo."));
+    return cb(null, true);
+  }
+
+  // padrão: apenas imagem
+  if (!isImage) {
     return cb(new Error("Arquivo não é uma imagem."));
   }
-  cb(null, true);
+  return cb(null, true);
 };
 
 const upload = multer({

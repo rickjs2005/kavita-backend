@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: kavita_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+
+    env:
+      JWT_SECRET: test-secret
+      EMAIL_USER: ci@example.com
+      EMAIL_PASS: ci-pass
+      APP_URL: http://localhost:3000
+      BACKEND_URL: http://localhost:5000
+
+      DB_HOST: 127.0.0.1
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_PORT: "3306"
+
+      # ✅ deixe DB_NAME e DB_NAME_TEST iguais no CI pra simplificar
+      DB_NAME: kavita_test
+      DB_NAME_TEST: kavita_test
+      DB_REAL: kavita_test
+
+      MP_ACCESS_TOKEN: "TEST_MP_ACCESS_TOKEN"
+      MP_WEBHOOK_SECRET: "TEST_MP_WEBHOOK_SECRET"
+
+      DISABLE_NOTIFICATIONS: "true"
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # ✅ recomendo igualar ao seu local (você está usando Node 22.x)
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install deps (clean)
+        run: npm ci
+
+      - name: Wait for MySQL
+        run: |
+          for i in {1..60}; do
+            mysql -h 127.0.0.1 -P 3306 -u root -proot -e "SELECT 1" && break
+            sleep 2
+          done
+
+      - name: Migrate (test DB)
+        run: npx sequelize-cli db:migrate --env test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test (CI)
+        run: npm run test:ci
+
+      - name: Build (smoke)
+        run: npm run build
+
+      - name: npm audit (critical)
+        run: npm audit --audit-level=critical

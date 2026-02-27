@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const express = require("express");
+const helmet = require("helmet");
 const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
@@ -18,7 +19,47 @@ const errorHandler = require("./middleware/errorHandler");
 const AppError = require("./errors/AppError");
 const ERROR_CODES = require("./constants/ErrorCodes");
 
+// ✅ WORKER: notificações de carrinho abandonado (email automático)
+let startAbandonedCartNotificationsWorker;
+try {
+  ({ startAbandonedCartNotificationsWorker } = require("./workers/abandonedCartNotificationsWorker"));
+} catch (err) {
+  logger.warn(
+    "⚠️ Worker de notificações não carregado (arquivo ausente ou erro no require):",
+    err.message
+  );
+}
+
 const app = express();
+
+/* ============================
+ * Segurança: Helmet (Security Headers)
+ * ============================ */
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameSrc: ["'none'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    frameguard: { action: "deny" },
+    noSniff: true,
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  })
+);
 
 /* ============================
  * CORS: origens permitidas
@@ -111,14 +152,34 @@ app.use((req, _res, next) => {
 app.use(errorHandler);
 
 /* ============================
- * Inicialização do Servidor
+ * Inicialização do Servidor + Workers
  * ============================ */
 if (process.env.NODE_ENV !== "test") {
   const PORT = process.env.PORT || 5000;
+
   app.listen(PORT, () => {
     logger.info(`✅ Server rodando em http://localhost:${PORT}`);
     logger.info(`📚 Swagger em: http://localhost:${PORT}/docs`);
     logger.info(`🌐 APP_URL configurada: ${config.appUrl}`);
+
+    // ============================
+    // WORKERS
+    // ============================
+    const disableNotifs = String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
+
+    if (disableNotifs) {
+      logger.warn("🚫 Notificações automáticas DESABILITADAS (DISABLE_NOTIFICATIONS=true)");
+      return;
+    }
+
+    if (typeof startAbandonedCartNotificationsWorker === "function") {
+      startAbandonedCartNotificationsWorker();
+      logger.info("📨 Worker de notificações de carrinho abandonado iniciado");
+    } else {
+      logger.warn(
+        "⚠️ Worker de notificações NÃO iniciado (função startAbandonedCartNotificationsWorker indisponível)."
+      );
+    }
   });
 }
 

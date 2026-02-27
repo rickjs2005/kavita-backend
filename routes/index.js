@@ -38,6 +38,9 @@ loadRoute("/public/promocoes", "./publicPromocoes");
 
 loadRoute("/public/produtos", "./publicProdutos");
 
+// ✅ FIX: Configuração pública da loja (já existe o arquivo, faltava montar)
+loadRoute("/config", "./publicShopConfigRoutes");
+
 /* ============================
  * Autenticação e Usuários
  * ============================ */
@@ -48,14 +51,13 @@ loadRoute("/users", "./userProfile");
 loadRoute("/users/addresses", "./userAddresses");
 loadRoute("/cart", "./cart");
 loadRoute("/favorites", "./favorites");
+loadRoute("/public/site-hero", "./publicSiteHero");
 
 // Este arquivo inteiro será montado em "/api"
 loadRoute("/", "./authRoutes");
 
-/* ============================
- * Checkout e Pagamento
- * ============================ */
-
+// checkout,pedidos e frete
+loadRoute("/shipping", "./shippingRoutes");
 loadRoute("/checkout", "./checkoutRoutes");
 loadRoute("/payment", "./payment");
 loadRoute("/pedidos", "./pedidos");
@@ -68,6 +70,13 @@ loadRoute("/admin", "./adminLogin");
 
 // Kavita News (Público)
 loadRoute("/news", "./newsPublicRoutes");
+
+/* ============================
+ * Módulo Kavita Drones
+ * ============================ */
+loadRoute("/public/drones", "./publicDrones");
+
+console.log("✅ publicDrones montado!");
 
 /* ============================
  * Área Admin - Rotas Protegidas
@@ -89,7 +98,7 @@ try {
   console.error("❌ Erro ao carregar ./adminColaboradores:", err.message);
 }
 
-// Marketing > Promoções
+/// Marketing > Promoções
 try {
   const adminMarketingPromocoesRoutes = require("./adminMarketingPromocoes");
   router.use(
@@ -213,6 +222,31 @@ try {
   router.use("/admin/news", verifyAdmin, adminNewsRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminNewsRoutes:", err.message);
+}
+
+// ✅ NOVO: Admin Drones (Kavita Drones)
+try {
+  const adminDronesRoutes = require("./adminDrones");
+  router.use("/admin/drones", verifyAdmin, adminDronesRoutes);
+} catch (err) {
+  console.error("❌ Erro ao carregar ./adminDrones:", err.message);
+}
+
+/** ✅ NOVO: Admin Shipping (Frete por zonas UF/cidades)
+ * O arquivo define rotas /zones, então montamos em /admin/shipping
+ */
+try {
+  const adminShippingZonesRoutes = require("./adminShippingZonesRoutes");
+  router.use("/admin/shipping", verifyAdmin, adminShippingZonesRoutes);
+} catch (err) {
+  console.error("❌ Erro ao carregar ./adminShippingZonesRoutes:", err.message);
+}
+// Site Hero (Admin)
+try {
+  const adminSiteHeroRoutes = require("./adminSiteHero");
+  router.use("/admin/site-hero", verifyAdmin, adminSiteHeroRoutes);
+} catch (err) {
+  console.error("❌ Erro ao carregar ./adminSiteHero:", err.message);
 }
 
 /* ============================

@@ -1,6 +1,8 @@
+// routes/publicProdutos.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool"); // Conexão com o banco de dados
+const authenticateToken = require("../middleware/authenticateToken");
 
 // Campos padrão que queremos expor publicamente de products
 const PUBLIC_PRODUCT_FIELDS = `
@@ -9,7 +11,9 @@ const PUBLIC_PRODUCT_FIELDS = `
   CAST(price AS DECIMAL(10,2)) AS price,
   image,
   rating_avg,
-  rating_count
+  rating_count,
+  shipping_free,
+  shipping_free_from_qty
 `;
 
 /**
@@ -62,6 +66,13 @@ const PUBLIC_PRODUCT_FIELDS = `
  *                   rating_count:
  *                     type: integer
  *                     description: Quantidade de avaliações do produto.
+ *                   shipping_free:
+ *                     type: boolean
+ *                     description: Se o produto tem frete grátis.
+ *                   shipping_free_from_qty:
+ *                     type: integer
+ *                     nullable: true
+ *                     description: Quantidade mínima para frete grátis (se aplicável).
  *       500:
  *         description: Erro interno ao buscar produtos
  */
@@ -115,8 +126,10 @@ router.get("/", async (req, res) => {
  * /api/public/produtos/avaliacoes:
  *   post:
  *     tags: [Public, Produtos]
- *     summary: Avaliar um produto
- *     description: Registra uma avaliação (nota e comentário) para um produto.
+ *     summary: Avaliar um produto (login obrigatório)
+ *     description: Registra uma avaliação (nota e comentário) para um produto. O usuário é identificado pelo token.
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -143,12 +156,14 @@ router.get("/", async (req, res) => {
  *         description: Avaliação registrada com sucesso
  *       400:
  *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado (token ausente/inválido)
  *       500:
  *         description: Erro interno ao registrar a avaliação
  */
 
-// ✅ POST /api/public/produtos/avaliacoes — Cria avaliação de produto
-router.post("/avaliacoes", async (req, res) => {
+// ✅ POST /api/public/produtos/avaliacoes — Cria avaliação de produto (LOGIN)
+router.post("/avaliacoes", authenticateToken, async (req, res) => {
   const { produto_id, nota, comentario } = req.body || {};
 
   const produtoIdNum = Number(produto_id);
@@ -165,8 +180,10 @@ router.post("/avaliacoes", async (req, res) => {
     conn = await pool.getConnection();
     await conn.beginTransaction();
 
-    // Se tiver autenticação: const usuarioId = req.user?.id || null;
-    const usuarioId = null;
+    const usuarioId = req.user?.id;
+    if (!usuarioId) {
+      return res.status(401).json({ message: "Usuário não autenticado." });
+    }
 
     await conn.query(
       `
@@ -203,6 +220,7 @@ router.post("/avaliacoes", async (req, res) => {
     await conn.commit();
     console.log("🟢 Avaliação de produto registrada com sucesso:", {
       produto_id: produtoIdNum,
+      usuario_id: usuarioId,
       nota: notaNum,
       media,
       total,
@@ -227,8 +245,8 @@ router.post("/avaliacoes", async (req, res) => {
  * /api/public/produtos/{id}/avaliacoes:
  *   get:
  *     tags: [Public, Produtos]
- *     summary: Listar avaliações de um produto
- *     description: Retorna as avaliações já realizadas para um produto específico.
+ *     summary: Listar avaliações de um produto (com nome do usuário)
+ *     description: Retorna as avaliações já realizadas para um produto específico, incluindo o nome do usuário que comentou.
  *     parameters:
  *       - name: id
  *         in: path
@@ -254,11 +272,17 @@ router.post("/avaliacoes", async (req, res) => {
  *                   created_at:
  *                     type: string
  *                     format: date-time
+ *                   usuario_nome:
+ *                     type: string
+ *                     nullable: true
+ *                     description: Nome do usuário que comentou.
+ *       400:
+ *         description: ID inválido
  *       500:
  *         description: Erro interno ao buscar avaliações
  */
 
-// ✅ GET /api/public/produtos/:id/avaliacoes — Lista avaliações de um produto
+// ✅ GET /api/public/produtos/:id/avaliacoes — Lista avaliações de um produto (COM NOME)
 router.get("/:id/avaliacoes", async (req, res) => {
   const idNum = Number(req.params.id);
 
@@ -267,17 +291,19 @@ router.get("/:id/avaliacoes", async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
+    const[rows] = await pool.query(
       `
         SELECT
-          nota,
-          comentario,
-          created_at
-        FROM produto_avaliacoes
-        WHERE produto_id = ?
-        ORDER BY created_at DESC
+          pa.nota,
+          pa.comentario,
+          pa.created_at,
+          u.nome AS usuario_nome
+        FROM produto_avaliacoes pa
+        LEFT JOIN usuarios u ON u.id = pa.usuario_id
+        WHERE pa.produto_id = ?
+        ORDER BY pa.created_at DESC
         LIMIT 50
-      `,
+        `,
       [idNum]
     );
 

@@ -1,6 +1,10 @@
 // services/comunicacaoService.js
 const pool = require("../config/pool");
-const { sendTransactionalEmail } = require("./mailService"); 
+const { sendTransactionalEmail } = require("./mailService");
+
+/* ------------------------------------------------------------------ */
+/*                               Helpers                              */
+/* ------------------------------------------------------------------ */
 
 // 🔧 busca os dados principais do pedido + cliente
 async function carregarPedidoBasico(pedidoId) {
@@ -69,19 +73,26 @@ function normalizarTelefone(valor) {
   return String(valor).replace(/\D/g, "");
 }
 
-// ===================
-// TEMPLATES - E-MAIL
-// ===================
+// ✅ normaliza valor monetário para 2 casas (evita toFixed em string/decimal)
+function money2(v) {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+}
+
+/* ------------------------------------------------------------------ */
+/*                          TEMPLATES - E-MAIL                         */
+/* ------------------------------------------------------------------ */
+
 function buildEmailFromTemplate(templateId, pedido) {
+  const totalFmt = money2(pedido?.total);
+
   switch (templateId) {
     case "confirmacao_pedido":
       return {
         subject: `Kavita - Pedido #${pedido.id} recebido`,
         html: `
           <p>Olá ${pedido.usuario_nome},</p>
-          <p>Recebemos o seu pedido <strong>#${pedido.id}</strong> no valor de <strong>R$ ${pedido.total.toFixed(
-            2
-          )}</strong>.</p>
+          <p>Recebemos o seu pedido <strong>#${pedido.id}</strong> no valor de <strong>R$ ${totalFmt}</strong>.</p>
           <p>Forma de pagamento: <strong>${pedido.forma_pagamento}</strong></p>
           <p>Você receberá novas atualizações assim que o pedido avançar.</p>
           <p>Equipe Kavita 🐄🌱</p>
@@ -94,7 +105,7 @@ function buildEmailFromTemplate(templateId, pedido) {
         html: `
           <p>Olá ${pedido.usuario_nome},</p>
           <p>O pagamento do seu pedido <strong>#${pedido.id}</strong> foi aprovado 🎉.</p>
-          <p>Valor: <strong>R$ ${pedido.total.toFixed(2)}</strong></p>
+          <p>Valor: <strong>R$ ${totalFmt}</strong></p>
           <p>Agora vamos separar e preparar o envio.</p>
           <p>Equipe Kavita</p>
         `,
@@ -117,15 +128,16 @@ function buildEmailFromTemplate(templateId, pedido) {
   }
 }
 
-// ====================
-// TEMPLATES - WHATSAPP
-// ====================
+/* ------------------------------------------------------------------ */
+/*                        TEMPLATES - WHATSAPP                         */
+/* ------------------------------------------------------------------ */
+
 function buildWhatsappFromTemplate(templateId, pedido) {
+  const totalFmt = money2(pedido?.total);
+
   switch (templateId) {
     case "confirmacao_pedido":
-      return `Olá ${pedido.usuario_nome}! Recebemos o seu pedido #${pedido.id} no valor de R$ ${pedido.total.toFixed(
-        2
-      )}. Assim que avançar, te aviso por aqui. Equipe Kavita.`;
+      return `Olá ${pedido.usuario_nome}! Recebemos o seu pedido #${pedido.id} no valor de R$ ${totalFmt}. Assim que avançar, te aviso por aqui. Equipe Kavita.`;
 
     case "pagamento_aprovado":
       return `Olá ${pedido.usuario_nome}! O pagamento do seu pedido #${pedido.id} foi aprovado 🎉. Vamos separar e já te avisamos quando sair para entrega.`;
@@ -138,9 +150,10 @@ function buildWhatsappFromTemplate(templateId, pedido) {
   }
 }
 
-// ============================
-// ENVIO UNITÁRIO (e-mail/whats)
-// ============================
+/* ------------------------------------------------------------------ */
+/*                     ENVIO UNITÁRIO (e-mail/whats)                   */
+/* ------------------------------------------------------------------ */
+
 async function enviarEmailTemplate(templateId, pedido) {
   const to = pedido.usuario_email;
   if (!to) return; // sem e-mail, só ignora
@@ -183,9 +196,7 @@ async function enviarWhatsappTemplate(templateId, pedido) {
   try {
     // Aqui entra a integração real com a API de WhatsApp (Cloud API, Z-API etc.)
     // Exemplo por enquanto:
-    console.log(
-      `[FAKE WHATSAPP] Enviando mensagem para 55${telefone}: ${mensagem}`
-    );
+    console.log(`[FAKE WHATSAPP] Enviando mensagem para 55${telefone}: ${mensagem}`);
   } catch (e) {
     console.error("[comunicacao] Erro ao enviar WhatsApp:", e);
     statusEnvio = "erro";
@@ -205,9 +216,9 @@ async function enviarWhatsappTemplate(templateId, pedido) {
   });
 }
 
-// ============================
-// FUNÇÃO PRINCIPAL DE EVENTO
-// ============================
+/* ------------------------------------------------------------------ */
+/*                    FUNÇÃO PRINCIPAL DE EVENTO                       */
+/* ------------------------------------------------------------------ */
 /**
  * tipoEvento:
  *  - "pedido_criado"

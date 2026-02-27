@@ -1,15 +1,17 @@
-// Mock genérico da pool.
-// Ajuste o caminho se seu pool estiver em outro arquivo.
-const pool = {
-  query: jest.fn().mockResolvedValue([[], []]),
-  execute: jest.fn().mockResolvedValue([[], []]),
-  getConnection: jest.fn().mockResolvedValue({
-    beginTransaction: jest.fn(),
-    commit: jest.fn(),
-    rollback: jest.fn(),
-    query: jest.fn().mockResolvedValue([[], []]),
-    execute: jest.fn().mockResolvedValue([[], []]),
-    release: jest.fn(),
-  }),
-};
-module.exports = pool;
+// teste/mocks/pool.mock.js
+"use strict";
+
+/**
+ * Mock do pool mysql2-like para testes.
+ * Padrão do projeto:
+ * - pool.query()
+ * - pool.getConnection()
+ */
+function makeMockPool() {
+  return {
+    query: jest.fn(),
+    getConnection: jest.fn(),
+  };
+}
+
+module.exports = { makeMockPool };

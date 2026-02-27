@@ -36,7 +36,7 @@ const config = {
   },
   jwt: {
     secret: process.env.JWT_SECRET,
-    expiresIn: process.env.JWT_EXPIRATION || '1h',
+    expiresIn: process.env.JWT_EXPIRATION || '7d',
   },
   db: {
     host: process.env.DB_HOST,

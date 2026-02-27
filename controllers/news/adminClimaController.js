@@ -3,6 +3,7 @@
 
 const newsModel = require("../../models/newsModel");
 const pool = require("../../config/pool");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 /**
  * Sugestão de coordenadas (compatibilidade):
@@ -147,7 +148,7 @@ function validateStationCodeOrNull(v, field = "station_code") {
   }
   if (sc.length > 10) {
     return {
-      error: { status: 400, code: "VALIDATION_ERROR", message: `${field} inválido (máx 10).`, details: { field } },
+      error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (máx 10).`, details: { field } },
     };
   }
   return { value: sc };
@@ -158,7 +159,7 @@ function validateOptionalFloat(body, field) {
   const raw = body[field];
   const n = toFloat(raw);
   if (raw !== null && raw !== "" && raw !== undefined && n === null) {
-    return { error: { status: 400, code: "VALIDATION_ERROR", message: `${field} inválido (número).`, details: { field } } };
+    return { error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (número).`, details: { field } } };
   }
   return { value: raw === "" ? null : n };
 }
@@ -168,7 +169,7 @@ function validateOptionalDateLike(body, field) {
   const raw = body[field];
   if (raw !== null && raw !== "" && raw !== undefined && !isValidDateTimeLike(raw)) {
     return {
-      error: { status: 400, code: "VALIDATION_ERROR", message: `${field} inválido (YYYY-MM-DD HH:mm:ss).`, details: { field } },
+      error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (YYYY-MM-DD HH:mm:ss).`, details: { field } },
     };
   }
   return { value: raw ?? null };
@@ -178,7 +179,7 @@ function validateOptionalStrMax(body, field, max = 120) {
   if (!hasOwn(body, field)) return { skip: true };
   const raw = body[field];
   if (raw !== null && raw !== "" && raw !== undefined && !isOptionalStr(raw, max)) {
-    return { error: { status: 400, code: "VALIDATION_ERROR", message: `${field} inválido (máx ${max}).`, details: { field } } };
+    return { error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (máx ${max}).`, details: { field } } };
   }
   return { value: raw ? String(raw).trim() : null };
 }
@@ -442,7 +443,7 @@ async function fetchChuvaMmFromProvider(climaRow) {
     const t = setTimeout(() => {
       try {
         ctrl.abort();
-      } catch {}
+      } catch { }
     }, timeoutMs);
 
     try {
