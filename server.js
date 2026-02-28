@@ -40,11 +40,12 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        // 'unsafe-inline' is required for Next.js/React injected scripts
+        scriptSrc: ["'self'", "'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:", "https:"],
         connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
+        fontSrc: ["'self'", "data:"],
         objectSrc: ["'none'"],
         frameSrc: ["'none'"],
         upgradeInsecureRequests: [],
