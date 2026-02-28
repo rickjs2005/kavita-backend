@@ -115,10 +115,10 @@ async function getAdminPermissions(adminId) {
  *                         - "admin.config.edit"
  *       400:
  *         description: Campos obrigatórios ausentes
- *       404:
- *         description: Admin não encontrado
  *       401:
- *         description: Senha incorreta
+ *         description: Email ou senha inválidos
+ *       429:
+ *         description: Muitas tentativas — tente novamente mais tarde
  *       500:
  *         description: Erro interno no servidor
  */
@@ -163,8 +163,8 @@ router.post("/login", async (req, res) => {
 
     if (!rows || rows.length === 0) {
       rateLimit.fail();
-      console.warn("⚠️ Admin não encontrado:", emailNormalizado);
-      return res.status(404).json({ message: "Admin não encontrado." });
+      console.warn("⚠️ Falha de autenticação (admin não encontrado):", emailNormalizado);
+      return res.status(401).json({ code: "INVALID_CREDENTIALS", message: "Email ou senha inválidos." });
     }
 
     const admin = rows[0];
@@ -174,8 +174,8 @@ router.post("/login", async (req, res) => {
 
     if (!senhaCorreta) {
       rateLimit.fail();
-      console.warn("⚠️ Senha incorreta para:", emailNormalizado);
-      return res.status(401).json({ message: "Senha incorreta." });
+      console.warn("⚠️ Falha de autenticação (senha incorreta) para:", emailNormalizado);
+      return res.status(401).json({ code: "INVALID_CREDENTIALS", message: "Email ou senha inválidos." });
     }
 
     // 4. Sucesso: reseta contador de falhas
