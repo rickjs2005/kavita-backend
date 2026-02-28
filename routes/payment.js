@@ -18,6 +18,26 @@ const verifyAdmin = require("../middleware/verifyAdmin"); // ✅ sem fallback: f
 // ✅ Webhook signature validation (HMAC-SHA256, formato oficial MP)
 const validateMPSignature = require("../middleware/validateMPSignature");
 
+// ✅ Rate limiter para o webhook: máx. 60 req/min por IP
+const _webhookIpCounts = new Map();
+function webhookRateLimiter(req, res, next) {
+  const ip = req.ip || "unknown";
+  const now = Date.now();
+  const windowMs = 60_000;
+  const maxRequests = 60;
+  const entry = _webhookIpCounts.get(ip);
+  if (!entry || now - entry.start >= windowMs) {
+    _webhookIpCounts.set(ip, { count: 1, start: now });
+    return next();
+  }
+  if (entry.count >= maxRequests) {
+    res.set("Retry-After", "60");
+    return res.status(429).json({ ok: false, code: ERROR_CODES.RATE_LIMIT });
+  }
+  entry.count += 1;
+  return next();
+}
+
 // Configuração do cliente do Mercado Pago
 const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
@@ -597,7 +617,7 @@ router.post("/start", async (req, res, next) => {
 // webhook Mercado Pago
 // Camada A: validateMPSignature valida HMAC-SHA256 antes de entrar no handler
 // Camada B: consulta o pagamento real no MP API antes de atualizar o pedido
-router.post("/webhook", validateMPSignature, async (req, res) => {
+router.post("/webhook", webhookRateLimiter, validateMPSignature, async (req, res) => {
   const idempotencyKey = req.get("x-idempotency-key");
   const signatureHeader = req.get("x-signature");
 

@@ -75,10 +75,18 @@ function timingSafeEqual(a, b) {
 /**
  * Express middleware que valida a assinatura HMAC-SHA256 do webhook do Mercado Pago.
  * Em caso de sucesso, popula req.mpSignature = { ts, v1, manifest } para uso posterior.
+ * Em caso de falha de autenticação, chama req.rateLimit.fail() para acionar o
+ * rate limiter adaptativo global (server.js).
  */
 function validateMPSignature(req, res, next) {
   const signatureHeader = req.get("x-signature");
   const secret = process.env.MP_WEBHOOK_SECRET;
+
+  // Helper: registra falha no rate limiter e responde
+  const rejectUnauthorized = () => {
+    if (typeof req.rateLimit?.fail === "function") req.rateLimit.fail();
+    return res.status(401).json({ ok: false });
+  };
 
   // Secret não configurado
   if (!secret) {
@@ -93,14 +101,14 @@ function validateMPSignature(req, res, next) {
 
   if (!signatureHeader) {
     console.warn("[validateMPSignature] Header x-signature ausente");
-    return res.status(401).json({ ok: false });
+    return rejectUnauthorized();
   }
 
   const { ts, v1: providedHash } = parseSignatureHeader(signatureHeader);
 
   if (!ts || !providedHash) {
     console.warn("[validateMPSignature] Formato de x-signature inválido:", signatureHeader);
-    return res.status(401).json({ ok: false });
+    return rejectUnauthorized();
   }
 
   // Extrai componentes do manifesto
@@ -116,7 +124,7 @@ function validateMPSignature(req, res, next) {
 
   if (!timingSafeEqual(expectedHash, providedHash)) {
     console.warn("[validateMPSignature] Assinatura inválida. Manifest:", manifest);
-    return res.status(401).json({ ok: false });
+    return rejectUnauthorized();
   }
 
   // Disponibiliza dados parseados para o handler
