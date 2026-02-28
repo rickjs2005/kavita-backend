@@ -14,9 +14,7 @@ function getAuthCookieOptions() {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? "strict" : "lax",
-    // ⛔ NÃO deixa fixo aqui se você quer alinhar com o JWT
-    // maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: "strict",
     path: "/",
   };
 }

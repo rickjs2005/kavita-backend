@@ -51,6 +51,13 @@ describe("Security Headers (Helmet)", () => {
     expect(res.headers["content-security-policy"]).toContain("default-src 'self'");
   });
 
+  test("CSP deve permitir unsafe-inline em script-src para Next.js", async () => {
+    const res = await request(app).get("/api/nonexistent-route-for-headers");
+    const csp = res.headers["content-security-policy"];
+    expect(csp).toContain("script-src");
+    expect(csp).toContain("'unsafe-inline'");
+  });
+
   test("deve retornar Referrer-Policy header", async () => {
     const res = await request(app).get("/api/nonexistent-route-for-headers");
     expect(res.headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
@@ -183,6 +190,64 @@ describe("CSRF Protection", () => {
       const authCookie = setCookie.find((c) => c.startsWith("auth_token"));
       if (authCookie) {
         expect(authCookie.toLowerCase()).toContain("httponly");
+      }
+    }
+  });
+
+  test("cookie auth_token deve usar samesite=strict em qualquer ambiente", async () => {
+    const pool = require("../../config/pool");
+    const bcrypt = require("bcrypt");
+
+    const hashed = await bcrypt.hash("senha123", 10);
+    pool.query.mockResolvedValueOnce([[{ id: 1, nome: "João", email: "joao@email.com", senha: hashed }]]);
+
+    const res = await request(app)
+      .post("/api/login")
+      .send({ email: "joao@email.com", senha: "senha123" });
+
+    const setCookie = res.headers["set-cookie"];
+    if (setCookie) {
+      const authCookie = setCookie.find((c) => c.startsWith("auth_token"));
+      if (authCookie) {
+        expect(authCookie.toLowerCase()).toContain("samesite=strict");
+      }
+    }
+  });
+
+  test("cookie auth_token deve ter maxAge alinhado ao JWT (não fixo em 7 dias)", async () => {
+    const pool = require("../../config/pool");
+    const bcrypt = require("bcrypt");
+    const jwt = require("jsonwebtoken");
+
+    const hashed = await bcrypt.hash("senha123", 10);
+    pool.query.mockResolvedValueOnce([[{ id: 1, nome: "João", email: "joao@email.com", senha: hashed }]]);
+
+    const before = Date.now();
+    const res = await request(app)
+      .post("/api/login")
+      .send({ email: "joao@email.com", senha: "senha123" });
+
+    const setCookie = res.headers["set-cookie"];
+    if (setCookie) {
+      const authCookie = setCookie.find((c) => c.startsWith("auth_token"));
+      if (authCookie) {
+        // Extract token value from cookie string: "auth_token=<value>; ..."
+        const tokenValue = authCookie.split(";")[0].split("=").slice(1).join("=");
+        if (tokenValue) {
+          const decoded = jwt.decode(tokenValue);
+          if (decoded && decoded.exp) {
+            const expectedMaxAge = decoded.exp * 1000 - before;
+            // maxAge must not be the old fixed 7-day default (604800000ms)
+            expect(expectedMaxAge).toBeLessThan(7 * 24 * 60 * 60 * 1000);
+            // maxAge should be positive and close to JWT exp (within 5s tolerance)
+            expect(expectedMaxAge).toBeGreaterThan(0);
+            const after = Date.now();
+            const maxExpected = decoded.exp * 1000 - before;
+            const minExpected = decoded.exp * 1000 - after;
+            expect(minExpected).toBeGreaterThanOrEqual(0);
+            expect(maxExpected).toBeGreaterThan(minExpected - 5000);
+          }
+        }
       }
     }
   });
