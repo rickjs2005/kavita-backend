@@ -2,7 +2,6 @@
 "use strict";
 
 const express = require("express");
-const crypto = require("crypto");
 const router = express.Router();
 const pool = require("../config/pool");
 
@@ -15,6 +14,9 @@ const ERROR_CODES = require("../constants/ErrorCodes");
 // ✅ ACL (Broken Access Control fix)
 const authenticateToken = require("../middleware/authenticateToken");
 const verifyAdmin = require("../middleware/verifyAdmin"); // ✅ sem fallback: falhar cedo se estiver faltando
+
+// ✅ Webhook signature validation (HMAC-SHA256, formato oficial MP)
+const validateMPSignature = require("../middleware/validateMPSignature");
 
 // Configuração do cliente do Mercado Pago
 const mpClient = new MercadoPagoConfig({
@@ -593,56 +595,15 @@ router.post("/start", async (req, res, next) => {
 });
 
 // webhook Mercado Pago
-router.post("/webhook", async (req, res) => {
-  const signatureHeader = req.get("x-signature");
+// Camada A: validateMPSignature valida HMAC-SHA256 antes de entrar no handler
+// Camada B: consulta o pagamento real no MP API antes de atualizar o pedido
+router.post("/webhook", validateMPSignature, async (req, res) => {
   const idempotencyKey = req.get("x-idempotency-key");
-  const secret = process.env.MP_WEBHOOK_SECRET;
+  const signatureHeader = req.get("x-signature");
 
-  const unauthorized = () => res.status(401).json({ ok: false });
-
-  if (!signatureHeader || !idempotencyKey) {
-    console.warn("[payment/webhook] assinatura ou idempotency key ausentes");
-    return unauthorized();
-  }
-
-  if (!secret) {
-    console.error("[payment/webhook] MP_WEBHOOK_SECRET não configurado");
-    const status = process.env.NODE_ENV === "development" ? 500 : 200;
-    return res.status(status).json({ ok: status === 200 });
-  }
-
-  const signatureParts = signatureHeader
-    .split(",")
-    .map((part) => part.trim().split("="))
-    .reduce((acc, [key, value]) => {
-      if (key && value) acc[key] = value;
-      return acc;
-    }, {});
-
-  const ts = signatureParts.ts;
-  const providedHash = signatureParts.v1;
-
-  if (!ts || !providedHash) {
-    console.warn("[payment/webhook] formato de assinatura inválido");
-    return unauthorized();
-  }
-
-  const payloadString = JSON.stringify(req.body || {});
-  const expectedHash = crypto
-    .createHmac("sha256", secret)
-    .update(`${ts}.${payloadString}`)
-    .digest("hex");
-
-  const safeCompare = (a, b) => {
-    const bufferA = Buffer.from(a, "utf8");
-    const bufferB = Buffer.from(b, "utf8");
-    if (bufferA.length !== bufferB.length) return false;
-    return crypto.timingSafeEqual(bufferA, bufferB);
-  };
-
-  if (!safeCompare(expectedHash, providedHash)) {
-    console.warn(`[payment/webhook] assinatura inválida para chave ${idempotencyKey}`);
-    return unauthorized();
+  if (!idempotencyKey) {
+    console.warn("[payment/webhook] x-idempotency-key ausente");
+    return res.status(401).json({ ok: false });
   }
 
   try {
