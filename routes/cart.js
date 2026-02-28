@@ -5,6 +5,7 @@ const authenticateToken = require("../middleware/authenticateToken");
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const { validateQuantity } = require("../middleware/cartValidation");
 
 router.use(authenticateToken);
 
@@ -275,15 +276,8 @@ router.post("/items", async (req, res, next) => {
     );
   }
 
-  if (!Number.isFinite(qtdNum) || qtdNum <= 0) {
-    return next(
-      new AppError(
-        "quantidade deve ser um número maior que zero.",
-        ERROR_CODES.VALIDATION_ERROR,
-        400
-      )
-    );
-  }
+  const qtdErr = validateQuantity(quantidade);
+  if (qtdErr) return next(qtdErr);
 
   const conn = await pool.getConnection();
   try {
@@ -398,7 +392,7 @@ router.post("/items", async (req, res, next) => {
  * /api/cart/items:
  *   patch:
  *     tags: [Cart]
- *     summary: Atualiza a quantidade de um produto no carrinho (valida estoque). Se quantidade <= 0, remove.
+ *     summary: Atualiza a quantidade de um produto no carrinho (valida estoque). Use DELETE para remover.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -458,7 +452,7 @@ router.patch("/items", async (req, res, next) => {
   const userId = req.user?.id;
 
   const produtoIdNum = toInt(produto_id);
-  const q = toInt(quantidade || 0);
+  const qtdNum = toInt(quantidade);
 
   if (!userId) {
     return next(
@@ -476,11 +470,8 @@ router.patch("/items", async (req, res, next) => {
     );
   }
 
-  if (!Number.isFinite(q)) {
-    return next(
-      new AppError("quantidade inválida.", ERROR_CODES.VALIDATION_ERROR, 400)
-    );
-  }
+  const qtdErr = validateQuantity(quantidade);
+  if (qtdErr) return next(qtdErr);
 
   const conn = await pool.getConnection();
   try {
@@ -502,23 +493,6 @@ router.patch("/items", async (req, res, next) => {
       });
     }
 
-    // Remoção não precisa validar estoque
-    if (q <= 0) {
-      await conn.query(
-        "DELETE FROM carrinho_itens WHERE carrinho_id = ? AND produto_id = ?",
-        [carrinho.id, produtoIdNum]
-      );
-
-      await conn.commit();
-      return res.status(200).json({
-        success: true,
-        message: "Item removido.",
-        produto_id: produtoIdNum,
-        quantidade: 0,
-        stock: 0,
-      });
-    }
-
     // lock produto (estoque)
     const [[produto]] = await conn.query(
       "SELECT id, quantity FROM products WHERE id = ? FOR UPDATE",
@@ -531,16 +505,16 @@ router.patch("/items", async (req, res, next) => {
 
     const stock = Number(produto.quantity ?? 0);
     if (!Number.isFinite(stock) || stock <= 0) {
-      throw makeStockLimitError({ max: 0, requested: q, current: 0 });
+      throw makeStockLimitError({ max: 0, requested: qtdNum, current: 0 });
     }
 
-    if (q > stock) {
-      throw makeStockLimitError({ max: stock, requested: q, current: null });
+    if (qtdNum > stock) {
+      throw makeStockLimitError({ max: stock, requested: qtdNum, current: null });
     }
 
     await conn.query(
       "UPDATE carrinho_itens SET quantidade = ? WHERE carrinho_id = ? AND produto_id = ?",
-      [q, carrinho.id, produtoIdNum]
+      [qtdNum, carrinho.id, produtoIdNum]
     );
 
     await conn.commit();
@@ -548,7 +522,7 @@ router.patch("/items", async (req, res, next) => {
       success: true,
       message: "Quantidade atualizada.",
       produto_id: produtoIdNum,
-      quantidade: q,
+      quantidade: qtdNum,
       stock,
     });
   } catch (e) {
