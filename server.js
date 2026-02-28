@@ -64,9 +64,33 @@ app.use(
 /* ============================
  * CORS: origens permitidas
  * ============================ */
+
+/**
+ * Normalizes a CORS origin for consistent comparison:
+ * - Lowercases protocol and host
+ * - Strips leading "www." subdomain
+ * - Omits default ports (80 for http, 443 for https)
+ * - Returns null for invalid/unparseable URLs
+ */
 const normalizeOrigin = (origin) => {
   if (!origin) return null;
-  return origin.replace(/\/$/, "").trim();
+  try {
+    const url = new URL(origin);
+    const protocol = url.protocol.toLowerCase();
+
+    let host = url.hostname.toLowerCase();
+    if (host.startsWith("www.")) {
+      host = host.substring(4);
+    }
+
+    const port = url.port;
+    const defaultPorts = { "http:": "80", "https:": "443" };
+    const normalizedPort = (port && port !== defaultPorts[protocol]) ? `:${port}` : "";
+
+    return `${protocol}//${host}${normalizedPort}`;
+  } catch {
+    return null;
+  }
 };
 
 const rawOrigins = [
@@ -100,9 +124,7 @@ app.use(
         return cb(null, true);
       }
       const msg = `CORS bloqueado para origem: ${origin}`;
-      if (process.env.NODE_ENV !== "production") {
-        logger.warn(msg, { normalized, ALLOWED_ORIGINS });
-      }
+      logger.warn(msg, { normalized, ALLOWED_ORIGINS });
       return cb(new Error(msg));
     },
     credentials: true,
