@@ -498,4 +498,173 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
       expect(conn.release).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("POST /api/payment/webhook", () => {
+    const crypto = require("crypto");
+
+    /**
+     * Gera assinatura HMAC-SHA256 válida no formato oficial do Mercado Pago.
+     * Manifesto: "id:{dataId};request-id:{requestId};ts:{ts};"
+     */
+    function buildValidSignature({ dataId, requestId, ts, secret }) {
+      let manifest = "";
+      if (dataId != null && dataId !== "") manifest += `id:${dataId};`;
+      if (requestId != null && requestId !== "") manifest += `request-id:${requestId};`;
+      manifest += `ts:${ts};`;
+      const hash = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+      return `ts=${ts},v1=${hash}`;
+    }
+
+    const WEBHOOK_SECRET = "test-webhook-secret-abc";
+
+    beforeEach(() => {
+      process.env.MP_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    });
+
+    afterEach(() => {
+      delete process.env.MP_WEBHOOK_SECRET;
+    });
+
+    test("401 quando x-signature ausente", async () => {
+      // Arrange
+      const { router } = setupModuleWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-idempotency-key", "idem-key-001")
+        .send({ type: "payment", data: { id: "999" } });
+
+      // Assert
+      expect(res.status).toBe(401);
+    });
+
+    test("401 quando assinatura inválida", async () => {
+      // Arrange
+      const { router } = setupModuleWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", "ts=111,v1=badhash0000000000000000000000000000000000000000000000000000000000")
+        .set("x-idempotency-key", "idem-key-002")
+        .send({ type: "payment", data: { id: "999" } });
+
+      // Assert
+      expect(res.status).toBe(401);
+    });
+
+    test("401 quando x-idempotency-key ausente (assinatura válida)", async () => {
+      // Arrange
+      const { router } = setupModuleWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      const ts = "1716900265";
+      const dataId = "123";
+      const sig = buildValidSignature({ dataId, ts, secret: WEBHOOK_SECRET });
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", sig)
+        .send({ type: "payment", data: { id: dataId } });
+
+      // Assert
+      expect(res.status).toBe(401);
+    });
+
+    test("200 retorna idempotent:true para evento já processado", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      const ts = "1716900265";
+      const dataId = "456";
+      const idemKey = "idem-already-processed";
+      const sig = buildValidSignature({ dataId, ts, secret: WEBHOOK_SECRET });
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from webhook_events") && sqlNorm.includes("for update"),
+            reply: async () => [[{ id: 10, status: "pago", processed_at: "2026-02-18 10:00:00" }]],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", sig)
+        .set("x-idempotency-key", idemKey)
+        .send({ type: "payment", data: { id: dataId } });
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true, idempotent: true });
+      expect(conn.commit).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("200 ignora evento que não é type='payment'", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      const ts = "1716900265";
+      const idemKey = "idem-non-payment";
+      const sig = buildValidSignature({ dataId: "9", ts, secret: WEBHOOK_SECRET });
+
+      let insertCalled = false;
+      let ignoredUpdate = false;
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from webhook_events") && sqlNorm.includes("for update"),
+            reply: async () => [[undefined]],
+          },
+          {
+            match: (sqlNorm) => sqlNorm.startsWith("insert into webhook_events"),
+            reply: async () => {
+              insertCalled = true;
+              return [{ insertId: 55 }];
+            },
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.startsWith("update webhook_events") &&
+              sqlNorm.includes("status = 'ignored'"),
+            reply: async () => {
+              ignoredUpdate = true;
+              return [{ affectedRows: 1 }];
+            },
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", sig)
+        .set("x-idempotency-key", idemKey)
+        .send({ type: "merchant_order", data: { id: "9" } });
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(insertCalled).toBe(true);
+      expect(ignoredUpdate).toBe(true);
+      expect(conn.commit).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+  });
 });
