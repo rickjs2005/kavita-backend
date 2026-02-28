@@ -1420,3 +1420,23 @@ Harmonizar migrations com as tabelas/colunas realmente usadas em rotas (ex.: usu
 Limpar o agregador de rotas: remover referências sem arquivo ou adicionar os módulos faltantes com contratos e testes.
 Consolidar OpenAPI cookie-first (e manter compatibilidade bearer no admin), com smoke tests de integração.
 Se essa sequência for seguida, o repositório sai do estado “documentação parcial + rotas não montáveis” para um estado “API executável + contratos verificáveis”, reduzindo risco de integração frontend/backend e tornando o Swagger /docs uma fonte de verdade consistente com o código. 
+
+## Rate Limiting por Rota
+
+O backend aplica dois níveis de rate limiting:
+
+### 1. `routeSpecificRateLimiter` (aplicado primeiro — `middleware/routeSpecificRateLimiter.js`)
+
+Limita por IP + caminho da rota, com três categorias:
+
+| Categoria | Rotas | Máx. tentativas | Janela | Bloqueio |
+|-----------|-------|-----------------|--------|----------|
+| **Sensível** | `POST /api/login`, `POST /api/admin/login`, `POST /api/users/register`, `POST /api/users/forgot-password`, `POST /api/users/reset-password`, `POST /api/payment/webhook` | 3 | 15 min | 1 h |
+| **Moderada** | `/api/checkout/*` | 10 | 1 min | 5 min |
+| **Padrão** | Demais rotas | 100 | 1 min | 5 min |
+
+Ao exceder o limite, a API retorna `429 Too Many Requests` com o header `Retry-After` (em segundos).
+
+### 2. `adaptiveRateLimiter` (aplicado depois — `middleware/adaptiveRateLimiter.js`)
+
+Rate limiter adaptativo por IP, com backoff progressivo baseado em falhas de autenticação (ex.: senhas incorretas). Complementa o limitador acima para rotas de login e admin.

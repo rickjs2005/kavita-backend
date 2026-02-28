@@ -26,6 +26,10 @@ jest.mock("../../middleware/adaptiveRateLimiter", () =>
   () => (_req, _res, next) => next()
 );
 
+jest.mock("../../middleware/routeSpecificRateLimiter", () =>
+  () => (_req, _res, next) => next()
+);
+
 const app = require("../../server");
 
 describe("Security Headers (Helmet)", () => {

@@ -13,6 +13,7 @@ const { setupDocs } = require("./docs/swagger");
 // Imports refatorados
 const apiRoutes = require("./routes");
 const createAdaptiveRateLimiter = require("./middleware/adaptiveRateLimiter");
+const createRouteSpecificRateLimiter = require("./middleware/routeSpecificRateLimiter");
 
 // ✅ Importações para tratamento de erro
 const errorHandler = require("./middleware/errorHandler");
@@ -116,6 +117,15 @@ app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use(cookieParser());
+
+/* ============================
+ * Segurança: Rate Limiter por Rota (aplicado ANTES do limiter genérico)
+ * Rotas sensíveis: 3 tentativas/15min, bloqueio de 1h
+ * Rotas moderadas: 10 tentativas/min, bloqueio de 5min
+ * Rotas públicas: 100 tentativas/min, bloqueio de 5min
+ * ============================ */
+const routeSpecificRateLimiter = createRouteSpecificRateLimiter();
+app.use(routeSpecificRateLimiter);
 
 /* ============================
  * Segurança: Rate Limiter
