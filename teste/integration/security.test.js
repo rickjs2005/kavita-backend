@@ -165,6 +165,44 @@ describe("Authentication", () => {
   });
 });
 
+describe("CORS Origin Normalization", () => {
+  test("deve aceitar origin com protocolo e host em uppercase", async () => {
+    const res = await request(app)
+      .get("/api/nonexistent-route-for-headers")
+      .set("Origin", "HTTP://LOCALHOST:3000");
+    expect(res.headers["access-control-allow-origin"]).toBeDefined();
+  });
+
+  test("deve aceitar origin com trailing slash", async () => {
+    const res = await request(app)
+      .get("/api/nonexistent-route-for-headers")
+      .set("Origin", "http://localhost:3000/");
+    expect(res.headers["access-control-allow-origin"]).toBeDefined();
+  });
+
+  test("deve aceitar origin com www. equivalente ao domínio sem www", async () => {
+    // http://www.localhost:3000 should normalize to http://localhost:3000
+    const res = await request(app)
+      .get("/api/nonexistent-route-for-headers")
+      .set("Origin", "http://www.localhost:3000");
+    expect(res.headers["access-control-allow-origin"]).toBeDefined();
+  });
+
+  test("deve bloquear origin inválida (URL malformada)", async () => {
+    const res = await request(app)
+      .get("/api/nonexistent-route-for-headers")
+      .set("Origin", "http://localhost:3000:extra:invalid");
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  test("deve bloquear origin não permitida", async () => {
+    const res = await request(app)
+      .get("/api/nonexistent-route-for-headers")
+      .set("Origin", "http://evil.com");
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+});
+
 describe("CSRF Protection", () => {
   test("cookies de autenticação são HttpOnly (não acessíveis via JS)", async () => {
     const pool = require("../../config/pool");
