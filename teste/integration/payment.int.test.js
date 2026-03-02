@@ -10,20 +10,29 @@
  *   - POST   -> cria
  *   - PUT    -> atualiza
  *   - DELETE -> soft delete (is_active = 0)
+ * - POST /api/payment/webhook (3-layer security)
  *
  * Regras:
  * - Sem MySQL real: mock de ../../config/pool (pool.getConnection + conn.query)
- * - Sem rede externa: (aqui não testamos /start e /webhook)
+ * - Sem rede externa: mock mercadopago SDK para /webhook
  * - Auth/admin: mock de ../../middleware/authenticateToken e ../../middleware/verifyAdmin
  * - AAA em todos os testes
  */
 
 "use strict";
 
+const crypto = require("crypto");
 const request = require("supertest");
 const { makeTestApp, makeMockConn } = require("../testUtils");
 const { makeMockPool } = require("../mocks/pool.mock");
 const ERROR_CODES = require("../../constants/ErrorCodes");
+
+/** Helper: build a valid Mercado Pago x-signature header */
+function makeMPSignature({ secret, dataId = "", requestId = "", ts = "1234567890" }) {
+  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  const v1 = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+  return `ts=${ts},v1=${v1}`;
+}
 
 /** helpers */
 function normalizeSql(sql) {
@@ -81,6 +90,32 @@ function setupModuleWithMocks({ asAdmin = true } = {}) {
   // Importa o router real só depois dos mocks
   const router = require("../../routes/payment");
 
+  return { router, mockPool };
+}
+
+/**
+ * Setup for webhook tests: uses REAL validateMPSignature middleware,
+ * mocks pool and mercadopago SDK.
+ */
+function setupWebhookWithMocks({ mpPaymentGet } = {}) {
+  jest.resetModules();
+
+  const poolPath = require.resolve("../../config/pool");
+  const mpPath = require.resolve("mercadopago");
+
+  const mockPool = makeMockPool();
+
+  jest.doMock(poolPath, () => mockPool);
+
+  jest.doMock(mpPath, () => ({
+    MercadoPagoConfig: jest.fn(),
+    Preference: jest.fn(),
+    Payment: jest.fn().mockImplementation(() => ({
+      get: mpPaymentGet || jest.fn(),
+    })),
+  }));
+
+  const router = require("../../routes/payment");
   return { router, mockPool };
 }
 
@@ -496,6 +531,205 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
       expect(res.body).toEqual({ ok: true });
       expect(sawSoftDelete).toBe(true);
       expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("POST /api/payment/webhook (3-layer hardening)", () => {
+    const SECRET = "wh-secret-test";
+
+    beforeEach(() => {
+      process.env.MP_WEBHOOK_SECRET = SECRET;
+    });
+
+    afterEach(() => {
+      delete process.env.MP_WEBHOOK_SECRET;
+    });
+
+    test("401 quando x-signature está ausente (Layer 1)", async () => {
+      // Arrange
+      const { router } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .send({ id: 1, type: "payment", data: { id: "999" } });
+
+      // Assert
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ ok: false });
+    });
+
+    test("401 quando assinatura HMAC é inválida (Layer 1)", async () => {
+      // Arrange
+      const { router } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", "ts=1234567890,v1=0000000000000000000000000000000000000000000000000000000000000000")
+        .send({ id: 1, type: "payment", data: { id: "999" } });
+
+      // Assert
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ ok: false });
+    });
+
+    test("200 quando tipo não é payment (ignora, idempotência)", async () => {
+      // Arrange
+      const body = { id: 999, type: "merchant_order", data: { id: "123" } };
+      const signature = makeMPSignature({ secret: SECRET, dataId: "123" });
+
+      const { router, mockPool } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from webhook_events") && sqlNorm.includes("for update"),
+            reply: async () => [[undefined]], // evento não existe
+          },
+          {
+            match: (sqlNorm) => sqlNorm.startsWith("insert into webhook_events"),
+            reply: async () => [{ insertId: 1 }],
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.startsWith("update webhook_events") && sqlNorm.includes("status = 'ignored'"),
+            reply: async () => [{ affectedRows: 1 }],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", signature)
+        .send(body);
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(conn.beginTransaction).toHaveBeenCalledTimes(1);
+      expect(conn.commit).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("200 idempotente quando evento já foi processado (processed_at != null)", async () => {
+      // Arrange
+      const body = { id: 777, type: "payment", data: { id: "555" } };
+      const signature = makeMPSignature({ secret: SECRET, dataId: "555" });
+
+      const { router, mockPool } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from webhook_events") && sqlNorm.includes("for update"),
+            reply: async () => [[{ id: 10, status: "pago", processed_at: "2026-01-01 00:00:00" }]],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", signature)
+        .send(body);
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true, idempotent: true });
+      expect(conn.commit).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("200 e atualiza pedido quando pagamento 'approved' (Layer 2 + Layer 3)", async () => {
+      // Arrange
+      const body = { id: 888, type: "payment", data: { id: "111222" } };
+      const signature = makeMPSignature({ secret: SECRET, dataId: "111222" });
+
+      const mpPaymentGet = jest.fn().mockResolvedValue({
+        status: "approved",
+        metadata: { pedidoId: 42 },
+      });
+
+      const { router, mockPool } = setupWebhookWithMocks({ mpPaymentGet });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      let sawPedidoUpdate = false;
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from webhook_events") && sqlNorm.includes("for update"),
+            reply: async () => [[undefined]], // novo evento
+          },
+          {
+            match: (sqlNorm) => sqlNorm.startsWith("insert into webhook_events"),
+            reply: async () => [{ insertId: 5 }],
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.startsWith("update pedidos") && sqlNorm.includes("status_pagamento"),
+            reply: async (_sqlNorm, params) => {
+              expect(params[0]).toBe("pago");
+              expect(params[1]).toBe("111222");
+              sawPedidoUpdate = true;
+              return [{ affectedRows: 1 }];
+            },
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.startsWith("update webhook_events") && sqlNorm.includes("processed_at"),
+            reply: async () => [{ affectedRows: 1 }],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", signature)
+        .send(body);
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(sawPedidoUpdate).toBe(true);
+      expect(mpPaymentGet).toHaveBeenCalledWith({ id: "111222" });
+      expect(conn.commit).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("200 quando payload não tem id de notificação", async () => {
+      // Arrange
+      const body = { type: "payment", data: { id: "123" } }; // sem id de notificação
+      const signature = makeMPSignature({ secret: SECRET, dataId: "123" });
+
+      const { router } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", signature)
+        .send(body);
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
     });
   });
 });

@@ -2,7 +2,6 @@
 "use strict";
 
 const express = require("express");
-const crypto = require("crypto");
 const router = express.Router();
 const pool = require("../config/pool");
 
@@ -15,6 +14,7 @@ const ERROR_CODES = require("../constants/ErrorCodes");
 // ✅ ACL (Broken Access Control fix)
 const authenticateToken = require("../middleware/authenticateToken");
 const verifyAdmin = require("../middleware/verifyAdmin"); // ✅ sem fallback: falhar cedo se estiver faltando
+const validateMPSignature = require("../middleware/validateMPSignature"); // ✅ Layer 1: webhook signature
 
 // Configuração do cliente do Mercado Pago
 const mpClient = new MercadoPagoConfig({
@@ -593,93 +593,53 @@ router.post("/start", async (req, res, next) => {
 });
 
 // webhook Mercado Pago
-router.post("/webhook", async (req, res) => {
+router.post("/webhook", validateMPSignature, async (req, res) => {
   const signatureHeader = req.get("x-signature");
-  const idempotencyKey = req.get("x-idempotency-key");
-  const secret = process.env.MP_WEBHOOK_SECRET;
-
-  const unauthorized = () => res.status(401).json({ ok: false });
-
-  if (!signatureHeader || !idempotencyKey) {
-    console.warn("[payment/webhook] assinatura ou idempotency key ausentes");
-    return unauthorized();
-  }
-
-  if (!secret) {
-    console.error("[payment/webhook] MP_WEBHOOK_SECRET não configurado");
-    const status = process.env.NODE_ENV === "development" ? 500 : 200;
-    return res.status(status).json({ ok: status === 200 });
-  }
-
-  const signatureParts = signatureHeader
-    .split(",")
-    .map((part) => part.trim().split("="))
-    .reduce((acc, [key, value]) => {
-      if (key && value) acc[key] = value;
-      return acc;
-    }, {});
-
-  const ts = signatureParts.ts;
-  const providedHash = signatureParts.v1;
-
-  if (!ts || !providedHash) {
-    console.warn("[payment/webhook] formato de assinatura inválido");
-    return unauthorized();
-  }
-
-  const payloadString = JSON.stringify(req.body || {});
-  const expectedHash = crypto
-    .createHmac("sha256", secret)
-    .update(`${ts}.${payloadString}`)
-    .digest("hex");
-
-  const safeCompare = (a, b) => {
-    const bufferA = Buffer.from(a, "utf8");
-    const bufferB = Buffer.from(b, "utf8");
-    if (bufferA.length !== bufferB.length) return false;
-    return crypto.timingSafeEqual(bufferA, bufferB);
-  };
-
-  if (!safeCompare(expectedHash, providedHash)) {
-    console.warn(`[payment/webhook] assinatura inválida para chave ${idempotencyKey}`);
-    return unauthorized();
-  }
 
   try {
     const { type, data } = req.body || {};
     const payload = JSON.stringify(req.body || {});
 
+    // Use the MP notification ID (top-level `id`) as the unique event identifier
+    const eventId = String(req.body?.id ?? "");
+
+    if (!eventId) {
+      console.warn("[payment/webhook] payload sem id de notificação");
+      return res.status(200).json({ ok: true });
+    }
+
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
 
+      // Layer 3: idempotency — UNIQUE(event_id) + FOR UPDATE prevents race conditions
       const [[existingEvent]] = await conn.query(
         `SELECT id, status, processed_at
            FROM webhook_events
-          WHERE idempotency_key = ?
+          WHERE event_id = ?
           FOR UPDATE`,
-        [idempotencyKey]
+        [eventId]
       );
 
-      let eventId = existingEvent?.id;
+      let dbEventId = existingEvent?.id;
 
       if (!existingEvent) {
         const [insertResult] = await conn.query(
-          `INSERT INTO webhook_events (idempotency_key, signature, event_type, payload, status, created_at)
+          `INSERT INTO webhook_events (event_id, signature, event_type, payload, status, created_at)
            VALUES (?, ?, ?, ?, 'received', NOW())`,
-          [idempotencyKey, signatureHeader, type || null, payload]
+          [eventId, signatureHeader, type || null, payload]
         );
-        eventId = insertResult.insertId;
+        dbEventId = insertResult.insertId;
       } else if (existingEvent.processed_at) {
         await conn.commit();
         return res.status(200).json({ ok: true, idempotent: true });
       } else {
-        eventId = existingEvent.id;
+        dbEventId = existingEvent.id;
         await conn.query(
           `UPDATE webhook_events
               SET signature = ?, event_type = ?, payload = ?, status = 'received', updated_at = NOW()
             WHERE id = ?`,
-          [signatureHeader, type || null, payload, eventId]
+          [signatureHeader, type || null, payload, dbEventId]
         );
       }
 
@@ -688,12 +648,13 @@ router.post("/webhook", async (req, res) => {
           `UPDATE webhook_events
               SET status = 'ignored', processed_at = NOW(), updated_at = NOW()
             WHERE id = ?`,
-          [eventId]
+          [dbEventId]
         );
         await conn.commit();
         return res.status(200).json({ ok: true });
       }
 
+      // Layer 2: consult the REAL payment status from Mercado Pago API
       const paymentClient = new Payment(mpClient);
       const payment = await paymentClient.get({ id: data.id });
 
@@ -706,7 +667,7 @@ router.post("/webhook", async (req, res) => {
           `UPDATE webhook_events
               SET status = 'ignored', processed_at = NOW(), updated_at = NOW()
             WHERE id = ?`,
-          [eventId]
+          [dbEventId]
         );
         await conn.commit();
         return res.status(200).json({ ok: true });
@@ -735,7 +696,7 @@ router.post("/webhook", async (req, res) => {
         `UPDATE webhook_events
             SET status = ?, processed_at = NOW(), updated_at = NOW()
           WHERE id = ?`,
-        [novoStatusPagamento, eventId]
+        [novoStatusPagamento, dbEventId]
       );
 
       await conn.commit();
