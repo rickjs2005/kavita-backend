@@ -6,6 +6,8 @@ const jwt = require("jsonwebtoken");
 const pool = require("../config/pool");
 const logAdminAction = require("../utils/adminLogger");
 const verifyAdmin = require("../middleware/verifyAdmin");
+const createAdaptiveRateLimiter = require("../middleware/adaptiveRateLimiter");
+const { ADMIN_LOGIN_SCHEDULE } = require("../config/rateLimitSchedules");
 require("dotenv").config();
 
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -17,6 +19,16 @@ if (!SECRET_KEY) {
 
 const COOKIE_NAME = "adminToken";
 const COOKIE_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2h
+
+const adminLoginRateLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => {
+    const email = req.body && req.body.email
+      ? String(req.body.email).trim().toLowerCase()
+      : "anon";
+    return `admin_login:${req.ip}:${email}`;
+  },
+  schedule: ADMIN_LOGIN_SCHEDULE,
+});
 
 /**
  * Carrega as permissões granulares do admin com base no role (slug).
@@ -55,10 +67,7 @@ async function getAdminPermissions(adminId) {
  *       Autentica um administrador pelo e-mail e senha, gera um token JWT com
  *       **id**, **email**, **role**, **role_id** e **permissions** e o envia em um
  *       **cookie HttpOnly (`adminToken`)**, recomendado para uso no painel admin.
- *
- *       O corpo da resposta ainda traz o campo `token` apenas por compatibilidade,
- *       mas o front-end do painel **não deve armazená-lo** – toda autenticação
- *       deve depender exclusivamente do cookie HttpOnly.
+ *       O token não é retornado no corpo da resposta.
  *     requestBody:
  *       required: true
  *       content:
@@ -75,7 +84,7 @@ async function getAdminPermissions(adminId) {
  *                 example: "123456"
  *     responses:
  *       200:
- *         description: Login bem-sucedido, retorna token JWT (apenas informativo) e dados do admin
+ *         description: Login bem-sucedido, retorna dados do admin
  *         content:
  *           application/json:
  *             schema:
@@ -84,9 +93,6 @@ async function getAdminPermissions(adminId) {
  *                 message:
  *                   type: string
  *                   example: "Login realizado com sucesso."
- *                 token:
- *                   type: string
- *                   description: Token JWT (também enviado em cookie HttpOnly `adminToken`)
  *                 admin:
  *                   type: object
  *                   properties:
@@ -115,19 +121,19 @@ async function getAdminPermissions(adminId) {
  *                         - "admin.config.edit"
  *       400:
  *         description: Campos obrigatórios ausentes
- *       404:
- *         description: Admin não encontrado
  *       401:
- *         description: Senha incorreta
+ *         description: Credenciais inválidas
+ *       429:
+ *         description: Muitas tentativas. Tente novamente mais tarde.
  *       500:
  *         description: Erro interno no servidor
  */
 
 // 📌 POST /api/admin/login — realiza login do administrador
-router.post("/login", async (req, res) => {
+router.post("/login", adminLoginRateLimiter, async (req, res) => {
   const { email, senha } = req.body || {};
 
-  // Rate limiter vindo do middleware global (fallback vazio para não quebrar)
+  // Rate limiter is applied as middleware; access via req.rateLimit
   const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
 
   // 1. Validação básica
@@ -164,7 +170,7 @@ router.post("/login", async (req, res) => {
     if (!rows || rows.length === 0) {
       rateLimit.fail();
       console.warn("⚠️ Admin não encontrado:", emailNormalizado);
-      return res.status(404).json({ message: "Admin não encontrado." });
+      return res.status(401).json({ message: "Credenciais inválidas." });
     }
 
     const admin = rows[0];
@@ -175,7 +181,7 @@ router.post("/login", async (req, res) => {
     if (!senhaCorreta) {
       rateLimit.fail();
       console.warn("⚠️ Senha incorreta para:", emailNormalizado);
-      return res.status(401).json({ message: "Senha incorreta." });
+      return res.status(401).json({ message: "Credenciais inválidas." });
     }
 
     // 4. Sucesso: reseta contador de falhas
@@ -231,10 +237,9 @@ router.post("/login", async (req, res) => {
 
     res.cookie(COOKIE_NAME, token, cookieOptions);
 
-    // 9. Retorna token e dados do admin (token é apenas informativo para outros clientes)
+    // 9. Retorna dados do admin (token enviado apenas via cookie HttpOnly)
     return res.status(200).json({
       message: "Login realizado com sucesso.",
-      token,
       admin: {
         id: admin.id,
         email: admin.email,
