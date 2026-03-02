@@ -160,7 +160,25 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("quantidade deve ser um número maior que zero.");
+      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(pool.getConnection).not.toHaveBeenCalled();
+    });
+
+    test("400: POST rejeita quantidade negativa (-1)", async () => {
+      const res = await request(app)
+        .post("/api/cart/items")
+        .send({ produto_id: 105, quantidade: -1 });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(pool.getConnection).not.toHaveBeenCalled();
+    });
+
+    test("400: POST rejeita quantidade acima do limite (10001)", async () => {
+      const res = await request(app)
+        .post("/api/cart/items")
+        .send({ produto_id: 105, quantidade: 10001 });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -345,35 +363,16 @@ describe("Cart routes (integração) — /api/cart", () => {
       expect(conn.release).toHaveBeenCalledTimes(1);
     });
 
-    test("200: quantidade <= 0 remove item sem validar estoque", async () => {
-      // Arrange
-      const conn = makeMockConn();
-      pool.getConnection.mockResolvedValue(conn);
-
-      conn.query
-        .mockResolvedValueOnce([[{ id: 12 }]]) // carrinho existe
-        .mockResolvedValueOnce([{ affectedRows: 1 }]); // DELETE carrinho_itens
-
+    test("400: quantidade 0 é proibido (use DELETE para remover)", async () => {
       // Act
       const res = await request(app)
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: 0 });
 
       // Assert
-      expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({
-        success: true,
-        message: "Item removido.",
-        produto_id: 105,
-        quantidade: 0,
-        stock: 0,
-      });
-
-      expect(conn.query).toHaveBeenCalledWith(
-        "DELETE FROM carrinho_itens WHERE carrinho_id = ? AND produto_id = ?",
-        [12, 105]
-      );
-      expect(conn.commit).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
     test("200: atualiza quantidade quando q <= stock", async () => {
@@ -441,7 +440,25 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("quantidade inválida.");
+      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(pool.getConnection).not.toHaveBeenCalled();
+    });
+
+    test("400: PATCH rejeita quantidade negativa (-1)", async () => {
+      const res = await request(app)
+        .patch("/api/cart/items")
+        .send({ produto_id: 105, quantidade: -1 });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(pool.getConnection).not.toHaveBeenCalled();
+    });
+
+    test("400: PATCH rejeita quantidade acima do limite (10001)", async () => {
+      const res = await request(app)
+        .patch("/api/cart/items")
+        .send({ produto_id: 105, quantidade: 10001 });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
   });
