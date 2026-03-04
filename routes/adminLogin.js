@@ -3,10 +3,12 @@ const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const pool = require("../config/pool");
 const logAdminAction = require("../utils/adminLogger");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const createAdaptiveRateLimiter = require("../middleware/adaptiveRateLimiter");
+const { assertNotLocked, incrementFailure, resetFailures } = require("../utils/accountLockout");
 const { ADMIN_LOGIN_SCHEDULE } = require("../config/rateLimitSchedules");
 require("dotenv").config();
 
@@ -19,6 +21,26 @@ if (!SECRET_KEY) {
 
 const COOKIE_NAME = "adminToken";
 const COOKIE_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2h
+const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Temporary in-memory store for MFA challenges: Map<challengeId, { adminId, ip, expiresAt, mfaSecret }>
+const mfaChallenges = new Map();
+
+// Periodic cleanup: remove expired MFA challenges every 5 minutes to prevent memory leaks
+if (process.env.NODE_ENV !== "test") {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [id, challenge] of mfaChallenges) {
+      if (now > challenge.expiresAt) {
+        mfaChallenges.delete(id);
+      }
+    }
+  }, 5 * 60 * 1000).unref();
+}
+
+// Load speakeasy once at module load (optional dependency for MFA)
+let speakeasy = null;
+try { speakeasy = require("speakeasy"); } catch { /* optional */ }
 
 const adminLoginRateLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => {
@@ -26,6 +48,16 @@ const adminLoginRateLimiter = createAdaptiveRateLimiter({
       ? String(req.body.email).trim().toLowerCase()
       : "anon";
     return `admin_login:${req.ip}:${email}`;
+  },
+  schedule: ADMIN_LOGIN_SCHEDULE,
+});
+
+const mfaRateLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => {
+    const challengeId = req.body && req.body.challengeId
+      ? String(req.body.challengeId).slice(0, 64)
+      : "anon";
+    return `admin_mfa:${req.ip}:${challengeId}`;
   },
   schedule: ADMIN_LOGIN_SCHEDULE,
 });
@@ -145,11 +177,15 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
   }
 
   const emailNormalizado = String(email).trim().toLowerCase();
+  const lockoutKey = `admin:${emailNormalizado}`;
 
   try {
+    // 2. Verifica lockout ANTES de validar credenciais
+    assertNotLocked(lockoutKey);
+
     console.log("🔐 Tentativa de login de admin:", emailNormalizado);
 
-    // 2. Busca o admin no banco de dados pelo email + role_id via admin_roles
+    // 3. Busca o admin no banco de dados pelo email + role_id via admin_roles
     const [rows] = await pool.query(
       `
         SELECT
@@ -158,6 +194,8 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
           a.email,
           a.senha,
           a.role,
+          a.mfa_secret,
+          a.mfa_active,
           r.id AS role_id
         FROM admins a
         LEFT JOIN admin_roles r
@@ -168,40 +206,57 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
     );
 
     if (!rows || rows.length === 0) {
+      incrementFailure(lockoutKey);
       rateLimit.fail();
-      console.warn("⚠️ Admin não encontrado:", emailNormalizado);
       return res.status(401).json({ message: "Credenciais inválidas." });
     }
 
     const admin = rows[0];
 
-    // 3. Compara a senha informada com a hash armazenada no banco
+    // 4. Compara a senha informada com a hash armazenada no banco
     const senhaCorreta = await bcrypt.compare(String(senha), admin.senha);
 
     if (!senhaCorreta) {
+      incrementFailure(lockoutKey);
       rateLimit.fail();
-      console.warn("⚠️ Senha incorreta para:", emailNormalizado);
       return res.status(401).json({ message: "Credenciais inválidas." });
     }
 
-    // 4. Sucesso: reseta contador de falhas
+    // 5. Credenciais válidas — reset lockout counter
+    resetFailures(lockoutKey);
     rateLimit.reset();
 
-    // 5. Carrega permissões corporativas para esse admin
+    // 6. Se MFA estiver ativo, emitir challengeId em vez do token completo
+    if (admin.mfa_active && admin.mfa_secret) {
+      const challengeId = crypto.randomBytes(32).toString("hex");
+      mfaChallenges.set(challengeId, {
+        adminId: admin.id,
+        ip: req.ip,
+        expiresAt: Date.now() + MFA_CHALLENGE_TTL_MS,
+        mfaSecret: admin.mfa_secret,
+      });
+
+      return res.status(200).json({
+        mfaRequired: true,
+        challengeId,
+      });
+    }
+
+    // 7. Carrega permissões corporativas para esse admin
     const permissions = await getAdminPermissions(admin.id);
 
-    // 6. Gera o token JWT com role_id, role e permissions (2h de duração)
+    // 8. Gera o token JWT com role_id, role e permissions (2h de duração)
     const tokenPayload = {
       id: admin.id,
       email: admin.email,
       role: admin.role,
       role_id: admin.role_id || null,
-      permissions, // array de strings (chaves)
+      permissions,
     };
 
     const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: "2h" });
 
-    // 6.1 Atualiza último login no banco
+    // 8.1 Atualiza último login no banco
     try {
       await pool.query(
         "UPDATE admins SET ultimo_login = NOW() WHERE id = ?",
@@ -213,12 +268,11 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
         admin.id,
         updateErr
       );
-      // não quebra o fluxo de login por causa disso
     }
 
     console.log("✅ Login bem-sucedido:", admin.email);
 
-    // 7. Registra log de auditoria
+    // 9. Registra log de auditoria
     logAdminAction({
       adminId: admin.id,
       acao: "login_sucesso",
@@ -226,18 +280,18 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
       entidadeId: admin.id,
     });
 
-    // 8. Define cookie HttpOnly com o token JWT
+    // 10. Define cookie HttpOnly com o token JWT
     const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "lax",
       maxAge: COOKIE_MAX_AGE_MS,
       path: "/",
     };
 
     res.cookie(COOKIE_NAME, token, cookieOptions);
 
-    // 9. Retorna dados do admin (token enviado apenas via cookie HttpOnly)
+    // 11. Retorna dados do admin (token enviado apenas via cookie HttpOnly)
     return res.status(200).json({
       message: "Login realizado com sucesso.",
       admin: {
@@ -250,13 +304,124 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
       },
     });
   } catch (err) {
-    // Em caso de erro interno também conta como falha para o rate limit
+    if (err.locked) {
+      return res.status(429).json({ message: err.message });
+    }
     rateLimit.fail();
     console.error("❌ Erro no login do admin:", err);
     return res
       .status(500)
       .json({ message: "Erro interno no servidor ao fazer login." });
   }
+});
+
+// 📌 POST /api/admin/login/mfa — verifica o código MFA usando o challengeId
+router.post("/login/mfa", mfaRateLimiter, async (req, res) => {
+  const { challengeId, code } = req.body || {};
+
+  if (!challengeId || !code) {
+    return res.status(400).json({ message: "challengeId e código são obrigatórios." });
+  }
+
+  const challenge = mfaChallenges.get(String(challengeId));
+
+  if (!challenge) {
+    return res.status(401).json({ message: "Sessão de verificação inválida." });
+  }
+
+  if (Date.now() > challenge.expiresAt) {
+    mfaChallenges.delete(challengeId);
+    return res.status(401).json({ message: "Sessão de verificação expirada. Faça login novamente." });
+  }
+
+  // Validate the TOTP code using speakeasy (loaded at module level)
+  let codeValid = false;
+  if (speakeasy) {
+    codeValid = speakeasy.totp.verify({
+      secret: challenge.mfaSecret,
+      encoding: "base32",
+      token: String(code).replace(/\s/g, ""),
+      window: 1,
+    });
+  } else {
+    // speakeasy not installed — MFA cannot be validated
+    console.error("❌ speakeasy não instalado — MFA não pode ser validado");
+    return res.status(500).json({ message: "Erro interno ao validar MFA." });
+  }
+
+  if (!codeValid) {
+    return res.status(401).json({ message: "Credenciais inválidas." });
+  }
+
+  // Challenge is consumed — remove it
+  mfaChallenges.delete(challengeId);
+
+  // Load admin data to generate the JWT
+  const [rows] = await pool.query(
+    `
+      SELECT
+        a.id,
+        a.nome,
+        a.email,
+        a.role,
+        r.id AS role_id
+      FROM admins a
+      LEFT JOIN admin_roles r
+        ON r.slug = a.role
+      WHERE a.id = ?
+    `,
+    [challenge.adminId]
+  );
+
+  if (!rows || rows.length === 0) {
+    return res.status(401).json({ message: "Credenciais inválidas." });
+  }
+
+  const admin = rows[0];
+  const permissions = await getAdminPermissions(admin.id);
+
+  const tokenPayload = {
+    id: admin.id,
+    email: admin.email,
+    role: admin.role,
+    role_id: admin.role_id || null,
+    permissions,
+  };
+
+  const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: "2h" });
+
+  try {
+    await pool.query("UPDATE admins SET ultimo_login = NOW() WHERE id = ?", [admin.id]);
+  } catch { /* non-fatal */ }
+
+  logAdminAction({
+    adminId: admin.id,
+    acao: "login_mfa_sucesso",
+    entidade: "admin",
+    entidadeId: admin.id,
+  });
+
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: COOKIE_MAX_AGE_MS,
+    path: "/",
+  };
+
+  res.cookie(COOKIE_NAME, token, cookieOptions);
+
+  return res.status(200).json({
+    message: "Login realizado com sucesso.",
+    admin: {
+      id: admin.id,
+      email: admin.email,
+      nome: admin.nome,
+      role: admin.role,
+      role_id: admin.role_id || null,
+      permissions,
+    },
+  });
 });
 
 /**
@@ -377,7 +542,7 @@ router.post("/logout", (req, res) => {
   const clearOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: "lax",
     path: "/",
   };
 

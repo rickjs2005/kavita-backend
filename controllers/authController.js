@@ -5,6 +5,7 @@ const authConfig = require("../config/auth");
 const jwt = require("jsonwebtoken");
 const passwordResetTokens = require("../services/passwordResetTokenService");
 const { sendResetPasswordEmail } = require("../services/mailService");
+const { assertNotLocked, incrementFailure, resetFailures } = require("../utils/accountLockout");
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -47,11 +48,16 @@ function buildSafeUserResponse(user) {
 const AuthController = {
   async login(req, res, next) {
     const { email, senha } = req.body;
+    const lockoutKey = `user:${String(email || "").trim().toLowerCase()}`;
 
     try {
+      // Check lockout before any credential validation
+      assertNotLocked(lockoutKey);
+
       const [users] = await pool.query("SELECT * FROM usuarios WHERE email = ?", [email]);
 
       if (users.length === 0) {
+        incrementFailure(lockoutKey);
         req.rateLimit?.fail?.();
         return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
       }
@@ -60,10 +66,12 @@ const AuthController = {
 
       const ok = await bcrypt.compare(senha, user.senha);
       if (!ok) {
+        incrementFailure(lockoutKey);
         req.rateLimit?.fail?.();
         return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
       }
 
+      resetFailures(lockoutKey);
       const token = authConfig.sign({ id: user.id });
       req.rateLimit?.reset?.();
 
@@ -75,6 +83,9 @@ const AuthController = {
         user: buildSafeUserResponse(user),
       });
     } catch (error) {
+      if (error.locked) {
+        return next(new AppError(error.message, ERROR_CODES.AUTH_ERROR, 429));
+      }
       return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
