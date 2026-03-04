@@ -1,32 +1,142 @@
 // utils/accountLockout.js
-// In-memory account lockout store.
-// For production, replace with Redis or a DB-backed store.
+// Account lockout store backed by Redis (with in-memory fallback).
+// Redis is the primary store; the in-memory map is used when Redis is
+// unavailable so the server can still boot and run in dev/CI environments.
+//
+// Lockout policy:
+//   - 5 failed attempts  → locked for LOCKOUT_DURATION_MS (30 minutes)
+//   - TTL per failure entry: LOCKOUT_DURATION_MS
+//   - Counts and lockout survive server restarts when Redis is available
 
 const MAX_FAILURES = 5;
-const LOCKOUT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+const LOCKOUT_DURATION_S = LOCKOUT_DURATION_MS / 1000; // seconds (for Redis TTL)
 
+// ---------------------------------------------------------------------------
+// Redis client (optional – falls back to in-memory on connection failure)
+// ---------------------------------------------------------------------------
+let redisClient = null;
+let redisReady = false;
+
+try {
+  const Redis = require("ioredis");
+
+  const redisBaseOptions = {
+    lazyConnect: true,            // don't auto-connect on require()
+    enableOfflineQueue: false,    // fail fast when not connected
+    maxRetriesPerRequest: 1,
+    connectTimeout: 3000,
+    retryStrategy: () => null,    // disable auto-reconnect (handled by fallback)
+  };
+
+  const redisUrl = process.env.REDIS_URL || null;
+  const redisOptions = {
+    ...redisBaseOptions,
+    host: process.env.REDIS_HOST || "127.0.0.1",
+    port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    password: process.env.REDIS_PASSWORD || undefined,
+  };
+
+  redisClient = redisUrl ? new Redis(redisUrl, redisBaseOptions) : new Redis(redisOptions);
+
+  redisClient.on("ready", () => {
+    redisReady = true;
+  });
+
+  redisClient.on("error", () => {
+    redisReady = false;
+  });
+
+  redisClient.on("end", () => {
+    redisReady = false;
+  });
+
+  // Attempt to connect; if it fails, silently fall back to in-memory
+  if (process.env.NODE_ENV !== "test") {
+    redisClient.connect().catch(() => {
+      redisReady = false;
+    });
+  }
+} catch (_err) {
+  // ioredis not installed – use in-memory fallback only
+  redisClient = null;
+}
+
+// ---------------------------------------------------------------------------
+// In-memory fallback store
 // Map<identifier, { failures: number, lockedUntil: number|null }>
-const store = new Map();
+// ---------------------------------------------------------------------------
+const memoryStore = new Map();
 
-function _getEntry(identifier) {
-  const entry = store.get(identifier);
+function _memGetEntry(identifier) {
+  const entry = memoryStore.get(identifier);
   if (!entry) return { failures: 0, lockedUntil: null };
   return entry;
 }
 
-function _setEntry(identifier, entry) {
-  store.set(identifier, entry);
+function _memSetEntry(identifier, entry) {
+  memoryStore.set(identifier, entry);
 }
 
+// ---------------------------------------------------------------------------
+// Redis-backed helpers
+// ---------------------------------------------------------------------------
+const REDIS_FAILURES_PREFIX = "lockout:failures:";
+const REDIS_LOCKED_PREFIX = "lockout:locked:";
+
+async function _redisGetFailures(identifier) {
+  try {
+    const val = await redisClient.get(REDIS_FAILURES_PREFIX + identifier);
+    return val ? parseInt(val, 10) : 0;
+  } catch (_err) {
+    return 0;
+  }
+}
+
+async function _redisSetFailures(identifier, failures) {
+  try {
+    await redisClient.set(REDIS_FAILURES_PREFIX + identifier, String(failures), "EX", LOCKOUT_DURATION_S);
+  } catch (_err) { /* non-fatal */ }
+}
+
+async function _redisSetLocked(identifier) {
+  try {
+    await redisClient.set(REDIS_LOCKED_PREFIX + identifier, "1", "EX", LOCKOUT_DURATION_S);
+  } catch (_err) { /* non-fatal */ }
+}
+
+async function _redisGetLockedTTL(identifier) {
+  try {
+    return await redisClient.ttl(REDIS_LOCKED_PREFIX + identifier);
+  } catch (_err) {
+    return -2; // key doesn't exist
+  }
+}
+
+async function _redisDelete(identifier) {
+  try {
+    await redisClient.del(REDIS_FAILURES_PREFIX + identifier, REDIS_LOCKED_PREFIX + identifier);
+  } catch (_err) { /* non-fatal */ }
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
- * Throws a 429-style error object if the identifier is currently locked out.
- * Does NOT increment the failure counter.
+ * Throws a 429-style error if the identifier is currently locked out.
+ * Supports both async (Redis) and sync (in-memory) paths.
  *
- * @param {string} identifier - e.g. "email:user@domain.com" or "ip:1.2.3.4"
- * @throws {{ locked: true, message: string }}
+ * Because callers may be sync contexts, this function checks the in-memory
+ * store synchronously FIRST, then performs a Redis check if available.
+ * Redis state is lazily reflected in memory on each incrementFailure call.
+ *
+ * @param {string} identifier - e.g. "user:user@domain.com" or "admin:x@y.com"
+ * @throws {{ locked: true, status: 429, message: string }}
  */
 function assertNotLocked(identifier) {
-  const entry = _getEntry(identifier);
+  // Always check in-memory store (synchronous, fast path)
+  const entry = _memGetEntry(identifier);
   if (entry.lockedUntil && Date.now() < entry.lockedUntil) {
     const remainingMs = entry.lockedUntil - Date.now();
     const remainingMin = Math.ceil(remainingMs / 60000);
@@ -37,23 +147,32 @@ function assertNotLocked(identifier) {
     err.status = 429;
     throw err;
   }
-
-  // If the lockout window expired, clean up
+  // If the in-memory lockout expired, clean up
   if (entry.lockedUntil && Date.now() >= entry.lockedUntil) {
-    store.delete(identifier);
+    memoryStore.delete(identifier);
   }
 }
 
 /**
- * Records a failed login attempt. Locks the account after MAX_FAILURES attempts.
+ * Records a failed login attempt. Locks the account after MAX_FAILURES.
+ * Writes to Redis (if available) AND the in-memory store.
  *
  * @param {string} identifier
  */
-function incrementFailure(identifier) {
-  const entry = _getEntry(identifier);
+async function incrementFailure(identifier) {
+  // --- in-memory ---
+  const entry = _memGetEntry(identifier);
   const failures = (entry.failures || 0) + 1;
-  const lockedUntil = failures >= MAX_FAILURES ? Date.now() + LOCKOUT_WINDOW_MS : null;
-  _setEntry(identifier, { failures, lockedUntil });
+  const lockedUntil = failures >= MAX_FAILURES ? Date.now() + LOCKOUT_DURATION_MS : null;
+  _memSetEntry(identifier, { failures, lockedUntil });
+
+  // --- Redis (best-effort) ---
+  if (redisClient && redisReady) {
+    await _redisSetFailures(identifier, failures);
+    if (failures >= MAX_FAILURES) {
+      await _redisSetLocked(identifier);
+    }
+  }
 }
 
 /**
@@ -61,8 +180,33 @@ function incrementFailure(identifier) {
  *
  * @param {string} identifier
  */
-function resetFailures(identifier) {
-  store.delete(identifier);
+async function resetFailures(identifier) {
+  memoryStore.delete(identifier);
+  if (redisClient && redisReady) {
+    await _redisDelete(identifier);
+  }
 }
 
-module.exports = { assertNotLocked, incrementFailure, resetFailures };
+/**
+ * Restores lockout state from Redis into the in-memory store.
+ * Call once at startup (or before the first assertNotLocked) to ensure
+ * lockouts survive server restarts.
+ *
+ * This is a best-effort operation; failures are silently ignored.
+ *
+ * @param {string} identifier
+ */
+async function syncFromRedis(identifier) {
+  if (!redisClient || !redisReady) return;
+
+  try {
+    const ttl = await _redisGetLockedTTL(identifier);
+    if (ttl > 0) {
+      // Locked in Redis – reflect in memory
+      const lockedUntil = Date.now() + ttl * 1000;
+      _memSetEntry(identifier, { failures: MAX_FAILURES, lockedUntil });
+    }
+  } catch (_err) { /* non-fatal */ }
+}
+
+module.exports = { assertNotLocked, incrementFailure, resetFailures, syncFromRedis };

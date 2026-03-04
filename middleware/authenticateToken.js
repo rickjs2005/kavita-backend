@@ -3,25 +3,14 @@ const authConfig = require("../config/auth");
 const pool = require("../config/pool");
 
 module.exports = async function authenticateToken(req, res, next) {
-  let token = null;
-
-  // 1) Cookie httpOnly
-  if (req.cookies?.auth_token) {
-    token = req.cookies.auth_token;
-  }
-
-  // 2) Authorization Bearer
-  if (!token && req.headers.authorization) {
-    const [type, value] = req.headers.authorization.split(" ");
-    if (type === "Bearer") token = value;
-  }
+  // Cookie-only authentication — Bearer tokens are not accepted
+  const token = req.cookies?.auth_token || null;
 
   if (!token) {
     return res.status(401).json({ message: "Usuário não autenticado." });
   }
 
   try {
-    // ✅ usa a mesma config (secret) do authConfig
     const payload = authConfig.verify(token);
 
     const userId = payload?.id;
@@ -31,7 +20,7 @@ module.exports = async function authenticateToken(req, res, next) {
 
     const [rows] = await pool.query(
       `
-      SELECT id, nome, email
+      SELECT id, nome, email, tokenVersion
       FROM usuarios
       WHERE id = ?
       LIMIT 1
@@ -45,6 +34,15 @@ module.exports = async function authenticateToken(req, res, next) {
 
     const user = rows[0];
 
+    // Validate tokenVersion to support logout revocation
+    if (
+      user.tokenVersion != null &&
+      payload.tokenVersion != null &&
+      payload.tokenVersion !== user.tokenVersion
+    ) {
+      return res.status(401).json({ message: "Sessão inválida. Faça login novamente." });
+    }
+
     req.user = {
       id: user.id,
       nome: user.nome,
@@ -54,7 +52,6 @@ module.exports = async function authenticateToken(req, res, next) {
 
     return next();
   } catch (err) {
-    // ✅ diferencia expirado vs inválido (melhor UX e debug)
     const isExpired = err?.name === "TokenExpiredError";
     console.error("authenticateToken error:", err?.message);
 

@@ -196,6 +196,7 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
           a.role,
           a.mfa_secret,
           a.mfa_active,
+          a.tokenVersion,
           r.id AS role_id
         FROM admins a
         LEFT JOIN admin_roles r
@@ -206,7 +207,7 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
     );
 
     if (!rows || rows.length === 0) {
-      incrementFailure(lockoutKey);
+      await incrementFailure(lockoutKey);
       rateLimit.fail();
       return res.status(401).json({ message: "Credenciais inválidas." });
     }
@@ -217,13 +218,13 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
     const senhaCorreta = await bcrypt.compare(String(senha), admin.senha);
 
     if (!senhaCorreta) {
-      incrementFailure(lockoutKey);
+      await incrementFailure(lockoutKey);
       rateLimit.fail();
       return res.status(401).json({ message: "Credenciais inválidas." });
     }
 
     // 5. Credenciais válidas — reset lockout counter
-    resetFailures(lockoutKey);
+    await resetFailures(lockoutKey);
     rateLimit.reset();
 
     // 6. Se MFA estiver ativo, emitir challengeId em vez do token completo
@@ -252,6 +253,7 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
       role: admin.role,
       role_id: admin.role_id || null,
       permissions,
+      tokenVersion: admin.tokenVersion ?? 1,
     };
 
     const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: "2h" });
@@ -364,6 +366,7 @@ router.post("/login/mfa", mfaRateLimiter, async (req, res) => {
         a.nome,
         a.email,
         a.role,
+        a.tokenVersion,
         r.id AS role_id
       FROM admins a
       LEFT JOIN admin_roles r
@@ -386,6 +389,7 @@ router.post("/login/mfa", mfaRateLimiter, async (req, res) => {
     role: admin.role,
     role_id: admin.role_id || null,
     permissions,
+    tokenVersion: admin.tokenVersion ?? 1,
   };
 
   const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: "2h" });
@@ -538,13 +542,26 @@ router.get("/me", verifyAdmin, async (req, res) => {
  *       200:
  *         description: Logout realizado com sucesso.
  */
-router.post("/logout", (req, res) => {
+router.post("/logout", adminLoginRateLimiter, verifyAdmin, async (req, res) => {
   const clearOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
   };
+
+  // Increment tokenVersion to invalidate all existing JWT tokens for this admin
+  const adminId = req.admin?.id;
+  if (adminId) {
+    try {
+      await pool.query(
+        "UPDATE admins SET tokenVersion = tokenVersion + 1 WHERE id = ?",
+        [adminId]
+      );
+    } catch (err) {
+      console.warn("⚠️ Não foi possível incrementar tokenVersion para admin:", adminId, err);
+    }
+  }
 
   res.clearCookie(COOKIE_NAME, clearOptions);
 
