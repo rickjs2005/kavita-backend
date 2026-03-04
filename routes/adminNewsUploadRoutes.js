@@ -3,6 +3,7 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+const { validateFileMagicBytes } = require("../utils/fileValidation");
 
 const router = express.Router();
 
@@ -34,6 +35,14 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
+function safeUnlink(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    console.warn("⚠️ Não foi possível remover arquivo:", e.message);
+  }
+}
+
 // OBS:
 // Esta rota já está protegida por verifyAdmin em routes/index.js,
 // pois adminNewsRoutes é montado em /api/admin/news com verifyAdmin.
@@ -45,6 +54,18 @@ router.post("/cover", upload.single("file"), (req, res) => {
     return res.status(400).json({ ok: false, message: "Nenhum arquivo enviado." });
   }
 
+  const filePath = req.file.path;
+
+  // Validate file magic bytes (actual content, not just MIME type)
+  const { valid, detectedMime } = validateFileMagicBytes(filePath);
+  if (!valid) {
+    safeUnlink(filePath);
+    return res.status(400).json({
+      ok: false,
+      message: "Arquivo inválido. Apenas imagens PNG, JPEG, WEBP ou GIF são permitidas.",
+    });
+  }
+
   const base = `${req.protocol}://${req.get("host")}`;
   const publicUrl = `${base}/uploads/news/${req.file.filename}`;
 
@@ -53,7 +74,7 @@ router.post("/cover", upload.single("file"), (req, res) => {
     data: {
       url: publicUrl,
       filename: req.file.filename,
-      mimetype: req.file.mimetype,
+      mimetype: detectedMime || req.file.mimetype,
       size: req.file.size,
     },
   });

@@ -13,6 +13,7 @@ const { setupDocs } = require("./docs/swagger");
 // Imports refatorados
 const apiRoutes = require("./routes");
 const createAdaptiveRateLimiter = require("./middleware/adaptiveRateLimiter");
+const { issueCsrfToken } = require("./middleware/csrfProtection");
 
 // ✅ Importações para tratamento de erro
 const errorHandler = require("./middleware/errorHandler");
@@ -128,6 +129,7 @@ app.use(rateLimiter);
 /* ============================
  * Rotas da API (Centralizadas)
  * ============================ */
+app.get("/api/csrf-token", issueCsrfToken);
 app.use("/api", apiRoutes);
 logger.info("✅ Sistema de rotas centralizado carregado em /api");
 
