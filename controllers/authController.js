@@ -57,7 +57,7 @@ const AuthController = {
       const [users] = await pool.query("SELECT * FROM usuarios WHERE email = ?", [email]);
 
       if (users.length === 0) {
-        incrementFailure(lockoutKey);
+        await incrementFailure(lockoutKey);
         req.rateLimit?.fail?.();
         return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
       }
@@ -66,13 +66,13 @@ const AuthController = {
 
       const ok = await bcrypt.compare(senha, user.senha);
       if (!ok) {
-        incrementFailure(lockoutKey);
+        await incrementFailure(lockoutKey);
         req.rateLimit?.fail?.();
         return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
       }
 
-      resetFailures(lockoutKey);
-      const token = authConfig.sign({ id: user.id });
+      await resetFailures(lockoutKey);
+      const token = authConfig.sign({ id: user.id, tokenVersion: user.tokenVersion ?? 1 });
       req.rateLimit?.reset?.();
 
       // ✅ AQUI: usar a função alinhada ao token
@@ -109,10 +109,16 @@ const AuthController = {
     }
   },
 
-  async logout(_req, res, next) {
+  async logout(req, res, next) {
     try {
-      // ✅ pode continuar usando getAuthCookieOptions()
-      // (clearCookie precisa bater path/samesite/secure, maxAge não importa)
+      // Increment tokenVersion to invalidate all existing JWT tokens for this user
+      const userId = req.user?.id;
+      if (userId) {
+        await pool.query(
+          "UPDATE usuarios SET tokenVersion = tokenVersion + 1 WHERE id = ?",
+          [userId]
+        );
+      }
       res.clearCookie("auth_token", getAuthCookieOptions());
       return res.status(200).json({ message: "Logout bem-sucedido!" });
     } catch (error) {

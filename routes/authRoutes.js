@@ -19,6 +19,10 @@ const resetPasswordLimiter = createAdaptiveRateLimiter({
   },
 });
 
+const logoutLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => `logout:${req.ip}`,
+});
+
 /**
  * @openapi
  * /api/logout:
@@ -38,7 +42,7 @@ const resetPasswordLimiter = createAdaptiveRateLimiter({
  *       500:
  *         description: Erro interno
  */
-router.post("/logout", authenticateToken, (req, res, next) =>
+router.post("/logout", logoutLimiter, authenticateToken, (req, res, next) =>
   AuthController.logout(req, res, next)
 );
 
