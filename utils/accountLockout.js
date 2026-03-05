@@ -58,8 +58,9 @@ try {
     });
   }
 } catch (_err) {
-  // ioredis not installed – use in-memory fallback only
+  // ioredis not installed or failed to initialise – use in-memory fallback only
   redisClient = null;
+  redisReady = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,4 +210,29 @@ async function syncFromRedis(identifier) {
   } catch (_err) { /* non-fatal */ }
 }
 
-module.exports = { assertNotLocked, incrementFailure, resetFailures, syncFromRedis };
+// Defensive export verification: ensures callers always receive callable functions
+// even if an unexpected error occurs during module initialisation.
+const _exports = { assertNotLocked, incrementFailure, resetFailures, syncFromRedis };
+
+/* istanbul ignore next */
+if (typeof _exports.assertNotLocked !== "function") {
+  console.error("❌ accountLockout: assertNotLocked não é uma função – usando fallback no-op");
+  _exports.assertNotLocked = function () {};
+}
+/* istanbul ignore next */
+if (typeof _exports.incrementFailure !== "function") {
+  console.error("❌ accountLockout: incrementFailure não é uma função – usando fallback no-op");
+  _exports.incrementFailure = async function () {};
+}
+/* istanbul ignore next */
+if (typeof _exports.resetFailures !== "function") {
+  console.error("❌ accountLockout: resetFailures não é uma função – usando fallback no-op");
+  _exports.resetFailures = async function () {};
+}
+/* istanbul ignore next */
+if (typeof _exports.syncFromRedis !== "function") {
+  console.error("❌ accountLockout: syncFromRedis não é uma função – usando fallback no-op");
+  _exports.syncFromRedis = async function () {};
+}
+
+module.exports = _exports;

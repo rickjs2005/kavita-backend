@@ -19,13 +19,23 @@ module.exports = (err, req, res, _next) => {
   }
 
   // Log interno (você vê no servidor)
-  console.error("Erro:", {
+  const logPayload = {
     status,
     code,
     message: err.message,
     url: req.originalUrl,
-    stack: err.stack,
-  });
+    method: req.method,
+  };
+
+  if (process.env.NODE_ENV !== "production") {
+    logPayload.stack = err.stack;
+  }
+
+  if (status >= 500) {
+    console.error("Erro:", logPayload);
+  } else {
+    console.warn("Aviso:", logPayload);
+  }
 
   return res.status(status).json({ code, message });
 };
