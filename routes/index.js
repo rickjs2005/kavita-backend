@@ -243,6 +243,14 @@ try {
   console.error("❌ Erro ao carregar ./adminConfigRoutes:", err.message);
 }
 
+// Upload de logo e configurações da loja
+try {
+  const adminConfigUploadRoutes = require("./adminConfigUploadRoutes");
+  router.use("/admin/shop-config/upload", verifyAdmin, validateCSRF, adminConfigUploadRoutes);
+} catch (err) {
+  console.error("❌ Erro ao carregar ./adminConfigUploadRoutes:", err.message);
+}
+
 // Relatórios
 try {
   const adminRelatoriosRoutes = require("./adminRelatorios");
