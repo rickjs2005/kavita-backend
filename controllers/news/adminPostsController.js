@@ -72,7 +72,7 @@ async function logAdmin(req, acao, entidade, entidade_id = null) {
     const admin_id = getAdminId(req);
     if (!admin_id) return;
     await pool.query(
-      `INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)`,
+      "INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)",
       [admin_id, acao, entidade, entidade_id]
     );
   } catch {
@@ -125,7 +125,7 @@ function slugifyFromTitle(title) {
 
 async function slugExists(slug) {
   const [[row]] = await pool.query(
-    `SELECT 1 AS ok FROM news_posts WHERE slug = ? LIMIT 1`,
+    "SELECT 1 AS ok FROM news_posts WHERE slug = ? LIMIT 1",
     [slug]
   );
   return !!row?.ok;
@@ -362,7 +362,7 @@ async function updatePost(req, res) {
 
         // opcional: bloquear se já existir em outro post
         const [[row]] = await pool.query(
-          `SELECT id FROM news_posts WHERE slug = ? AND id <> ? LIMIT 1`,
+          "SELECT id FROM news_posts WHERE slug = ? AND id <> ? LIMIT 1",
           [slug, id]
         );
         if (row?.id) {
@@ -481,7 +481,7 @@ async function deletePost(req, res) {
     const id = toInt(req.params.id, 0);
     if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
 
-    const [result] = await pool.query(`DELETE FROM news_posts WHERE id = ?`, [id]);
+    const [result] = await pool.query("DELETE FROM news_posts WHERE id = ?", [id]);
     if (!result || result.affectedRows === 0) {
       return fail(res, 404, "NOT_FOUND", "Post não encontrado.");
     }

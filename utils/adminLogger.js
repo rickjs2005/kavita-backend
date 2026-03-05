@@ -1,5 +1,5 @@
 // utils/adminLogger.js
-const pool = require('../config/pool');
+const pool = require("../config/pool");
 
 /**
  * logAdminAction({
@@ -14,11 +14,11 @@ async function logAdminAction({ adminId, acao, entidade, entidadeId = null }) {
 
   try {
     await pool.query(
-      'INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)',
+      "INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)",
       [adminId, acao, entidade, entidadeId]
     );
   } catch (err) {
-    console.error('Erro ao registrar log de admin:', err.message);
+    console.error("Erro ao registrar log de admin:", err.message);
   }
 }
 

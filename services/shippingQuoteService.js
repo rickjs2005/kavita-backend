@@ -268,7 +268,7 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
       if (Number(z.all_cities) === 1) continue;
 
       const [rowsCity] = await pool.query(
-        `SELECT 1 FROM shipping_zone_cities WHERE zone_id=? AND LOWER(city)=? LIMIT 1`,
+        "SELECT 1 FROM shipping_zone_cities WHERE zone_id=? AND LOWER(city)=? LIMIT 1",
         [z.id, cityLower]
       );
 

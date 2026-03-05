@@ -69,7 +69,7 @@ describe("siteHeroController (unit)", () => {
     jest.doMock("../../../config/pool", () => mockPool);
     jest.doMock("../../../errors/AppError", () => MockAppError);
 
-    // eslint-disable-next-line global-require
+     
     return require("../../../controllers/siteHeroController");
   }
 

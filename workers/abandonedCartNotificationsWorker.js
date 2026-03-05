@@ -105,7 +105,7 @@ function buildHtml({ nome, cartId, itens, total }) {
             )}</li>`
         )
         .join("")}</ul>`
-    : `<p><em>(sem itens no snapshot)</em></p>`;
+    : "<p><em>(sem itens no snapshot)</em></p>";
 
   return `
     <div style="font-family: Arial, sans-serif">

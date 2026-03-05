@@ -426,7 +426,7 @@ async function resolveGalleryTitleColumn() {
   // Prioriza caption (é o seu schema atual)
   const candidates = ["caption", "title", "legenda", "label"];
   for (const c of candidates) {
-    // eslint-disable-next-line no-await-in-loop
+     
     if (await hasColumn("drone_gallery_items", c)) return c;
   }
   return null;
@@ -631,7 +631,7 @@ async function deleteGalleryItem(id) {
     throw err;
   }
 
-  const [result] = await pool.query(`DELETE FROM drone_gallery_items WHERE id=?`, [itemId]);
+  const [result] = await pool.query("DELETE FROM drone_gallery_items WHERE id=?", [itemId]);
   return result.affectedRows || 0;
 }
 
@@ -835,7 +835,7 @@ async function deleteRepresentative(id) {
     throw err;
   }
 
-  const [result] = await pool.query(`DELETE FROM drone_representatives WHERE id=?`, [repId]);
+  const [result] = await pool.query("DELETE FROM drone_representatives WHERE id=?", [repId]);
   return result.affectedRows || 0;
 }
 
@@ -1091,7 +1091,7 @@ async function deleteComment(id) {
     throw err;
   }
 
-  const [result] = await pool.query(`DELETE FROM drone_comments WHERE id=?`, [commentId]);
+  const [result] = await pool.query("DELETE FROM drone_comments WHERE id=?", [commentId]);
   return result.affectedRows || 0;
 }
 
@@ -1118,7 +1118,7 @@ async function setCommentStatus(id, status) {
     throw err;
   }
 
-  const [result] = await pool.query(`UPDATE drone_comments SET status=? WHERE id=?`, [st, commentId]);
+  const [result] = await pool.query("UPDATE drone_comments SET status=? WHERE id=?", [st, commentId]);
   return result.affectedRows || 0;
 }
 
@@ -1261,7 +1261,7 @@ async function deleteDroneModel(id) {
     throw err;
   }
 
-  const [result] = await pool.query(`DELETE FROM drone_models WHERE id=?`, [modelId]);
+  const [result] = await pool.query("DELETE FROM drone_models WHERE id=?", [modelId]);
   return result.affectedRows || 0;
 }
 
