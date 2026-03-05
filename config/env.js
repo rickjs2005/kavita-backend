@@ -1,26 +1,26 @@
-require('dotenv').config();
+require("dotenv").config();
 
 const REQUIRED_VARS = [
-  'JWT_SECRET',
-  'EMAIL_USER',
-  'EMAIL_PASS',
-  'APP_URL',
-  'BACKEND_URL',
-  'DB_HOST',
-  'DB_USER',
-  'DB_PASSWORD',
-  'DB_NAME',
+  "JWT_SECRET",
+  "EMAIL_USER",
+  "EMAIL_PASS",
+  "APP_URL",
+  "BACKEND_URL",
+  "DB_HOST",
+  "DB_USER",
+  "DB_PASSWORD",
+  "DB_NAME",
 ];
 
 function ensureRequiredEnv() {
   const missing = REQUIRED_VARS.filter((key) =>
-    typeof process.env[key] === 'undefined'
+    typeof process.env[key] === "undefined"
   );
 
   if (missing.length > 0) {
     throw new Error(
-      `Variáveis de ambiente ausentes: ${missing.join(', ')}. ` +
-        'Defina-as antes de iniciar a aplicação.'
+      `Variáveis de ambiente ausentes: ${missing.join(", ")}. ` +
+        "Defina-as antes de iniciar a aplicação."
     );
   }
 }
@@ -36,7 +36,7 @@ const config = {
   },
   jwt: {
     secret: process.env.JWT_SECRET,
-    expiresIn: process.env.JWT_EXPIRATION || '7d',
+    expiresIn: process.env.JWT_EXPIRATION || "7d",
   },
   db: {
     host: process.env.DB_HOST,

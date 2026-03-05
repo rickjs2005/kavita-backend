@@ -149,7 +149,7 @@ exports.getPost = async (req, res) => {
     try {
       if (pool) {
         await pool.query(
-          `UPDATE news_posts SET views = COALESCE(views, 0) + 1 WHERE slug = ? LIMIT 1`,
+          "UPDATE news_posts SET views = COALESCE(views, 0) + 1 WHERE slug = ? LIMIT 1",
           [slug]
         );
       }

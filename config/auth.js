@@ -1,5 +1,5 @@
-const jwt = require('jsonwebtoken');
-const { jwt: jwtConfig } = require('./env');
+const jwt = require("jsonwebtoken");
+const { jwt: jwtConfig } = require("./env");
 
 function sign(payload, options = {}) {
   return jwt.sign(payload, jwtConfig.secret, {

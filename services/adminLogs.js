@@ -1,4 +1,4 @@
-const pool = require('../config/pool');
+const pool = require("../config/pool");
 
 /**
  * Registra um log de ação do admin.
@@ -14,7 +14,7 @@ const pool = require('../config/pool');
 async function registrarLog(adminId, acao, entidade, entidadeId = null) {
   if (!adminId || !acao || !entidade) {
     throw new Error(
-      'registrarLog: adminId, acao e entidade são obrigatórios.'
+      "registrarLog: adminId, acao e entidade são obrigatórios."
     );
   }
 

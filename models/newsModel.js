@@ -198,7 +198,7 @@ async function updateClima(id, data) {
 }
 
 async function deleteClima(id) {
-  const res = await query(`DELETE FROM news_clima WHERE id = ?`, [id]);
+  const res = await query("DELETE FROM news_clima WHERE id = ?", [id]);
   return { affectedRows: res.affectedRows ?? 0 };
 }
 
@@ -241,16 +241,16 @@ async function listCotacoes() {
 
 async function cotacoesMeta() {
   const markets = await query(
-    `SELECT DISTINCT market FROM news_cotacoes WHERE market IS NOT NULL AND market <> '' ORDER BY market ASC`
+    "SELECT DISTINCT market FROM news_cotacoes WHERE market IS NOT NULL AND market <> '' ORDER BY market ASC"
   );
   const sources = await query(
-    `SELECT DISTINCT source FROM news_cotacoes WHERE source IS NOT NULL AND source <> '' ORDER BY source ASC`
+    "SELECT DISTINCT source FROM news_cotacoes WHERE source IS NOT NULL AND source <> '' ORDER BY source ASC"
   );
   const units = await query(
-    `SELECT DISTINCT unit FROM news_cotacoes WHERE unit IS NOT NULL AND unit <> '' ORDER BY unit ASC`
+    "SELECT DISTINCT unit FROM news_cotacoes WHERE unit IS NOT NULL AND unit <> '' ORDER BY unit ASC"
   );
   const types = await query(
-    `SELECT DISTINCT type FROM news_cotacoes WHERE type IS NOT NULL AND type <> '' ORDER BY type ASC`
+    "SELECT DISTINCT type FROM news_cotacoes WHERE type IS NOT NULL AND type <> '' ORDER BY type ASC"
   );
 
   return {
@@ -366,7 +366,7 @@ async function updateCotacao(id, data) {
 }
 
 async function deleteCotacao(id) {
-  const res = await query(`DELETE FROM news_cotacoes WHERE id = ?`, [id]);
+  const res = await query("DELETE FROM news_cotacoes WHERE id = ?", [id]);
   return { affectedRows: res.affectedRows ?? 0 };
 }
 
@@ -457,13 +457,13 @@ async function listPosts({ status, search, limit, offset }) {
   const params = [];
 
   if (status) {
-    where.push(`status = ?`);
+    where.push("status = ?");
     params.push(status);
   }
 
   const like = normalizeLike(search);
   if (like) {
-    where.push(`(title LIKE ? ESCAPE '\\\\' OR slug LIKE ? ESCAPE '\\\\')`);
+    where.push("(title LIKE ? ESCAPE '\\\\' OR slug LIKE ? ESCAPE '\\\\')");
     params.push(`%${like}%`, `%${like}%`);
   }
 
@@ -566,7 +566,7 @@ async function updatePost(id, data) {
 }
 
 async function deletePost(id) {
-  const res = await query(`DELETE FROM news_posts WHERE id = ?`, [id]);
+  const res = await query("DELETE FROM news_posts WHERE id = ?", [id]);
   return { affectedRows: res.affectedRows ?? 0 };
 }
 

@@ -70,7 +70,7 @@ describe("POST /api/checkout (integration)", () => {
       dispararEventoComunicacao: mockDisparar,
     }));
 
-    // eslint-disable-next-line global-require
+     
     return require("../../../controllers/checkoutController");
   }
 

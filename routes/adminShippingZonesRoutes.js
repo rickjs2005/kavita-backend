@@ -139,7 +139,7 @@ router.post("/zones", async (req, res, next) => {
         const list = Array.isArray(cities) ? cities : [];
         const cleaned = Array.from(new Set(list.map((c) => String(c || "").trim()).filter(Boolean)));
         for (const city of cleaned) {
-          await conn.query(`INSERT IGNORE INTO shipping_zone_cities (zone_id, city) VALUES (?, ?)`, [
+          await conn.query("INSERT IGNORE INTO shipping_zone_cities (zone_id, city) VALUES (?, ?)", [
             zoneId,
             city,
           ]);
@@ -227,7 +227,7 @@ router.put("/zones/:id", async (req, res, next) => {
     try {
       await conn.beginTransaction();
 
-      const [exists] = await conn.query(`SELECT id FROM shipping_zones WHERE id = ? LIMIT 1`, [id]);
+      const [exists] = await conn.query("SELECT id FROM shipping_zones WHERE id = ? LIMIT 1", [id]);
       if (!exists.length) {
         await conn.rollback();
         return next(new AppError("Zona não encontrada.", ERROR_CODES.NOT_FOUND, 404));
@@ -242,13 +242,13 @@ router.put("/zones/:id", async (req, res, next) => {
         [nm, uf, all ? 1 : 0, free ? 1 : 0, priceNum, prazo, active ? 1 : 0, id]
       );
 
-      await conn.query(`DELETE FROM shipping_zone_cities WHERE zone_id=?`, [id]);
+      await conn.query("DELETE FROM shipping_zone_cities WHERE zone_id=?", [id]);
 
       if (!all) {
         const list = Array.isArray(cities) ? cities : [];
         const cleaned = Array.from(new Set(list.map((c) => String(c || "").trim()).filter(Boolean)));
         for (const city of cleaned) {
-          await conn.query(`INSERT IGNORE INTO shipping_zone_cities (zone_id, city) VALUES (?, ?)`, [
+          await conn.query("INSERT IGNORE INTO shipping_zone_cities (zone_id, city) VALUES (?, ?)", [
             id,
             city,
           ]);
@@ -292,7 +292,7 @@ router.delete("/zones/:id", async (req, res, next) => {
       return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
 
-    await pool.query(`DELETE FROM shipping_zones WHERE id=?`, [id]);
+    await pool.query("DELETE FROM shipping_zones WHERE id=?", [id]);
     return res.status(204).send();
   } catch (err) {
     return next(
