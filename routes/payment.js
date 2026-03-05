@@ -411,7 +411,7 @@ router.put("/admin/payment-methods/:id", authenticateToken, verifyAdmin, async (
 
   const conn = await pool.getConnection();
   try {
-    const [[exists]] = await conn.query(`SELECT id FROM payment_methods WHERE id = ?`, [id]);
+    const [[exists]] = await conn.query("SELECT id FROM payment_methods WHERE id = ?", [id]);
 
     if (!exists) {
       return next(new AppError("Método não encontrado.", ERROR_CODES.NOT_FOUND, 404));
@@ -461,7 +461,7 @@ router.delete(
 
     const conn = await pool.getConnection();
     try {
-      const [[exists]] = await conn.query(`SELECT id FROM payment_methods WHERE id = ?`, [id]);
+      const [[exists]] = await conn.query("SELECT id FROM payment_methods WHERE id = ?", [id]);
 
       if (!exists) {
         return next(new AppError("Método não encontrado.", ERROR_CODES.NOT_FOUND, 404));

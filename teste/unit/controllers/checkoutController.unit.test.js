@@ -71,7 +71,7 @@ describe("checkoutController.create (unit)", () => {
       dispararEventoComunicacao: mockDisparar,
     }));
 
-    // eslint-disable-next-line global-require
+     
     return require("../../../controllers/checkoutController");
   }
 

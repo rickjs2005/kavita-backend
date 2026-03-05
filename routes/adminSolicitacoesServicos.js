@@ -118,7 +118,7 @@ router.patch("/solicitacoes/:id/status", verifyAdmin, async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      `UPDATE solicitacoes_servico SET status = ? WHERE id = ?`,
+      "UPDATE solicitacoes_servico SET status = ? WHERE id = ?",
       [status, id]
     );
 

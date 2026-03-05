@@ -1,11 +1,11 @@
-const crypto = require('crypto');
-const pool = require('../config/pool');
+const crypto = require("crypto");
+const pool = require("../config/pool");
 
-const TABLE_NAME = 'password_reset_tokens';
+const TABLE_NAME = "password_reset_tokens";
 let ensureTablePromise;
 
 function hashToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 async function ensureTable() {
@@ -27,7 +27,7 @@ async function ensureTable() {
 }
 
 function generateToken() {
-  return crypto.randomBytes(32).toString('hex');
+  return crypto.randomBytes(32).toString("hex");
 }
 
 async function revokeAllForUser(userId) {

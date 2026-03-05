@@ -114,7 +114,7 @@ async function logAdmin(req, acao, entidade, entidade_id = null) {
     const admin_id = getAdminId(req);
     if (!admin_id) return;
 
-    await pool.query(`INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)`, [
+    await pool.query("INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)", [
       admin_id,
       acao,
       entidade,
@@ -516,11 +516,11 @@ async function fetchChuvaMmFromProvider(climaRow) {
   const start7 = toYMD(addDays(now, -6)); // 7 dias (hoje + 6 anteriores)
 
   const url =
-    `https://api.open-meteo.com/v1/forecast` +
+    "https://api.open-meteo.com/v1/forecast" +
     `?latitude=${encodeURIComponent(lat)}` +
     `&longitude=${encodeURIComponent(lon)}` +
-    `&daily=precipitation_sum` +
-    `&timezone=America%2FSao_Paulo` +
+    "&daily=precipitation_sum" +
+    "&timezone=America%2FSao_Paulo" +
     `&start_date=${encodeURIComponent(start7)}` +
     `&end_date=${encodeURIComponent(end)}`;
 
