@@ -1,12 +1,18 @@
-'use strict';
-
 const speakeasy = require('speakeasy');
 
-const totp = (secret) => {
-    const token = speakeasy.totp({
+/**
+ * Verifies the TOTP token.
+ *
+ * @param {*} token - The TOTP token to verify.
+ * @param {*} secret - The secret key used to generate the TOTP.
+ * @returns {boolean} - Returns true if the token is valid, false otherwise.
+ */
+function verifyToken(token, secret) {
+    return speakeasy.totp.verify({
         secret: secret,
+        encoding: 'base32',
+        token: token
     });
-    return token;
-};
+}
 
-module.exports = { totp };
+module.exports = { verifyToken };
