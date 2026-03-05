@@ -110,6 +110,7 @@ const AuthController = {
 
       return res.status(201).json({ message: "Usuário cadastrado com sucesso!" });
     } catch (error) {
+      console.error("❌ Erro no registro do usuário:", error);
       return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
@@ -127,6 +128,7 @@ const AuthController = {
       res.clearCookie("auth_token", getAuthCookieOptions());
       return res.status(200).json({ message: "Logout bem-sucedido!" });
     } catch (error) {
+      console.error("❌ Erro no logout do usuário:", error);
       return next(new AppError("Erro no servidor ao fazer logout.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
@@ -164,6 +166,7 @@ const AuthController = {
       });
     } catch (error) {
       req.rateLimit?.fail?.();
+      console.error("❌ Erro no esqueceu-senha:", error);
       return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
@@ -193,6 +196,7 @@ const AuthController = {
       return res.status(200).json({ mensagem: "Senha redefinida com sucesso!" });
     } catch (error) {
       req.rateLimit?.fail?.();
+      console.error("❌ Erro no reset de senha:", error);
       return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },
