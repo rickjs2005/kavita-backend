@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/318</span>
+                <span class='fraction'>0/319</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/271</span>
+                <span class='fraction'>0/272</span>
             </div>
         
             
@@ -692,9 +692,11 @@
 <a name='L627'></a><a href='#L627'>627</a>
 <a name='L628'></a><a href='#L628'>628</a>
 <a name='L629'></a><a href='#L629'>629</a>
-<a name='L630'></a><a href='#L630'>630</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L630'></a><a href='#L630'>630</a>
+<a name='L631'></a><a href='#L631'>631</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1326,6 +1328,7 @@
 &nbsp;
 const newsModel = <span class="cstat-no" title="statement not covered" >require("../../models/newsModel");</span>
 const pool = <span class="cstat-no" title="statement not covered" >require("../../config/pool");</span>
+const ERROR_CODES = <span class="cstat-no" title="statement not covered" >require("../../constants/ErrorCodes");</span>
 &nbsp;
 /**
  * Sugestão de coordenadas (compatibilidade):
@@ -1436,7 +1439,7 @@ async function <span class="fstat-no" title="function not covered" >logAdmin(</s
     const admin_id = <span class="cstat-no" title="statement not covered" >getAdminId(req);</span>
 <span class="cstat-no" title="statement not covered" >    if (!admin_id) <span class="cstat-no" title="statement not covered" >return;</span></span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    await pool.query(`INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)`, [</span>
+<span class="cstat-no" title="statement not covered" >    await pool.query("INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)", [</span>
       admin_id,
       acao,
       entidade,
@@ -1470,7 +1473,7 @@ function <span class="fstat-no" title="function not covered" >validateStationCod
   }
 <span class="cstat-no" title="statement not covered" >  if (sc.length &gt; 10) {</span>
 <span class="cstat-no" title="statement not covered" >    return {</span>
-      error: { status: 400, code: "VALIDATION_ERROR", message: `${field} inválido (máx 10).`, details: { field } },
+      error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (máx 10).`, details: { field } },
     };
   }
 <span class="cstat-no" title="statement not covered" >  return { value: sc };</span>
@@ -1481,7 +1484,7 @@ function <span class="fstat-no" title="function not covered" >validateOptionalFl
   const raw = <span class="cstat-no" title="statement not covered" >body[field];</span>
   const n = <span class="cstat-no" title="statement not covered" >toFloat(raw);</span>
 <span class="cstat-no" title="statement not covered" >  if (raw !== null &amp;&amp; raw !== "" &amp;&amp; raw !== undefined &amp;&amp; n === null) {</span>
-<span class="cstat-no" title="statement not covered" >    return { error: { status: 400, code: "VALIDATION_ERROR", message: `${field} inválido (número).`, details: { field } } };</span>
+<span class="cstat-no" title="statement not covered" >    return { error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (número).`, details: { field } } };</span>
   }
 <span class="cstat-no" title="statement not covered" >  return { value: raw === "" ? null : n };</span>
 }
@@ -1491,7 +1494,7 @@ function <span class="fstat-no" title="function not covered" >validateOptionalDa
   const raw = <span class="cstat-no" title="statement not covered" >body[field];</span>
 <span class="cstat-no" title="statement not covered" >  if (raw !== null &amp;&amp; raw !== "" &amp;&amp; raw !== undefined &amp;&amp; !isValidDateTimeLike(raw)) {</span>
 <span class="cstat-no" title="statement not covered" >    return {</span>
-      error: { status: 400, code: "VALIDATION_ERROR", message: `${field} inválido (YYYY-MM-DD HH:mm:ss).`, details: { field } },
+      error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (YYYY-MM-DD HH:mm:ss).`, details: { field } },
     };
   }
 <span class="cstat-no" title="statement not covered" >  return { value: raw ?? null };</span>
@@ -1501,7 +1504,7 @@ function <span class="fstat-no" title="function not covered" >validateOptionalSt
 <span class="cstat-no" title="statement not covered" >  if (!hasOwn(body, field)) <span class="cstat-no" title="statement not covered" >return { skip: true };</span></span>
   const raw = <span class="cstat-no" title="statement not covered" >body[field];</span>
 <span class="cstat-no" title="statement not covered" >  if (raw !== null &amp;&amp; raw !== "" &amp;&amp; raw !== undefined &amp;&amp; !isOptionalStr(raw, max)) {</span>
-<span class="cstat-no" title="statement not covered" >    return { error: { status: 400, code: "VALIDATION_ERROR", message: `${field} inválido (máx ${max}).`, details: { field } } };</span>
+<span class="cstat-no" title="statement not covered" >    return { error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (máx ${max}).`, details: { field } } };</span>
   }
 <span class="cstat-no" title="statement not covered" >  return { value: raw ? String(raw).trim() : null };</span>
 }
@@ -1765,7 +1768,7 @@ async function <span class="fstat-no" title="function not covered" >fetchChuvaMm
     const t = <span class="cstat-no" title="statement not covered" >setTimeout(<span class="fstat-no" title="function not covered" >()</span> =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >      try {</span>
 <span class="cstat-no" title="statement not covered" >        ctrl.abort();</span>
-      } catch {}
+      } catch { }
     }, timeoutMs);
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    try {</span>
@@ -1838,11 +1841,11 @@ async function <span class="fstat-no" title="function not covered" >fetchChuvaMm
   const start7 = <span class="cstat-no" title="statement not covered" >toYMD(addDays(now, -6));</span> // 7 dias (hoje + 6 anteriores)
 &nbsp;
   const url =
-<span class="cstat-no" title="statement not covered" >    `https://api.open-meteo.com/v1/forecast` +</span>
+<span class="cstat-no" title="statement not covered" >    "https://api.open-meteo.com/v1/forecast" +</span>
     `?latitude=${encodeURIComponent(lat)}` +
     `&amp;longitude=${encodeURIComponent(lon)}` +
-    `&amp;daily=precipitation_sum` +
-    `&amp;timezone=America%2FSao_Paulo` +
+    "&amp;daily=precipitation_sum" +
+    "&amp;timezone=America%2FSao_Paulo" +
     `&amp;start_date=${encodeURIComponent(start7)}` +
     `&amp;end_date=${encodeURIComponent(end)}`;
 &nbsp;
@@ -1957,7 +1960,7 @@ async function <span class="fstat-no" title="function not covered" >syncClima(</
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-25T16:12:15.340Z
+                at 2026-03-05T15:18:27.444Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
