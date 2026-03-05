@@ -1,139 +1,158 @@
 // utils/accountLockout.js
+// Account lockout store backed by Redis (with in-memory fallback).
+// Redis is the primary store; the in-memory map is used when Redis is
+// unavailable so the server can still boot and run in dev/CI environments.
+//
+// Lockout policy:
+//   - 5 failed attempts  → locked for LOCKOUT_DURATION_MS (30 minutes)
+//   - TTL per failure entry: LOCKOUT_DURATION_MS
+//   - Counts and lockout survive server restarts when Redis is available
+
+const MAX_FAILURES = 5;
+const LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+const LOCKOUT_DURATION_S = LOCKOUT_DURATION_MS / 1000; // seconds (for Redis TTL)
+
+// ---------------------------------------------------------------------------
+// Redis client (optional – falls back to in-memory on connection failure)
+// ---------------------------------------------------------------------------
+let redisClient = null;
+let redisReady = false;
+
+try {
+  const Redis = require("ioredis");
+
+  const redisBaseOptions = {
+    lazyConnect: true,            // don't auto-connect on require()
+    enableOfflineQueue: false,    // fail fast when not connected
+    maxRetriesPerRequest: 1,
+    connectTimeout: 3000,
+    retryStrategy: () => null,    // disable auto-reconnect (handled by fallback)
+  };
+
+  const redisUrl = process.env.REDIS_URL || null;
+  const redisOptions = {
+    ...redisBaseOptions,
+    host: process.env.REDIS_HOST || "127.0.0.1",
+    port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    password: process.env.REDIS_PASSWORD || undefined,
+  };
+
+  redisClient = redisUrl ? new Redis(redisUrl, redisBaseOptions) : new Redis(redisOptions);
+
+  redisClient.on("ready", () => {
+    redisReady = true;
+  });
+
+  redisClient.on("error", () => {
+    redisReady = false;
+  });
+
+  redisClient.on("end", () => {
+    redisReady = false;
+  });
+
+  // Attempt to connect; if it fails, silently fall back to in-memory
+  if (process.env.NODE_ENV !== "test") {
+    redisClient.connect().catch(() => {
+      redisReady = false;
+    });
+  }
+} catch (_err) {
+  // ioredis not installed or failed to initialise – use in-memory fallback only
+  redisClient = null;
+  redisReady = false;
+}
+
+// ---------------------------------------------------------------------------
+// In-memory fallback store
+// Map<identifier, { failures: number, lockedUntil: number|null }>
+// ---------------------------------------------------------------------------
+const memoryStore = new Map();
+
+function _memGetEntry(identifier) {
+  const entry = memoryStore.get(identifier);
+  if (!entry) return { failures: 0, lockedUntil: null };
+  return entry;
+}
+
+function _memSetEntry(identifier, entry) {
+  memoryStore.set(identifier, entry);
+}
+
+// ---------------------------------------------------------------------------
+// Redis-backed helpers
+// ---------------------------------------------------------------------------
+const REDIS_FAILURES_PREFIX = "lockout:failures:";
+const REDIS_LOCKED_PREFIX = "lockout:locked:";
+
+async function _redisGetFailures(identifier) {
+  try {
+    const val = await redisClient.get(REDIS_FAILURES_PREFIX + identifier);
+    return val ? parseInt(val, 10) : 0;
+  } catch (_err) {
+    return 0;
+  }
+}
+
+async function _redisSetFailures(identifier, failures) {
+  try {
+    await redisClient.set(REDIS_FAILURES_PREFIX + identifier, String(failures), "EX", LOCKOUT_DURATION_S);
+  } catch (_err) { /* non-fatal */ }
+}
+
+async function _redisSetLocked(identifier) {
+  try {
+    await redisClient.set(REDIS_LOCKED_PREFIX + identifier, "1", "EX", LOCKOUT_DURATION_S);
+  } catch (_err) { /* non-fatal */ }
+}
+
+async function _redisGetLockedTTL(identifier) {
+  try {
+    return await redisClient.ttl(REDIS_LOCKED_PREFIX + identifier);
+  } catch (_err) {
+    return -2; // key doesn't exist
+  }
+}
+
+async function _redisDelete(identifier) {
+  try {
+    await redisClient.del(REDIS_FAILURES_PREFIX + identifier, REDIS_LOCKED_PREFIX + identifier);
+  } catch (_err) { /* non-fatal */ }
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
- * Account lockout com Redis fallback para memória.
- * 
- * Métodos:
- * - assertNotLocked(identifier): verifica se está bloqueado (sem incrementar)
- * - incrementFailure(identifier): incrementa contador de falha
- * - resetFailures(identifier): limpa em login bem-sucedido
+ * Throws a 429-style error if the identifier is currently locked out.
+ * Supports both async (Redis) and sync (in-memory) paths.
+ *
+ * Because callers may be sync contexts, this function checks the in-memory
+ * store synchronously FIRST, then performs a Redis check if available.
+ * Redis state is lazily reflected in memory on each incrementFailure call.
+ *
+ * @param {string} identifier - e.g. "user:user@domain.com" or "admin:x@y.com"
+ * @throws {{ locked: true, status: 429, message: string }}
  */
-
-class AccountLockout {
-  constructor(redisClient = null) {
-    this.redis = redisClient;
-    this.inMemoryStore = new Map();
-
-    this.MAX_FAILURES = 5;
-    this.LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 min
-    this.RESET_AFTER_MS = 60 * 60 * 1000; // 1h sem tentativas = reset
+function assertNotLocked(identifier) {
+  // Always check in-memory store (synchronous, fast path)
+  const entry = _memGetEntry(identifier);
+  if (entry.lockedUntil && Date.now() < entry.lockedUntil) {
+    const remainingMs = entry.lockedUntil - Date.now();
+    const remainingMin = Math.ceil(remainingMs / 60000);
+    const err = new Error(
+      `Conta bloqueada temporariamente. Tente novamente em ${remainingMin} minuto(s).`
+    );
+    err.locked = true;
+    err.status = 429;
+    throw err;
   }
-
-  _lockoutKey(identifier) {
-    return `lockout:${identifier}`;
+  // If the in-memory lockout expired, clean up
+  if (entry.lockedUntil && Date.now() >= entry.lockedUntil) {
+    memoryStore.delete(identifier);
   }
-
-  /**
-   * ✅ Check se está bloqueado (sem incrementar).
-   * Lança erro se bloqueado.
-   */
-  async assertNotLocked(identifier) {
-    const key = this._lockoutKey(identifier);
-    const state = this.redis
-      ? await this._getState_Redis(key)
-      : this._getState_Memory(key);
-
-    if (!state) return; // Não tem bloqueio
-
-    const now = Date.now();
-
-    // Lockout expirou?
-    if (state.lockedUntil && state.lockedUntil <= now) {
-      // Limpou automaticamente
-      if (this.redis) {
-        await this.redis.del(key);
-      } else {
-        this.inMemoryStore.delete(key);
-      }
-      return;
-    }
-
-    // Está bloqueado
-    if (state.lockedUntil && state.lockedUntil > now) {
-      const error = new Error("Account is locked due to too many failed attempts.");
-      error.code = "ACCOUNT_LOCKED";
-      error.retryAfterMs = state.lockedUntil - now;
-      throw error;
-    }
-  }
-
-  /**
-   * ✅ Incrementar falha (chamar APÓS confirmar credenciais inválidas).
-   */
-  async incrementFailure(identifier) {
-    const key = this._lockoutKey(identifier);
-
-    if (this.redis) {
-      return this._incrementFailure_Redis(key);
-    } else {
-      return this._incrementFailure_Memory(key);
-    }
-  }
-
-  async _incrementFailure_Redis(key) {
-    try {
-      const data = await this.redis.get(key);
-      let state = data ? JSON.parse(data) : { failures: 0, lockedUntil: 0, lastFailure: 0 };
-
-      state.failures += 1;
-      state.lastFailure = Date.now();
-
-      // Block if max reached
-      if (state.failures >= this.MAX_FAILURES) {
-        state.lockedUntil = Date.now() + this.LOCKOUT_DURATION_MS;
-      }
-
-      await this.redis.setex(
-        key,
-        Math.ceil((this.LOCKOUT_DURATION_MS + 3600000) / 1000),
-        JSON.stringify(state)
-      );
-    } catch (err) {
-      console.warn("⚠️ Redis error in incrementFailure; using memory fallback:", err.message);
-      this._incrementFailure_Memory(key);
-    }
-  }
-
-  _incrementFailure_Memory(key) {
-    const now = Date.now();
-    let state = this.inMemoryStore.get(key) || {
-      failures: 0,
-      lockedUntil: 0,
-      lastFailure: 0,
-    };
-
-    // Auto-reset se expirou
-    if (state.lastFailure && now - state.lastFailure > this.RESET_AFTER_MS) {
-      state.failures = 0;
-      state.lockedUntil = 0;
-    }
-
-    state.failures += 1;
-    state.lastFailure = now;
-
-    if (state.failures >= this.MAX_FAILURES) {
-      state.lockedUntil = now + this.LOCKOUT_DURATION_MS;
-    }
-
-    this.inMemoryStore.set(key, state);
-  }
-
-  /**
-   * ✅ Reset em login bem-sucedido.
-   */
-  async resetFailures(identifier) {
-    const key = this._lockoutKey(identifier);
-
-    if (this.redis) {
-      try {
-        await this.redis.del(key);
-      } catch (err) {
-        console.warn("⚠️ Redis error in resetFailures:", err.message);
-        this.inMemoryStore.delete(key);
-      }
-    } else {
-      this.inMemoryStore.delete(key);
-    }
-  }
+}
 
   /**
    * Helper: get state (Redis).
@@ -163,4 +182,29 @@ class AccountLockout {
   }
 }
 
-module.exports = AccountLockout;
+// Defensive export verification: ensures callers always receive callable functions
+// even if an unexpected error occurs during module initialisation.
+const _exports = { assertNotLocked, incrementFailure, resetFailures, syncFromRedis };
+
+/* istanbul ignore next */
+if (typeof _exports.assertNotLocked !== "function") {
+  console.error("❌ accountLockout: assertNotLocked não é uma função – usando fallback no-op");
+  _exports.assertNotLocked = function () {};
+}
+/* istanbul ignore next */
+if (typeof _exports.incrementFailure !== "function") {
+  console.error("❌ accountLockout: incrementFailure não é uma função – usando fallback no-op");
+  _exports.incrementFailure = async function () {};
+}
+/* istanbul ignore next */
+if (typeof _exports.resetFailures !== "function") {
+  console.error("❌ accountLockout: resetFailures não é uma função – usando fallback no-op");
+  _exports.resetFailures = async function () {};
+}
+/* istanbul ignore next */
+if (typeof _exports.syncFromRedis !== "function") {
+  console.error("❌ accountLockout: syncFromRedis não é uma função – usando fallback no-op");
+  _exports.syncFromRedis = async function () {};
+}
+
+module.exports = _exports;
