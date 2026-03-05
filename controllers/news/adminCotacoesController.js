@@ -99,7 +99,7 @@ async function logAdmin(req, acao, entidade, entidade_id = null) {
     const admin_id = req.admin?.id || req.user?.id || req.adminId || req.userId || null;
     if (!admin_id) return;
 
-    await pool.query(`INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)`, [
+    await pool.query("INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)", [
       admin_id,
       acao,
       entidade,

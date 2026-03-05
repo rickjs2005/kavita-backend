@@ -553,7 +553,7 @@ router.post("/:id/view", async (req, res) => {
     }
 
     await pool.query(
-      `UPDATE colaboradores SET views_count = views_count + 1 WHERE id = ?`,
+      "UPDATE colaboradores SET views_count = views_count + 1 WHERE id = ?",
       [id]
     );
     return res.json({ ok: true });
@@ -604,7 +604,7 @@ router.post("/:id/whatsapp", async (req, res) => {
     }
 
     await pool.query(
-      `UPDATE colaboradores SET whatsapp_clicks = whatsapp_clicks + 1 WHERE id = ?`,
+      "UPDATE colaboradores SET whatsapp_clicks = whatsapp_clicks + 1 WHERE id = ?",
       [id]
     );
     return res.json({ ok: true });
