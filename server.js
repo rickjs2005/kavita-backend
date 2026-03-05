@@ -34,6 +34,16 @@ try {
 const app = express();
 
 /* ============================
+ * Garantir que o diretório de uploads exista
+ * ============================ */
+const fs = require("fs");
+const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  logger.info(`📁 Diretório de uploads criado: ${UPLOADS_DIR}`);
+}
+
+/* ============================
  * Segurança: Helmet (Security Headers)
  * ============================ */
 app.use(

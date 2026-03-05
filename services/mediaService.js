@@ -98,11 +98,42 @@ const createDiskAdapter = () => {
         key: target.key || resolveKey(target.path),
       }));
     },
-    persist: async (files = []) =>
-      files.map((file) => ({
-        path: toPublicPath(file.filename),
-        key: resolveKey(toPublicPath(file.filename)),
-      })),
+    persist: async (files = [], options = {}) => {
+      const folder = sanitizeSegment(options.folder || "");
+      const results = [];
+
+      for (const file of files) {
+        let publicFilename = file.filename;
+
+        if (folder) {
+          const subDir = path.join(uploadRoot, folder);
+          ensureDirSync(subDir);
+          const srcPath = path.join(uploadRoot, file.filename);
+          const destPath = path.join(subDir, file.filename);
+          try {
+            fs.renameSync(srcPath, destPath);
+            publicFilename = `${folder}/${file.filename}`;
+            console.log(`[mediaService] ✅ Arquivo salvo: ${destPath}`);
+          } catch (err) {
+            console.error(
+              `[mediaService] ❌ Erro ao mover arquivo para ${destPath}: ${err.message}`
+            );
+          }
+        } else {
+          const diskPath = path.join(uploadRoot, file.filename);
+          if (!fs.existsSync(diskPath)) {
+            console.error(`[mediaService] ⚠️ Arquivo não encontrado após upload: ${diskPath}`);
+          } else {
+            console.log(`[mediaService] ✅ Arquivo salvo: ${diskPath}`);
+          }
+        }
+
+        const publicPath = toPublicPath(publicFilename);
+        results.push({ path: publicPath, key: resolveKey(publicPath) });
+      }
+
+      return results;
+    },
     remove: async (targets = []) => {
       for (const target of targets) {
         if (!target?.key) continue;
