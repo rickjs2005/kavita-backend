@@ -86,7 +86,11 @@ const AuthController = {
       if (error.locked) {
         return next(new AppError(error.message, ERROR_CODES.AUTH_ERROR, 429));
       }
-      console.error("❌ Erro no login do usuário:", error);
+      console.error("❌ Erro no login do usuário:", {
+        message: error.message,
+        stack: process.env.NODE_ENV !== "production" ? error.stack : undefined,
+        url: req.originalUrl,
+      });
       return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
     }
   },

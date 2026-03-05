@@ -94,5 +94,8 @@
       "server.js"
     ]
   },
-  "keywords": []
+  "keywords": [],
+  "overrides": {
+    "punycode": "^2.3.1"
+  }
 }
