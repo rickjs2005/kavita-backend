@@ -7,6 +7,7 @@ const router = express.Router();
 
 const db = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
+const { validateFileMagicBytes } = require("../utils/fileValidation");
 
 /**
  * Diretório público de uploads
@@ -100,6 +101,15 @@ router.post("/logo", verifyAdmin, upload.single("logo"), async (req, res, next) 
 
     if (!req.file) {
       return res.status(400).json({ error: "Arquivo não enviado." });
+    }
+
+    const filePath = req.file.path;
+
+    // Validate magic bytes (actual content, not just MIME type)
+    const { valid } = validateFileMagicBytes(filePath, ["image/png", "image/jpeg", "image/webp"]);
+    if (!valid) {
+      safeUnlink(filePath);
+      return res.status(400).json({ error: "Formato inválido. Envie PNG, JPG ou WEBP." });
     }
 
     const id = await ensureDefaultSettings();

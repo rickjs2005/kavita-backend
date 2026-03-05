@@ -1,106 +1,62 @@
 // middleware/csrfProtection.js
+// Double-submit cookie strategy for CSRF protection
 const crypto = require("crypto");
-const AppError = require("../errors/AppError");
-const ERROR_CODES = require("../constants/ErrorCodes");
+
+const CSRF_COOKIE = "csrf_token";
+const CSRF_HEADER = "x-csrf-token";
+const COOKIE_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2h
 
 /**
- * CSRF Protection Middleware (Double-Submit Cookie Strategy)
- * 
- * IMPORTANTE: NÃO aplicar globalmente em /api
- * Aplicar seletivamente em rotas que usam cookies (admin, cart, checkout, etc)
- * 
- * Flow:
- * 1. GET /api/csrf-token → returns { csrfToken } + sets cookie
- * 2. Client armazena token em memória (não localStorage)
- * 3. Client envia token em X-CSRF-Token header
- * 4. Middleware valida
+ * Generates a new CSRF token and sets it as a non-HttpOnly cookie
+ * (must be readable by JS so the frontend can read and send it in a header).
+ *
+ * GET /api/csrf-token
  */
+function issueCsrfToken(req, res) {
+  const token = crypto.randomBytes(32).toString("hex");
 
-const CSRF_COOKIE_NAME = "csrf_token";
-const CSRF_HEADER_NAME = "x-csrf-token";
-
-function generateCSRFToken() {
-  return crypto.randomBytes(32).toString("hex");
-}
-
-function setCSRFTokenCookie(res, token) {
-  res.cookie(CSRF_COOKIE_NAME, token, {
-    httpOnly: true,
+  res.cookie(CSRF_COOKIE, token, {
+    httpOnly: false, // intentionally readable by JS (double-submit pattern)
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax", // Compatível com subdomínios/redirecionamentos
-    path: "/api", // Reduz escopo do cookie
-    maxAge: 24 * 60 * 60 * 1000, // 24h
+    sameSite: "lax",
+    maxAge: COOKIE_MAX_AGE_MS,
+    path: "/",
   });
+
+  return res.json({ csrfToken: token });
 }
 
 /**
- * Middleware: valida CSRF token em mutações
- * Aplique APENAS em rotas autenticadas (admin, cart, etc)
+ * Validates CSRF token using the double-submit cookie strategy:
+ * - Cookie value must match the value sent in the X-CSRF-Token header.
+ *
+ * Apply to state-changing routes on admin/authenticated areas.
  */
 function validateCSRF(req, res, next) {
-  // Skip GET/HEAD/OPTIONS (safe methods)
-  if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+  // Safe methods don't need CSRF protection
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
     return next();
   }
 
-  // Get token from cookie
-  const cookieToken = req.cookies?.[CSRF_COOKIE_NAME];
-  if (!cookieToken) {
-    return next(
-      new AppError(
-        "CSRF token missing. Call GET /api/csrf-token first.",
-        ERROR_CODES.AUTH_ERROR,
-        403
-      )
-    );
+  const cookieToken = req.cookies && req.cookies[CSRF_COOKIE];
+  const headerToken = req.headers && req.headers[CSRF_HEADER];
+
+  if (!cookieToken || !headerToken) {
+    return res.status(403).json({ message: "CSRF token ausente." });
   }
 
-  // Get token from header
-  const headerToken = req.get(CSRF_HEADER_NAME);
-  if (!headerToken) {
-    return next(
-      new AppError(
-        "CSRF token header missing (X-CSRF-Token).",
-        ERROR_CODES.AUTH_ERROR,
-        403
-      )
-    );
-  }
-
-  // Timing-safe comparison
-  const bufCookie = Buffer.from(cookieToken, "utf8");
-  const bufHeader = Buffer.from(headerToken, "utf8");
+  // Constant-time comparison to prevent timing attacks
+  const cookieBuf = Buffer.from(cookieToken);
+  const headerBuf = Buffer.from(headerToken);
 
   if (
-    bufCookie.length !== bufHeader.length ||
-    !crypto.timingSafeEqual(bufCookie, bufHeader)
+    cookieBuf.length !== headerBuf.length ||
+    !crypto.timingSafeEqual(cookieBuf, headerBuf)
   ) {
-    console.warn("[CSRF] Token mismatch (potential CSRF attack)");
-    return next(
-      new AppError(
-        "CSRF token invalid.",
-        ERROR_CODES.AUTH_ERROR,
-        403
-      )
-    );
+    return res.status(403).json({ message: "CSRF token inválido." });
   }
 
   return next();
 }
 
-/**
- * Endpoint: GET /api/csrf-token (público, sem autenticação)
- * Retorna token + seta cookie
- */
-function csrfTokenEndpoint(req, res) {
-  const token = generateCSRFToken();
-  setCSRFTokenCookie(res, token);
-  return res.json({ csrfToken: token });
-}
-
-module.exports = {
-  validateCSRF,
-  csrfTokenEndpoint,
-  generateCSRFToken,
-  setCSRFTokenCookie,
-};
+module.exports = { issueCsrfToken, validateCSRF };

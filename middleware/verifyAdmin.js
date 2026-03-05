@@ -18,6 +18,7 @@ async function findAdminById(adminId) {
         a.email,
         a.role,
         a.ativo,
+        a.tokenVersion,
         r.id AS role_id
       FROM admins a
       LEFT JOIN admin_roles r
@@ -71,18 +72,9 @@ async function verifyAdmin(req, _res, next) {
 
   let token = null;
 
-  // 1) Cookie HttpOnly (prioridade)
+  // Cookie HttpOnly only — Bearer tokens are not accepted
   if (req.cookies?.adminToken) {
     token = req.cookies.adminToken;
-  }
-
-  // 2) Fallback: Authorization header
-  if (!token) {
-    const authHeader =
-      req.headers.authorization || req.headers["authorization"];
-    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
-      token = authHeader.slice(7);
-    }
   }
 
   if (!token) {
@@ -126,6 +118,21 @@ async function verifyAdmin(req, _res, next) {
       return next(
         new AppError(
           "Admin inativo.",
+          ERROR_CODES.AUTH_ERROR,
+          401
+        )
+      );
+    }
+
+    // Validate tokenVersion for logout revocation support
+    if (
+      admin.tokenVersion != null &&
+      decoded.tokenVersion != null &&
+      decoded.tokenVersion !== admin.tokenVersion
+    ) {
+      return next(
+        new AppError(
+          "Sessão inválida. Faça login novamente.",
           ERROR_CODES.AUTH_ERROR,
           401
         )

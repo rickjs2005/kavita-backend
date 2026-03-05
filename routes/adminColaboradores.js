@@ -1,10 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const path = require("path");
+const fs = require("fs");
 const multer = require("multer");
 
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
+const { validateFileMagicBytes, sanitizeFilename } = require("../utils/fileValidation");
 
 /* ========================
    UPLOAD CONFIG - MULTER
@@ -15,11 +17,20 @@ const storage = multer.diskStorage({
     cb(null, "uploads/colaboradores");
   },
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const base = path.basename(file.originalname, ext);
+    const sanitized = sanitizeFilename(file.originalname);
+    const ext = path.extname(sanitized);
+    const base = path.basename(sanitized, ext);
     cb(null, `${base}-${Date.now()}${ext}`);
   },
 });
+
+function safeUnlink(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    console.warn("⚠️ Não foi possível remover arquivo:", e.message);
+  }
+}
 
 const upload = multer({ storage });
 
@@ -52,10 +63,20 @@ router.post("/public", upload.single("imagem"), async (req, res) => {
     } = req.body;
 
     if (!nome || !whatsapp || !especialidade_id || !email) {
+      if (req.file) safeUnlink(req.file.path);
       return res.status(400).json({
         message:
           "Campos obrigatórios: nome, WhatsApp, e-mail e especialidade.",
       });
+    }
+
+    // Validate uploaded image magic bytes
+    if (req.file) {
+      const { valid } = validateFileMagicBytes(req.file.path);
+      if (!valid) {
+        safeUnlink(req.file.path);
+        return res.status(400).json({ message: "Arquivo inválido. Envie uma imagem PNG, JPEG, WEBP ou GIF." });
+      }
     }
 
     const especialidadeId = Number(especialidade_id);
@@ -92,6 +113,7 @@ router.post("/public", upload.single("imagem"), async (req, res) => {
         "Cadastro enviado! Você será avisado por e-mail quando seu perfil for aprovado.",
     });
   } catch (err) {
+    if (req.file) safeUnlink(req.file.path);
     console.error("Erro ao cadastrar colaborador (public):", err);
     return res
       .status(500)
@@ -115,10 +137,20 @@ router.post("/", verifyAdmin, upload.single("imagem"), async (req, res) => {
     } = req.body;
 
     if (!nome || !whatsapp || !especialidade_id || !email) {
+      if (req.file) safeUnlink(req.file.path);
       return res.status(400).json({
         message:
           "Campos obrigatórios: nome, WhatsApp, e-mail e especialidade.",
       });
+    }
+
+    // Validate uploaded image magic bytes
+    if (req.file) {
+      const { valid } = validateFileMagicBytes(req.file.path);
+      if (!valid) {
+        safeUnlink(req.file.path);
+        return res.status(400).json({ message: "Arquivo inválido. Envie uma imagem PNG, JPEG, WEBP ou GIF." });
+      }
     }
 
     const especialidadeId = Number(especialidade_id);
@@ -154,6 +186,7 @@ router.post("/", verifyAdmin, upload.single("imagem"), async (req, res) => {
       .status(201)
       .json({ message: "Colaborador cadastrado com sucesso!" });
   } catch (err) {
+    if (req.file) safeUnlink(req.file.path);
     console.error("Erro ao salvar colaborador (admin):", err);
     return res.status(500).json({ message: "Erro ao salvar colaborador." });
   }
