@@ -154,34 +154,6 @@ function assertNotLocked(identifier) {
   }
 }
 
-  /**
-   * Helper: get state (Redis).
-   */
-  async _getState_Redis(key) {
-    try {
-      const data = await this.redis.get(key);
-      return data ? JSON.parse(data) : null;
-    } catch (err) {
-      console.warn("⚠️ Redis error in getState:", err.message);
-      return null;
-    }
-  }
-
-  /**
-   * Helper: get state (Memory).
-   */
-  _getState_Memory(key) {
-    return this.inMemoryStore.get(key) || null;
-  }
-
-  async getState(identifier) {
-    const key = this._lockoutKey(identifier);
-    return this.redis
-      ? this._getState_Redis(key)
-      : this._getState_Memory(key);
-  }
-}
-
 // Defensive export verification: ensures callers always receive callable functions
 // even if an unexpected error occurs during module initialisation.
 const _exports = { assertNotLocked, incrementFailure, resetFailures, syncFromRedis };
