@@ -12,9 +12,12 @@ const { validateFileMagicBytes, sanitizeFilename } = require("../utils/fileValid
    UPLOAD CONFIG - MULTER
 ======================== */
 
+const UPLOAD_DIR = path.join(process.cwd(), "uploads", "colaboradores");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/colaboradores");
+    cb(null, UPLOAD_DIR);
   },
   filename: (req, file, cb) => {
     const sanitized = sanitizeFilename(file.originalname);

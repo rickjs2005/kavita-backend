@@ -154,6 +154,67 @@ function assertNotLocked(identifier) {
   }
 }
 
+/**
+ * Record a failed login attempt for the identifier.
+ * If failures reach MAX_FAILURES, lock the account.
+ *
+ * @param {string} identifier - e.g. "user:user@domain.com"
+ */
+async function incrementFailure(identifier) {
+  if (redisReady && redisClient) {
+    const failures = await _redisGetFailures(identifier);
+    const newFailures = failures + 1;
+    await _redisSetFailures(identifier, newFailures);
+
+    // Sync to in-memory store
+    const entry = _memGetEntry(identifier);
+    entry.failures = newFailures;
+    if (newFailures >= MAX_FAILURES) {
+      entry.lockedUntil = Date.now() + LOCKOUT_DURATION_MS;
+      await _redisSetLocked(identifier);
+    }
+    _memSetEntry(identifier, entry);
+  } else {
+    // In-memory only
+    const entry = _memGetEntry(identifier);
+    entry.failures += 1;
+    if (entry.failures >= MAX_FAILURES) {
+      entry.lockedUntil = Date.now() + LOCKOUT_DURATION_MS;
+    }
+    _memSetEntry(identifier, entry);
+  }
+}
+
+/**
+ * Clear all lockout state for the identifier (used after successful login).
+ *
+ * @param {string} identifier - e.g. "user:user@domain.com"
+ */
+async function resetFailures(identifier) {
+  memoryStore.delete(identifier);
+  if (redisReady && redisClient) {
+    await _redisDelete(identifier);
+  }
+}
+
+/**
+ * Sync lockout state from Redis into the in-memory store (e.g. on server startup).
+ * Useful to restore lockouts after a server restart when Redis is available.
+ *
+ * @param {string} identifier - e.g. "user:user@domain.com"
+ */
+async function syncFromRedis(identifier) {
+  if (!redisReady || !redisClient) return;
+
+  const failures = await _redisGetFailures(identifier);
+  const ttl = await _redisGetLockedTTL(identifier);
+
+  const entry = { failures, lockedUntil: null };
+  if (ttl > 0) {
+    entry.lockedUntil = Date.now() + ttl * 1000;
+  }
+  _memSetEntry(identifier, entry);
+}
 // Defensive export verification: ensures callers always receive callable functions
 // even if an unexpected error occurs during module initialisation.
 const _exports = { assertNotLocked, incrementFailure, resetFailures, syncFromRedis };

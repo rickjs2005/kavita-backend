@@ -4,7 +4,12 @@ const fsPromises = require("fs/promises");
 const multer = require("multer");
 const { randomUUID } = require("crypto");
 
-const STORAGE_DRIVER = (process.env.MEDIA_STORAGE_DRIVER || process.env.MEDIA_STORAGE || "disk").toLowerCase();
+const STORAGE_DRIVER = (
+  process.env.MEDIA_STORAGE_DRIVER ||
+  process.env.MEDIA_STORAGE ||
+  "disk"
+).toLowerCase();
+
 const UPLOAD_DIR = process.env.MEDIA_UPLOAD_DIR || "uploads";
 const PUBLIC_PREFIX = process.env.MEDIA_PUBLIC_PREFIX || "/uploads";
 const MEDIA_PUBLIC_BASE_URL = process.env.MEDIA_PUBLIC_BASE_URL || "";
@@ -26,7 +31,8 @@ const generateId = () => {
   }
 };
 
-const sanitizeSegment = (segment = "") => segment.replace(/\\+/g, "/").replace(/^\/+|\/+$/g, "");
+const sanitizeSegment = (segment = "") =>
+  String(segment).replace(/\\+/g, "/").replace(/^\/+|\/+$/g, "");
 
 const buildFilename = (original = "", prefix = "") => {
   const ext = path.extname(original) || "";
@@ -42,10 +48,18 @@ const normalizeTargets = (targets = []) => {
     .filter((item) => item && item.path);
 };
 
+const normalizePublicPrefix = () =>
+  PUBLIC_PREFIX.endsWith("/") ? PUBLIC_PREFIX.slice(0, -1) : PUBLIC_PREFIX;
+
+const stripConfiguredBaseUrl = (value = "") => {
+  if (!MEDIA_PUBLIC_BASE_URL) return value;
+  return value.replace(MEDIA_PUBLIC_BASE_URL, "");
+};
+
 const createDiskAdapter = () => {
   const uploadRoot = path.isAbsolute(UPLOAD_DIR)
     ? UPLOAD_DIR
-    : path.join(process.cwd(), UPLOAD_DIR);
+    : path.resolve(__dirname, "..", UPLOAD_DIR);
 
   ensureDirSync(uploadRoot);
 
@@ -68,24 +82,33 @@ const createDiskAdapter = () => {
     },
   });
 
-  const toPublicPath = (filename = "") => {
-    const normalizedPrefix = PUBLIC_PREFIX.endsWith("/")
-      ? PUBLIC_PREFIX.slice(0, -1)
-      : PUBLIC_PREFIX;
-    return `${normalizedPrefix}/${sanitizeSegment(filename)}`.replace(/\\+/g, "/");
+  const toPublicPath = (relativePath = "") => {
+    const normalizedPrefix = normalizePublicPrefix();
+    const cleanRelative = sanitizeSegment(relativePath);
+    if (!cleanRelative) return normalizedPrefix;
+    return `${normalizedPrefix}/${cleanRelative}`.replace(/\\+/g, "/");
   };
 
   const resolveKey = (value = "") => {
     if (!value) return "";
-    const withoutBaseUrl = value.replace(MEDIA_PUBLIC_BASE_URL, "");
-    const prefixNormalized = PUBLIC_PREFIX.endsWith("/")
-      ? PUBLIC_PREFIX
-      : `${PUBLIC_PREFIX}/`;
-    let relative = withoutBaseUrl.startsWith(prefixNormalized)
-      ? withoutBaseUrl.slice(prefixNormalized.length)
-      : withoutBaseUrl.replace(PUBLIC_PREFIX, "");
-    relative = relative.replace(/^\/+/, "");
-    return path.join(uploadRoot, relative);
+
+    const withoutBaseUrl = stripConfiguredBaseUrl(String(value));
+    const normalizedPrefix = normalizePublicPrefix();
+    const prefixWithSlash = `${normalizedPrefix}/`;
+
+    let relative = withoutBaseUrl;
+
+    if (relative.startsWith(prefixWithSlash)) {
+      relative = relative.slice(prefixWithSlash.length);
+    } else if (relative === normalizedPrefix) {
+      relative = "";
+    } else if (relative.startsWith(normalizedPrefix)) {
+      relative = relative.slice(normalizedPrefix.length);
+    }
+
+    relative = sanitizeSegment(relative);
+
+    return path.resolve(uploadRoot, relative);
   };
 
   return {
@@ -98,16 +121,80 @@ const createDiskAdapter = () => {
         key: target.key || resolveKey(target.path),
       }));
     },
-    persist: async (files = []) =>
-      files.map((file) => ({
-        path: toPublicPath(file.filename),
-        key: resolveKey(toPublicPath(file.filename)),
-      })),
+    persist: async (files = [], options = {}) => {
+      const folder = sanitizeSegment(options.folder || "");
+      const results = [];
+
+      for (const file of files) {
+        let relativePath = file.filename;
+
+        console.log("[mediaService] ------------------------------");
+        console.log("[mediaService] storage=disk");
+        console.log("[mediaService] uploadRoot:", uploadRoot);
+        console.log("[mediaService] folder:", folder || "(root)");
+        console.log("[mediaService] file.originalname:", file.originalname);
+        console.log("[mediaService] file.filename:", file.filename);
+
+        if (folder) {
+          const subDir = path.join(uploadRoot, folder);
+          ensureDirSync(subDir);
+
+          const srcPath = path.join(uploadRoot, file.filename);
+          const destPath = path.join(subDir, file.filename);
+
+          console.log("[mediaService] srcPath:", srcPath);
+          console.log("[mediaService] destPath:", destPath);
+
+          try {
+            if (!fs.existsSync(srcPath)) {
+              throw new Error(`Arquivo temporário não encontrado em ${srcPath}`);
+            }
+
+            fs.renameSync(srcPath, destPath);
+
+            if (!fs.existsSync(destPath)) {
+              throw new Error(`Arquivo não encontrado após mover para ${destPath}`);
+            }
+
+            relativePath = `${folder}/${file.filename}`;
+            console.log(`[mediaService] ✅ Arquivo movido para: ${destPath}`);
+          } catch (err) {
+            console.error(
+              `[mediaService] ❌ Erro ao mover arquivo para ${destPath}: ${err.message}`
+            );
+            throw err;
+          }
+        } else {
+          const diskPath = path.join(uploadRoot, file.filename);
+          if (!fs.existsSync(diskPath)) {
+            throw new Error(
+              `[mediaService] Arquivo não encontrado após upload: ${diskPath}`
+            );
+          }
+          console.log(`[mediaService] ✅ Arquivo salvo: ${diskPath}`);
+        }
+
+        const publicPath = toPublicPath(relativePath);
+        const resolvedKey = resolveKey(publicPath);
+
+        console.log("[mediaService] publicPath:", publicPath);
+        console.log("[mediaService] resolvedKey:", resolvedKey);
+
+        results.push({
+          path: publicPath,
+          key: resolvedKey,
+        });
+      }
+
+      return results;
+    },
     remove: async (targets = []) => {
       for (const target of targets) {
         if (!target?.key) continue;
+
         try {
           await fsPromises.unlink(target.key);
+          console.log(`[mediaService] 🗑️ Arquivo removido: ${target.key}`);
         } catch (err) {
           if (err?.code !== "ENOENT") throw err;
         }
@@ -120,6 +207,7 @@ const createS3Adapter = (fallback) => {
   let S3Client;
   let PutObjectCommand;
   let DeleteObjectCommand;
+
   try {
     ({ S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3"));
   } catch (err) {
@@ -129,6 +217,7 @@ const createS3Adapter = (fallback) => {
 
   const bucket = process.env.AWS_S3_BUCKET || process.env.S3_BUCKET;
   const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+
   if (!bucket) {
     console.warn("Bucket S3 não configurado. Recuando para storage local.");
     return fallback;
@@ -199,9 +288,11 @@ const createS3Adapter = (fallback) => {
     persist: async (files = [], options = {}) => {
       const folder = sanitizeSegment(options.folder || "");
       const uploaded = [];
+
       try {
         for (const file of files) {
           const key = folder ? `${folder}/${buildKey(file)}` : buildKey(file);
+
           await client.send(
             new PutObjectCommand({
               Bucket: bucket,
@@ -210,13 +301,19 @@ const createS3Adapter = (fallback) => {
               ContentType: file.mimetype,
             })
           );
+
           uploaded.push({ path: toPublicPath(key), key });
         }
       } catch (err) {
         if (uploaded.length) {
           try {
             for (const item of uploaded) {
-              await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: item.key }));
+              await client.send(
+                new DeleteObjectCommand({
+                  Bucket: bucket,
+                  Key: item.key,
+                })
+              );
             }
           } catch (cleanupErr) {
             console.error("Erro ao limpar uploads parciais no S3:", cleanupErr);
@@ -224,13 +321,20 @@ const createS3Adapter = (fallback) => {
         }
         throw err;
       }
+
       return uploaded;
     },
     remove: async (targets = []) => {
       for (const target of targets) {
         if (!target?.key) continue;
+
         try {
-          await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: target.key }));
+          await client.send(
+            new DeleteObjectCommand({
+              Bucket: bucket,
+              Key: target.key,
+            })
+          );
         } catch (err) {
           if (err?.name === "NoSuchKey") continue;
           if (err?.$metadata?.httpStatusCode === 404) continue;
@@ -243,6 +347,7 @@ const createS3Adapter = (fallback) => {
 
 const createGcsAdapter = (fallback) => {
   let Storage;
+
   try {
     ({ Storage } = require("@google-cloud/storage"));
   } catch (err) {
@@ -307,24 +412,33 @@ const createGcsAdapter = (fallback) => {
     persist: async (files = [], options = {}) => {
       const folder = sanitizeSegment(options.folder || "");
       const uploaded = [];
+
       try {
         for (const file of files) {
           const key = folder
             ? `${folder}/${buildFilename(file.originalname)}`
             : buildFilename(file.originalname);
+
           const fileRef = bucket.file(sanitizeSegment(key));
+
           await fileRef.save(file.buffer, {
             resumable: false,
             contentType: file.mimetype,
             public: true,
           });
-          uploaded.push({ path: `${baseUrl}${sanitizeSegment(key)}`, key: sanitizeSegment(key) });
+
+          uploaded.push({
+            path: `${baseUrl}${sanitizeSegment(key)}`,
+            key: sanitizeSegment(key),
+          });
         }
       } catch (err) {
         if (uploaded.length) {
           try {
             await Promise.all(
-              uploaded.map((item) => bucket.file(item.key).delete({ ignoreNotFound: true }))
+              uploaded.map((item) =>
+                bucket.file(item.key).delete({ ignoreNotFound: true })
+              )
             );
           } catch (cleanupErr) {
             console.error("Erro ao limpar uploads parciais no Cloud Storage:", cleanupErr);
@@ -332,11 +446,13 @@ const createGcsAdapter = (fallback) => {
         }
         throw err;
       }
+
       return uploaded;
     },
     remove: async (targets = []) => {
       for (const target of targets) {
         if (!target?.key) continue;
+
         try {
           await bucket.file(target.key).delete({ ignoreNotFound: true });
         } catch (err) {
@@ -361,29 +477,29 @@ const storageAdapter = (() => {
 })();
 
 /* ====================================================================== */
-/* 🔧 ÚNICO AJUSTE: aceitar vídeo em heroVideo e na galeria (media)        */
+/* Filtro de upload                                                        */
 /* ====================================================================== */
 const imageFilter = (_req, file, cb) => {
   const mime = String(file.mimetype || "");
   const isImage = mime.startsWith("image/");
   const isVideo = mime.startsWith("video/");
 
-  // heroVideo: aceita somente vídeo
   if (file.fieldname === "heroVideo") {
     if (!isVideo) return cb(new Error("heroVideo deve ser um vídeo (mp4/webm)."));
     return cb(null, true);
   }
 
-  // media (galeria): aceita imagem OU vídeo
   if (file.fieldname === "media") {
-    if (!isImage && !isVideo) return cb(new Error("Arquivo inválido. Envie imagem ou vídeo."));
+    if (!isImage && !isVideo) {
+      return cb(new Error("Arquivo inválido. Envie imagem ou vídeo."));
+    }
     return cb(null, true);
   }
 
-  // padrão: apenas imagem
   if (!isImage) {
     return cb(new Error("Arquivo não é uma imagem."));
   }
+
   return cb(null, true);
 };
 
@@ -408,9 +524,11 @@ async function persistMedia(files = [], options = {}) {
 
 async function removeMedia(targets = []) {
   const normalized = resolveTargetsForAdapter(targets);
+
   if (!normalized.length || typeof storageAdapter.remove !== "function") {
     return;
   }
+
   try {
     await storageAdapter.remove(normalized);
   } catch (err) {
@@ -425,6 +543,7 @@ async function processCleanupQueue() {
 
   while (cleanupQueue.length) {
     const job = cleanupQueue.shift();
+
     try {
       await removeMedia(job.targets);
     } catch (err) {
@@ -439,14 +558,18 @@ async function processCleanupQueue() {
 
 function enqueueOrphanCleanup(targets = []) {
   const normalized = resolveTargetsForAdapter(targets);
+
   if (!normalized.length) {
     return Promise.resolve();
   }
 
   return new Promise((resolve) => {
     cleanupQueue.push({ targets: normalized, resolve });
+
     setImmediate(() => {
-      processCleanupQueue().catch((err) => console.error("Erro na fila de limpeza:", err));
+      processCleanupQueue().catch((err) =>
+        console.error("Erro na fila de limpeza:", err)
+      );
     });
   });
 }

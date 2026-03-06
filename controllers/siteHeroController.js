@@ -2,6 +2,7 @@
 
 const AppError = require("../errors/AppError");
 const pool = require("../config/pool");
+const mediaService = require("../services/mediaService");
 
 function pickFile(files, field) {
   const arr = files?.[field];
@@ -66,9 +67,7 @@ async function updateHeroRow(fields) {
 }
 
 function fileToPublicPath(file) {
-  // padrão mais comum: servir /uploads/<filename>
-  // se seu storage for diferente, ajuste aqui
-  return `/uploads/${file.filename}`;
+  return mediaService.toPublicPath(file.filename);
 }
 
 exports.getHero = async (req, res) => {

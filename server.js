@@ -6,7 +6,9 @@ const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
 const cookieParser = require("cookie-parser");
+const fs = require("fs");
 const logger = console;
+
 const config = require("./config/env");
 const { setupDocs } = require("./docs/swagger");
 
@@ -32,6 +34,65 @@ try {
 }
 
 const app = express();
+
+/* ============================
+ * Garantir que o diretório de uploads exista
+ * ============================ */
+
+// ✅ IMPORTANTE: caminho estável (evita CWD diferente no Windows/PM2/Tasks)
+const UPLOADS_DIR = path.resolve(__dirname, "uploads");
+
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  logger.info(`📁 Diretório de uploads criado: ${UPLOADS_DIR}`);
+} else {
+  logger.info(`📁 Diretório de uploads OK: ${UPLOADS_DIR}`);
+}
+
+/* ============================
+ * Debug de uploads
+ * ============================ */
+
+// ✅ Endpoint simples para validar se o diretório e um arquivo específico existem
+app.get("/__debug/uploads", (_req, res) => {
+  const file = path.join(UPLOADS_DIR, "logo-1767549512715.png");
+
+  res.json({
+    uploadsDir: UPLOADS_DIR,
+    exists: fs.existsSync(file),
+    stat: fs.existsSync(file) ? fs.statSync(file) : null,
+  });
+});
+
+// ✅ Middleware de debug para ver exatamente o que está sendo pedido em /uploads
+// Fica ANTES do express.static para logar todas as tentativas
+app.use("/uploads", (req, _res, next) => {
+  try {
+    const raw = req.originalUrl; // ex: /uploads/arquivo.jpg%0A
+    const decoded = decodeURIComponent(raw);
+    const rel = decoded.replace(/^\/uploads\/?/i, "");
+    const cleanedRel = String(rel).trim();
+
+    const diskPath = path.resolve(UPLOADS_DIR, cleanedRel);
+    const isInsideUploads =
+      diskPath === UPLOADS_DIR || diskPath.startsWith(UPLOADS_DIR + path.sep);
+
+    logger.info("[uploads-debug]", {
+      method: req.method,
+      raw,
+      decoded,
+      rel,
+      cleanedRel,
+      diskPath,
+      isInsideUploads,
+      exists: isInsideUploads ? fs.existsSync(diskPath) : false,
+    });
+  } catch (err) {
+    logger.warn("[uploads-debug] erro ao processar caminho:", err.message);
+  }
+
+  next();
+});
 
 /* ============================
  * Segurança: Helmet (Security Headers)
@@ -96,14 +157,17 @@ app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
+
       const normalized = normalizeOrigin(origin);
       if (normalized && ALLOWED_ORIGINS.includes(normalized)) {
         return cb(null, true);
       }
+
       const msg = `CORS bloqueado para origem: ${origin}`;
       if (process.env.NODE_ENV !== "production") {
         logger.warn(msg, { normalized, ALLOWED_ORIGINS });
       }
+
       return cb(new Error(msg));
     },
     credentials: true,
@@ -115,14 +179,18 @@ app.use(
  * ============================ */
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use(cookieParser());
+
+/* ============================
+ * Arquivos estáticos: uploads
+ * ============================ */
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 /* ============================
  * Segurança: Rate Limiter
  * ============================ */
 const rateLimiter = createAdaptiveRateLimiter({
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => req.ip || crypto.randomUUID(),
 });
 app.use(rateLimiter);
 
@@ -163,14 +231,20 @@ if (process.env.NODE_ENV !== "test") {
     logger.info(`✅ Server rodando em http://localhost:${PORT}`);
     logger.info(`📚 Swagger em: http://localhost:${PORT}/docs`);
     logger.info(`🌐 APP_URL configurada: ${config.appUrl}`);
+    logger.info(
+      `🖼️ Uploads servidos em: http://localhost:${PORT}/uploads (dir: ${UPLOADS_DIR})`
+    );
 
     // ============================
     // WORKERS
     // ============================
-    const disableNotifs = String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
+    const disableNotifs =
+      String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
 
     if (disableNotifs) {
-      logger.warn("🚫 Notificações automáticas DESABILITADAS (DISABLE_NOTIFICATIONS=true)");
+      logger.warn(
+        "🚫 Notificações automáticas DESABILITADAS (DISABLE_NOTIFICATIONS=true)"
+      );
       return;
     }
 
