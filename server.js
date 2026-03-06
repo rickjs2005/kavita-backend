@@ -44,6 +44,11 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 
 /* ============================
+ * Arquivos Estáticos (antes dos middlewares de segurança)
+ * ============================ */
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+/* ============================
  * Segurança: Helmet (Security Headers)
  * ============================ */
 app.use(
@@ -125,7 +130,6 @@ app.use(
  * ============================ */
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use(cookieParser());
 
 /* ============================
