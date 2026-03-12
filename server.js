@@ -55,12 +55,16 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 
 // ✅ Endpoint simples para validar se o diretório e um arquivo específico existem
 app.get("/__debug/uploads", (_req, res) => {
-  const file = path.join(UPLOADS_DIR, "logo-1767549512715.png");
+  const uploadsExists = fs.existsSync(UPLOADS_DIR);
+  const productsDir = path.join(UPLOADS_DIR, "products");
 
   res.json({
     uploadsDir: UPLOADS_DIR,
-    exists: fs.existsSync(file),
-    stat: fs.existsSync(file) ? fs.statSync(file) : null,
+    uploadsExists,
+    uploadsStat: uploadsExists ? fs.statSync(UPLOADS_DIR) : null,
+    productsDir,
+    productsExists: fs.existsSync(productsDir),
+    productsStat: fs.existsSync(productsDir) ? fs.statSync(productsDir) : null,
   });
 });
 
