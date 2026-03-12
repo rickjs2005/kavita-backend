@@ -50,37 +50,6 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 
 
-
-// ✅ Middleware de debug para ver exatamente o que está sendo pedido em /uploads
-// Fica ANTES do express.static para logar todas as tentativas
-app.use("/uploads", (req, _res, next) => {
-  try {
-    const raw = req.originalUrl; // ex: /uploads/arquivo.jpg%0A
-    const decoded = decodeURIComponent(raw);
-    const rel = decoded.replace(/^\/uploads\/?/i, "");
-    const cleanedRel = String(rel).trim();
-
-    const diskPath = path.resolve(UPLOADS_DIR, cleanedRel);
-    const isInsideUploads =
-      diskPath === UPLOADS_DIR || diskPath.startsWith(UPLOADS_DIR + path.sep);
-
-    logger.info("[uploads-debug]", {
-      method: req.method,
-      raw,
-      decoded,
-      rel,
-      cleanedRel,
-      diskPath,
-      isInsideUploads,
-      exists: isInsideUploads ? fs.existsSync(diskPath) : false,
-    });
-  } catch (err) {
-    logger.warn("[uploads-debug] erro ao processar caminho:", err.message);
-  }
-
-  next();
-});
-
 /* ============================
  * Segurança: Helmet (Security Headers)
  * ============================ */
@@ -172,6 +141,35 @@ app.use(cookieParser());
  * Arquivos estáticos: uploads
  * ============================ */
 app.use("/uploads", express.static(UPLOADS_DIR));
+
+// ✅ Middleware de debug para /uploads: só é acionado quando o express.static
+// não encontrou o arquivo (next() foi chamado). Loga apenas requisições não servidas.
+app.use("/uploads", (req, _res, next) => {
+  try {
+    const raw = req.originalUrl;
+    const decoded = decodeURIComponent(raw);
+    const rel = decoded.replace(/^\/uploads\/?/i, "");
+    const cleanedRel = String(rel).trim();
+
+    const diskPath = path.resolve(UPLOADS_DIR, cleanedRel);
+    const isInsideUploads =
+      diskPath === UPLOADS_DIR || diskPath.startsWith(UPLOADS_DIR + path.sep);
+
+    logger.info("[uploads-debug] arquivo não servido pelo express.static:", {
+      method: req.method,
+      raw,
+      decoded,
+      rel,
+      cleanedRel,
+      diskPath,
+      isInsideUploads,
+    });
+  } catch (err) {
+    logger.warn("[uploads-debug] erro ao processar caminho:", err.message);
+  }
+
+  next();
+});
 
 /* ============================
  * Segurança: Rate Limiter
