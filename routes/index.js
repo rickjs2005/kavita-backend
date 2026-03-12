@@ -22,6 +22,11 @@ function loadRoute(path, moduleName) {
 }
 
 /* ============================
+ * Uploads — verificação de arquivos em disco
+ * ============================ */
+loadRoute("/uploads", "./uploadsCheckRoutes");
+
+/* ============================
  * Rotas Públicas e Produtos
  * ============================ */
 
