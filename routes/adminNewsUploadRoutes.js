@@ -66,8 +66,7 @@ router.post("/cover", upload.single("file"), (req, res) => {
     });
   }
 
-  const base = `${req.protocol}://${req.get("host")}`;
-  const publicUrl = `${base}/uploads/news/${req.file.filename}`;
+  const publicUrl = `/uploads/news/${req.file.filename}`;
 
   return res.json({
     ok: true,
