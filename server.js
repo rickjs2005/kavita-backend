@@ -49,24 +49,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   logger.info(`📁 Diretório de uploads OK: ${UPLOADS_DIR}`);
 }
 
-/* ============================
- * Debug de uploads
- * ============================ */
 
-// ✅ Endpoint simples para validar se o diretório e um arquivo específico existem
-app.get("/__debug/uploads", (_req, res) => {
-  const uploadsExists = fs.existsSync(UPLOADS_DIR);
-  const productsDir = path.join(UPLOADS_DIR, "products");
-
-  res.json({
-    uploadsDir: UPLOADS_DIR,
-    uploadsExists,
-    uploadsStat: uploadsExists ? fs.statSync(UPLOADS_DIR) : null,
-    productsDir,
-    productsExists: fs.existsSync(productsDir),
-    productsStat: fs.existsSync(productsDir) ? fs.statSync(productsDir) : null,
-  });
-});
 
 // ✅ Middleware de debug para ver exatamente o que está sendo pedido em /uploads
 // Fica ANTES do express.static para logar todas as tentativas
@@ -197,6 +180,55 @@ const rateLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => req.ip || crypto.randomUUID(),
 });
 app.use(rateLimiter);
+
+/* ============================
+ * Debug de uploads (após rate limiter)
+ * ============================ */
+
+// ✅ Endpoint de debug: lista todos os subdiretórios e arquivos em /uploads
+app.get("/__debug/uploads", (_req, res) => {
+  const uploadsExists = fs.existsSync(UPLOADS_DIR);
+
+  const result = {
+    uploadsDir: UPLOADS_DIR,
+    uploadsExists,
+    subdirs: {},
+  };
+
+  if (uploadsExists) {
+    try {
+      const entries = fs.readdirSync(UPLOADS_DIR, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const subdirPath = path.join(UPLOADS_DIR, entry.name);
+          try {
+            const files = fs.readdirSync(subdirPath);
+            result.subdirs[entry.name] = files.map((filename) => {
+              const filePath = path.join(subdirPath, filename);
+              try {
+                const stat = fs.statSync(filePath);
+                return {
+                  filename,
+                  size: stat.size,
+                  mtime: stat.mtime,
+                  url: `/uploads/${entry.name}/${filename}`,
+                };
+              } catch {
+                return { filename, error: "stat failed" };
+              }
+            });
+          } catch {
+            result.subdirs[entry.name] = [];
+          }
+        }
+      }
+    } catch (err) {
+      result.error = err.message;
+    }
+  }
+
+  return res.json(result);
+});
 
 /* ============================
  * Rotas da API (Centralizadas)
