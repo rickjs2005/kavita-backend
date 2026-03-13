@@ -2,24 +2,16 @@
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
-const multer = require("multer");
 const router = express.Router();
 
 const db = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
+const mediaService = require("../services/mediaService");
 const { validateFileMagicBytes } = require("../utils/fileValidation");
 
-/**
- * Diretório público de uploads
- * (você deve servir esse path no server.js: app.use("/uploads", express.static(...)))
- */
 const UPLOAD_ROOT = path.join(process.cwd(), "uploads");
-const LOGO_DIR = path.join(UPLOAD_ROOT, "logos");
 
-function ensureDir(p) {
-  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
-}
-ensureDir(LOGO_DIR);
+const upload = mediaService.upload;
 
 function safeUnlink(filePath) {
   try {
@@ -28,31 +20,6 @@ function safeUnlink(filePath) {
     console.warn("⚠️ Não foi possível remover arquivo antigo:", e.message);
   }
 }
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, LOGO_DIR);
-  },
-  filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname || "").toLowerCase();
-    const safeExt = [".png", ".jpg", ".jpeg", ".webp"].includes(ext) ? ext : ".png";
-    cb(null, `logo-${Date.now()}${safeExt}`);
-  },
-});
-
-function fileFilter(req, file, cb) {
-  const allowed = ["image/png", "image/jpeg", "image/webp"];
-  if (!allowed.includes(file.mimetype)) {
-    return cb(new Error("Formato inválido. Envie PNG, JPG ou WEBP."), false);
-  }
-  cb(null, true);
-}
-
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
-});
 
 async function ensureDefaultSettings() {
   const [rows] = await db.query("SELECT id FROM shop_settings ORDER BY id ASC LIMIT 1");
@@ -119,7 +86,8 @@ router.post("/logo", verifyAdmin, upload.single("logo"), async (req, res, next) 
     const oldLogoUrl = oldRows?.[0]?.logo_url || null;
 
     // caminho público salvo no banco
-    const publicPath = `/uploads/logos/${req.file.filename}`;
+    const [uploaded] = await mediaService.persistMedia([req.file], { folder: "logos" });
+    const publicPath = uploaded.path;
 
     await db.query(
       "UPDATE shop_settings SET logo_url = ?, updated_at = NOW() WHERE id = ?",

@@ -66,9 +66,7 @@ async function updateHeroRow(fields) {
   await pool.query("UPDATE site_hero_settings SET ? WHERE id = ?", [fields, id]);
 }
 
-function fileToPublicPath(file) {
-  return mediaService.toPublicPath(file.filename);
-}
+
 
 exports.getHero = async (req, res) => {
   const data = await getHeroBase();
@@ -146,9 +144,9 @@ exports.updateHero = async (req, res) => {
           field: "heroVideo",
         });
       }
-      const publicPath = fileToPublicPath(heroVideo);
-      patch.hero_video_path = publicPath;
-      patch.hero_video_url = publicPath;
+      const [uploaded] = await mediaService.persistMedia([heroVideo], { folder: "hero" });
+      patch.hero_video_path = uploaded.path;
+      patch.hero_video_url = uploaded.path;
     }
 
     if (heroImage) {
@@ -157,9 +155,9 @@ exports.updateHero = async (req, res) => {
           field: "heroImage",
         });
       }
-      const publicPath = fileToPublicPath(heroImage);
-      patch.hero_image_path = publicPath;
-      patch.hero_image_url = publicPath;
+      const [uploaded] = await mediaService.persistMedia([heroImage], { folder: "hero" });
+      patch.hero_image_path = uploaded.path;
+      patch.hero_image_url = uploaded.path;
     }
 
     await updateHeroRow(patch);
