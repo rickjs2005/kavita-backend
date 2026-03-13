@@ -49,36 +49,6 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   logger.info(`📁 Diretório de uploads OK: ${UPLOADS_DIR}`);
 }
 
-
-/* ============================
- * Segurança: Helmet (Security Headers)
- * ============================ */
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        frameSrc: ["'none'"],
-        upgradeInsecureRequests: [],
-      },
-    },
-    hsts: {
-      maxAge: 31536000,
-      includeSubDomains: true,
-      preload: true,
-    },
-    frameguard: { action: "deny" },
-    noSniff: true,
-    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
-  })
-);
-
 /* ============================
  * CORS: origens permitidas
  * ============================ */
@@ -109,24 +79,106 @@ const ALLOWED_ORIGINS = Array.from(
 
 logger.info("🌐 CORS - ORIGENS PERMITIDAS:", ALLOWED_ORIGINS);
 
+// ✅ CORS Config com credentials (para /api)
+const corsWithCredentials = {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+
+    const normalized = normalizeOrigin(origin);
+    if (normalized && ALLOWED_ORIGINS.includes(normalized)) {
+      return cb(null, true);
+    }
+
+    const msg = `CORS bloqueado para origem: ${origin}`;
+    if (process.env.NODE_ENV !== "production") {
+      logger.warn(msg, { normalized, ALLOWED_ORIGINS });
+    }
+
+    return cb(new Error(msg));
+  },
+  credentials: true,  // ✅ PARA AUTENTICAÇÃO (login, cookies)
+};
+
+// ✅ CORS Config SEM credentials (para /uploads)
+const corsWithoutCredentials = {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+
+    const normalized = normalizeOrigin(origin);
+    if (normalized && ALLOWED_ORIGINS.includes(normalized)) {
+      return cb(null, true);
+    }
+
+    const msg = `CORS bloqueado para origem: ${origin}`;
+    if (process.env.NODE_ENV !== "production") {
+      logger.warn(msg, { normalized, ALLOWED_ORIGINS });
+    }
+
+    return cb(new Error(msg));
+  },
+  // ✅ SEM credentials (arquivos estáticos não precisam)
+};
+
+// ✅ APLICAR CORS: UPLOADS PRIMEIRO (sem credentials)
+app.use("/uploads", cors(corsWithoutCredentials));
+
+// ✅ NOVO: Middleware extra para garantir CORS em 304s e outras respostas
+app.use("/uploads", (req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Cache-Control", "public, max-age=31536000");
+  next();
+});
+
+// ✅ APLICAR CORS: API DEPOIS (com credentials)
+app.use("/api", cors(corsWithCredentials));
+
+/* ============================
+ * Segurança: Helmet (Security Headers)
+ * ============================ */
 app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-
-      const normalized = normalizeOrigin(origin);
-      if (normalized && ALLOWED_ORIGINS.includes(normalized)) {
-        return cb(null, true);
-      }
-
-      const msg = `CORS bloqueado para origem: ${origin}`;
-      if (process.env.NODE_ENV !== "production") {
-        logger.warn(msg, { normalized, ALLOWED_ORIGINS });
-      }
-
-      return cb(new Error(msg));
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "https:",
+          "http://localhost:5000",
+          "http://127.0.0.1:5000",
+          "http://localhost:3000",
+          "http://127.0.0.1:3000",
+        ],
+        connectSrc: [
+          "'self'",
+          "http://localhost:5000",
+          "http://127.0.0.1:5000",
+          "http://localhost:3000",
+        ],
+        mediaSrc: [
+          "'self'",
+          "http://localhost:5000",
+          "http://127.0.0.1:5000",
+          "https:",
+        ],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameSrc: ["'none'"],
+        upgradeInsecureRequests: [],
+      },
     },
-    credentials: true,
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    frameguard: { action: "deny" },
+    noSniff: true,
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   })
 );
 
@@ -142,8 +194,7 @@ app.use(cookieParser());
  * ============================ */
 app.use("/uploads", express.static(UPLOADS_DIR));
 
-// ✅ Middleware de debug para /uploads: só é acionado quando o express.static
-// não encontrou o arquivo (next() foi chamado). Loga apenas requisições não servidas.
+// ✅ Middleware de debug para /uploads
 app.use("/uploads", (req, _res, next) => {
   try {
     const raw = req.originalUrl;
