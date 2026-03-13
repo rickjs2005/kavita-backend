@@ -1,31 +1,13 @@
 const express = require("express");
 const router = express.Router();
-const path = require("path");
 const fs = require("fs");
-const multer = require("multer");
 
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
-const { validateFileMagicBytes, sanitizeFilename } = require("../utils/fileValidation");
+const mediaService = require("../services/mediaService");
+const { validateFileMagicBytes } = require("../utils/fileValidation");
 
-/* ========================
-   UPLOAD CONFIG - MULTER
-======================== */
-
-const UPLOAD_DIR = path.join(process.cwd(), "uploads", "colaboradores");
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOAD_DIR);
-  },
-  filename: (req, file, cb) => {
-    const sanitized = sanitizeFilename(file.originalname);
-    const ext = path.extname(sanitized);
-    const base = path.basename(sanitized, ext);
-    cb(null, `${base}-${Date.now()}${ext}`);
-  },
-});
+const upload = mediaService.upload;
 
 function safeUnlink(filePath) {
   try {
@@ -34,8 +16,6 @@ function safeUnlink(filePath) {
     console.warn("⚠️ Não foi possível remover arquivo:", e.message);
   }
 }
-
-const upload = multer({ storage });
 
 /* ========================
    FUNÇÃO MOCK DE E-MAIL
@@ -103,7 +83,8 @@ router.post("/public", upload.single("imagem"), async (req, res) => {
     const colaboradorId = result.insertId;
 
     if (req.file) {
-      const imagePath = `/uploads/colaboradores/${req.file.filename}`;
+      const [uploaded] = await mediaService.persistMedia([req.file], { folder: "colaboradores" });
+      const imagePath = uploaded.path;
 
       await pool.query(
         "INSERT INTO colaborador_images (colaborador_id, path) VALUES (?, ?)",
@@ -177,7 +158,8 @@ router.post("/", verifyAdmin, upload.single("imagem"), async (req, res) => {
     const colaboradorId = result.insertId;
 
     if (req.file) {
-      const imagePath = `/uploads/colaboradores/${req.file.filename}`;
+      const [uploaded] = await mediaService.persistMedia([req.file], { folder: "colaboradores" });
+      const imagePath = uploaded.path;
 
       await pool.query(
         "INSERT INTO colaborador_images (colaborador_id, path) VALUES (?, ?)",

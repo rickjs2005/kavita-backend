@@ -126,8 +126,27 @@ function setupModuleWithMocks() {
     }
   }
 
+  const mockPersistMedia = jest.fn(async (files, options) => {
+    const folder = (options && options.folder) ? String(options.folder) : "";
+    return files.map((f) => ({
+      path: folder ? `/uploads/${folder}/${f.filename}` : `/uploads/${f.filename}`,
+      filename: f.filename,
+    }));
+  });
+
   jest.doMock("../../../config/pool", () => mockPool);
   jest.doMock("../../../errors/AppError", () => MockAppError);
+  jest.doMock("../../../services/mediaService", () => ({
+    persistMedia: mockPersistMedia,
+    upload: {
+      single: () => (_req, _res, next) => next(),
+      array: () => (_req, _res, next) => next(),
+      fields: () => (_req, _res, next) => next(),
+    },
+    toPublicPath: (filename) => `/uploads/${filename}`,
+    enqueueOrphanCleanup: jest.fn(),
+    removeMedia: jest.fn(async () => {}),
+  }));
 
   // carregar controller real após mocks
   const controller = require("../../../controllers/siteHeroController");
@@ -426,10 +445,10 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
               button_href: "/drones",
               title: "Meu Título",
               subtitle: "Meu Sub",
-              hero_video_path: "/uploads/hero.mp4",
-              hero_video_url: "/uploads/hero.mp4",
-              hero_image_path: "/uploads/hero.jpg",
-              hero_image_url: "/uploads/hero.jpg",
+              hero_video_path: "/uploads/hero/hero.mp4",
+              hero_video_url: "/uploads/hero/hero.mp4",
+              hero_image_path: "/uploads/hero/hero.jpg",
+              hero_image_url: "/uploads/hero/hero.jpg",
             });
 
             return [{ affectedRows: 1 }];
@@ -444,10 +463,10 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
           reply: async () => [
             [
               {
-                hero_video_url: "/uploads/hero.mp4",
-                hero_video_path: "/uploads/hero.mp4",
-                hero_image_url: "/uploads/hero.jpg",
-                hero_image_path: "/uploads/hero.jpg",
+                hero_video_url: "/uploads/hero/hero.mp4",
+                hero_video_path: "/uploads/hero/hero.mp4",
+                hero_image_url: "/uploads/hero/hero.jpg",
+                hero_image_path: "/uploads/hero/hero.jpg",
                 title: "Meu Título",
                 subtitle: "Meu Sub",
                 button_label: "Ver drones",
@@ -474,8 +493,8 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
     expect(res.body).toMatchObject({
       ok: true,
       hero: {
-        hero_video_url: "/uploads/hero.mp4",
-        hero_image_url: "/uploads/hero.jpg",
+        hero_video_url: "/uploads/hero/hero.mp4",
+        hero_image_url: "/uploads/hero/hero.jpg",
         title: "Meu Título",
         subtitle: "Meu Sub",
         button_label: "Ver drones",
