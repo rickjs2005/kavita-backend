@@ -90,6 +90,10 @@ router.post("/public", upload.single("imagem"), async (req, res) => {
         "INSERT INTO colaborador_images (colaborador_id, path) VALUES (?, ?)",
         [colaboradorId, imagePath]
       );
+      await pool.query(
+        "UPDATE colaboradores SET imagem = ? WHERE id = ?",
+        [imagePath, colaboradorId]
+      );
     }
 
     return res.status(201).json({
@@ -164,6 +168,10 @@ router.post("/", verifyAdmin, upload.single("imagem"), async (req, res) => {
       await pool.query(
         "INSERT INTO colaborador_images (colaborador_id, path) VALUES (?, ?)",
         [colaboradorId, imagePath]
+      );
+      await pool.query(
+        "UPDATE colaboradores SET imagem = ? WHERE id = ?",
+        [imagePath, colaboradorId]
       );
     }
 
@@ -242,6 +250,11 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
   const { id } = req.params;
 
   try {
+    const [images] = await pool.query(
+      "SELECT path FROM colaborador_images WHERE colaborador_id = ?",
+      [id]
+    );
+
     await pool.query("DELETE FROM colaborador_images WHERE colaborador_id = ?", [
       id,
     ]);
@@ -253,6 +266,12 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
 
     if (!result.affectedRows) {
       return res.status(404).json({ message: "Colaborador não encontrado." });
+    }
+
+    if (images.length) {
+      mediaService.removeMedia(images.map((r) => ({ path: r.path }))).catch((err) => {
+        console.error("Falha ao remover mídias de colaborador excluído:", err);
+      });
     }
 
     return res.json({ message: "Colaborador removido com sucesso." });

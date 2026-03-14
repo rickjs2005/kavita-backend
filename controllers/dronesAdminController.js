@@ -812,6 +812,13 @@ async function deleteModelGalleryItem(req, res) {
     }
 
     await dronesService.deleteGalleryItem(id);
+
+    if (cur.media_path) {
+      mediaService.removeMedia([{ path: cur.media_path }]).catch((err) => {
+        console.error("Falha ao remover mídia de galeria:", err);
+      });
+    }
+
     return res.json({ message: "Item removido." });
   } catch (e) {
     console.error("[drones/admin] deleteModelGalleryItem error:", e);
@@ -1010,6 +1017,13 @@ async function deleteGalleryItem(req, res) {
     }
 
     await dronesService.deleteGalleryItem(id);
+
+    if (cur.media_path) {
+      mediaService.removeMedia([{ path: cur.media_path }]).catch((err) => {
+        console.error("Falha ao remover mídia de galeria (legado):", err);
+      });
+    }
+
     return res.json({ message: "Item removido." });
   } catch (e) {
     console.error("[drones/admin] deleteGalleryItem error:", e);

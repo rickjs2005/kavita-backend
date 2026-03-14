@@ -9,7 +9,7 @@ const verifyAdmin = require("../middleware/verifyAdmin");
 const mediaService = require("../services/mediaService");
 const { validateFileMagicBytes } = require("../utils/fileValidation");
 
-const UPLOAD_ROOT = path.join(process.cwd(), "uploads");
+const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
 
 const upload = mediaService.upload;
 

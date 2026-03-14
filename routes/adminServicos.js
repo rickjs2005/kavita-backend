@@ -156,11 +156,7 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     await conn.rollback();
     console.error("Erro ao cadastrar serviço:", err);
     if (uploadedMedia.length) {
-      try {
-        await mediaService.cleanupMedia(uploadedMedia);
-      } catch (cleanupErr) {
-        console.error("Erro ao limpar mídia após falha:", cleanupErr);
-      }
+      mediaService.enqueueOrphanCleanup(uploadedMedia);
     }
     res.status(500).json({ message: "Erro ao cadastrar serviço." });
   } finally {
@@ -239,11 +235,9 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     await conn.commit();
 
     if (imagesToDeletePaths.length) {
-      try {
-        await mediaService.cleanupMedia(imagesToDeletePaths.map((p) => ({ path: p })));
-      } catch (cleanupErr) {
-        console.error("Erro ao remover arquivos antigos do disco:", cleanupErr);
-      }
+      mediaService.removeMedia(imagesToDeletePaths.map((p) => ({ path: p }))).catch((err) => {
+        console.error("Falha ao remover mídias antigas de serviço:", err);
+      });
     }
 
     res.json({ message: "Serviço atualizado com sucesso." });
@@ -252,11 +246,7 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     console.error("Erro ao atualizar serviço:", err);
 
     if (newlyUploaded.length) {
-      try {
-        await mediaService.cleanupMedia(newlyUploaded);
-      } catch (cleanupErr) {
-        console.error("Erro ao limpar mídia após falha no update:", cleanupErr);
-      }
+      mediaService.enqueueOrphanCleanup(newlyUploaded);
     }
 
     res.status(500).json({ message: "Erro ao atualizar serviço." });
@@ -312,11 +302,9 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
     await conn.commit();
 
     if (images.length) {
-      try {
-        await mediaService.cleanupMedia(images.map((img) => ({ path: img.path })));
-      } catch (cleanupErr) {
-        console.error("Erro ao apagar arquivos de mídia:", cleanupErr);
-      }
+      mediaService.removeMedia(images.map((img) => ({ path: img.path }))).catch((err) => {
+        console.error("Falha ao remover mídias de serviço excluído:", err);
+      });
     }
 
     res.json({ message: "Serviço removido com sucesso." });
