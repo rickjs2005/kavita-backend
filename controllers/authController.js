@@ -54,7 +54,10 @@ const AuthController = {
       // Check lockout before any credential validation
       assertNotLocked(lockoutKey);
 
-      const [users] = await pool.query("SELECT * FROM usuarios WHERE email = ?", [email]);
+      const [users] = await pool.query(
+        "SELECT id, nome, email, senha, tokenVersion FROM usuarios WHERE email = ?",
+        [email]
+      );
 
       if (users.length === 0) {
         await incrementFailure(lockoutKey);

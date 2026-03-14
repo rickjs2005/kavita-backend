@@ -331,6 +331,11 @@ router.post("/login/mfa", mfaRateLimiter, async (req, res) => {
     return res.status(401).json({ message: "Sessão de verificação inválida." });
   }
 
+  if (challenge.ip && challenge.ip !== req.ip) {
+    mfaChallenges.delete(challengeId);
+    return res.status(401).json({ message: "Sessão de verificação inválida." });
+  }
+
   if (Date.now() > challenge.expiresAt) {
     mfaChallenges.delete(challengeId);
     return res.status(401).json({ message: "Sessão de verificação expirada. Faça login novamente." });
@@ -352,6 +357,7 @@ router.post("/login/mfa", mfaRateLimiter, async (req, res) => {
   }
 
   if (!codeValid) {
+    req.rateLimit?.fail?.();
     return res.status(401).json({ message: "Credenciais inválidas." });
   }
 

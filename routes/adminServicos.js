@@ -1,9 +1,11 @@
 // routes/adminServicos.js
 const express = require("express");
 const router = express.Router();
+const fs = require("fs");
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const mediaService = require("../services/mediaService");
+const { validateFileMagicBytes } = require("../utils/fileValidation");
 
 /* ==============================
    Configuração e helpers
@@ -136,6 +138,15 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
     const colaboradorId = insert.insertId;
 
     if (files.length) {
+      for (const file of files) {
+        const { valid } = validateFileMagicBytes(file.path, ["image/png", "image/jpeg", "image/webp", "image/gif"]);
+        if (!valid) {
+          files.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
+          await conn.rollback();
+          conn.release();
+          return res.status(400).json({ message: "Arquivo inválido. Envie PNG, JPG, WEBP ou GIF." });
+        }
+      }
       uploadedMedia = await mediaService.persistMedia(files, { folder: "services" });
       if (uploadedMedia.length) {
         const values = uploadedMedia.map((media) => [colaboradorId, media.path]);
@@ -213,6 +224,15 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
     }
 
     if (newFiles.length) {
+      for (const file of newFiles) {
+        const { valid } = validateFileMagicBytes(file.path, ["image/png", "image/jpeg", "image/webp", "image/gif"]);
+        if (!valid) {
+          newFiles.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
+          await conn.rollback();
+          conn.release();
+          return res.status(400).json({ message: "Arquivo inválido. Envie PNG, JPG, WEBP ou GIF." });
+        }
+      }
       newlyUploaded = await mediaService.persistMedia(newFiles, { folder: "services" });
 
       if (newlyUploaded.length) {

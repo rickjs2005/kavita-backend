@@ -35,6 +35,9 @@ try {
 
 const app = express();
 
+// ✅ SEGURANÇA: necessário para req.ip correto atrás de nginx/proxy reverso
+app.set("trust proxy", 1);
+
 /* ============================
  * Garantir que o diretório de uploads exista
  * ============================ */
@@ -249,7 +252,8 @@ app.use(rateLimiter);
  * ============================ */
 
 // ✅ Endpoint de debug: lista todos os subdiretórios e arquivos em /uploads
-app.get("/__debug/uploads", (_req, res) => {
+const verifyAdmin = require("./middleware/verifyAdmin");
+app.get("/__debug/uploads", verifyAdmin, (_req, res) => {
   const uploadsExists = fs.existsSync(UPLOADS_DIR);
 
   const result = {

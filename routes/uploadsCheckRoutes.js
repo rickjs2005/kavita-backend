@@ -34,7 +34,6 @@ router.get("/check/*", (req, res) => {
       ok: false,
       exists: false,
       filename: rawParam,
-      fullPath: resolved,
     });
   }
 
@@ -49,7 +48,6 @@ router.get("/check/*", (req, res) => {
     ok: true,
     exists: true,
     filename: rawParam,
-    fullPath: resolved,
     size: stat.size,
     mtime: stat.mtime,
     mimetype: detectedMime,
