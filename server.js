@@ -183,6 +183,20 @@ app.use(
 );
 
 /* ============================
+ * Cross-Origin-Resource-Policy para /uploads
+ * Helmet define CORP: same-origin globalmente.
+ * Arquivos estáticos precisam de CORP: cross-origin para carregar em
+ * origens diferentes (ex: frontend em localhost:3000 carregando
+ * imagens de localhost:5000 via <img> / <video>).
+ * Este middleware sobrescreve apenas para /uploads, preservando
+ * a política same-origin no restante das rotas.
+ * ============================ */
+app.use("/uploads", (_req, res, next) => {
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  next();
+});
+
+/* ============================
  * Middlewares Globais
  * ============================ */
 app.use(express.json({ limit: "5mb" }));
