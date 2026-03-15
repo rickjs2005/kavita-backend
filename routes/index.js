@@ -4,6 +4,7 @@ const router = require("express").Router();
 // Middlewares / auth
 const verifyAdmin = require("../middleware/verifyAdmin");
 const { validateCSRF } = require("../middleware/csrfProtection");
+const requirePermission = require("../middleware/requirePermission");
 
 // Rotas Admin protegidas específicas (já existiam)
 const adminLogsRoutes = require("./adminLogsRoutes");
@@ -160,10 +161,10 @@ try {
   console.error("❌ Erro ao carregar ./adminEspecialidades:", err.message);
 }
 
-// Pedidos
+// Pedidos (sensível: impacto financeiro)
 try {
   const adminPedidosRoutes = require("./adminPedidos");
-  router.use("/admin/pedidos", verifyAdmin, validateCSRF, adminPedidosRoutes);
+  router.use("/admin/pedidos", verifyAdmin, validateCSRF, requirePermission("pedidos.ver"), adminPedidosRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminPedidos:", err.message);
 }
@@ -200,10 +201,10 @@ try {
   );
 }
 
-// Usuários
+// Usuários (sensível: gerencia contas de clientes)
 try {
   const adminUsersRoutes = require("./adminUsers");
-  router.use("/admin/users", verifyAdmin, validateCSRF, adminUsersRoutes);
+  router.use("/admin/users", verifyAdmin, validateCSRF, requirePermission("usuarios.ver"), adminUsersRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminUsers:", err.message);
 }
@@ -240,26 +241,26 @@ try {
   console.error("❌ Erro ao carregar ./adminCupons:", err.message);
 }
 
-// Configurações
+// Configurações (sensível: altera comportamento global da loja)
 try {
   const adminConfigRoutes = require("./adminConfigRoutes");
-  router.use("/admin/config", verifyAdmin, validateCSRF, adminConfigRoutes);
+  router.use("/admin/config", verifyAdmin, validateCSRF, requirePermission("config.editar"), adminConfigRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminConfigRoutes:", err.message);
 }
 
-// Upload de logo e configurações da loja
+// Upload de logo e configurações da loja (sensível: mesma permissão de config)
 try {
   const adminConfigUploadRoutes = require("./adminConfigUploadRoutes");
-  router.use("/admin/shop-config/upload", verifyAdmin, validateCSRF, adminConfigUploadRoutes);
+  router.use("/admin/shop-config/upload", verifyAdmin, validateCSRF, requirePermission("config.editar"), adminConfigUploadRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminConfigUploadRoutes:", err.message);
 }
 
-// Relatórios
+// Relatórios (sensível: requer permissão explícita além de verifyAdmin)
 try {
   const adminRelatoriosRoutes = require("./adminRelatorios");
-  router.use("/admin/relatorios", verifyAdmin, validateCSRF, adminRelatoriosRoutes);
+  router.use("/admin/relatorios", verifyAdmin, validateCSRF, requirePermission("relatorios.ver"), adminRelatoriosRoutes);
 } catch (err) {
   console.error("❌ Erro ao carregar ./adminRelatorios:", err.message);
 }

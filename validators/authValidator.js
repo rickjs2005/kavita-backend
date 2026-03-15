@@ -68,4 +68,45 @@ const registerValidators = [
   handleValidationErrors,
 ];
 
-module.exports = { loginValidators, registerValidators, handleValidationErrors };
+/**
+ * Validadores para forgot-password.
+ */
+const forgotPasswordValidators = [
+  body("email")
+    .isEmail()
+    .withMessage("Email inválido.")
+    .normalizeEmail()
+    .trim()
+    .isLength({ max: 254 })
+    .withMessage("Email muito longo."),
+  handleValidationErrors,
+];
+
+/**
+ * Validadores para reset-password.
+ */
+const resetPasswordValidators = [
+  body("token")
+    .isString()
+    .withMessage("Token é obrigatório.")
+    .notEmpty()
+    .withMessage("Token não pode ser vazio.")
+    .isLength({ min: 10, max: 512 })
+    .withMessage("Token inválido.")
+    .trim(),
+  body("novaSenha")
+    .isString()
+    .withMessage("Nova senha é obrigatória.")
+    .isLength({ min: 8, max: 128 })
+    .withMessage("Nova senha deve ter entre 8 e 128 caracteres.")
+    .trim(),
+  handleValidationErrors,
+];
+
+module.exports = {
+  loginValidators,
+  registerValidators,
+  forgotPasswordValidators,
+  resetPasswordValidators,
+  handleValidationErrors,
+};

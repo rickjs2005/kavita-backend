@@ -4,6 +4,7 @@ const router = express.Router();
 const pool = require("../config/pool");
 const { sanitizeCPF, isValidCPF } = require("../utils/cpf");
 const authenticateToken = require("../middleware/authenticateToken");
+const { sanitizeText } = require("../utils/sanitize");
 
 /**
  * ✅ Fallback local (não quebra nada):
@@ -38,7 +39,7 @@ function verifyAdmin(req, res, next) {
   }
 }
 
-// Campos permitidos para edição
+// Campos permitidos para edição com limites de comprimento e sanitização
 const EDITABLE = new Set([
   "nome",
   "telefone",
@@ -48,8 +49,20 @@ const EDITABLE = new Set([
   "cep",
   "pais",
   "ponto_referencia",
-  "cpf", // 👈 agora também CPF
+  "cpf",
 ]);
+
+// Comprimento máximo por campo (para validação de valor, não só da coluna SQL)
+const FIELD_MAX_LENGTH = {
+  nome:            100,
+  telefone:         30,
+  endereco:        255,
+  cidade:          100,
+  estado:           50,
+  cep:              20,
+  pais:             80,
+  ponto_referencia: 200,
+};
 
 /**
  * @openapi
@@ -187,12 +200,17 @@ router.put("/me", authenticateToken, async (req, res) => {
     for (const k of Object.keys(body)) {
       if (k === "cpf") continue;
       if (!EDITABLE.has(k)) continue;
-      const v = body[k];
-      if (v === "") {
+      const raw = body[k];
+      if (raw === "" || raw === null || raw === undefined) {
         sets.push(`${k} = NULL`);
       } else {
+        const strVal = String(raw);
+        const maxLen = FIELD_MAX_LENGTH[k] || 255;
+        if (strVal.length > maxLen) {
+          return res.status(400).json({ mensagem: `Campo '${k}' excede o tamanho máximo de ${maxLen} caracteres.` });
+        }
         sets.push(`${k} = ?`);
-        values.push(v);
+        values.push(sanitizeText(strVal, maxLen));
       }
     }
 
@@ -289,25 +307,28 @@ router.put("/admin/:id", authenticateToken, verifyAdmin, async (req, res) => {
     }
 
     for (const k of Object.keys(body)) {
-      if (k === "cpf") continue;
-
-      // ✅ não “mata” a request do nada
+      if (k === “cpf”) continue;
       if (!EDITABLE.has(k)) continue;
 
-      const v = body[k];
-      if (v === "") {
+      const raw = body[k];
+      if (raw === “” || raw === null || raw === undefined) {
         sets.push(`${k} = NULL`);
       } else {
+        const strVal = String(raw);
+        const maxLen = FIELD_MAX_LENGTH[k] || 255;
+        if (strVal.length > maxLen) {
+          return res.status(400).json({ mensagem: `Campo '${k}' excede o tamanho máximo de ${maxLen} caracteres.` });
+        }
         sets.push(`${k} = ?`);
-        values.push(v);
+        values.push(sanitizeText(strVal, maxLen));
       }
     }
 
     if (!sets.length) {
-      return res.status(400).json({ mensagem: "Nada para atualizar." });
+      return res.status(400).json({ mensagem: “Nada para atualizar.” });
     }
 
-    await pool.query(`UPDATE usuarios SET ${sets.join(", ")} WHERE id = ?`, [
+    await pool.query(`UPDATE usuarios SET ${sets.join(“, “)} WHERE id = ?`, [
       ...values,
       id,
     ]);

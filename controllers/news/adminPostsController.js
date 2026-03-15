@@ -2,6 +2,7 @@
 // Admin controller do Kavita News - POSTS (CRUD + listagem paginada)
 
 const pool = require("../../config/pool");
+const { sanitizeText, sanitizeRichText } = require("../../utils/sanitize");
 
 /* =========================
  * Helpers: respostas padrão
@@ -222,14 +223,16 @@ async function createPost(req, res) {
   try {
     const body = req.body || {};
 
-    const title = isNonEmptyStr(body.title, 220) ? body.title.trim() : null;
-    if (!title) return fail(res, 400, "VALIDATION_ERROR", "title é obrigatório (máx 220).", { field: "title" });
+    const rawTitle = isNonEmptyStr(body.title, 220) ? body.title.trim() : null;
+    if (!rawTitle) return fail(res, 400, "VALIDATION_ERROR", "title é obrigatório (máx 220).", { field: "title" });
+    const title = sanitizeText(rawTitle, 220);
 
-    // content é NOT NULL no schema
-    const content = body.content !== undefined && body.content !== null ? String(body.content) : "";
-    if (!content.trim()) {
+    // content é NOT NULL no schema — sanitiza rich text para remover XSS
+    const rawContent = body.content !== undefined && body.content !== null ? String(body.content) : "";
+    if (!rawContent.trim()) {
       return fail(res, 400, "VALIDATION_ERROR", "content é obrigatório.", { field: "content" });
     }
+    const content = sanitizeRichText(rawContent);
 
     // slug opcional: se vier, respeita e valida; se não vier, gera a partir do title e garante unicidade
     const userProvidedSlug = body.slug !== undefined && body.slug !== null && body.slug !== "";
@@ -282,10 +285,10 @@ async function createPost(req, res) {
 
     const author_admin_id = getAdminId(req);
 
-    const excerpt = body.excerpt ? String(body.excerpt).trim() : null;
+    const excerpt = body.excerpt ? sanitizeText(String(body.excerpt), 500) : null;
     const cover_image_url = body.cover_image_url ? String(body.cover_image_url).trim() : null;
-    const category = body.category ? String(body.category).trim() : null;
-    const tags = body.tags ? String(body.tags).trim() : null;
+    const category = body.category ? sanitizeText(String(body.category), 80) : null;
+    const tags = body.tags ? sanitizeText(String(body.tags), 500) : null;
 
     const sql = `
       INSERT INTO news_posts
@@ -348,7 +351,7 @@ async function updatePost(req, res) {
         return fail(res, 400, "VALIDATION_ERROR", "title inválido (máx 220).", { field: "title" });
       }
       sets.push("title = ?");
-      params.push(body.title ? String(body.title).trim() : null);
+      params.push(body.title ? sanitizeText(String(body.title).trim(), 220) : null);
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "slug")) {
@@ -377,14 +380,14 @@ async function updatePost(req, res) {
     if (Object.prototype.hasOwnProperty.call(body, "excerpt")) {
       if (!isOptionalStr(body.excerpt, 500)) return fail(res, 400, "VALIDATION_ERROR", "excerpt inválido (máx 500).", { field: "excerpt" });
       sets.push("excerpt = ?");
-      params.push(body.excerpt ? String(body.excerpt).trim() : null);
+      params.push(body.excerpt ? sanitizeText(String(body.excerpt).trim(), 500) : null);
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "content")) {
       const c = body.content !== undefined && body.content !== null ? String(body.content) : "";
       if (!c.trim()) return fail(res, 400, "VALIDATION_ERROR", "content não pode ser vazio.", { field: "content" });
       sets.push("content = ?");
-      params.push(c);
+      params.push(sanitizeRichText(c));
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "cover_image_url")) {
@@ -398,13 +401,13 @@ async function updatePost(req, res) {
     if (Object.prototype.hasOwnProperty.call(body, "category")) {
       if (!isOptionalStr(body.category, 80)) return fail(res, 400, "VALIDATION_ERROR", "category inválido (máx 80).", { field: "category" });
       sets.push("category = ?");
-      params.push(body.category ? String(body.category).trim() : null);
+      params.push(body.category ? sanitizeText(String(body.category).trim(), 80) : null);
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "tags")) {
       if (!isOptionalStr(body.tags, 500)) return fail(res, 400, "VALIDATION_ERROR", "tags inválido (máx 500).", { field: "tags" });
       sets.push("tags = ?");
-      params.push(body.tags ? String(body.tags).trim() : null);
+      params.push(body.tags ? sanitizeText(String(body.tags).trim(), 500) : null);
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "status")) {

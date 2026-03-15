@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool");
+const { sanitizeText } = require("../utils/sanitize");
 
 /**
  * @openapi
@@ -33,13 +34,22 @@ const pool = require("../config/pool");
  *         description: Erro interno
  */
 router.post("/avaliacoes", async (req, res) => {
-  const { colaborador_id, nota, comentario } = req.body || {};
+  const raw = req.body || {};
 
-  if (!colaborador_id || !nota || nota < 1 || nota > 5) {
-    return res
-      .status(400)
-      .json({ message: "Informe colaborador_id e nota entre 1 e 5." });
+  const colaborador_id = Number.parseInt(raw.colaborador_id, 10);
+  const nota = Number.parseInt(raw.nota, 10);
+
+  if (!Number.isInteger(colaborador_id) || colaborador_id <= 0) {
+    return res.status(400).json({ message: "colaborador_id inválido." });
   }
+  if (!Number.isInteger(nota) || nota < 1 || nota > 5) {
+    return res.status(400).json({ message: "nota deve ser um inteiro entre 1 e 5." });
+  }
+
+  // Sanitiza o comentário: remove HTML para evitar XSS persistido
+  const comentario = raw.comentario
+    ? sanitizeText(String(raw.comentario), 1000)
+    : null;
 
   const conn = await pool.getConnection();
   try {
