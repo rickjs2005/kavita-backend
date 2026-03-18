@@ -354,7 +354,7 @@ app.use(errorHandler);
 if (process.env.NODE_ENV !== "test") {
   const PORT = process.env.PORT || 5000;
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     logger.info(`✅ Server rodando em http://localhost:${PORT}`);
     logger.info(`📚 Swagger em: http://localhost:${PORT}/docs`);
     logger.info(`🌐 APP_URL configurada: ${config.appUrl}`);
@@ -384,6 +384,39 @@ if (process.env.NODE_ENV !== "test") {
       );
     }
   });
+
+  /* ============================
+   * Graceful Shutdown
+   * ============================ */
+  const shutdown = async (signal) => {
+    logger.warn(`[${signal}] Sinal recebido. Iniciando graceful shutdown...`);
+
+    // Força saída após 30s caso alguma conexão trave o encerramento
+    const forceExit = setTimeout(() => {
+      logger.error("[shutdown] Timeout de 30s atingido. Forçando saída.");
+      process.exit(1);
+    }, 30_000);
+    // Não impede o event loop de sair enquanto aguarda
+    forceExit.unref();
+
+    // Para de aceitar novas conexões e aguarda as ativas finalizarem
+    server.close(async () => {
+      logger.info("[shutdown] Servidor HTTP encerrado.");
+
+      try {
+        await pool.end();
+        logger.info("[shutdown] Pool MySQL encerrado.");
+      } catch (err) {
+        logger.error("[shutdown] Erro ao encerrar pool MySQL:", err.message);
+      }
+
+      logger.info("[shutdown] Processo encerrado com sucesso.");
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT",  () => shutdown("SIGINT"));
 }
 
 module.exports = app;
