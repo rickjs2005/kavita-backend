@@ -10,6 +10,7 @@ const fs = require("fs");
 const logger = console;
 
 const config = require("./config/env");
+const pool = require("./config/pool");
 const { setupDocs } = require("./docs/swagger");
 
 // Imports refatorados
@@ -237,6 +238,27 @@ app.use("/uploads", (req, _res, next) => {
   }
 
   next();
+});
+
+/* ============================
+ * Health Check
+ * Montado antes do rate limiter para responder sempre,
+ * independente de carga ou estado do limitador.
+ * ============================ */
+app.get("/health", async (_req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    return res.status(200).json({
+      status: "ok",
+      ts: new Date().toISOString(),
+      env: process.env.NODE_ENV,
+    });
+  } catch {
+    return res.status(503).json({
+      status: "error",
+      detail: "database unreachable",
+    });
+  }
 });
 
 /* ============================
