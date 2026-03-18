@@ -249,53 +249,55 @@ app.use(rateLimiter);
 
 /* ============================
  * Debug de uploads (após rate limiter)
+ * Disponível apenas fora de produção (NODE_ENV !== "production")
  * ============================ */
 
-// ✅ Endpoint de debug: lista todos os subdiretórios e arquivos em /uploads
-const verifyAdmin = require("./middleware/verifyAdmin");
-app.get("/__debug/uploads", verifyAdmin, (_req, res) => {
-  const uploadsExists = fs.existsSync(UPLOADS_DIR);
+if (process.env.NODE_ENV !== "production") {
+  const verifyAdmin = require("./middleware/verifyAdmin");
+  app.get("/__debug/uploads", verifyAdmin, (_req, res) => {
+    const uploadsExists = fs.existsSync(UPLOADS_DIR);
 
-  const result = {
-    uploadsDir: UPLOADS_DIR,
-    uploadsExists,
-    subdirs: {},
-  };
+    const result = {
+      uploadsDir: UPLOADS_DIR,
+      uploadsExists,
+      subdirs: {},
+    };
 
-  if (uploadsExists) {
-    try {
-      const entries = fs.readdirSync(UPLOADS_DIR, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const subdirPath = path.join(UPLOADS_DIR, entry.name);
-          try {
-            const files = fs.readdirSync(subdirPath);
-            result.subdirs[entry.name] = files.map((filename) => {
-              const filePath = path.join(subdirPath, filename);
-              try {
-                const stat = fs.statSync(filePath);
-                return {
-                  filename,
-                  size: stat.size,
-                  mtime: stat.mtime,
-                  url: `/uploads/${entry.name}/${filename}`,
-                };
-              } catch {
-                return { filename, error: "stat failed" };
-              }
-            });
-          } catch {
-            result.subdirs[entry.name] = [];
+    if (uploadsExists) {
+      try {
+        const entries = fs.readdirSync(UPLOADS_DIR, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const subdirPath = path.join(UPLOADS_DIR, entry.name);
+            try {
+              const files = fs.readdirSync(subdirPath);
+              result.subdirs[entry.name] = files.map((filename) => {
+                const filePath = path.join(subdirPath, filename);
+                try {
+                  const stat = fs.statSync(filePath);
+                  return {
+                    filename,
+                    size: stat.size,
+                    mtime: stat.mtime,
+                    url: `/uploads/${entry.name}/${filename}`,
+                  };
+                } catch {
+                  return { filename, error: "stat failed" };
+                }
+              });
+            } catch {
+              result.subdirs[entry.name] = [];
+            }
           }
         }
+      } catch (err) {
+        result.error = err.message;
       }
-    } catch (err) {
-      result.error = err.message;
     }
-  }
 
-  return res.json(result);
-});
+    return res.json(result);
+  });
+}
 
 /* ============================
  * Rotas da API (Centralizadas)
