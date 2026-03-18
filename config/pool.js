@@ -11,7 +11,7 @@ const pool = mysql.createPool({
   // ✅ desempenho/estabilidade
   waitForConnections: true,   // ao invés de falhar, espera vaga no pool
   connectionLimit: 10,        // ajuste conforme carga (CI/dev ok)
-  queueLimit: 0,              // fila ilimitada (cuidado em overload)
+  queueLimit: 100,            // rejeita com POOL_ENQUEUELIMIT após 100 na fila
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
 

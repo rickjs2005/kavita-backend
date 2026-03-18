@@ -3,6 +3,15 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 
 module.exports = (err, req, res, _next) => {
+  // Pool esgotado: todas as conexões ocupadas e fila cheia.
+  // Retorna 503 para que load balancers e clientes possam tentar outro instância.
+  if (err.code === "POOL_ENQUEUELIMIT") {
+    return res.status(503).json({
+      code: "SERVICE_UNAVAILABLE",
+      message: "Servidor sobrecarregado. Tente novamente em alguns instantes.",
+    });
+  }
+
   const isAppError = err instanceof AppError;
 
   const status = isAppError ? err.status : (err.statusCode || err.status || 500);
