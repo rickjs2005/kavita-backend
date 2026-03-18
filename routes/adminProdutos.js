@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const mediaService = require("../services/mediaService");
+const { CriarProdutoSchema, AtualizarProdutoSchema, formatZodErrors } = require("../schemas/requests");
 
 /* ==============================
    Config por ENV (flexibiliza BD)
@@ -356,15 +357,23 @@ router.get("/:id", verifyAdmin, async (req, res) => {
 
 // POST /api/admin/produtos (múltiplas imagens OPCIONAIS + frete por produto)
 router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
+  const parsed = CriarProdutoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      message: "Dados inválidos.",
+      errors: formatZodErrors(parsed.error),
+    });
+  }
+
   const {
-    name = "",
-    description = "",
-    price = "",
-    quantity = "",
-    category_id = "",
-    shippingFree = "0",
-    shippingFreeFromQtyStr = "",
-  } = req.body;
+    name,
+    description,
+    price,
+    quantity,
+    category_id,
+    shippingFree,
+    shippingFreeFromQtyStr,
+  } = parsed.data;
 
   const priceNum = parseMoneyBR(price);
   const qtyNum = toInt(quantity, -1);
@@ -456,16 +465,25 @@ router.post("/", verifyAdmin, upload.array("images"), async (req, res) => {
 // PUT /api/admin/produtos/:id (múltiplas imagens + keepImages[] + frete por produto)
 router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
   const { id } = req.params;
+
+  const parsed = AtualizarProdutoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      message: "Dados inválidos.",
+      errors: formatZodErrors(parsed.error),
+    });
+  }
+
   const {
-    name = "",
-    description = "",
-    price = "",
-    quantity = "",
-    category_id = "",
-    keepImages = "[]",
-    shippingFree = "0",
-    shippingFreeFromQtyStr = "",
-  } = req.body;
+    name,
+    description,
+    price,
+    quantity,
+    category_id,
+    keepImages,
+    shippingFree,
+    shippingFreeFromQtyStr,
+  } = parsed.data;
 
   const priceNum = parseMoneyBR(price);
   const qtyNum = toInt(quantity, -1);
@@ -487,7 +505,7 @@ router.put("/:id", verifyAdmin, upload.array("images"), async (req, res) => {
 
   let keep = [];
   try {
-    keep = JSON.parse(keepImages || "[]");
+    keep = JSON.parse(keepImages);
     if (!Array.isArray(keep)) keep = [];
   } catch (_) {
     keep = [];
