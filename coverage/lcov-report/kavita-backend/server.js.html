@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">51.61% </span>
+                <span class="strong">51.28% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>80/155</span>
+                <span class='fraction'>80/156</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">52% </span>
+                <span class="strong">51.65% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>78/150</span>
+                <span class='fraction'>78/151</span>
             </div>
         
             
@@ -484,7 +484,23 @@
 <a name='L419'></a><a href='#L419'>419</a>
 <a name='L420'></a><a href='#L420'>420</a>
 <a name='L421'></a><a href='#L421'>421</a>
-<a name='L422'></a><a href='#L422'>422</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">3x</span>
+<a name='L422'></a><a href='#L422'>422</a>
+<a name='L423'></a><a href='#L423'>423</a>
+<a name='L424'></a><a href='#L424'>424</a>
+<a name='L425'></a><a href='#L425'>425</a>
+<a name='L426'></a><a href='#L426'>426</a>
+<a name='L427'></a><a href='#L427'>427</a>
+<a name='L428'></a><a href='#L428'>428</a>
+<a name='L429'></a><a href='#L429'>429</a>
+<a name='L430'></a><a href='#L430'>430</a>
+<a name='L431'></a><a href='#L431'>431</a>
+<a name='L432'></a><a href='#L432'>432</a>
+<a name='L433'></a><a href='#L433'>433</a>
+<a name='L434'></a><a href='#L434'>434</a>
+<a name='L435'></a><a href='#L435'>435</a>
+<a name='L436'></a><a href='#L436'>436</a>
+<a name='L437'></a><a href='#L437'>437</a>
+<a name='L438'></a><a href='#L438'>438</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">3x</span>
@@ -750,6 +766,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -845,6 +868,15 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1171,6 +1203,13 @@ app.get("/health", <span class="fstat-no" title="function not covered" >as</span
 /* ============================
  * Segurança: Rate Limiter
  * ============================ */
+// LIMITAÇÃO CONHECIDA: store in-memory (Map por processo).
+// Em PM2 cluster ou múltiplas instâncias, cada worker tem contadores independentes.
+// Para produção multi-instância, passe um store Redis-backed via opção `store`.
+// BLOQUEADOR para Redis-backed store: a interface de store é síncrona (store.get()
+// retorna valor direto). Redis é assíncrono — uma implementação Redis-backed exigiria
+// tornar o middleware async, o que é uma mudança de arquitetura maior.
+// Enquanto isso, o rate limit global opera apenas por processo.
 const rateLimiter = createAdaptiveRateLimiter({
   keyGenerator: <span class="fstat-no" title="function not covered" >(r</span>eq) =&gt; <span class="cstat-no" title="statement not covered" >req.ip || crypto.randomUUID(),</span>
 });
@@ -1270,6 +1309,15 @@ app.use(errorHandler);
     );
 &nbsp;
     // ============================
+    // AVISOS OPERACIONAIS DE STARTUP
+    // ============================
+<span class="cstat-no" title="statement not covered" >    logger.warn(</span>
+      "⚠️ [rateLimiter] Store in-memory (Map por processo). " +
+      "Em PM2 cluster/multi-instância os contadores NÃO são compartilhados entre workers. " +
+      "Implemente store Redis-backed se necessário (ver comentário acima de createAdaptiveRateLimiter)."
+    );
+&nbsp;
+    // ============================
     // WORKERS
     // ============================
     const disableNotifs =
@@ -1333,7 +1381,7 @@ module.exports = app;</pre></td></tr></table></pre>
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-19T12:32:58.871Z
+                at 2026-03-19T13:34:34.750Z
             </div>
         <script src="../prettify.js"></script>
         <script>

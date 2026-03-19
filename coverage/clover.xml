@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<coverage generated="1773923579074" clover="3.2.0">
-  <project timestamp="1773923579074" name="All files">
-    <metrics statements="6417" coveredstatements="2356" conditionals="5071" coveredconditionals="1291" methods="707" coveredmethods="180" elements="12195" coveredelements="3827" complexity="0" loc="6417" ncloc="6417" packages="5" files="71" classes="71"/>
+<coverage generated="1773927274996" clover="3.2.0">
+  <project timestamp="1773927274996" name="All files">
+    <metrics statements="6418" coveredstatements="2356" conditionals="5071" coveredconditionals="1291" methods="707" coveredmethods="180" elements="12196" coveredelements="3827" complexity="0" loc="6418" ncloc="6418" packages="5" files="71" classes="71"/>
     <package name="kavita-backend">
-      <metrics statements="150" coveredstatements="78" conditionals="40" coveredconditionals="8" methods="19" coveredmethods="9"/>
+      <metrics statements="151" coveredstatements="78" conditionals="40" coveredconditionals="8" methods="19" coveredmethods="9"/>
       <file name="server.js" path="C:\Users\rickj\kavita\kavita-backend\server.js">
-        <metrics statements="150" coveredstatements="78" conditionals="40" coveredconditionals="8" methods="19" coveredmethods="9"/>
+        <metrics statements="151" coveredstatements="78" conditionals="40" coveredconditionals="8" methods="19" coveredmethods="9"/>
         <line num="1" count="3" type="stmt"/>
         <line num="3" count="3" type="stmt"/>
         <line num="4" count="3" type="stmt"/>
@@ -92,70 +92,71 @@
         <line num="250" count="0" type="stmt"/>
         <line num="251" count="0" type="stmt"/>
         <line num="257" count="0" type="stmt"/>
-        <line num="267" count="3" type="stmt"/>
-        <line num="268" count="0" type="cond" truecount="0" falsecount="2"/>
-        <line num="270" count="3" type="stmt"/>
-        <line num="277" count="3" type="cond" truecount="1" falsecount="1"/>
-        <line num="278" count="3" type="stmt"/>
-        <line num="279" count="3" type="stmt"/>
-        <line num="280" count="0" type="stmt"/>
-        <line num="282" count="0" type="stmt"/>
-        <line num="288" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="274" count="3" type="stmt"/>
+        <line num="275" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="277" count="3" type="stmt"/>
+        <line num="284" count="3" type="cond" truecount="1" falsecount="1"/>
+        <line num="285" count="3" type="stmt"/>
+        <line num="286" count="3" type="stmt"/>
+        <line num="287" count="0" type="stmt"/>
         <line num="289" count="0" type="stmt"/>
-        <line num="290" count="0" type="stmt"/>
-        <line num="291" count="0" type="stmt"/>
-        <line num="292" count="0" type="cond" truecount="0" falsecount="2"/>
-        <line num="293" count="0" type="stmt"/>
-        <line num="294" count="0" type="stmt"/>
-        <line num="295" count="0" type="stmt"/>
+        <line num="295" count="0" type="cond" truecount="0" falsecount="2"/>
         <line num="296" count="0" type="stmt"/>
         <line num="297" count="0" type="stmt"/>
         <line num="298" count="0" type="stmt"/>
-        <line num="299" count="0" type="stmt"/>
+        <line num="299" count="0" type="cond" truecount="0" falsecount="2"/>
         <line num="300" count="0" type="stmt"/>
+        <line num="301" count="0" type="stmt"/>
+        <line num="302" count="0" type="stmt"/>
+        <line num="303" count="0" type="stmt"/>
+        <line num="304" count="0" type="stmt"/>
+        <line num="305" count="0" type="stmt"/>
+        <line num="306" count="0" type="stmt"/>
         <line num="307" count="0" type="stmt"/>
-        <line num="311" count="0" type="stmt"/>
-        <line num="316" count="0" type="stmt"/>
-        <line num="320" count="0" type="stmt"/>
-        <line num="327" count="3" type="stmt"/>
-        <line num="328" count="3" type="stmt"/>
-        <line num="329" count="3" type="stmt"/>
+        <line num="314" count="0" type="stmt"/>
+        <line num="318" count="0" type="stmt"/>
+        <line num="323" count="0" type="stmt"/>
+        <line num="327" count="0" type="stmt"/>
         <line num="334" count="3" type="stmt"/>
-        <line num="339" count="3" type="stmt"/>
-        <line num="340" count="8" type="stmt"/>
-        <line num="349" count="3" type="stmt"/>
-        <line num="354" count="3" type="cond" truecount="1" falsecount="1"/>
-        <line num="355" count="0" type="cond" truecount="0" falsecount="2"/>
-        <line num="357" count="0" type="stmt"/>
-        <line num="358" count="0" type="stmt"/>
-        <line num="359" count="0" type="stmt"/>
-        <line num="360" count="0" type="stmt"/>
-        <line num="361" count="0" type="stmt"/>
-        <line num="369" count="0" type="cond" truecount="0" falsecount="2"/>
-        <line num="371" count="0" type="cond" truecount="0" falsecount="2"/>
-        <line num="372" count="0" type="stmt"/>
+        <line num="335" count="3" type="stmt"/>
+        <line num="336" count="3" type="stmt"/>
+        <line num="341" count="3" type="stmt"/>
+        <line num="346" count="3" type="stmt"/>
+        <line num="347" count="8" type="stmt"/>
+        <line num="356" count="3" type="stmt"/>
+        <line num="361" count="3" type="cond" truecount="1" falsecount="1"/>
+        <line num="362" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="364" count="0" type="stmt"/>
+        <line num="365" count="0" type="stmt"/>
+        <line num="366" count="0" type="stmt"/>
+        <line num="367" count="0" type="stmt"/>
+        <line num="368" count="0" type="stmt"/>
         <line num="375" count="0" type="stmt"/>
-        <line num="378" count="0" type="cond" truecount="0" falsecount="2"/>
-        <line num="379" count="0" type="stmt"/>
-        <line num="380" count="0" type="stmt"/>
-        <line num="382" count="0" type="stmt"/>
+        <line num="385" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="387" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="388" count="0" type="stmt"/>
         <line num="391" count="0" type="stmt"/>
-        <line num="392" count="0" type="stmt"/>
+        <line num="394" count="0" type="cond" truecount="0" falsecount="2"/>
         <line num="395" count="0" type="stmt"/>
         <line num="396" count="0" type="stmt"/>
-        <line num="397" count="0" type="stmt"/>
-        <line num="400" count="0" type="stmt"/>
-        <line num="403" count="0" type="stmt"/>
-        <line num="404" count="0" type="stmt"/>
-        <line num="406" count="0" type="stmt"/>
+        <line num="398" count="0" type="stmt"/>
         <line num="407" count="0" type="stmt"/>
         <line num="408" count="0" type="stmt"/>
-        <line num="410" count="0" type="stmt"/>
+        <line num="411" count="0" type="stmt"/>
+        <line num="412" count="0" type="stmt"/>
         <line num="413" count="0" type="stmt"/>
-        <line num="414" count="0" type="stmt"/>
-        <line num="418" count="0" type="stmt"/>
+        <line num="416" count="0" type="stmt"/>
         <line num="419" count="0" type="stmt"/>
-        <line num="422" count="3" type="stmt"/>
+        <line num="420" count="0" type="stmt"/>
+        <line num="422" count="0" type="stmt"/>
+        <line num="423" count="0" type="stmt"/>
+        <line num="424" count="0" type="stmt"/>
+        <line num="426" count="0" type="stmt"/>
+        <line num="429" count="0" type="stmt"/>
+        <line num="430" count="0" type="stmt"/>
+        <line num="434" count="0" type="stmt"/>
+        <line num="435" count="0" type="stmt"/>
+        <line num="438" count="3" type="stmt"/>
       </file>
     </package>
     <package name="kavita-backend.controllers">

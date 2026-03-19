@@ -7,78 +7,18 @@
 //   - 5 failed attempts  → locked for LOCKOUT_DURATION_MS (30 minutes)
 //   - TTL per failure entry: LOCKOUT_DURATION_MS
 //   - Counts and lockout survive server restarts when Redis is available
+//
+// Redis é gerenciado pelo cliente centralizado em lib/redis.js.
+// Warnings operacionais de conexão (connect failure, disconnect) são emitidos por lib/redis.js.
 
 const MAX_FAILURES = 5;
 const LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const LOCKOUT_DURATION_S = LOCKOUT_DURATION_MS / 1000; // seconds (for Redis TTL)
 
 // ---------------------------------------------------------------------------
-// Redis client (optional – falls back to in-memory on connection failure)
+// Redis client — compartilhado via lib/redis.js (sem conexão própria)
 // ---------------------------------------------------------------------------
-let redisClient = null;
-let redisReady = false;
-
-try {
-  const Redis = require("ioredis");
-
-  const redisBaseOptions = {
-    lazyConnect: true,            // don't auto-connect on require()
-    enableOfflineQueue: false,    // fail fast when not connected
-    maxRetriesPerRequest: 1,
-    connectTimeout: 3000,
-    retryStrategy: () => null,    // disable auto-reconnect (handled by fallback)
-  };
-
-  const redisUrl = process.env.REDIS_URL || null;
-  const redisOptions = {
-    ...redisBaseOptions,
-    host: process.env.REDIS_HOST || "127.0.0.1",
-    port: parseInt(process.env.REDIS_PORT || "6379", 10),
-    password: process.env.REDIS_PASSWORD || undefined,
-  };
-
-  redisClient = redisUrl ? new Redis(redisUrl, redisBaseOptions) : new Redis(redisOptions);
-
-  redisClient.on("ready", () => {
-    redisReady = true;
-    console.info("[accountLockout] Redis conectado — lockout persiste entre restarts.");
-  });
-
-  redisClient.on("error", (err) => {
-    const wasReady = redisReady;
-    redisReady = false;
-    // Só loga se estava conectado e caiu — evita spam duplicado com o catch() inicial
-    if (wasReady) {
-      console.warn(
-        "[accountLockout] Redis desconectado:", err.message,
-        "— fallback in-memory ativo. Lockout NÃO persiste entre restarts."
-      );
-    }
-  });
-
-  redisClient.on("end", () => {
-    redisReady = false;
-  });
-
-  // Attempt to connect; if it fails, fall back to in-memory.
-  // Em produção, loga warning explícito — lockout em memória é uma degradação operacional.
-  if (process.env.NODE_ENV !== "test") {
-    redisClient.connect().catch((err) => {
-      redisReady = false;
-      if (process.env.NODE_ENV === "production") {
-        console.warn(
-          "[accountLockout] Redis indisponível em produção — fallback in-memory ativo.",
-          "Lockout NÃO persiste entre restarts nem é compartilhado entre instâncias PM2/containers.",
-          err.message
-        );
-      }
-    });
-  }
-} catch (_err) {
-  // ioredis not installed or failed to initialise – use in-memory fallback only
-  redisClient = null;
-  redisReady = false;
-}
+const redis = require("../lib/redis");
 
 // ---------------------------------------------------------------------------
 // In-memory fallback store
@@ -104,7 +44,7 @@ const REDIS_LOCKED_PREFIX = "lockout:locked:";
 
 async function _redisGetFailures(identifier) {
   try {
-    const val = await redisClient.get(REDIS_FAILURES_PREFIX + identifier);
+    const val = await redis.client.get(REDIS_FAILURES_PREFIX + identifier);
     return val ? parseInt(val, 10) : 0;
   } catch (_err) {
     return 0;
@@ -113,19 +53,19 @@ async function _redisGetFailures(identifier) {
 
 async function _redisSetFailures(identifier, failures) {
   try {
-    await redisClient.set(REDIS_FAILURES_PREFIX + identifier, String(failures), "EX", LOCKOUT_DURATION_S);
+    await redis.client.set(REDIS_FAILURES_PREFIX + identifier, String(failures), "EX", LOCKOUT_DURATION_S);
   } catch (_err) { /* non-fatal */ }
 }
 
 async function _redisSetLocked(identifier) {
   try {
-    await redisClient.set(REDIS_LOCKED_PREFIX + identifier, "1", "EX", LOCKOUT_DURATION_S);
+    await redis.client.set(REDIS_LOCKED_PREFIX + identifier, "1", "EX", LOCKOUT_DURATION_S);
   } catch (_err) { /* non-fatal */ }
 }
 
 async function _redisGetLockedTTL(identifier) {
   try {
-    return await redisClient.ttl(REDIS_LOCKED_PREFIX + identifier);
+    return await redis.client.ttl(REDIS_LOCKED_PREFIX + identifier);
   } catch (_err) {
     return -2; // key doesn't exist
   }
@@ -133,7 +73,7 @@ async function _redisGetLockedTTL(identifier) {
 
 async function _redisDelete(identifier) {
   try {
-    await redisClient.del(REDIS_FAILURES_PREFIX + identifier, REDIS_LOCKED_PREFIX + identifier);
+    await redis.client.del(REDIS_FAILURES_PREFIX + identifier, REDIS_LOCKED_PREFIX + identifier);
   } catch (_err) { /* non-fatal */ }
 }
 
@@ -178,7 +118,7 @@ function assertNotLocked(identifier) {
  * @param {string} identifier - e.g. "user:user@domain.com"
  */
 async function incrementFailure(identifier) {
-  if (redisReady && redisClient) {
+  if (redis.ready && redis.client) {
     const failures = await _redisGetFailures(identifier);
     const newFailures = failures + 1;
     await _redisSetFailures(identifier, newFailures);
@@ -209,7 +149,7 @@ async function incrementFailure(identifier) {
  */
 async function resetFailures(identifier) {
   memoryStore.delete(identifier);
-  if (redisReady && redisClient) {
+  if (redis.ready && redis.client) {
     await _redisDelete(identifier);
   }
 }
@@ -221,7 +161,7 @@ async function resetFailures(identifier) {
  * @param {string} identifier - e.g. "user:user@domain.com"
  */
 async function syncFromRedis(identifier) {
-  if (!redisReady || !redisClient) return;
+  if (!redis.ready || !redis.client) return;
 
   const failures = await _redisGetFailures(identifier);
   const ttl = await _redisGetLockedTTL(identifier);
