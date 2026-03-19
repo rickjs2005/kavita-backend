@@ -8,7 +8,7 @@ const pool = require("../config/pool");
 const logAdminAction = require("../utils/adminLogger");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const createAdaptiveRateLimiter = require("../middleware/adaptiveRateLimiter");
-const { assertNotLocked, incrementFailure, resetFailures } = require("../utils/accountLockout");
+const { assertNotLocked, incrementFailure, resetFailures, syncFromRedis } = require("../utils/accountLockout");
 const { ADMIN_LOGIN_SCHEDULE } = require("../config/rateLimitSchedules");
 require("dotenv").config();
 
@@ -180,7 +180,10 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
   const lockoutKey = `admin:${emailNormalizado}`;
 
   try {
-    // 2. Verifica lockout ANTES de validar credenciais
+    // 2. Verifica lockout ANTES de validar credenciais.
+    // syncFromRedis garante que lockouts persistidos no Redis sejam respeitados
+    // na primeira tentativa após restart (sem Redis, vira no-op).
+    await syncFromRedis(lockoutKey);
     assertNotLocked(lockoutKey);
 
     console.log("🔐 Tentativa de login de admin:", emailNormalizado);

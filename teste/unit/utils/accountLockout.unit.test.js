@@ -5,6 +5,8 @@
  *
  * Cobertura:
  * - Comportamento in-memory (NODE_ENV=test, sem Redis)
+ * - syncFromRedis: no-op sem Redis disponível
+ * - syncFromRedis: popula in-memory com lockout do Redis (simula restart)
  *
  * Nota: os testes de warning de Redis foram movidos para
  * teste/unit/lib/redis.unit.test.js após a migração de accountLockout.js
@@ -84,6 +86,80 @@ describe("accountLockout", () => {
     // A is locked, B is not
     expect(() => assertNotLocked(keyA)).toThrow();
     expect(() => assertNotLocked(keyB)).not.toThrow();
+  });
+});
+
+// -----------------------------------------------------------------------
+// syncFromRedis: restaura lockout do Redis para in-memory (cenário pós-restart)
+// -----------------------------------------------------------------------
+describe("accountLockout — syncFromRedis", () => {
+  afterEach(() => {
+    jest.resetModules();
+  });
+
+  test("syncFromRedis é no-op quando Redis não está disponível (redis.ready=false)", async () => {
+    jest.resetModules();
+    // lib/redis.js em NODE_ENV=test retorna ready=false — comportamento padrão
+    const { syncFromRedis, assertNotLocked } = require("../../../utils/accountLockout");
+    const key = "user:noop-sync@test.com";
+
+    await syncFromRedis(key); // deve retornar sem fazer nada
+    expect(() => assertNotLocked(key)).not.toThrow();
+  });
+
+  test("syncFromRedis popula in-memory com lockout do Redis e assertNotLocked lança (simula restart)", async () => {
+    jest.resetModules();
+
+    // Simula lib/redis.js com cliente conectado e lockout ativo no Redis
+    jest.doMock("../../../lib/redis", () => ({
+      get ready() { return true; },
+      get client() {
+        return {
+          // Redis tem 5 falhas para esta chave
+          get: async (key) => key.includes("failures:") ? "5" : null,
+          // Redis tem lockout ativo com TTL de ~30min
+          ttl: async (key) => key.includes("locked:") ? 1799 : -2,
+        };
+      },
+    }));
+
+    const { syncFromRedis, assertNotLocked } = require("../../../utils/accountLockout");
+    const key = "user:restart-locked@test.com";
+
+    // In-memory está vazia (simula restart), Redis tem o lockout
+    // Antes do sync: não lança
+    expect(() => assertNotLocked(key)).not.toThrow();
+
+    // Sync popula in-memory com o estado do Redis
+    await syncFromRedis(key);
+
+    // Após o sync: deve lançar com locked=true
+    const err = (() => { try { assertNotLocked(key); } catch (e) { return e; } })();
+    expect(err).toBeDefined();
+    expect(err.locked).toBe(true);
+    expect(err.status).toBe(429);
+    expect(err.message).toContain("bloqueada");
+  });
+
+  test("syncFromRedis é no-op quando Redis não tem lockout para a chave (TTL=-2)", async () => {
+    jest.resetModules();
+
+    // Redis disponível mas sem lockout para essa chave
+    jest.doMock("../../../lib/redis", () => ({
+      get ready() { return true; },
+      get client() {
+        return {
+          get: async () => null,   // sem failures
+          ttl: async () => -2,    // chave inexistente
+        };
+      },
+    }));
+
+    const { syncFromRedis, assertNotLocked } = require("../../../utils/accountLockout");
+    const key = "user:no-lockout@test.com";
+
+    await syncFromRedis(key);
+    expect(() => assertNotLocked(key)).not.toThrow();
   });
 });
 

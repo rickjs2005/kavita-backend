@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<coverage generated="1773927274996" clover="3.2.0">
-  <project timestamp="1773927274996" name="All files">
+<coverage generated="1773928002655" clover="3.2.0">
+  <project timestamp="1773928002655" name="All files">
     <metrics statements="6418" coveredstatements="2356" conditionals="5071" coveredconditionals="1291" methods="707" coveredmethods="180" elements="12196" coveredelements="3827" complexity="0" loc="6418" ncloc="6418" packages="5" files="71" classes="71"/>
     <package name="kavita-backend">
       <metrics statements="151" coveredstatements="78" conditionals="40" coveredconditionals="8" methods="19" coveredmethods="9"/>

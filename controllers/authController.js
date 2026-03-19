@@ -5,7 +5,7 @@ const authConfig = require("../config/auth");
 const jwt = require("jsonwebtoken");
 const passwordResetTokens = require("../services/passwordResetTokenService");
 const { sendResetPasswordEmail } = require("../services/mailService");
-const { assertNotLocked, incrementFailure, resetFailures } = require("../utils/accountLockout");
+const { assertNotLocked, incrementFailure, resetFailures, syncFromRedis } = require("../utils/accountLockout");
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -51,7 +51,10 @@ const AuthController = {
     const lockoutKey = `user:${String(email || "").trim().toLowerCase()}`;
 
     try {
-      // Check lockout before any credential validation
+      // Sync Redis lockout state to in-memory before checking.
+      // Garante que lockouts persistidos no Redis sejam respeitados
+      // na primeira tentativa após restart (sem Redis, vira no-op).
+      await syncFromRedis(lockoutKey);
       assertNotLocked(lockoutKey);
 
       const [users] = await pool.query(
