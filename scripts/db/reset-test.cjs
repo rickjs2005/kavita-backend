@@ -7,8 +7,8 @@ const DB_USER = process.env.DB_USER || "root";
 
 // ✅ aqui tem que ser DB_PASSWORD (não DB_PASS)
 const DB_PASS = process.env.DB_PASSWORD || "";
-
-const DB_NAME_TEST = process.env.DB_NAME_TEST || "kavita_migrations_test";
+const DB_NAME_BASE = process.env.DB_NAME || "kavita";
+const DB_NAME_TEST = process.env.DB_NAME_TEST || `${DB_NAME_BASE}_test`;
 
 (async () => {
   console.log("🧹 Resetando DB de teste:", DB_NAME_TEST);

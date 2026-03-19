@@ -10774,7 +10774,7 @@ BRH:106
 end_of_record
 TN:
 SF:routes\userProfile.js
-FN:15,verifyAdmin
+FN:17,verifyAdmin
 FN:129,(anonymous_1)
 FN:162,(anonymous_2)
 FN:248,(anonymous_3)
@@ -10792,7 +10792,7 @@ DA:4,3
 DA:5,3
 DA:6,3
 DA:7,3
-DA:16,0
+DA:18,0
 DA:19,0
 DA:20,0
 DA:22,0
