@@ -75,7 +75,8 @@ const AuthController = {
       }
 
       await resetFailures(lockoutKey);
-      const token = authConfig.sign({ id: user.id, tokenVersion: user.tokenVersion ?? 1 });
+      // ✅ FIX: usar 0 como fallback (não 1) para alinhar com o middleware que também usa 0
+      const token = authConfig.sign({ id: user.id, tokenVersion: user.tokenVersion ?? 0 });
       req.rateLimit?.reset?.();
 
       // ✅ AQUI: usar a função alinhada ao token
@@ -123,8 +124,9 @@ const AuthController = {
       // Increment tokenVersion to invalidate all existing JWT tokens for this user
       const userId = req.user?.id;
       if (userId) {
+        // ✅ FIX: COALESCE garante que NULL + 1 = 1 em vez de NULL (MySQL behavior)
         await pool.query(
-          "UPDATE usuarios SET tokenVersion = tokenVersion + 1 WHERE id = ?",
+          "UPDATE usuarios SET tokenVersion = COALESCE(tokenVersion, 0) + 1 WHERE id = ?",
           [userId]
         );
       }

@@ -34,12 +34,12 @@ module.exports = async function authenticateToken(req, res, next) {
 
     const user = rows[0];
 
-    // Validate tokenVersion to support logout revocation
-    if (
-      user.tokenVersion != null &&
-      payload.tokenVersion != null &&
-      payload.tokenVersion !== user.tokenVersion
-    ) {
+    // Validate tokenVersion to support logout revocation.
+    // ✅ FIX: tratar null como 0 — sem esse fallback, usuários pré-migração com
+    // tokenVersion NULL no banco ignoram completamente a verificação de revogação.
+    const dbVersion = user.tokenVersion ?? 0;
+    const jwtVersion = payload.tokenVersion ?? 0;
+    if (jwtVersion !== dbVersion) {
       return res.status(401).json({ message: "Sessão inválida. Faça login novamente." });
     }
 

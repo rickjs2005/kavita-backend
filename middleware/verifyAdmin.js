@@ -124,12 +124,12 @@ async function verifyAdmin(req, _res, next) {
       );
     }
 
-    // Validate tokenVersion for logout revocation support
-    if (
-      admin.tokenVersion != null &&
-      decoded.tokenVersion != null &&
-      decoded.tokenVersion !== admin.tokenVersion
-    ) {
+    // Validate tokenVersion for logout revocation support.
+    // ✅ FIX: tratar null como 0 — sem esse fallback, admins pré-migração com
+    // tokenVersion NULL no banco ignoram completamente a verificação de revogação.
+    const dbVersion = admin.tokenVersion ?? 0;
+    const jwtVersion = decoded.tokenVersion ?? 0;
+    if (jwtVersion !== dbVersion) {
       return next(
         new AppError(
           "Sessão inválida. Faça login novamente.",

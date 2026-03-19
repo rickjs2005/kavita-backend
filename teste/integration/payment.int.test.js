@@ -731,5 +731,114 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
     });
+
+    // ✅ FIX COVERAGE: fail-closed quando MP_WEBHOOK_SECRET não configurado
+    test("401 quando MP_WEBHOOK_SECRET não está configurado (fail-closed)", async () => {
+      // Arrange — sem o segredo configurado
+      const savedSecret = process.env.MP_WEBHOOK_SECRET;
+      delete process.env.MP_WEBHOOK_SECRET;
+
+      const { router } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      const body = { id: 1, type: "payment", data: { id: "999" } };
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", "ts=1234567890,v1=qualquer")
+        .send(body);
+
+      // Assert — deve rejeitar, não aceitar silenciosamente
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ ok: false });
+
+      // Restore
+      if (savedSecret !== undefined) process.env.MP_WEBHOOK_SECRET = savedSecret;
+    });
+  });
+
+  // ✅ FIX COVERAGE: /api/payment/start — autenticação + ownership
+  describe("POST /api/payment/start — autenticação e ownership", () => {
+    function setupStartWithAuth({ userId = 1, authenticated = true } = {}) {
+      jest.resetModules();
+
+      const poolPath = require.resolve("../../config/pool");
+      const authPath = require.resolve("../../middleware/authenticateToken");
+
+      const mockPool = makeMockPool();
+      jest.doMock(poolPath, () => mockPool);
+
+      jest.doMock(authPath, () => (req, res, next) => {
+        if (!authenticated) {
+          return res.status(401).json({ message: "Usuário não autenticado." });
+        }
+        req.user = { id: userId, role: "user" };
+        next();
+      });
+
+      const router = require("../../routes/payment");
+      return { router, mockPool };
+    }
+
+    test("401 quando não autenticado", async () => {
+      // Arrange
+      const { router } = setupStartWithAuth({ authenticated: false });
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/start")
+        .send({ pedidoId: 1 });
+
+      // Assert
+      expect(res.status).toBe(401);
+    });
+
+    test("404 quando pedido pertence a outro usuário (ownership check)", async () => {
+      // Arrange — usuário 1 tenta pagar pedido do usuário 2
+      const { router, mockPool } = setupStartWithAuth({ userId: 1 });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) =>
+              sqlNorm.includes("from pedidos") && sqlNorm.includes("where id = ?"),
+            reply: async () => [
+              [{ id: 10, forma_pagamento: "pix", usuario_id: 2 }], // dono é o usuário 2
+            ],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/start")
+        .send({ pedidoId: 10 });
+
+      // Assert
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Pedido não encontrado." });
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("400 pedidoId inválido (sem auth não chega aqui mas com auth chega)", async () => {
+      // Arrange
+      const { router } = setupStartWithAuth({ userId: 1 });
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/start")
+        .send({ pedidoId: -1 });
+
+      // Assert
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "pedidoId é obrigatório." });
+    });
   });
 });

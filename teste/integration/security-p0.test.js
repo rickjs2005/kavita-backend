@@ -334,3 +334,138 @@ describe("Cookie-Only Auth (Bearer tokens rejected)", () => {
     expect(res.status).toBe(200);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 6. tokenVersion null bypass — FIX coverage
+// ---------------------------------------------------------------------------
+describe("tokenVersion null bypass fix", () => {
+  const pool = require("../../config/pool");
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test("authenticateToken rejeita token quando DB tem tokenVersion=null e JWT tem tokenVersion=1", async () => {
+    // Antes do fix: null no DB ignorava a verificação, token valia para sempre.
+    // Após o fix: null é tratado como 0, JWT com tokenVersion=1 é rejeitado.
+    const token = jwt.sign({ id: 77, tokenVersion: 1 }, SECRET, { expiresIn: "1h" });
+
+    pool.query.mockResolvedValueOnce([
+      [{ id: 77, nome: "Ghost", email: "ghost@test.com", tokenVersion: null }],
+    ]);
+
+    const res = await request(app)
+      .post("/api/logout")
+      .set("Cookie", `auth_token=${token}`);
+
+    // tokenVersion 1 (JWT) !== 0 (null ?? 0 no DB) → deve rejeitar
+    expect(res.status).toBe(401);
+  });
+
+  test("authenticateToken aceita token quando ambos tokenVersion são null (tratados como 0)", async () => {
+    // JWT com tokenVersion=0 e DB com null (tratado como 0) → deve aceitar
+    const token = jwt.sign({ id: 88, tokenVersion: 0 }, SECRET, { expiresIn: "1h" });
+
+    pool.query
+      .mockResolvedValueOnce([
+        [{ id: 88, nome: "New", email: "new@test.com", tokenVersion: null }],
+      ])
+      .mockResolvedValueOnce([{ affectedRows: 1 }]); // logout UPDATE
+
+    const res = await request(app)
+      .post("/api/logout")
+      .set("Cookie", `auth_token=${token}`);
+
+    // tokenVersion 0 (JWT) === 0 (null ?? 0 no DB) → deve aceitar
+    expect(res.status).toBe(200);
+  });
+
+  test("logout usa COALESCE — SQL contém COALESCE(tokenVersion, 0)", async () => {
+    const token = jwt.sign({ id: 42, tokenVersion: 0 }, SECRET, { expiresIn: "1h" });
+
+    pool.query
+      .mockResolvedValueOnce([[{ id: 42, nome: "U", email: "u@t.com", tokenVersion: null }]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }]);
+
+    await request(app)
+      .post("/api/logout")
+      .set("Cookie", `auth_token=${token}`);
+
+    const updateCall = pool.query.mock.calls.find(
+      (call) => typeof call[0] === "string" &&
+        call[0].toUpperCase().includes("COALESCE") &&
+        call[0].includes("tokenVersion")
+    );
+    expect(updateCall).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Checkout não altera email — FIX coverage
+// ---------------------------------------------------------------------------
+describe("Checkout não altera email do usuário", () => {
+  const { create } = require("../../controllers/checkoutController");
+
+  test("UPDATE no banco não inclui email mesmo quando enviado no body", async () => {
+    // Monta req/res/next mínimos para chamar o controller diretamente
+    let capturedUpdateSql = null;
+    let capturedUpdateParams = null;
+
+    const conn = {
+      beginTransaction: jest.fn().mockResolvedValue(undefined),
+      commit: jest.fn().mockResolvedValue(undefined),
+      rollback: jest.fn().mockResolvedValue(undefined),
+      release: jest.fn().mockResolvedValue(undefined),
+      query: jest.fn().mockImplementation(async (sql, params) => {
+        const normalized = sql.toLowerCase().replace(/\s+/g, " ").trim();
+        // Captura o UPDATE de usuário
+        if (normalized.startsWith("update usuarios set") && !normalized.includes("tokenversion")) {
+          capturedUpdateSql = normalized;
+          capturedUpdateParams = params;
+          return [{ affectedRows: 1 }];
+        }
+        // Simula INSERT de pedido
+        if (normalized.startsWith("insert into pedidos")) return [{ insertId: 1 }];
+        // Simula SELECT de produtos (FOR UPDATE)
+        if (normalized.includes("from products") && normalized.includes("for update"))
+          return [[{ id: 5, price: 100, quantity: 10 }]];
+        // Simula SELECT de carrinho
+        if (normalized.includes("from carrinhos")) return [[]];
+        // Simula INSERT de pedidos_produtos
+        if (normalized.startsWith("insert into pedidos_produtos")) return [{ insertId: 99 }];
+        // Simula UPDATE de estoque
+        if (normalized.startsWith("update products")) return [{ affectedRows: 1 }];
+        // Simula UPDATE total do pedido
+        if (normalized.startsWith("update pedidos")) return [{ affectedRows: 1 }];
+        return [[]];
+      }),
+    };
+
+    const pool = require("../../config/pool");
+    pool.getConnection = jest.fn().mockResolvedValue(conn);
+
+    const req = {
+      body: {
+        formaPagamento: "pix",
+        produtos: [{ id: 5, quantidade: 1 }],
+        nome: "Nome Novo",
+        email: "hacker@evil.com", // email que NÃO deve ser gravado
+        telefone: "31999999999",
+        cpf: "12345678901",
+        endereco: { cep: "36940000", cidade: "Manhuaçu", estado: "MG" },
+      },
+      user: { id: 42 },
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = jest.fn();
+
+    await create(req, res, next);
+
+    // Garante que o email não foi incluído no UPDATE
+    if (capturedUpdateSql) {
+      expect(capturedUpdateSql).not.toContain("email");
+    }
+    // Se não houve UPDATE (nenhum campo válido além de email), ok também
+    // — importante é que se houve UPDATE, email não estava lá
+  });
+});

@@ -253,7 +253,8 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
       role: admin.role,
       role_id: admin.role_id || null,
       permissions,
-      tokenVersion: admin.tokenVersion ?? 1,
+      // ✅ FIX: usar 0 como fallback (não 1) para alinhar com verifyAdmin que usa 0
+      tokenVersion: admin.tokenVersion ?? 0,
     };
 
     const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: "2h" });
@@ -395,7 +396,8 @@ router.post("/login/mfa", mfaRateLimiter, async (req, res) => {
     role: admin.role,
     role_id: admin.role_id || null,
     permissions,
-    tokenVersion: admin.tokenVersion ?? 1,
+    // ✅ FIX: usar 0 como fallback (não 1) para alinhar com verifyAdmin que usa 0
+    tokenVersion: admin.tokenVersion ?? 0,
   };
 
   const token = jwt.sign(tokenPayload, SECRET_KEY, { expiresIn: "2h" });
@@ -560,8 +562,9 @@ router.post("/logout", adminLoginRateLimiter, verifyAdmin, async (req, res) => {
   const adminId = req.admin?.id;
   if (adminId) {
     try {
+      // ✅ FIX: COALESCE garante que NULL + 1 = 1 em vez de NULL (MySQL behavior)
       await pool.query(
-        "UPDATE admins SET tokenVersion = tokenVersion + 1 WHERE id = ?",
+        "UPDATE admins SET tokenVersion = COALESCE(tokenVersion, 0) + 1 WHERE id = ?",
         [adminId]
       );
     } catch (err) {

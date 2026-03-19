@@ -12,7 +12,7 @@ const crypto = require("crypto");
  *   Signed manifest: "id:{data.id};request-id:{x-request-id};ts:{ts};"
  *
  * Returns 401 if signature is absent, malformed, or invalid.
- * Returns 500 in non-production when MP_WEBHOOK_SECRET is not configured.
+ * Returns 401 (fail-closed) when MP_WEBHOOK_SECRET is not configured — in any environment.
  */
 function validateMPSignature(req, res, next) {
   const signatureHeader = req.get("x-signature");
@@ -27,9 +27,10 @@ function validateMPSignature(req, res, next) {
   }
 
   if (!secret) {
-    console.error("[validateMPSignature] MP_WEBHOOK_SECRET não configurado");
-    const status = process.env.NODE_ENV === "development" ? 500 : 200;
-    return res.status(status).json({ ok: status === 200 });
+    console.error("[validateMPSignature] MP_WEBHOOK_SECRET não configurado — rejeitando webhook (fail-closed)");
+    // Fail-closed: sem segredo configurado, não processamos webhooks em nenhum ambiente.
+    // Retornar 200 (fail-open) em produção permitiria aceitar webhooks sem validação.
+    return unauthorized();
   }
 
   // Parse "ts=1234567890,v1=abcdef..." into { ts, v1 }

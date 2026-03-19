@@ -497,7 +497,8 @@ router.delete(
 /* ------------------------------------------------------------------ */
 
 // inicia pagamento para um pedido existente
-router.post("/start", async (req, res, next) => {
+// ✅ FIX: requer autenticação + ownership check (Broken Access Control)
+router.post("/start", authenticateToken, async (req, res, next) => {
   const { pedidoId } = req.body || {};
   const pedidoIdNum = Number(pedidoId);
 
@@ -508,11 +509,16 @@ router.post("/start", async (req, res, next) => {
   const conn = await pool.getConnection();
   try {
     const [[pedido]] = await conn.query(
-      `SELECT id, forma_pagamento
+      `SELECT id, forma_pagamento, usuario_id
          FROM pedidos
         WHERE id = ?`,
       [pedidoIdNum]
     );
+
+    // ✅ FIX: ownership check — o pedido deve pertencer ao usuário autenticado
+    if (pedido && pedido.usuario_id !== req.user.id) {
+      return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
+    }
 
     if (!pedido) {
       return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));

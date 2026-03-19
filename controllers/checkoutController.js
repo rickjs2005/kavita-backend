@@ -77,6 +77,8 @@ async function create(req, res, next) {
     await connection.beginTransaction();
 
     /* 1) Atualiza informações do usuário (não bloqueia pedido) */
+    // ✅ FIX: email removido do update — é credencial de login, não deve ser alterado
+    // no checkout. Alterações de email devem passar por endpoint de perfil com confirmação.
     try {
       const campos = [];
       const valores = [];
@@ -84,11 +86,6 @@ async function create(req, res, next) {
       if (nome && String(nome).trim()) {
         campos.push("nome = ?");
         valores.push(String(nome).trim());
-      }
-
-      if (email && String(email).trim()) {
-        campos.push("email = ?");
-        valores.push(String(email).trim());
       }
 
       if (telefone && String(telefone).trim()) {
