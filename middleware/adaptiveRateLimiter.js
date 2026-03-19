@@ -1,4 +1,14 @@
 // middleware/adaptiveRateLimiter.js
+//
+// LIMITAÇÃO CONHECIDA: o store padrão é um Map() em memória por processo.
+// Em deployments com múltiplas instâncias (PM2 cluster, containers horizontais),
+// o estado de rate limit NÃO é compartilhado entre processos — cada instância
+// mantém seu próprio contador. Reiniciar o servidor zera todos os contadores.
+//
+// Para produção multi-instância: passe um store compatível com a interface Map
+// (get/set/delete) implementado sobre Redis (ex: usando ioredis).
+// O accountLockout.js já usa ioredis e pode servir de referência.
+//
 const ERROR_CODES = require("../constants/ErrorCodes");
 
 const DEFAULT_SCHEDULE = [0, 60_000, 300_000, 900_000];
@@ -8,12 +18,13 @@ function createAdaptiveRateLimiter({
   keyGenerator,
   schedule = DEFAULT_SCHEDULE,
   decayMs = DEFAULT_DECAY_MS,
+  // store: permite injetar store externo (ex: Redis-backed) para ambientes multi-instância.
+  // Interface mínima: { get(key), set(key, value), delete(key) } — compatível com Map.
+  store = new Map(),
 } = {}) {
   if (typeof keyGenerator !== "function") {
     throw new Error("keyGenerator é obrigatório no rate limiter.");
   }
-
-  const store = new Map();
 
   return function adaptiveRateLimiter(req, res, next) {
     req.rateLimit = req.rateLimit || { fail: () => { }, reset: () => { } };

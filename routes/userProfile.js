@@ -6,16 +6,16 @@ const { sanitizeCPF, isValidCPF } = require("../utils/cpf");
 const authenticateToken = require("../middleware/authenticateToken");
 const { sanitizeText } = require("../utils/sanitize");
 
-/**
- * ✅ Fallback local (não quebra nada):
- * Se você já tiver um middleware verifyAdmin no projeto,
- * troque este bloco por:
- *   const verifyAdmin = require("../middleware/verifyAdmin");
- */
+// NOTA DE DESIGN (pendente de refatoração futura — não alterar agora sem análise completa):
+// As rotas /admin/:id abaixo usam authenticateToken (auth_token) + verifyAdmin local.
+// O verifyAdmin local lê req.user.role do token de usuário, não do token de admin.
+// Risco atual: BAIXO — authController não inclui role no JWT de usuário, então
+// req.user.role = "user" sempre (payload.role ?? "user"). Nenhum usuário comum pode
+// acessar essas rotas sem manipular o JWT, o que exigiria a JWT_SECRET.
+// Ação futura: migrar para usar verifyAdmin real (adminToken) e remover authenticateToken
+// dessas rotas, para alinhar com o modelo de auth admin do restante do sistema.
 function verifyAdmin(req, res, next) {
   try {
-    // depende de como seu authenticateToken popula req.user
-    // suportar várias formas comuns sem quebrar:
     const u = req.user || {};
     const role = (u.role || u.papel || u.tipo || "").toString().toLowerCase();
     const isAdmin =
