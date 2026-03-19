@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">11.42% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/105</span>
+                <span class='fraction'>12/105</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">11.65% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/103</span>
+                <span class='fraction'>12/103</span>
             </div>
         
             
@@ -535,12 +535,12 @@
 <a name='L470'></a><a href='#L470'>470</a>
 <a name='L471'></a><a href='#L471'>471</a>
 <a name='L472'></a><a href='#L472'>472</a>
-<a name='L473'></a><a href='#L473'>473</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<a name='L473'></a><a href='#L473'>473</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -698,7 +698,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -745,7 +745,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -798,7 +798,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -854,7 +854,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -947,7 +947,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1006,13 +1006,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">const express = <span class="cstat-no" title="statement not covered" >require("express");</span>
-const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
-const pool = <span class="cstat-no" title="statement not covered" >require("../config/pool");</span>
-const verifyAdmin = <span class="cstat-no" title="statement not covered" >require("../middleware/verifyAdmin");</span>
-const requirePermission = <span class="cstat-no" title="statement not covered" >require("../middleware/requirePermission");</span>
-const logAdminAction = <span class="cstat-no" title="statement not covered" >require("../utils/adminLogger");</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">const express = require("express");
+const router = express.Router();
+const pool = require("../config/pool");
+const verifyAdmin = require("../middleware/verifyAdmin");
+const requirePermission = require("../middleware/requirePermission");
+const logAdminAction = require("../utils/adminLogger");
 &nbsp;
 /**
  * @openapi
@@ -1170,7 +1170,7 @@ const logAdminAction = <span class="cstat-no" title="statement not covered" >req
 /**
  * GET /api/admin/roles
  */
-<span class="cstat-no" title="statement not covered" >router.get(</span>
+router.get(
   "/",
   verifyAdmin,
   requirePermission("roles_manage"),
@@ -1217,7 +1217,7 @@ const logAdminAction = <span class="cstat-no" title="statement not covered" >req
 /**
  * GET /api/admin/roles/:id
  */
-<span class="cstat-no" title="statement not covered" >router.get(</span>
+router.get(
   "/:id",
   verifyAdmin,
   requirePermission("roles_manage"),
@@ -1270,7 +1270,7 @@ const logAdminAction = <span class="cstat-no" title="statement not covered" >req
 /**
  * POST /api/admin/roles
  */
-<span class="cstat-no" title="statement not covered" >router.post(</span>
+router.post(
   "/",
   verifyAdmin,
   requirePermission("roles_manage"),
@@ -1326,7 +1326,7 @@ const logAdminAction = <span class="cstat-no" title="statement not covered" >req
 /**
  * PUT /api/admin/roles/:id
  */
-<span class="cstat-no" title="statement not covered" >router.put(</span>
+router.put(
   "/:id",
   verifyAdmin,
   requirePermission("roles_manage"),
@@ -1419,7 +1419,7 @@ const logAdminAction = <span class="cstat-no" title="statement not covered" >req
 /**
  * DELETE /api/admin/roles/:id
  */
-<span class="cstat-no" title="statement not covered" >router.delete(</span>
+router.delete(
   "/:id",
   verifyAdmin,
   requirePermission("roles_manage"),
@@ -1478,7 +1478,7 @@ const logAdminAction = <span class="cstat-no" title="statement not covered" >req
   }
 );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >module.exports = router;</span>
+module.exports = router;
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -1486,7 +1486,7 @@ const logAdminAction = <span class="cstat-no" title="statement not covered" >req
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-05T15:18:27.444Z
+                at 2026-03-19T11:36:50.752Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

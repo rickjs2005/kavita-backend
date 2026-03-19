@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/11</span>
+                <span class='fraction'>11/11</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/11</span>
+                <span class='fraction'>11/11</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -241,10 +241,10 @@
 <a name='L176'></a><a href='#L176'>176</a>
 <a name='L177'></a><a href='#L177'>177</a>
 <a name='L178'></a><a href='#L178'>178</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -272,7 +272,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -287,7 +287,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -313,7 +313,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -334,7 +334,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -360,7 +360,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -390,7 +390,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -414,14 +414,14 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// routes/newsPublicRoutes.js
-const express = <span class="cstat-no" title="statement not covered" >require("express");</span>
-const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
+const express = require("express");
+const router = express.Router();
 &nbsp;
-const newsPublicController = <span class="cstat-no" title="statement not covered" >require("../controllers/newsPublicController");</span>
+const newsPublicController = require("../controllers/newsPublicController");
 &nbsp;
 /**
  * @openapi
@@ -449,7 +449,7 @@ const newsPublicController = <span class="cstat-no" title="statement not covered
  *       500:
  *         description: Erro interno
  */
-<span class="cstat-no" title="statement not covered" >router.get("/overview", newsPublicController.overview);</span>
+router.get("/overview", newsPublicController.overview);
 &nbsp;
 /**
  * @openapi
@@ -464,7 +464,7 @@ const newsPublicController = <span class="cstat-no" title="statement not covered
  *       500:
  *         description: Erro interno
  */
-<span class="cstat-no" title="statement not covered" >router.get("/clima", newsPublicController.listClima);</span>
+router.get("/clima", newsPublicController.listClima);
 &nbsp;
 /**
  * @openapi
@@ -490,7 +490,7 @@ const newsPublicController = <span class="cstat-no" title="statement not covered
  *       500:
  *         description: Erro interno
  */
-<span class="cstat-no" title="statement not covered" >router.get("/clima/:slug", newsPublicController.getClima);</span>
+router.get("/clima/:slug", newsPublicController.getClima);
 &nbsp;
 /**
  * @openapi
@@ -511,7 +511,7 @@ const newsPublicController = <span class="cstat-no" title="statement not covered
  *       500:
  *         description: Erro interno
  */
-<span class="cstat-no" title="statement not covered" >router.get("/cotacoes", newsPublicController.listCotacoes);</span>
+router.get("/cotacoes", newsPublicController.listCotacoes);
 &nbsp;
 /**
  * @openapi
@@ -537,7 +537,7 @@ const newsPublicController = <span class="cstat-no" title="statement not covered
  *       500:
  *         description: Erro interno
  */
-<span class="cstat-no" title="statement not covered" >router.get("/cotacoes/:slug", newsPublicController.getCotacao);</span>
+router.get("/cotacoes/:slug", newsPublicController.getCotacao);
 &nbsp;
 /**
  * @openapi
@@ -567,7 +567,7 @@ const newsPublicController = <span class="cstat-no" title="statement not covered
  *       500:
  *         description: Erro interno
  */
-<span class="cstat-no" title="statement not covered" >router.get("/posts", newsPublicController.listPosts);</span>
+router.get("/posts", newsPublicController.listPosts);
 &nbsp;
 /**
  * @openapi
@@ -591,9 +591,9 @@ const newsPublicController = <span class="cstat-no" title="statement not covered
  *       500:
  *         description: Erro interno
  */
-<span class="cstat-no" title="statement not covered" >router.get("/posts/:slug", newsPublicController.getPost);</span>
+router.get("/posts/:slug", newsPublicController.getPost);
 &nbsp;
-<span class="cstat-no" title="statement not covered" >module.exports = router;</span>
+module.exports = router;
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -601,7 +601,7 @@ const newsPublicController = <span class="cstat-no" title="statement not covered
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-05T15:18:27.444Z
+                at 2026-03-19T11:36:50.752Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

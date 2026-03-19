@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">11.68% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/77</span>
+                <span class='fraction'>9/77</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">11.68% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/77</span>
+                <span class='fraction'>9/77</span>
             </div>
         
             
@@ -442,10 +442,10 @@
 <a name='L377'></a><a href='#L377'>377</a>
 <a name='L378'></a><a href='#L378'>378</a>
 <a name='L379'></a><a href='#L379'>379</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -608,9 +608,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -663,7 +663,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -729,8 +729,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -804,12 +804,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -818,12 +818,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// routes/adminMarketingPromocoes.js
-const express = <span class="cstat-no" title="statement not covered" >require("express");</span>
-const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
-const pool = <span class="cstat-no" title="statement not covered" >require("../config/pool");</span>
-const verifyAdmin = <span class="cstat-no" title="statement not covered" >require("../middleware/verifyAdmin");</span>
+const express = require("express");
+const router = express.Router();
+const pool = require("../config/pool");
+const verifyAdmin = require("../middleware/verifyAdmin");
 &nbsp;
 /**
  * @openapi
@@ -986,7 +986,7 @@ const verifyAdmin = <span class="cstat-no" title="statement not covered" >requir
  */
 &nbsp;
 // LISTAR PROMOÇÕES
-<span class="cstat-no" title="statement not covered" >router.get("/", verifyAdmin, <span class="fstat-no" title="function not covered" >as</span>ync (_req, res) =&gt; {</span>
+router.get("/", verifyAdmin, <span class="fstat-no" title="function not covered" >as</span>ync (_req, res) =&gt; {
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const sql = <span class="cstat-no" title="statement not covered" >`</span>
       SELECT
@@ -1041,7 +1041,7 @@ const verifyAdmin = <span class="cstat-no" title="statement not covered" >requir
 });
 &nbsp;
 // CRIAR PROMOÇÃO
-<span class="cstat-no" title="statement not covered" >router.post("/", verifyAdmin, <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
+router.post("/", verifyAdmin, <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
   const {
     product_id,
     title = <span class="branch-0 cbranch-no" title="branch not covered" >null,</span>
@@ -1107,7 +1107,7 @@ const verifyAdmin = <span class="cstat-no" title="statement not covered" >requir
 });
 &nbsp;
 // ATUALIZAR PROMOÇÃO
-<span class="cstat-no" title="statement not covered" >router.put("/:id", verifyAdmin, <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
+router.put("/:id", verifyAdmin, <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
   const { id } = <span class="cstat-no" title="statement not covered" >req.params;</span>
   const {
     title,
@@ -1182,7 +1182,7 @@ const verifyAdmin = <span class="cstat-no" title="statement not covered" >requir
 });
 &nbsp;
 // REMOVER PROMOÇÃO
-<span class="cstat-no" title="statement not covered" >router.delete("/:id", verifyAdmin, <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
+router.delete("/:id", verifyAdmin, <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
   const { id } = <span class="cstat-no" title="statement not covered" >req.params;</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const [r] = <span class="cstat-no" title="statement not covered" >await pool.query("DELETE FROM product_promotions WHERE id = ?", [id]);</span>
@@ -1196,7 +1196,7 @@ const verifyAdmin = <span class="cstat-no" title="statement not covered" >requir
   }
 });
 &nbsp;
-<span class="cstat-no" title="statement not covered" >module.exports = router;</span>
+module.exports = router;
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -1204,7 +1204,7 @@ const verifyAdmin = <span class="cstat-no" title="statement not covered" >requir
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-05T15:18:27.444Z
+                at 2026-03-19T11:36:50.752Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">4.78% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/188</span>
+                <span class='fraction'>9/188</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">5.2% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/173</span>
+                <span class='fraction'>9/173</span>
             </div>
         
             
@@ -554,9 +554,9 @@
 <a name='L489'></a><a href='#L489'>489</a>
 <a name='L490'></a><a href='#L490'>490</a>
 <a name='L491'></a><a href='#L491'>491</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -572,12 +572,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1031,7 +1031,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1044,9 +1044,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// controllers/dronesPublicController.js
-const fs = <span class="cstat-no" title="statement not covered" >require("fs");</span>
-const dronesService = <span class="cstat-no" title="statement not covered" >require("../services/dronesService");</span>
-const mediaService = <span class="cstat-no" title="statement not covered" >require("../services/mediaService");</span>
+const fs = require("fs");
+const dronesService = require("../services/dronesService");
+const mediaService = require("../services/mediaService");
 &nbsp;
 /**
  * AppError fallback (compatível):
@@ -1062,12 +1062,12 @@ class AppError extends Error {
   }
 }
 &nbsp;
-const MAX_IMAGE_BYTES = <span class="cstat-no" title="statement not covered" >5 * 1024 * 1024;</span> // 5MB
-const MAX_VIDEO_BYTES = <span class="cstat-no" title="statement not covered" >30 * 1024 * 1024;</span> // 30MB
-const ALLOWED_IMAGE = <span class="cstat-no" title="statement not covered" >new Set(["image/jpeg", "image/png", "image/webp"]);</span>
-const ALLOWED_VIDEO = <span class="cstat-no" title="statement not covered" >new Set(["video/mp4"]);</span>
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
+const MAX_VIDEO_BYTES = 30 * 1024 * 1024; // 30MB
+const ALLOWED_IMAGE = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_VIDEO = new Set(["video/mp4"]);
 &nbsp;
-const DEFAULT_DRONE_MODELS = <span class="cstat-no" title="statement not covered" >[</span>
+const DEFAULT_DRONE_MODELS = [
   { key: "t25p", label: "DJI Agras T25P" },
   { key: "t70p", label: "DJI Agras T70P" },
   { key: "t100", label: "DJI Agras T100" },
@@ -1521,7 +1521,7 @@ async function <span class="fstat-no" title="function not covered" >listModels(<
       }
     }
   
-<span class="cstat-no" title="statement not covered" >    module.exports = {</span>
+    module.exports = {
       // legado
       getPage,
       getGallery,
@@ -1540,7 +1540,7 @@ async function <span class="fstat-no" title="function not covered" >listModels(<
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-05T15:18:27.444Z
+                at 2026-03-19T11:36:50.752Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

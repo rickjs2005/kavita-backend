@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">6.29% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/127</span>
+                <span class='fraction'>8/127</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">7.01% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/114</span>
+                <span class='fraction'>8/114</span>
             </div>
         
             
@@ -500,9 +500,9 @@
 <a name='L435'></a><a href='#L435'>435</a>
 <a name='L436'></a><a href='#L436'>436</a>
 <a name='L437'></a><a href='#L437'>437</a>
-<a name='L438'></a><a href='#L438'>438</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<a name='L438'></a><a href='#L438'>438</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -589,7 +589,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -607,8 +607,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -695,7 +695,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -786,8 +786,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -936,10 +936,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">const express = <span class="cstat-no" title="statement not covered" >require("express");</span>
-const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
-const pool = <span class="cstat-no" title="statement not covered" >require("../config/pool");</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">const express = require("express");
+const router = express.Router();
+const pool = require("../config/pool");
 &nbsp;
 /**
  * normaliza slug -&gt; nome (ou retorna id numérico como string)
@@ -1026,7 +1026,7 @@ async function <span class="fstat-no" title="function not covered" >attachImages
 // =============== LISTAGEM PADRÃO (/api/products) ===============
 &nbsp;
 // Whitelist de colunas para ORDER BY
-const LIST_SORT_MAP = <span class="cstat-no" title="statement not covered" >{</span>
+const LIST_SORT_MAP = {
   id: "p.id",
   name: "p.name",
   price: "p.price",
@@ -1044,7 +1044,7 @@ const LIST_SORT_MAP = <span class="cstat-no" title="statement not covered" >{</s
  *  - sort: id | name | price | quantity (default id)
  *  - order: asc | desc (default desc)
  */
-<span class="cstat-no" title="statement not covered" >router.get("/", <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
+router.get("/", <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const {
       category = <span class="branch-0 cbranch-no" title="branch not covered" >"all",</span>
@@ -1132,7 +1132,7 @@ const LIST_SORT_MAP = <span class="cstat-no" title="statement not covered" >{</s
 // =============== BUSCA AVANÇADA (/api/products/search) ===============
 &nbsp;
 // Whitelist de ORDER BY (nunca confie no input do usuário)
-const SEARCH_SORT_MAP = <span class="cstat-no" title="statement not covered" >{</span>
+const SEARCH_SORT_MAP = {
   price_asc: "final_price ASC, p.id DESC",
   price_desc: "final_price DESC, p.id DESC",
   newest: "p.created_at DESC, p.id DESC",
@@ -1223,7 +1223,7 @@ const SEARCH_SORT_MAP = <span class="cstat-no" title="statement not covered" >{<
  *       500:
  *         description: Erro interno
  */
-<span class="cstat-no" title="statement not covered" >router.get("/search", <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
+router.get("/search", <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const {
       q,
@@ -1373,7 +1373,7 @@ const SEARCH_SORT_MAP = <span class="cstat-no" title="statement not covered" >{<
   }
 });
 &nbsp;
-<span class="cstat-no" title="statement not covered" >module.exports = router;</span>
+module.exports = router;
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -1381,7 +1381,7 @@ const SEARCH_SORT_MAP = <span class="cstat-no" title="statement not covered" >{<
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-05T15:18:27.444Z
+                at 2026-03-19T11:36:50.752Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

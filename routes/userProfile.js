@@ -307,11 +307,11 @@ router.put("/admin/:id", authenticateToken, verifyAdmin, async (req, res) => {
     }
 
     for (const k of Object.keys(body)) {
-      if (k === “cpf”) continue;
+      if (k === "cpf") continue;
       if (!EDITABLE.has(k)) continue;
 
       const raw = body[k];
-      if (raw === “” || raw === null || raw === undefined) {
+      if (raw === "" || raw === null || raw === undefined) {
         sets.push(`${k} = NULL`);
       } else {
         const strVal = String(raw);
@@ -325,10 +325,10 @@ router.put("/admin/:id", authenticateToken, verifyAdmin, async (req, res) => {
     }
 
     if (!sets.length) {
-      return res.status(400).json({ mensagem: “Nada para atualizar.” });
+      return res.status(400).json({ mensagem: "Nada para atualizar." });
     }
 
-    await pool.query(`UPDATE usuarios SET ${sets.join(“, “)} WHERE id = ?`, [
+    await pool.query(`UPDATE usuarios SET ${sets.join(", ")} WHERE id = ?`, [
       ...values,
       id,
     ]);

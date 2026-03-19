@@ -9,8 +9,8 @@
  * - Returns 401 when signature is invalid (wrong HMAC)
  * - Calls next() when signature is valid
  * - Attaches req.mpSignature when signature is valid
- * - Returns 200 in production when MP_WEBHOOK_SECRET is not configured
- * - Returns 500 in development when MP_WEBHOOK_SECRET is not configured
+ * - Returns 401 (fail-closed) in production when MP_WEBHOOK_SECRET is not configured
+ * - Returns 401 (fail-closed) in development when MP_WEBHOOK_SECRET is not configured
  */
 
 "use strict";
@@ -148,7 +148,11 @@ describe("validateMPSignature middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  test("200 em produção quando MP_WEBHOOK_SECRET não está configurado", () => {
+  // Comportamento antigo (pré c4f7d87): produção retornava 200 (fail-open) e
+  // development retornava 500. O commit c4f7d87 "harden payment flows" mudou
+  // para fail-closed (401) em todos os ambientes — aceitar webhooks sem secret
+  // configurado permitiria que qualquer payload falso fosse processado.
+  test("401 em produção quando MP_WEBHOOK_SECRET não está configurado (fail-closed)", () => {
     delete process.env.MP_WEBHOOK_SECRET;
     process.env.NODE_ENV = "production";
     const validateMPSignature = require("../../../middleware/validateMPSignature");
@@ -157,12 +161,12 @@ describe("validateMPSignature middleware", () => {
 
     validateMPSignature(req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ ok: true });
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ ok: false });
     expect(next).not.toHaveBeenCalled();
   });
 
-  test("500 em development quando MP_WEBHOOK_SECRET não está configurado", () => {
+  test("401 em development quando MP_WEBHOOK_SECRET não está configurado (fail-closed)", () => {
     delete process.env.MP_WEBHOOK_SECRET;
     process.env.NODE_ENV = "development";
     const validateMPSignature = require("../../../middleware/validateMPSignature");
@@ -171,7 +175,8 @@ describe("validateMPSignature middleware", () => {
 
     validateMPSignature(req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ ok: false });
     expect(next).not.toHaveBeenCalled();
   });
 });

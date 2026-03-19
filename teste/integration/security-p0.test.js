@@ -62,9 +62,9 @@ describe("CSRF Enforcement", () => {
     expect(csrfCookie).toBeDefined();
   });
 
-  test("POST /api/users/profile returns 403 without CSRF token", async () => {
+  test("PUT /api/users/me returns 403 without CSRF token", async () => {
     const res = await request(app)
-      .put("/api/users/profile")
+      .put("/api/users/me")
       .set("Cookie", "auth_token=sometoken")
       .send({ nome: "Test" });
     // Either 401 (no valid auth) or 403 (CSRF rejection) — CSRF runs first on protected routes
@@ -300,9 +300,7 @@ describe("Cookie-Only Auth (Bearer tokens rejected)", () => {
   test("authenticateToken: Bearer token in Authorization header is rejected (401)", async () => {
     const token = jwt.sign({ id: 1, tokenVersion: 1 }, SECRET, { expiresIn: "1h" });
 
-    // Even if DB would return a user, Bearer should be rejected before any DB call
-    pool.query.mockResolvedValueOnce([[{ id: 1, nome: "U", email: "u@u.com", tokenVersion: 1 }]]);
-
+    // Bearer is rejected before any DB call — no pool.query mock needed
     const res = await request(app)
       .post("/api/logout")
       .set("Authorization", `Bearer ${token}`);
