@@ -41,20 +41,37 @@ try {
 
   redisClient.on("ready", () => {
     redisReady = true;
+    console.info("[accountLockout] Redis conectado — lockout persiste entre restarts.");
   });
 
-  redisClient.on("error", () => {
+  redisClient.on("error", (err) => {
+    const wasReady = redisReady;
     redisReady = false;
+    // Só loga se estava conectado e caiu — evita spam duplicado com o catch() inicial
+    if (wasReady) {
+      console.warn(
+        "[accountLockout] Redis desconectado:", err.message,
+        "— fallback in-memory ativo. Lockout NÃO persiste entre restarts."
+      );
+    }
   });
 
   redisClient.on("end", () => {
     redisReady = false;
   });
 
-  // Attempt to connect; if it fails, silently fall back to in-memory
+  // Attempt to connect; if it fails, fall back to in-memory.
+  // Em produção, loga warning explícito — lockout em memória é uma degradação operacional.
   if (process.env.NODE_ENV !== "test") {
-    redisClient.connect().catch(() => {
+    redisClient.connect().catch((err) => {
       redisReady = false;
+      if (process.env.NODE_ENV === "production") {
+        console.warn(
+          "[accountLockout] Redis indisponível em produção — fallback in-memory ativo.",
+          "Lockout NÃO persiste entre restarts nem é compartilhado entre instâncias PM2/containers.",
+          err.message
+        );
+      }
     });
   }
 } catch (_err) {

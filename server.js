@@ -264,6 +264,13 @@ app.get("/health", async (_req, res) => {
 /* ============================
  * Segurança: Rate Limiter
  * ============================ */
+// LIMITAÇÃO CONHECIDA: store in-memory (Map por processo).
+// Em PM2 cluster ou múltiplas instâncias, cada worker tem contadores independentes.
+// Para produção multi-instância, passe um store Redis-backed via opção `store`.
+// BLOQUEADOR para Redis-backed store: a interface de store é síncrona (store.get()
+// retorna valor direto). Redis é assíncrono — uma implementação Redis-backed exigiria
+// tornar o middleware async, o que é uma mudança de arquitetura maior.
+// Enquanto isso, o rate limit global opera apenas por processo.
 const rateLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => req.ip || crypto.randomUUID(),
 });
@@ -360,6 +367,15 @@ if (process.env.NODE_ENV !== "test") {
     logger.info(`🌐 APP_URL configurada: ${config.appUrl}`);
     logger.info(
       `🖼️ Uploads servidos em: http://localhost:${PORT}/uploads (dir: ${UPLOADS_DIR})`
+    );
+
+    // ============================
+    // AVISOS OPERACIONAIS DE STARTUP
+    // ============================
+    logger.warn(
+      "⚠️ [rateLimiter] Store in-memory (Map por processo). " +
+      "Em PM2 cluster/multi-instância os contadores NÃO são compartilhados entre workers. " +
+      "Implemente store Redis-backed se necessário (ver comentário acima de createAdaptiveRateLimiter)."
     );
 
     // ============================
