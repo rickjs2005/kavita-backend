@@ -4,40 +4,8 @@ const router = express.Router();
 const pool = require("../config/pool");
 const { sanitizeCPF, isValidCPF } = require("../utils/cpf");
 const authenticateToken = require("../middleware/authenticateToken");
+const verifyAdmin = require("../middleware/verifyAdmin");
 const { sanitizeText } = require("../utils/sanitize");
-
-// NOTA DE DESIGN (pendente de refatoração futura — não alterar agora sem análise completa):
-// As rotas /admin/:id abaixo usam authenticateToken (auth_token) + verifyAdmin local.
-// O verifyAdmin local lê req.user.role do token de usuário, não do token de admin.
-// Risco atual: BAIXO — authController não inclui role no JWT de usuário, então
-// req.user.role = "user" sempre (payload.role ?? "user"). Nenhum usuário comum pode
-// acessar essas rotas sem manipular o JWT, o que exigiria a JWT_SECRET.
-// Ação futura: migrar para usar verifyAdmin real (adminToken) e remover authenticateToken
-// dessas rotas, para alinhar com o modelo de auth admin do restante do sistema.
-function verifyAdmin(req, res, next) {
-  try {
-    const u = req.user || {};
-    const role = (u.role || u.papel || u.tipo || "").toString().toLowerCase();
-    const isAdmin =
-      u.is_admin === true ||
-      u.is_admin === 1 ||
-      u.admin === true ||
-      u.admin === 1 ||
-      role === "admin" ||
-      role === "administrator";
-
-    if (!req.user) {
-      return res.status(401).json({ mensagem: "Não autenticado." });
-    }
-    if (!isAdmin) {
-      return res.status(403).json({ mensagem: "Acesso negado." });
-    }
-    return next();
-  } catch (e) {
-    console.error("verifyAdmin erro:", e);
-    return res.status(500).json({ mensagem: "Erro interno." });
-  }
-}
 
 // Campos permitidos para edição com limites de comprimento e sanitização
 const EDITABLE = new Set([
@@ -245,7 +213,7 @@ router.put("/me", authenticateToken, async (req, res) => {
 // GET /api/users/admin/:id
 // PUT /api/users/admin/:id
 // -----------------------------------------------------
-router.get("/admin/:id", authenticateToken, verifyAdmin, async (req, res) => {
+router.get("/admin/:id", verifyAdmin, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ mensagem: "ID inválido." });
 
@@ -271,7 +239,7 @@ router.get("/admin/:id", authenticateToken, verifyAdmin, async (req, res) => {
   }
 });
 
-router.put("/admin/:id", authenticateToken, verifyAdmin, async (req, res) => {
+router.put("/admin/:id", verifyAdmin, async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ mensagem: "ID inválido." });
 
