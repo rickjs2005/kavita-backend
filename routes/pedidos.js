@@ -36,11 +36,9 @@ router.get("/", authenticateToken, async (req, res, next) => {
         p.forma_pagamento,
         p.status,
         p.data_pedido,
-        SUM(pp.quantidade * pp.valor_unitario) AS total
+        (p.total + COALESCE(p.shipping_price, 0)) AS total
       FROM pedidos p
-      LEFT JOIN pedidos_produtos pp ON pp.pedido_id = p.id
       WHERE p.usuario_id = ?
-      GROUP BY p.id
       ORDER BY p.data_pedido DESC
     `;
 
@@ -94,11 +92,10 @@ router.get("/:id", authenticateToken, async (req, res, next) => {
         p.status,
         p.data_pedido,
         p.endereco,
-        SUM(pp.quantidade * pp.valor_unitario) AS total
+        p.total AS total_produtos,
+        COALESCE(p.shipping_price, 0) AS shipping_price
       FROM pedidos p
-      LEFT JOIN pedidos_produtos pp ON pp.pedido_id = p.id
       WHERE p.id = ? AND p.usuario_id = ?
-      GROUP BY p.id
       `,
       [pedidoId, usuarioId]
     );
@@ -138,10 +135,8 @@ router.get("/:id", authenticateToken, async (req, res, next) => {
       imagem: i.imagem,
     }));
 
-    const totalCalculado = itensFormatados.reduce(
-      (sum, i) => sum + i.preco * i.quantidade,
-      0
-    );
+    const shippingPrice = Number(pedido.shipping_price || 0);
+    const totalProdutos = Number(pedido.total_produtos || 0);
 
     return res.json({
       id: pedido.id,
@@ -150,7 +145,8 @@ router.get("/:id", authenticateToken, async (req, res, next) => {
       status: pedido.status,
       data_pedido: pedido.data_pedido,
       endereco: pedido.endereco ?? null,
-      total: totalCalculado,
+      total: totalProdutos + shippingPrice,
+      shipping_price: shippingPrice,
       itens: itensFormatados,
     });
   } catch (error) {

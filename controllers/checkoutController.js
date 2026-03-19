@@ -10,6 +10,7 @@ function isFormaPagamentoValida(value) {
 
   if (s === "pix") return true;
   if (s === "boleto") return true;
+  if (s === "mercadopago") return true;
   if (s.includes("cart") && s.includes("mercado")) return true;
   if (s === "prazo") return true;
 
