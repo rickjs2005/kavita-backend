@@ -7,7 +7,7 @@ const pool = require("../config/pool");
 const createAdaptiveRateLimiter = require("../middleware/adaptiveRateLimiter");
 const AuthController = require("../controllers/authController");
 const { sanitizeCPF, isValidCPF } = require("../utils/cpf"); // 👈 AQUI
-const { registerValidators } = require("../validators/authValidator");
+const { registerValidators, forgotPasswordValidators, resetPasswordValidators } = require("../validators/authValidator");
 
 const router = express.Router();
 
@@ -119,7 +119,7 @@ router.post("/register", registerLimiter, registerValidators, async (req, res) =
 // ===========================================================
 // ✅ POST /forgot-password — Enviar link de redefinição de senha
 // ===========================================================
-router.post("/forgot-password", forgotPasswordLimiter, (req, res) =>
+router.post("/forgot-password", forgotPasswordLimiter, forgotPasswordValidators, (req, res) =>
   AuthController.forgotPassword(req, res)
 );
 
@@ -147,7 +147,7 @@ router.post("/forgot-password", forgotPasswordLimiter, (req, res) =>
 // ===========================================================
 // ✅ POST /reset-password — Redefinir senha com token
 // ===========================================================
-router.post("/reset-password", resetPasswordLimiter, (req, res) =>
+router.post("/reset-password", resetPasswordLimiter, resetPasswordValidators, (req, res) =>
   AuthController.resetPassword(req, res)
 );
 
