@@ -15,6 +15,7 @@ const ERROR_CODES = require("../constants/ErrorCodes");
 const authenticateToken = require("../middleware/authenticateToken");
 const verifyAdmin = require("../middleware/verifyAdmin"); // ✅ sem fallback: falhar cedo se estiver faltando
 const validateMPSignature = require("../middleware/validateMPSignature"); // ✅ Layer 1: webhook signature
+const { validateCSRF } = require("../middleware/csrfProtection"); // ✅ protege /start contra CSRF
 
 // Configuração do cliente do Mercado Pago
 const mpClient = new MercadoPagoConfig({
@@ -22,22 +23,19 @@ const mpClient = new MercadoPagoConfig({
 });
 
 // =====================================================
-// Util: calcula o total do pedido diretamente no banco
+// Util: lê o total persistido do pedido (já com desconto de cupom + frete).
+// Não recalcula a partir dos itens para evitar divergência com o valor
+// mostrado ao usuário no checkout (que já incluía cupom e frete).
 // =====================================================
-async function calcularTotalPedido(conn, pedidoId) {
-  const [rows] = await conn.query(
-    `SELECT quantidade, valor_unitario
-       FROM pedidos_produtos
-      WHERE pedido_id = ?`,
+async function getTotalPedido(conn, pedidoId) {
+  const [[row]] = await conn.query(
+    `SELECT (total + COALESCE(shipping_price, 0)) AS total_final
+       FROM pedidos
+      WHERE id = ?`,
     [pedidoId]
   );
 
-  const total = rows.reduce(
-    (acc, r) => acc + Number(r.quantidade) * Number(r.valor_unitario),
-    0
-  );
-
-  return Number(total.toFixed(2));
+  return Number((row?.total_final || 0).toFixed(2));
 }
 
 // =====================================================
@@ -498,7 +496,7 @@ router.delete(
 
 // inicia pagamento para um pedido existente
 // ✅ FIX: requer autenticação + ownership check (Broken Access Control)
-router.post("/start", authenticateToken, async (req, res, next) => {
+router.post("/start", authenticateToken, validateCSRF, async (req, res, next) => {
   const { pedidoId } = req.body || {};
   const pedidoIdNum = Number(pedidoId);
 
@@ -548,7 +546,7 @@ router.post("/start", authenticateToken, async (req, res, next) => {
       );
     }
 
-    const total = await calcularTotalPedido(conn, pedidoIdNum);
+    const total = await getTotalPedido(conn, pedidoIdNum);
 
     const preference = new Preference(mpClient);
     const body = buildPreferenceBody({

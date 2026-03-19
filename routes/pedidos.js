@@ -35,6 +35,7 @@ router.get("/", authenticateToken, async (req, res, next) => {
         p.usuario_id,
         p.forma_pagamento,
         p.status,
+        p.status_pagamento,
         p.data_pedido,
         (p.total + COALESCE(p.shipping_price, 0)) AS total
       FROM pedidos p
@@ -90,6 +91,7 @@ router.get("/:id", authenticateToken, async (req, res, next) => {
         p.usuario_id,
         p.forma_pagamento,
         p.status,
+        p.status_pagamento,
         p.data_pedido,
         p.endereco,
         p.total AS total_produtos,
@@ -143,6 +145,7 @@ router.get("/:id", authenticateToken, async (req, res, next) => {
       usuario_id: pedido.usuario_id,
       forma_pagamento: pedido.forma_pagamento,
       status: pedido.status,
+      status_pagamento: pedido.status_pagamento ?? null,
       data_pedido: pedido.data_pedido,
       endereco: pedido.endereco ?? null,
       total: totalProdutos + shippingPrice,
