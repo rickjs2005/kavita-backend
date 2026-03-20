@@ -193,8 +193,8 @@ router.put("/me", authenticateToken, async (req, res) => {
 
     const [rows] = await pool.query(
       `
-      SELECT 
-        id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia, status_conta
+      SELECT
+        id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia
       FROM usuarios
       WHERE id = ?
     `,

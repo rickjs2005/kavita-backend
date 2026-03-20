@@ -186,7 +186,7 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
     await syncFromRedis(lockoutKey);
     assertNotLocked(lockoutKey);
 
-    console.log("🔐 Tentativa de login de admin:", emailNormalizado);
+    console.log("🔐 Tentativa de login de admin");
 
     // 3. Busca o admin no banco de dados pelo email + role_id via admin_roles
     const [rows] = await pool.query(
@@ -276,7 +276,7 @@ router.post("/login", adminLoginRateLimiter, async (req, res) => {
       );
     }
 
-    console.log("✅ Login bem-sucedido:", admin.email);
+    console.log("✅ Login de admin bem-sucedido, id:", admin.id);
 
     // 9. Registra log de auditoria
     logAdminAction({
