@@ -683,12 +683,31 @@ router.post("/webhook", validateMPSignature, async (req, res) => {
       else if (status === "in_process" || status === "pending") novoStatusPagamento = "pendente";
       else if (status === "charged_back" || status === "refunded") novoStatusPagamento = "estornado";
 
+      // Restaura estoque se pagamento falhou.
+      // Executado ANTES de atualizar status_pagamento para que a guarda de
+      // idempotência funcione: se o mesmo pedido já está 'falhou' (webhook
+      // duplicado com event_id diferente), o UPDATE não toca os produtos.
+      if (novoStatusPagamento === "falhou") {
+        await conn.query(
+          `UPDATE products p
+              JOIN pedidos_produtos pp ON pp.produto_id = p.id
+              JOIN pedidos ped         ON ped.id        = pp.pedido_id
+             SET p.quantity = p.quantity + pp.quantidade
+           WHERE pp.pedido_id = ?
+             AND ped.status_pagamento <> 'falhou'`,
+          [pedidoId]
+        );
+      }
+
+      // Atualiza status_pagamento e status (campo operacional) de forma atômica.
+      // status espelha status_pagamento para evitar divergência entre os dois campos.
       await conn.query(
         `UPDATE pedidos
-            SET status_pagamento = ?, pagamento_id = ?
+            SET status_pagamento = ?, status = ?, pagamento_id = ?
           WHERE id = ?
             AND (status_pagamento <> ? OR pagamento_id <> ?)`,
         [
+          novoStatusPagamento,
           novoStatusPagamento,
           String(data.id),
           pedidoId,

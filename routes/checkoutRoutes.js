@@ -6,6 +6,7 @@ const authenticateToken = require("../middleware/authenticateToken");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { getQuote, parseCep, normalizeItems } = require("../services/shippingQuoteService");
+const { validateCSRF } = require("../middleware/csrfProtection");
 
 /* ------------------------------------------------------------------ */
 /*                               Swagger                              */
@@ -560,7 +561,7 @@ async function recalcShippingMiddleware(req, _res, next) {
  *       400:
  *         description: Cupom inválido ou não aplicável
  */
-router.post("/preview-cupom", authenticateToken, async (req, res, next) => {
+router.post("/preview-cupom", authenticateToken, validateCSRF, async (req, res, next) => {
   const { codigo, produtos, total } = req.body || {};
 
   if (!codigo || !String(codigo).trim()) {
@@ -731,12 +732,14 @@ router.post("/preview-cupom", authenticateToken, async (req, res, next) => {
 // POST /api/checkout
 // Ordem intencional:
 // - autentica
+// - valida CSRF (impede cross-site form submit criando pedido real)
 // - valida body (inclui regras URBANA/RURAL e RETIRADA)
 // - recalcula frete (ENTREGA) ou força pickup (RETIRADA) — injeta req.body.shipping_*
 // - chama controller (shipping_* persistido dentro da transação do controller)
 router.post(
   "/",
   authenticateToken,
+  validateCSRF,
   validateCheckoutBody,
   recalcShippingMiddleware,
   checkoutHandler
