@@ -507,7 +507,7 @@ router.post("/start", authenticateToken, validateCSRF, async (req, res, next) =>
   const conn = await pool.getConnection();
   try {
     const [[pedido]] = await conn.query(
-      `SELECT id, forma_pagamento, usuario_id
+      `SELECT id, forma_pagamento, usuario_id, status_pagamento
          FROM pedidos
         WHERE id = ?`,
       [pedidoIdNum]
@@ -520,6 +520,21 @@ router.post("/start", authenticateToken, validateCSRF, async (req, res, next) =>
 
     if (!pedido) {
       return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
+    }
+
+    // Apenas pedidos em estado elegível aceitam nova tentativa de pagamento.
+    // 'pendente' = criado mas pagamento ainda não iniciado (ou gateway ainda processando).
+    // 'falhou'   = pagamento rejeitado/cancelado — retry é a ação esperada.
+    // 'pago' / 'estornado' = estados finais — retry seria cobrança indevida.
+    const statusElegiveis = ["pendente", "falhou"];
+    if (!statusElegiveis.includes(pedido.status_pagamento)) {
+      return next(
+        new AppError(
+          "Este pedido não pode ser pago novamente.",
+          ERROR_CODES.VALIDATION_ERROR,
+          409
+        )
+      );
     }
 
     const formaPagamentoRaw = pedido.forma_pagamento || "";
@@ -559,7 +574,7 @@ router.post("/start", authenticateToken, validateCSRF, async (req, res, next) =>
 
     await conn.query(
       `UPDATE pedidos
-          SET status_pagamento = 'pendente'
+          SET status_pagamento = 'pendente', status = 'pendente'
         WHERE id = ?`,
       [pedidoIdNum]
     );
