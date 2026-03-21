@@ -517,80 +517,6 @@ async function recalcShippingMiddleware(req, _res, next) {
   }
 }
 
-/**
- * Persistência obrigatória no pedido sem depender do controller:
- * intercepta o res.json para pegar pedido_id e fazer UPDATE.
- *
- * Também injeta aviso fixo de Nota Fiscal (sempre).
- */
-function persistShippingOnResponse(req, res, next) {
-  const originalJson = res.json.bind(res);
-
-  res.json = async (body) => {
-    const safeBody =
-      body && typeof body === "object"
-        ? { ...body }
-        : { success: true, message: "OK" };
-
-    // Aviso fixo para qualquer opção
-    if (!safeBody.nota_fiscal_aviso) {
-      safeBody.nota_fiscal_aviso = "Nota fiscal será entregue junto com o produto.";
-    }
-
-    try {
-      const pedidoId = safeBody?.pedido_id;
-
-      if (pedidoId && req.__shippingCalc) {
-        const s = req.__shippingCalc;
-
-        // IMPORTANTE: exige que a tabela pedidos tenha as colunas.
-        // Se não tiver, falha explicitamente para garantir "fonte da verdade".
-        await pool.query(
-          `
-            UPDATE pedidos
-            SET
-              shipping_price = ?,
-              shipping_rule_applied = ?,
-              shipping_prazo_dias = ?,
-              shipping_cep = ?
-            WHERE id = ?
-            LIMIT 1
-          `,
-          [
-            Number(s.shipping_price || 0),
-            String(s.shipping_rule_applied || "ZONE"),
-            s.shipping_prazo_dias === null || s.shipping_prazo_dias === undefined
-              ? null
-              : Number(s.shipping_prazo_dias),
-            s.shipping_cep === null || s.shipping_cep === undefined
-              ? null
-              : String(s.shipping_cep),
-            Number(pedidoId),
-          ]
-        );
-      }
-    } catch (e) {
-      console.error("[checkoutRoutes] Falha ao salvar frete no pedido:", e);
-
-      // Para manter segurança/consistência, não devolve sucesso sem persistir.
-      if (!res.headersSent) {
-        res.status(500);
-      }
-      return originalJson({
-        success: false,
-        message:
-          "Pedido criado, mas falhou ao persistir dados de frete. Verifique colunas shipping_* em pedidos.",
-        error: e?.message || "Erro ao salvar frete",
-        nota_fiscal_aviso: "Nota fiscal será entregue junto com o produto.",
-      });
-    }
-
-    return originalJson(safeBody);
-  };
-
-  return next();
-}
-
 /* ------------------------------------------------------------------ */
 /*                 Rota de pré-visualização de cupom                  */
 /* ------------------------------------------------------------------ */
@@ -748,15 +674,13 @@ router.post("/preview-cupom", authenticateToken, async (req, res, next) => {
 // Ordem intencional:
 // - autentica
 // - valida body (inclui regras URBANA/RURAL e RETIRADA)
-// - recalcula frete (ENTREGA) ou força pickup (RETIRADA)
-// - intercepta resposta para persistir shipping_* no pedido (sem mudar controller)
-// - chama controller atual
+// - recalcula frete (ENTREGA) ou força pickup (RETIRADA) — injeta req.body.shipping_*
+// - chama controller (shipping_* persistido dentro da transação do controller)
 router.post(
   "/",
   authenticateToken,
   validateCheckoutBody,
   recalcShippingMiddleware,
-  persistShippingOnResponse,
   checkoutHandler
 );
 

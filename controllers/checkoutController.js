@@ -347,6 +347,23 @@ async function create(req, res, next) {
       pedidoId,
     ]);
 
+    /* 7.1) Persiste dados de frete dentro da transação (antes do commit) */
+    await connection.query(
+      `UPDATE pedidos
+          SET shipping_price        = ?,
+              shipping_rule_applied = ?,
+              shipping_prazo_dias   = ?,
+              shipping_cep          = ?
+        WHERE id = ?`,
+      [
+        Number(req.body.shipping_price ?? 0),
+        String(req.body.shipping_rule_applied ?? "ZONE"),
+        req.body.shipping_prazo_dias == null ? null : Number(req.body.shipping_prazo_dias),
+        req.body.shipping_cep == null ? null : String(req.body.shipping_cep),
+        pedidoId,
+      ]
+    );
+
     /* 8) Marca carrinho abandonado como recuperado (não bloqueia) */
     try {
       if (carrinhoAberto && carrinhoAberto.id) {
@@ -393,6 +410,7 @@ async function create(req, res, next) {
       total_sem_desconto: totalPedido,
       desconto_total: descontoTotal,
       cupom_aplicado: cupomAplicado,
+      nota_fiscal_aviso: "Nota fiscal será entregue junto com o produto.",
     });
   } catch (err) {
     console.error("[checkout] Erro geral no checkout:", err);
