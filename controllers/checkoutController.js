@@ -72,9 +72,32 @@ async function create(req, res, next) {
   }
 
   let connection;
+  let lockAcquired = false;
 
   try {
     connection = await pool.getConnection();
+
+    /* 0) Lock de idempotência: serializa checkouts simultâneos do mesmo usuário.
+     *    GET_LOCK é um advisory lock MySQL global por nome.
+     *    Timeout de 5 s: se outra transação do mesmo usuário não liberar em 5 s,
+     *    retorna 409 (cenário de latência extrema, não do caso normal).       */
+    const lockName = `kavita_checkout_${usuario_id}`;
+    const [[lockRow]] = await connection.query(
+      "SELECT GET_LOCK(?, 5) AS ok",
+      [lockName]
+    );
+    lockAcquired = lockRow?.ok === 1;
+
+    if (!lockAcquired) {
+      return next(
+        new AppError(
+          "Outro checkout está em andamento para esta conta. Aguarde alguns segundos e tente novamente.",
+          ERROR_CODES.VALIDATION_ERROR,
+          409
+        )
+      );
+    }
+
     await connection.beginTransaction();
 
     /* 1) Atualiza informações do usuário (não bloqueia pedido) */
@@ -136,6 +159,49 @@ async function create(req, res, next) {
       }
     } catch (err) {
       console.error("[checkout] Erro ao buscar carrinho aberto:", err);
+    }
+
+    /* 2.5) Deduplicação por composição: impede double submit com mesma lista de produtos.
+     *
+     *  Fingerprint: ids+quantidades ordenados → string comparável.
+     *  Janela de 2 min cobre latência alta, duplo clique e retry automático.
+     *  O GET_LOCK (passo 0) já garante que apenas uma transação deste usuário
+     *  chega aqui de cada vez, então o SELECT lê o estado já commitado da
+     *  transação anterior, sem race condition.                                */
+    const prodFingerprint = [...produtos]
+      .map((p) => `${Number(p.id)}:${Number(p.quantidade || 0)}`)
+      .sort()
+      .join(",");
+
+    const [recentOrders] = await connection.query(
+      `SELECT pp.pedido_id,
+              GROUP_CONCAT(
+                CONCAT(pp.produto_id, ':', pp.quantidade)
+                ORDER BY pp.produto_id SEPARATOR ','
+              ) AS composicao
+         FROM pedidos_produtos pp
+         JOIN pedidos p ON p.id = pp.pedido_id
+        WHERE p.usuario_id      = ?
+          AND p.status          = 'pendente'
+          AND p.status_pagamento = 'pendente'
+          AND p.data_pedido     >= NOW() - INTERVAL 2 MINUTE
+        GROUP BY pp.pedido_id`,
+      [usuario_id]
+    );
+
+    const pedidoDuplicado = recentOrders.find(
+      (row) => row.composicao === prodFingerprint
+    );
+
+    if (pedidoDuplicado) {
+      await connection.rollback();
+      return res.status(200).json({
+        success: true,
+        message: "Pedido já registrado.",
+        pedido_id: pedidoDuplicado.pedido_id,
+        nota_fiscal_aviso: "Nota fiscal será entregue junto com o produto.",
+        idempotente: true,
+      });
     }
 
     /* 3) Cria pedido */
@@ -474,6 +540,13 @@ async function create(req, res, next) {
     );
   } finally {
     if (connection) {
+      // RELEASE_LOCK deve ser chamado ANTES de connection.release() para não
+      // vazar o lock no pool (o lock MySQL é por conexão; release() não o libera).
+      if (lockAcquired) {
+        await connection
+          .query("SELECT RELEASE_LOCK(?)", [`kavita_checkout_${usuario_id}`])
+          .catch(() => {});
+      }
       connection.release();
     }
   }
