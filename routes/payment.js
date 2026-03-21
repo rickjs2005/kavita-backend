@@ -681,6 +681,7 @@ router.post("/webhook", validateMPSignature, async (req, res) => {
       if (status === "approved") novoStatusPagamento = "pago";
       else if (status === "rejected" || status === "cancelled") novoStatusPagamento = "falhou";
       else if (status === "in_process" || status === "pending") novoStatusPagamento = "pendente";
+      else if (status === "charged_back" || status === "refunded") novoStatusPagamento = "estornado";
 
       await conn.query(
         `UPDATE pedidos
