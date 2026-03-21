@@ -363,9 +363,11 @@ router.put("/:id/pagamento", verifyAdmin, async (req, res) => {
   }
 
   try {
+    // Atualiza status_pagamento e status juntos para manter consistência operacional.
+    // status espelha status_pagamento — mesma regra do webhook.
     const [result] = await pool.query(
-      "UPDATE pedidos SET status_pagamento = ? WHERE id = ?",
-      [status_pagamento, id]
+      "UPDATE pedidos SET status_pagamento = ?, status = ? WHERE id = ?",
+      [status_pagamento, status_pagamento, id]
     );
 
     if (result.affectedRows === 0) {
