@@ -525,10 +525,13 @@ async function recalcShippingMiddleware(req, _res, next) {
  * @openapi
  * /api/checkout/preview-cupom:
  *   post:
- *     summary: Valida um cupom de desconto para um determinado total
+ *     summary: Valida um cupom de desconto calculando o subtotal no servidor
  *     description: |
- *       Verifica se o cupom existe, está ativo, não expirou, não atingiu o limite
- *       de usos e se o total informado atende ao valor mínimo.
+ *       Recebe a lista de produtos do carrinho, calcula o subtotal no backend
+ *       usando a mesma regra de preço do checkout real (promoção ativa tem
+ *       prioridade sobre products.price) e retorna o desconto do cupom.
+ *
+ *       Aceita também `total` (legado) como fallback se `produtos` não for enviado.
  *     tags:
  *       - Checkout
  *     security:
@@ -539,13 +542,18 @@ async function recalcShippingMiddleware(req, _res, next) {
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [codigo, produtos]
  *             properties:
  *               codigo:
  *                 type: string
  *                 example: "PROMO10"
- *               total:
- *                 type: number
- *                 example: 189.9
+ *               produtos:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: integer }
+ *                     quantidade: { type: integer }
  *     responses:
  *       200:
  *         description: Cupom válido e desconto calculado
@@ -553,8 +561,7 @@ async function recalcShippingMiddleware(req, _res, next) {
  *         description: Cupom inválido ou não aplicável
  */
 router.post("/preview-cupom", authenticateToken, async (req, res, next) => {
-  const { codigo, total } = req.body || {};
-  const subtotal = Number(total || 0);
+  const { codigo, produtos, total } = req.body || {};
 
   if (!codigo || !String(codigo).trim()) {
     return next(
@@ -562,24 +569,79 @@ router.post("/preview-cupom", authenticateToken, async (req, res, next) => {
     );
   }
 
-  if (!Number.isFinite(subtotal) || subtotal <= 0) {
-    return next(
-      new AppError(
-        "Total inválido para cálculo do cupom.",
-        ERROR_CODES.VALIDATION_ERROR,
-        400
-      )
-    );
-  }
+  let subtotal;
 
   try {
+    if (Array.isArray(produtos) && produtos.length > 0) {
+      /*
+       * Calcula subtotal no servidor usando a mesma regra de preço do checkout:
+       *   final_price da promoção ativa, ou products.price quando sem promoção.
+       */
+      const ids = produtos
+        .map((p) => Number(p.id))
+        .filter((id) => Number.isFinite(id) && id > 0);
+
+      if (!ids.length) {
+        return next(
+          new AppError("Produtos inválidos para cálculo do cupom.", ERROR_CODES.VALIDATION_ERROR, 400)
+        );
+      }
+
+      const [prodRows] = await pool.query(
+        "SELECT id, price FROM products WHERE id IN (?)",
+        [ids]
+      );
+
+      const [promoRows] = await pool.query(
+        `SELECT
+           pp.product_id,
+           CAST(
+             CASE
+               WHEN pp.promo_price IS NOT NULL
+                 THEN pp.promo_price
+               WHEN pp.discount_percent IS NOT NULL
+                 THEN p.price - (p.price * (pp.discount_percent / 100))
+               ELSE p.price
+             END
+           AS DECIMAL(10,2)) AS final_price
+         FROM product_promotions pp
+         JOIN products p ON p.id = pp.product_id
+         WHERE pp.product_id IN (?)
+           AND pp.is_active = 1
+           AND (pp.start_at IS NULL OR pp.start_at <= NOW())
+           AND (pp.end_at   IS NULL OR pp.end_at   >= NOW())`,
+        [ids]
+      );
+
+      const precos = {};
+      prodRows.forEach((r) => { precos[Number(r.id)] = Number(r.price); });
+      const promos = {};
+      promoRows.forEach((r) => { promos[Number(r.product_id)] = Number(r.final_price); });
+
+      subtotal = 0;
+      for (const item of produtos) {
+        const id = Number(item.id);
+        const qty = Number(item.quantidade || 0);
+        if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(qty) || qty <= 0) continue;
+        const preco = promos[id] ?? precos[id] ?? 0;
+        subtotal += preco * qty;
+      }
+    } else {
+      // Fallback legado: total enviado pelo frontend (menos preciso, mantido por compatibilidade)
+      subtotal = Number(total || 0);
+    }
+
+    if (!Number.isFinite(subtotal) || subtotal <= 0) {
+      return next(
+        new AppError("Total inválido para cálculo do cupom.", ERROR_CODES.VALIDATION_ERROR, 400)
+      );
+    }
+
     const [rows] = await pool.query(
-      `
-        SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, ativo
-        FROM cupons
+      `SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, ativo
+         FROM cupons
         WHERE codigo = ?
-        LIMIT 1
-      `,
+        LIMIT 1`,
       [String(codigo).trim()]
     );
 
@@ -609,11 +671,7 @@ router.post("/preview-cupom", authenticateToken, async (req, res, next) => {
 
     if (maxUsos !== null && usos >= maxUsos) {
       return next(
-        new AppError(
-          "Este cupom já atingiu o limite de usos.",
-          ERROR_CODES.VALIDATION_ERROR,
-          400
-        )
+        new AppError("Este cupom já atingiu o limite de usos.", ERROR_CODES.VALIDATION_ERROR, 400)
       );
     }
 

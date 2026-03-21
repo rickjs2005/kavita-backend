@@ -183,6 +183,43 @@ async function create(req, res, next) {
       };
     });
 
+    /*
+     * Regra de preço do sistema:
+     *   products.price  = preço de tabela (nunca alterado pela promoção).
+     *   product_promotions.final_price = preço efetivo de venda quando há promoção ativa.
+     *   O checkout usa final_price se existir promoção ativa, caso contrário products.price.
+     *   O cupom incide sobre esse subtotal pós-promoção.
+     *   A mesma fórmula de final_price é usada em publicPromocoes.js e preview-cupom.
+     */
+
+    /* 4.1) Busca promoções ativas para os produtos do pedido */
+    const [promoRows] = await connection.query(
+      `SELECT
+         pp.product_id,
+         CAST(
+           CASE
+             WHEN pp.promo_price IS NOT NULL
+               THEN pp.promo_price
+             WHEN pp.discount_percent IS NOT NULL
+               THEN p.price - (p.price * (pp.discount_percent / 100))
+             ELSE p.price
+           END
+         AS DECIMAL(10,2)) AS final_price
+       FROM product_promotions pp
+       JOIN products p ON p.id = pp.product_id
+       WHERE pp.product_id IN (?)
+         AND pp.is_active = 1
+         AND (pp.start_at IS NULL OR pp.start_at <= NOW())
+         AND (pp.end_at   IS NULL OR pp.end_at   >= NOW())`,
+      [ids]
+    );
+
+    // product_id → final_price (promoção ativa)
+    const mapPromocoes = {};
+    promoRows.forEach((row) => {
+      mapPromocoes[Number(row.product_id)] = Number(row.final_price);
+    });
+
     /* 5) Insere itens e atualiza estoque */
     let totalPedido = 0;
 
@@ -215,7 +252,8 @@ async function create(req, res, next) {
         );
       }
 
-      const valorUnitario = info.price;
+      // Usa final_price da promoção ativa; caso não haja promoção, usa preço de tabela.
+      const valorUnitario = mapPromocoes[produtoId] ?? info.price;
 
       await connection.query(
         `INSERT INTO pedidos_produtos (pedido_id, produto_id, quantidade, valor_unitario)
