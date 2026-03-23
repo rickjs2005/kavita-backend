@@ -164,11 +164,15 @@ async function create(req, res, next) {
     /* 2.5) Deduplicação por composição: impede double submit com mesma lista de produtos.
      *
      *  Fingerprint: ids+quantidades ordenados → string comparável.
+     *  Cupom normalizado (trim+uppercase) também integra o fingerprint:
+     *  mesmos itens + cupom diferente não são tratados como duplicata.
      *  Janela de 2 min cobre latência alta, duplo clique e retry automático.
      *  O GET_LOCK (passo 0) já garante que apenas uma transação deste usuário
      *  chega aqui de cada vez, então o SELECT lê o estado já commitado da
      *  transação anterior, sem race condition.                                */
-    const prodFingerprint = [...produtos]
+    const cupomNorm = cupom_codigo ? String(cupom_codigo).trim().toUpperCase() : null;
+
+    const sortedProds = [...produtos]
       .map((p) => `${Number(p.id)}:${Number(p.quantidade || 0)}`)
       .sort()
       .join(",");
@@ -178,19 +182,22 @@ async function create(req, res, next) {
               GROUP_CONCAT(
                 CONCAT(pp.produto_id, ':', pp.quantidade)
                 ORDER BY pp.produto_id SEPARATOR ','
-              ) AS composicao
+              ) AS composicao,
+              p.cupom_codigo AS cupom
          FROM pedidos_produtos pp
          JOIN pedidos p ON p.id = pp.pedido_id
         WHERE p.usuario_id      = ?
           AND p.status          = 'pendente'
           AND p.status_pagamento = 'pendente'
           AND p.data_pedido     >= NOW() - INTERVAL 2 MINUTE
-        GROUP BY pp.pedido_id`,
+        GROUP BY pp.pedido_id, p.cupom_codigo`,
       [usuario_id]
     );
 
     const pedidoDuplicado = recentOrders.find(
-      (row) => row.composicao === prodFingerprint
+      (row) =>
+        row.composicao === sortedProds &&
+        (row.cupom ?? null) === cupomNorm
     );
 
     if (pedidoDuplicado) {
@@ -217,9 +224,10 @@ async function create(req, res, next) {
         status_entrega,
         total,
         data_pedido,
-        pagamento_id
+        pagamento_id,
+        cupom_codigo
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)`,
       [
         usuario_id,
         enderecoStr,
@@ -229,6 +237,7 @@ async function create(req, res, next) {
         "em_separacao",
         0,
         null,
+        cupomNorm,
       ]
     );
 
