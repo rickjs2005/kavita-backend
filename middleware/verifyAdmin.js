@@ -141,24 +141,17 @@ async function verifyAdmin(req, _res, next) {
 
     const dbPermissions = await getAdminPermissions(admin.id);
 
-    const baseFromToken = { ...decoded };
-
     req.admin = {
-      ...baseFromToken,
       id: admin.id,
       email: admin.email,
       nome: admin.nome,
       role: admin.role,
-      role_id:
-        admin.role_id != null
-          ? admin.role_id
-          : baseFromToken.role_id ?? null,
-      permissions:
-        dbPermissions && dbPermissions.length > 0
-          ? dbPermissions
-          : Array.isArray(baseFromToken.permissions)
-          ? baseFromToken.permissions
-          : [],
+      role_id: admin.role_id ?? null,
+      // Permissões SEMPRE vêm do banco — nunca do JWT.
+      // Se o banco retorna [], o admin tem zero permissões (menor privilégio).
+      // Usar o JWT como fallback permitiria que permissões removidas no banco
+      // continuassem válidas até a expiração do token.
+      permissions: Array.isArray(dbPermissions) ? dbPermissions : [],
     };
 
     return next();
