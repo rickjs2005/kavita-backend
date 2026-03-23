@@ -169,6 +169,7 @@ router.get("/", verifyAdmin, async (req, res) => {
         p.status_pagamento,
         p.status_entrega,
         p.total,
+        COALESCE(p.shipping_price, 0) AS shipping_price,
         p.data_pedido
       FROM pedidos p
       JOIN usuarios u ON p.usuario_id = u.id
@@ -199,7 +200,9 @@ router.get("/", verifyAdmin, async (req, res) => {
         forma_pagamento: p.forma_pagamento,
         status_pagamento: p.status_pagamento,
         status_entrega: p.status_entrega,
-        total: Number(p.total ?? 0),
+        // total final cobrado = subtotal de produtos + frete
+        total: Number(p.total ?? 0) + Number(p.shipping_price ?? 0),
+        shipping_price: Number(p.shipping_price ?? 0),
         data_pedido: p.data_pedido,
         itens: itens
           .filter((i) => i.pedido_id === p.pedido_id)
@@ -266,6 +269,7 @@ router.get("/:id", verifyAdmin, async (req, res) => {
         p.status_pagamento,
         p.status_entrega,
         p.total,
+        COALESCE(p.shipping_price, 0) AS shipping_price,
         p.data_pedido
       FROM pedidos p
       JOIN usuarios u ON p.usuario_id = u.id
@@ -302,7 +306,9 @@ router.get("/:id", verifyAdmin, async (req, res) => {
       forma_pagamento: pedido.forma_pagamento,
       status_pagamento: pedido.status_pagamento,
       status_entrega: pedido.status_entrega,
-      total: Number(pedido.total ?? 0),
+      // total final cobrado = subtotal de produtos + frete
+      total: Number(pedido.total ?? 0) + Number(pedido.shipping_price ?? 0),
+      shipping_price: Number(pedido.shipping_price ?? 0),
       data_pedido: pedido.data_pedido,
       itens: itens.map((i) => ({
         produto: i.produto_nome,
