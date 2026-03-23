@@ -563,6 +563,16 @@ router.post("/start", authenticateToken, validateCSRF, async (req, res, next) =>
 
     const total = await getTotalPedido(conn, pedidoIdNum);
 
+    if (total <= 0) {
+      return next(
+        new AppError(
+          "Não foi possível iniciar o pagamento: valor final do pedido inválido.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
+    }
+
     const preference = new Preference(mpClient);
     const body = buildPreferenceBody({
       total,
