@@ -452,13 +452,62 @@ router.put("/:id/entrega", verifyAdmin, async (req, res) => {
   }
 
   try {
-    const [result] = await pool.query(
-      "UPDATE pedidos SET status_entrega = ? WHERE id = ?",
-      [status_entrega, id]
-    );
+    if (status_entrega === "cancelado") {
+      // Cancelamento requer transação: lê estado atual, devolve estoque de forma
+      // idempotente e só então atualiza o status.
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "Pedido não encontrado" });
+        // FOR UPDATE serializa cancelamentos concorrentes sobre o mesmo pedido.
+        const [[pedido]] = await conn.query(
+          "SELECT status_entrega, status_pagamento FROM pedidos WHERE id = ? FOR UPDATE",
+          [id]
+        );
+
+        if (!pedido) {
+          await conn.rollback();
+          return res.status(404).json({ message: "Pedido não encontrado" });
+        }
+
+        // Devolve estoque apenas se ainda não foi cancelado (idempotência) e
+        // se o webhook de pagamento ainda não devolveu por falha (status_pagamento <> 'falhou').
+        // Isso cobre pedidos "a prazo" (nunca passam pelo webhook) e demais
+        // pedidos cancelados manualmente antes de qualquer falha de gateway.
+        if (
+          pedido.status_entrega !== "cancelado" &&
+          pedido.status_pagamento !== "falhou"
+        ) {
+          await conn.query(
+            `UPDATE products p
+               JOIN pedidos_produtos pp ON pp.produto_id = p.id
+              SET p.quantity = p.quantity + pp.quantidade
+            WHERE pp.pedido_id = ?`,
+            [id]
+          );
+        }
+
+        await conn.query(
+          "UPDATE pedidos SET status_entrega = 'cancelado' WHERE id = ?",
+          [id]
+        );
+
+        await conn.commit();
+      } catch (err) {
+        await conn.rollback();
+        throw err;
+      } finally {
+        conn.release();
+      }
+    } else {
+      const [result] = await pool.query(
+        "UPDATE pedidos SET status_entrega = ? WHERE id = ?",
+        [status_entrega, id]
+      );
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "Pedido não encontrado" });
+      }
     }
 
     // 🔔 Se o status de entrega foi marcado como "enviado", dispara comunicação automática
