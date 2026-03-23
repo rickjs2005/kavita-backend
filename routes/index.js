@@ -43,6 +43,10 @@ loadRoute("/public/servicos", "./publicAvaliacaoColaborador");
 // ✅ NOVO: rota pública de promoções (Marketing)
 loadRoute("/public/promocoes", "./publicPromocoes");
 
+// Avaliações de produtos — NÃO é o catálogo.
+// Rotas ativas: POST /avaliacoes (auth), GET /:id/avaliacoes (público)
+// GET /?busca=xxx existe no arquivo mas não tem consumer no frontend.
+// A busca do catálogo usa /api/products e /api/products/search.
 loadRoute("/public/produtos", "./publicProdutos");
 
 // ✅ FIX: Configuração pública da loja (já existe o arquivo, faltava montar)

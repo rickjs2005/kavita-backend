@@ -77,7 +77,11 @@ const PUBLIC_PRODUCT_FIELDS = `
  *         description: Erro interno ao buscar produtos
  */
 
-// ✅ GET /api/public/produtos?busca=xxx — Busca rápida por nome do produto
+// ⚠️ GET /api/public/produtos?busca=xxx — Busca rápida por nome do produto
+// ATENÇÃO: este endpoint não tem consumer ativo no frontend.
+// A busca de catálogo usa /api/products (listagem) e /api/products/search (busca avançada).
+// Mantido por compatibilidade com possíveis consumers externos.
+// Se confirmar que ninguém consome, pode ser removido em limpeza futura.
 router.get("/", async (req, res) => {
   const buscaRaw = req.query.busca;
   const limitRaw = req.query.limit;
