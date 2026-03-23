@@ -125,9 +125,17 @@ function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
 
   if (process.env.NODE_ENV === "production") {
     body.auto_return = "approved";
-    if (backendUrl) {
-      body.notification_url = `${backendUrl}/api/payment/webhook`;
-    }
+  }
+
+  // notification_url é controlada por MP_WEBHOOK_URL (env dedicada).
+  // Isso desacopla a habilitação do webhook de NODE_ENV, permitindo teste
+  // funcional em staging sem setar NODE_ENV=production.
+  // Ausência da env → nenhuma notification_url enviada (comportamento conservador).
+  const mpWebhookUrl = process.env.MP_WEBHOOK_URL
+    ? String(process.env.MP_WEBHOOK_URL).trim()
+    : null;
+  if (mpWebhookUrl) {
+    body.notification_url = mpWebhookUrl;
   }
 
   return body;
