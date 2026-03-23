@@ -531,8 +531,7 @@ async function recalcShippingMiddleware(req, _res, next) {
  *       Recebe a lista de produtos do carrinho, calcula o subtotal no backend
  *       usando a mesma regra de preço do checkout real (promoção ativa tem
  *       prioridade sobre products.price) e retorna o desconto do cupom.
- *
- *       Aceita também `total` (legado) como fallback se `produtos` não for enviado.
+ *       O campo `produtos` é obrigatório; o backend é a única fonte do cálculo.
  *     tags:
  *       - Checkout
  *     security:
@@ -562,7 +561,7 @@ async function recalcShippingMiddleware(req, _res, next) {
  *         description: Cupom inválido ou não aplicável
  */
 router.post("/preview-cupom", authenticateToken, validateCSRF, async (req, res, next) => {
-  const { codigo, produtos, total } = req.body || {};
+  const { codigo, produtos } = req.body || {};
 
   if (!codigo || !String(codigo).trim()) {
     return next(
@@ -628,8 +627,14 @@ router.post("/preview-cupom", authenticateToken, validateCSRF, async (req, res, 
         subtotal += preco * qty;
       }
     } else {
-      // Fallback legado: total enviado pelo frontend (menos preciso, mantido por compatibilidade)
-      subtotal = Number(total || 0);
+      // produtos é obrigatório — o backend é a fonte do cálculo
+      return next(
+        new AppError(
+          "Informe os produtos para calcular o cupom.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
     }
 
     if (!Number.isFinite(subtotal) || subtotal <= 0) {
