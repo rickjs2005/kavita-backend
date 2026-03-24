@@ -1,11 +1,13 @@
+"use strict";
+
 const express = require("express");
 const router = express.Router();
-const pool = require("../config/pool");
-const authenticateToken = require("../middleware/authenticateToken");
 
+const authenticateToken = require("../middleware/authenticateToken");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { validateQuantity } = require("../middleware/cartValidation");
+const cartService = require("../services/cartService");
 
 router.use(authenticateToken);
 
@@ -112,17 +114,28 @@ router.use(authenticateToken);
  *           example: 8
  */
 
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
 const toInt = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : NaN;
 };
 
-function makeStockLimitError({ max, requested, current }) {
-  // AppError(message, code, status)
-  const err = new AppError("Limite de estoque atingido.", "STOCK_LIMIT", 409);
-  err.meta = { max, requested, current };
-  return err;
+function sendStockLimit(res, err) {
+  return res.status(409).json({
+    code: "STOCK_LIMIT",
+    message: err.message,
+    max: err.meta?.max ?? null,
+    current: err.meta?.current ?? null,
+    requested: err.meta?.requested ?? null,
+  });
 }
+
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
 
 /**
  * @swagger
@@ -154,37 +167,15 @@ function makeStockLimitError({ max, requested, current }) {
  */
 router.get("/", async (req, res, next) => {
   const userId = req.user?.id;
+  if (!userId) {
+    return next(
+      new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
+    );
+  }
 
   try {
-    if (!userId) {
-      return next(
-        new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
-      );
-    }
-
-    const [[carrinho]] = await pool.query(
-      'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-      [userId]
-    );
-
-    if (!carrinho) return res.json({ carrinho_id: null, items: [] });
-
-    const [itens] = await pool.query(
-      `SELECT 
-          ci.id AS item_id,
-          ci.produto_id,
-          ci.quantidade,
-          ci.valor_unitario,
-          p.name  AS nome,
-          p.image AS image,
-          p.quantity AS stock
-       FROM carrinho_itens ci
-       JOIN products p ON p.id = ci.produto_id
-       WHERE ci.carrinho_id = ?`,
-      [carrinho.id]
-    );
-
-    return res.json({ carrinho_id: carrinho.id, items: itens });
+    const result = await cartService.getCart(userId);
+    return res.json(result);
   } catch (e) {
     console.error("GET /api/cart erro:", e);
     return next(
@@ -257,14 +248,13 @@ router.post("/items", async (req, res, next) => {
   const { produto_id, quantidade } = req.body || {};
   const userId = req.user?.id;
 
-  const produtoIdNum = toInt(produto_id);
-  const qtdNum = toInt(quantidade);
-
   if (!userId) {
     return next(
       new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
     );
   }
+
+  const produtoIdNum = toInt(produto_id);
 
   if (!Number.isFinite(produtoIdNum) || produtoIdNum <= 0) {
     return next(
@@ -279,100 +269,18 @@ router.post("/items", async (req, res, next) => {
   const qtdErr = validateQuantity(quantidade);
   if (qtdErr) return next(qtdErr);
 
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-
-    // 1) carrinho aberto (cria se não existir)
-    const [[carrinho]] = await conn.query(
-      'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-      [userId]
-    );
-
-    let carrinhoId = carrinho?.id;
-
-    if (!carrinhoId) {
-      const [newCart] = await conn.query(
-        "INSERT INTO carrinhos (usuario_id) VALUES (?)",
-        [userId]
-      );
-      carrinhoId = newCart.insertId;
-    }
-
-    // 2) lock produto (estoque) + preço
-    const [[produto]] = await conn.query(
-      "SELECT id, price, quantity FROM products WHERE id = ? FOR UPDATE",
-      [produtoIdNum]
-    );
-
-    if (!produto) {
-      throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
-    }
-
-    const stock = Number(produto.quantity ?? 0);
-    if (!Number.isFinite(stock) || stock <= 0) {
-      throw makeStockLimitError({ max: 0, requested: qtdNum, current: 0 });
-    }
-
-    // 3) lock item existente no carrinho (se houver)
-    const [[existente]] = await conn.query(
-      "SELECT id, quantidade FROM carrinho_itens WHERE carrinho_id = ? AND produto_id = ? FOR UPDATE",
-      [carrinhoId, produtoIdNum]
-    );
-
-    const currentQty = Number(existente?.quantidade ?? 0);
-    const desired = currentQty + qtdNum;
-
-    if (desired > stock) {
-      throw makeStockLimitError({
-        max: stock,
-        requested: desired,
-        current: currentQty,
-      });
-    }
-
-    // 4) update/insert
-    if (existente) {
-      await conn.query("UPDATE carrinho_itens SET quantidade = ? WHERE id = ?", [
-        desired,
-        existente.id,
-      ]);
-    } else {
-      await conn.query(
-        `INSERT INTO carrinho_itens (carrinho_id, produto_id, quantidade, valor_unitario)
-         VALUES (?, ?, ?, ?)`,
-        [carrinhoId, produtoIdNum, desired, produto.price]
-      );
-    }
-
-    await conn.commit();
+    const result = await cartService.addItem(userId, { produto_id, quantidade });
     return res.status(200).json({
       success: true,
       message: "Produto adicionado ao carrinho",
-      produto_id: produtoIdNum,
-      quantidade: desired,
-      stock,
+      produto_id: result.produto_id,
+      quantidade: result.quantidade,
+      stock: result.stock,
     });
   } catch (e) {
-    try {
-      await conn.rollback();
-    } catch (rb) {
-      console.error("POST /api/cart/items rollback erro:", rb);
-    }
-
+    if (e instanceof AppError && e.code === "STOCK_LIMIT") return sendStockLimit(res, e);
     console.error("POST /api/cart/items erro:", e);
-
-    // se for STOCK_LIMIT, envia payload compatível com Swagger
-    if (e instanceof AppError && e.code === "STOCK_LIMIT") {
-      return res.status(409).json({
-        code: "STOCK_LIMIT",
-        message: e.message,
-        max: e.meta?.max ?? null,
-        current: e.meta?.current ?? null,
-        requested: e.meta?.requested ?? null,
-      });
-    }
-
     return next(
       e instanceof AppError
         ? e
@@ -382,8 +290,6 @@ router.post("/items", async (req, res, next) => {
             500
           )
     );
-  } finally {
-    conn.release();
   }
 });
 
@@ -451,14 +357,13 @@ router.patch("/items", async (req, res, next) => {
   const { produto_id, quantidade } = req.body || {};
   const userId = req.user?.id;
 
-  const produtoIdNum = toInt(produto_id);
-  const qtdNum = toInt(quantidade);
-
   if (!userId) {
     return next(
       new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
     );
   }
+
+  const produtoIdNum = toInt(produto_id);
 
   if (!Number.isFinite(produtoIdNum) || produtoIdNum <= 0) {
     return next(
@@ -473,77 +378,18 @@ router.patch("/items", async (req, res, next) => {
   const qtdErr = validateQuantity(quantidade);
   if (qtdErr) return next(qtdErr);
 
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-
-    const [[carrinho]] = await conn.query(
-      'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-      [userId]
-    );
-
-    if (!carrinho) {
-      await conn.commit();
-      return res.status(200).json({
-        success: true,
-        message: "Carrinho já vazio.",
-        produto_id: produtoIdNum,
-        quantidade: 0,
-        stock: 0,
-      });
-    }
-
-    // lock produto (estoque)
-    const [[produto]] = await conn.query(
-      "SELECT id, quantity FROM products WHERE id = ? FOR UPDATE",
-      [produtoIdNum]
-    );
-
-    if (!produto) {
-      throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
-    }
-
-    const stock = Number(produto.quantity ?? 0);
-    if (!Number.isFinite(stock) || stock <= 0) {
-      throw makeStockLimitError({ max: 0, requested: qtdNum, current: 0 });
-    }
-
-    if (qtdNum > stock) {
-      throw makeStockLimitError({ max: stock, requested: qtdNum, current: null });
-    }
-
-    await conn.query(
-      "UPDATE carrinho_itens SET quantidade = ? WHERE carrinho_id = ? AND produto_id = ?",
-      [qtdNum, carrinho.id, produtoIdNum]
-    );
-
-    await conn.commit();
+    const result = await cartService.updateItem(userId, { produto_id, quantidade });
     return res.status(200).json({
       success: true,
-      message: "Quantidade atualizada.",
-      produto_id: produtoIdNum,
-      quantidade: qtdNum,
-      stock,
+      message: result.emptyCart ? "Carrinho já vazio." : "Quantidade atualizada.",
+      produto_id: result.produto_id,
+      quantidade: result.quantidade,
+      stock: result.stock,
     });
   } catch (e) {
-    try {
-      await conn.rollback();
-    } catch (rb) {
-      console.error("PATCH /api/cart/items rollback erro:", rb);
-    }
-
+    if (e instanceof AppError && e.code === "STOCK_LIMIT") return sendStockLimit(res, e);
     console.error("PATCH /api/cart/items erro:", e);
-
-    if (e instanceof AppError && e.code === "STOCK_LIMIT") {
-      return res.status(409).json({
-        code: "STOCK_LIMIT",
-        message: e.message,
-        max: e.meta?.max ?? null,
-        current: e.meta?.current ?? null,
-        requested: e.meta?.requested ?? null,
-      });
-    }
-
     return next(
       e instanceof AppError
         ? e
@@ -553,8 +399,6 @@ router.patch("/items", async (req, res, next) => {
             500
           )
     );
-  } finally {
-    conn.release();
   }
 });
 
@@ -603,8 +447,8 @@ router.patch("/items", async (req, res, next) => {
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.delete("/items/:produtoId", async (req, res, next) => {
-  const produtoId = toInt(req.params.produtoId);
   const userId = req.user?.id;
+  const produtoId = toInt(req.params.produtoId);
 
   if (!userId) {
     return next(
@@ -618,36 +462,14 @@ router.delete("/items/:produtoId", async (req, res, next) => {
     );
   }
 
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-
-    const [[carrinho]] = await conn.query(
-      'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-      [userId]
-    );
-
-    if (!carrinho) {
-      await conn.commit();
-      return res.status(200).json({ success: true, message: "Carrinho já vazio." });
-    }
-
-    await conn.query(
-      "DELETE FROM carrinho_itens WHERE carrinho_id = ? AND produto_id = ?",
-      [carrinho.id, produtoId]
-    );
-
-    await conn.commit();
-    return res.json({ success: true, message: "Item removido do carrinho." });
+    const result = await cartService.removeItem(userId, produtoId);
+    return res.json({
+      success: true,
+      message: result.removed ? "Item removido do carrinho." : "Carrinho já vazio.",
+    });
   } catch (e) {
-    try {
-      await conn.rollback();
-    } catch (rb) {
-      console.error("DELETE /api/cart/items/:produtoId rollback erro:", rb);
-    }
-
     console.error("DELETE /api/cart/items/:produtoId erro:", e);
-
     return next(
       e instanceof AppError
         ? e
@@ -657,8 +479,6 @@ router.delete("/items/:produtoId", async (req, res, next) => {
             500
           )
     );
-  } finally {
-    conn.release();
   }
 });
 
@@ -702,48 +522,19 @@ router.delete("/", async (req, res, next) => {
     );
   }
 
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-
-    const [[carrinho]] = await conn.query(
-      'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-      [userId]
-    );
-
-    if (!carrinho) {
-      await conn.commit();
-      return res
-        .status(200)
-        .json({ success: true, message: "Carrinho já estava vazio." });
-    }
-
-    await conn.query("DELETE FROM carrinho_itens WHERE carrinho_id = ?", [
-      carrinho.id,
-    ]);
-
-    await conn.query('UPDATE carrinhos SET status = "fechado" WHERE id = ?', [
-      carrinho.id,
-    ]);
-
-    await conn.commit();
-    return res.json({ success: true, message: "Carrinho limpo." });
+    const result = await cartService.clearCart(userId);
+    return res.json({
+      success: true,
+      message: result.cleared ? "Carrinho limpo." : "Carrinho já estava vazio.",
+    });
   } catch (e) {
-    try {
-      await conn.rollback();
-    } catch (rb) {
-      console.error("DELETE /api/cart rollback erro:", rb);
-    }
-
     console.error("DELETE /api/cart erro:", e);
-
     return next(
       e instanceof AppError
         ? e
         : new AppError("Erro ao limpar carrinho.", ERROR_CODES.SERVER_ERROR, 500)
     );
-  } finally {
-    conn.release();
   }
 });
 
