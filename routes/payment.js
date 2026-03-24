@@ -5,144 +5,19 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool");
 
-// 👉 SDK Mercado Pago (v2)
-const { MercadoPagoConfig, Preference, Payment } = require("mercadopago");
-
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 
-// ✅ ACL (Broken Access Control fix)
 const authenticateToken = require("../middleware/authenticateToken");
-const verifyAdmin = require("../middleware/verifyAdmin"); // ✅ sem fallback: falhar cedo se estiver faltando
-const validateMPSignature = require("../middleware/validateMPSignature"); // ✅ Layer 1: webhook signature
-const { validateCSRF } = require("../middleware/csrfProtection"); // ✅ protege /start contra CSRF
+const verifyAdmin = require("../middleware/verifyAdmin");
+const validateMPSignature = require("../middleware/validateMPSignature");
+const { validateCSRF } = require("../middleware/csrfProtection");
 
-// Configuração do cliente do Mercado Pago
-const mpClient = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN,
-});
-
-// =====================================================
-// Util: lê o total persistido do pedido (já com desconto de cupom + frete).
-// Não recalcula a partir dos itens para evitar divergência com o valor
-// mostrado ao usuário no checkout (que já incluía cupom e frete).
-// =====================================================
-async function getTotalPedido(conn, pedidoId) {
-  const [[row]] = await conn.query(
-    `SELECT (total + COALESCE(shipping_price, 0)) AS total_final
-       FROM pedidos
-      WHERE id = ?`,
-    [pedidoId]
-  );
-
-  return Number((row?.total_final || 0).toFixed(2));
-}
-
-// =====================================================
-// Normalizador de forma de pagamento (robusto)
-// Aceita code OU label (pix, boleto, cartao_mp, prazo)
-// E também labels bonitas como "Cartão (Mercado Pago)"
-// =====================================================
-function normalizeFormaPagamento(raw) {
-  const s = String(raw || "").trim().toLowerCase();
-  const noAccents = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-  // Codes estáveis (preferidos)
-  if (noAccents === "pix") return "pix";
-  if (noAccents === "boleto") return "boleto";
-  if (noAccents === "prazo") return "prazo";
-  if (noAccents === "cartao_mp" || noAccents === "cartao-mp") return "cartao"; // mp -> cartao
-
-  // Compat: textos / variações
-  if (noAccents.includes("pix") || noAccents.includes("bank_transfer")) return "pix";
-  if (noAccents.includes("boleto") || noAccents.includes("ticket")) return "boleto";
-  if (noAccents.includes("prazo")) return "prazo";
-
-  if (
-    noAccents.includes("cartao") ||
-    noAccents.includes("credito") ||
-    noAccents.includes("mercadopago") ||
-    noAccents === "mercadopago"
-  ) {
-    return "cartao";
-  }
-
-  return "";
-}
-
-// =====================================================
-// Helper: monta o body da Preference do Mercado Pago
-// =====================================================
-function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
-  const appUrl = process.env.APP_URL;
-  const backendUrl = process.env.BACKEND_URL;
-
-  const tipo = normalizeFormaPagamento(formaPagamento);
-
-  const body = {
-    items: [
-      {
-        id: `pedido-${pedidoId}`,
-        title: `Pedido #${pedidoId}`,
-        quantity: 1,
-        unit_price: total,
-        currency_id: "BRL",
-      },
-    ],
-    back_urls: {
-      success: `${appUrl}/checkout/sucesso?pedidoId=${pedidoId}`,
-      pending: `${appUrl}/checkout/pendente?pedidoId=${pedidoId}`,
-      failure: `${appUrl}/checkout/erro?pedidoId=${pedidoId}`,
-    },
-    metadata: { pedidoId },
-  };
-
-  // Filtra a experiência do MP conforme método escolhido
-  if (tipo === "pix") {
-    body.payment_methods = {
-      excluded_payment_types: [
-        { id: "credit_card" },
-        { id: "debit_card" },
-        { id: "ticket" }, // boleto
-      ],
-    };
-  } else if (tipo === "boleto") {
-    body.payment_methods = {
-      excluded_payment_types: [
-        { id: "credit_card" },
-        { id: "debit_card" },
-        { id: "bank_transfer" }, // pix
-      ],
-    };
-  } else if (tipo === "cartao") {
-    body.payment_methods = {
-      excluded_payment_types: [
-        { id: "bank_transfer" }, // pix
-        { id: "ticket" }, // boleto
-      ],
-    };
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    body.auto_return = "approved";
-  }
-
-  // notification_url é controlada por MP_WEBHOOK_URL (env dedicada).
-  // Isso desacopla a habilitação do webhook de NODE_ENV, permitindo teste
-  // funcional em staging sem setar NODE_ENV=production.
-  // Ausência da env → nenhuma notification_url enviada (comportamento conservador).
-  const mpWebhookUrl = process.env.MP_WEBHOOK_URL
-    ? String(process.env.MP_WEBHOOK_URL).trim()
-    : null;
-  if (mpWebhookUrl) {
-    body.notification_url = mpWebhookUrl;
-  }
-
-  return body;
-}
+const paymentService = require("../services/paymentService");
+const { handleWebhookEvent } = require("../services/paymentWebhookService");
 
 /* ------------------------------------------------------------------ */
-/*                               Swagger                              */
+/*  Swagger — tags e schemas mantidos aqui para co-localização          */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -265,46 +140,30 @@ function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
  */
 
 /* ------------------------------------------------------------------ */
-/*                      PUBLIC: LIST METHODS (checkout)                 */
+/*  PUBLIC: list active methods                                          */
 /* ------------------------------------------------------------------ */
 
-router.get("/methods", async (req, res, next) => {
-  const conn = await pool.getConnection();
+router.get("/methods", async (_req, res, next) => {
   try {
-    const [rows] = await conn.query(
-      `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
-         FROM payment_methods
-        WHERE is_active = 1
-        ORDER BY sort_order ASC, id ASC`
-    );
-    return res.json({ methods: rows });
+    const methods = await paymentService.listActiveMethods();
+    return res.json({ methods });
   } catch (err) {
     return next(
       err instanceof AppError
         ? err
         : new AppError("Erro ao listar métodos de pagamento.", ERROR_CODES.SERVER_ERROR, 500)
     );
-  } finally {
-    conn.release();
   }
 });
 
 /* ------------------------------------------------------------------ */
-/*                    ADMIN: CRUD PAYMENT METHODS                       */
-/*  ✅ FIX: Broken Access Control (exige auth + role admin)             */
-/*  Obs: como o router é montado em /api/payment no index.js,           */
-/*       o caminho final fica /api/payment/admin/payment-methods        */
+/*  ADMIN: CRUD payment methods                                          */
 /* ------------------------------------------------------------------ */
 
-router.get("/admin/payment-methods", authenticateToken, verifyAdmin, async (req, res, next) => {
-  const conn = await pool.getConnection();
+router.get("/admin/payment-methods", authenticateToken, verifyAdmin, async (_req, res, next) => {
   try {
-    const [rows] = await conn.query(
-      `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
-         FROM payment_methods
-        ORDER BY sort_order ASC, id ASC`
-    );
-    return res.json({ methods: rows });
+    const methods = await paymentService.listAllMethods();
+    return res.json({ methods });
   } catch (err) {
     return next(
       err instanceof AppError
@@ -315,143 +174,33 @@ router.get("/admin/payment-methods", authenticateToken, verifyAdmin, async (req,
             500
           )
     );
-  } finally {
-    conn.release();
   }
 });
 
 router.post("/admin/payment-methods", authenticateToken, verifyAdmin, async (req, res, next) => {
-  const { code, label, description = null, is_active = 1, sort_order = 0 } = req.body || {};
-
-  const codeStr = String(code || "").trim();
-  const labelStr = String(label || "").trim();
-
-  if (!codeStr || !labelStr) {
-    return next(
-      new AppError("code e label são obrigatórios.", ERROR_CODES.VALIDATION_ERROR, 400)
-    );
-  }
-
-  const conn = await pool.getConnection();
   try {
-    const [result] = await conn.query(
-      `INSERT INTO payment_methods (code, label, description, is_active, sort_order, created_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
-      [codeStr, labelStr, description, Number(is_active) ? 1 : 0, Number(sort_order) || 0]
-    );
-
-    const [[created]] = await conn.query(
-      `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
-         FROM payment_methods
-        WHERE id = ?`,
-      [result.insertId]
-    );
-
+    const created = await paymentService.addMethod(req.body || {});
     return res.status(201).json({ method: created });
   } catch (err) {
-    if (err && String(err.code || "").toLowerCase().includes("er_dup")) {
-      return next(
-        new AppError("Já existe um método com esse code.", ERROR_CODES.VALIDATION_ERROR, 400)
-      );
-    }
-
     return next(
       err instanceof AppError
         ? err
         : new AppError("Erro ao criar método de pagamento.", ERROR_CODES.SERVER_ERROR, 500)
     );
-  } finally {
-    conn.release();
   }
 });
 
 router.put("/admin/payment-methods/:id", authenticateToken, verifyAdmin, async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!Number.isFinite(id) || id <= 0) {
-    return next(new AppError("id inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
-  }
-
-  const { code, label, description, is_active, sort_order } = req.body || {};
-
-  const fields = [];
-  const values = [];
-
-  if (code !== undefined) {
-    const codeStr = String(code || "").trim();
-    if (!codeStr) {
-      return next(new AppError("code não pode ser vazio.", ERROR_CODES.VALIDATION_ERROR, 400));
-    }
-    fields.push("code = ?");
-    values.push(codeStr);
-  }
-
-  if (label !== undefined) {
-    const labelStr = String(label || "").trim();
-    if (!labelStr) {
-      return next(new AppError("label não pode ser vazio.", ERROR_CODES.VALIDATION_ERROR, 400));
-    }
-    fields.push("label = ?");
-    values.push(labelStr);
-  }
-
-  if (description !== undefined) {
-    fields.push("description = ?");
-    values.push(description === "" ? null : description);
-  }
-
-  if (is_active !== undefined) {
-    fields.push("is_active = ?");
-    values.push(Number(is_active) ? 1 : 0);
-  }
-
-  if (sort_order !== undefined) {
-    fields.push("sort_order = ?");
-    values.push(Number(sort_order) || 0);
-  }
-
-  if (fields.length === 0) {
-    return next(
-      new AppError("Nenhum campo para atualizar.", ERROR_CODES.VALIDATION_ERROR, 400)
-    );
-  }
-
-  const conn = await pool.getConnection();
   try {
-    const [[exists]] = await conn.query("SELECT id FROM payment_methods WHERE id = ?", [id]);
-
-    if (!exists) {
-      return next(new AppError("Método não encontrado.", ERROR_CODES.NOT_FOUND, 404));
-    }
-
-    await conn.query(
-      `UPDATE payment_methods
-          SET ${fields.join(", ")}, updated_at = NOW()
-        WHERE id = ?`,
-      [...values, id]
-    );
-
-    const [[updated]] = await conn.query(
-      `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
-         FROM payment_methods
-        WHERE id = ?`,
-      [id]
-    );
-
+    const updated = await paymentService.editMethod(id, req.body || {});
     return res.json({ method: updated });
   } catch (err) {
-    if (err && String(err.code || "").toLowerCase().includes("er_dup")) {
-      return next(
-        new AppError("Já existe um método com esse code.", ERROR_CODES.VALIDATION_ERROR, 400)
-      );
-    }
-
     return next(
       err instanceof AppError
         ? err
         : new AppError("Erro ao atualizar método de pagamento.", ERROR_CODES.SERVER_ERROR, 500)
     );
-  } finally {
-    conn.release();
   }
 });
 
@@ -461,26 +210,8 @@ router.delete(
   verifyAdmin,
   async (req, res, next) => {
     const id = Number(req.params.id);
-    if (!Number.isFinite(id) || id <= 0) {
-      return next(new AppError("id inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
-    }
-
-    const conn = await pool.getConnection();
     try {
-      const [[exists]] = await conn.query("SELECT id FROM payment_methods WHERE id = ?", [id]);
-
-      if (!exists) {
-        return next(new AppError("Método não encontrado.", ERROR_CODES.NOT_FOUND, 404));
-      }
-
-      // Soft delete: desativa
-      await conn.query(
-        `UPDATE payment_methods
-            SET is_active = 0, updated_at = NOW()
-          WHERE id = ?`,
-        [id]
-      );
-
+      await paymentService.disableMethod(id);
       return res.json({ ok: true });
     } catch (err) {
       return next(
@@ -492,18 +223,14 @@ router.delete(
               500
             )
       );
-    } finally {
-      conn.release();
     }
   }
 );
 
 /* ------------------------------------------------------------------ */
-/*                          MERCADO PAGO FLOW                           */
+/*  MERCADO PAGO: start payment                                          */
 /* ------------------------------------------------------------------ */
 
-// inicia pagamento para um pedido existente
-// ✅ FIX: requer autenticação + ownership check (Broken Access Control)
 router.post("/start", authenticateToken, validateCSRF, async (req, res, next) => {
   const { pedidoId } = req.body || {};
   const pedidoIdNum = Number(pedidoId);
@@ -514,107 +241,20 @@ router.post("/start", authenticateToken, validateCSRF, async (req, res, next) =>
 
   const conn = await pool.getConnection();
   try {
-    const [[pedido]] = await conn.query(
-      `SELECT id, forma_pagamento, usuario_id, status_pagamento
-         FROM pedidos
-        WHERE id = ?`,
-      [pedidoIdNum]
-    );
-
-    // ✅ FIX: ownership check — o pedido deve pertencer ao usuário autenticado
-    if (pedido && pedido.usuario_id !== req.user.id) {
-      return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
-    }
-
-    if (!pedido) {
-      return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
-    }
-
-    // Apenas pedidos em estado elegível aceitam nova tentativa de pagamento.
-    // 'pendente' = criado mas pagamento ainda não iniciado (ou gateway ainda processando).
-    // 'falhou'   = pagamento rejeitado/cancelado — retry é a ação esperada.
-    // 'pago' / 'estornado' = estados finais — retry seria cobrança indevida.
-    const statusElegiveis = ["pendente", "falhou"];
-    if (!statusElegiveis.includes(pedido.status_pagamento)) {
-      return next(
-        new AppError(
-          "Este pedido não pode ser pago novamente.",
-          ERROR_CODES.VALIDATION_ERROR,
-          409
-        )
-      );
-    }
-
-    const formaPagamentoRaw = pedido.forma_pagamento || "";
-    const formaPagamentoNorm = normalizeFormaPagamento(formaPagamentoRaw);
-
-    // "Prazo" NÃO é Mercado Pago
-    if (formaPagamentoNorm === "prazo") {
-      return next(
-        new AppError(
-          "Forma de pagamento 'Prazo' não é processada pelo Mercado Pago.",
-          ERROR_CODES.VALIDATION_ERROR,
-          400
-        )
-      );
-    }
-
-    if (!formaPagamentoNorm) {
-      return next(
-        new AppError(
-          "Forma de pagamento inválida/indefinida para Mercado Pago.",
-          ERROR_CODES.VALIDATION_ERROR,
-          400
-        )
-      );
-    }
-
-    const total = await getTotalPedido(conn, pedidoIdNum);
-
-    if (total <= 0) {
-      return next(
-        new AppError(
-          "Não foi possível iniciar o pagamento: valor final do pedido inválido.",
-          ERROR_CODES.VALIDATION_ERROR,
-          400
-        )
-      );
-    }
-
-    const preference = new Preference(mpClient);
-    const body = buildPreferenceBody({
-      total,
-      pedidoId: pedidoIdNum,
-      formaPagamento: formaPagamentoRaw,
-    });
-
-    const pref = await preference.create({ body });
-
-    await conn.query(
-      `UPDATE pedidos
-          SET status_pagamento = 'pendente', status = 'pendente'
-        WHERE id = ?`,
-      [pedidoIdNum]
-    );
-
-    const { id, init_point, sandbox_init_point } = pref;
-
-    return res.json({
-      preferenceId: id,
-      init_point,
-      sandbox_init_point,
-    });
+    const result = await paymentService.startPayment(conn, pedidoIdNum, req.user.id);
+    return res.json(result);
   } catch (err) {
-    console.error("[payment/start] erro bruto:", err);
-    if (err?.message || err?.status || err?.error) {
-      console.error("[payment/start] detalhes:", {
-        message: err.message,
-        error: err.error,
-        status: err.status,
-        cause: err.cause ?? null,
-      });
+    if (!(err instanceof AppError)) {
+      console.error("[payment/start] erro bruto:", err);
+      if (err?.message || err?.status || err?.error) {
+        console.error("[payment/start] detalhes:", {
+          message: err.message,
+          error: err.error,
+          status: err.status,
+          cause: err.cause ?? null,
+        });
+      }
     }
-
     return next(
       err instanceof AppError
         ? err
@@ -629,15 +269,16 @@ router.post("/start", authenticateToken, validateCSRF, async (req, res, next) =>
   }
 });
 
-// webhook Mercado Pago
+/* ------------------------------------------------------------------ */
+/*  MERCADO PAGO: webhook                                                */
+/* ------------------------------------------------------------------ */
+
 router.post("/webhook", validateMPSignature, async (req, res) => {
   const signatureHeader = req.get("x-signature");
 
   try {
     const { type, data } = req.body || {};
     const payload = JSON.stringify(req.body || {});
-
-    // Use the MP notification ID (top-level `id`) as the unique event identifier
     const eventId = String(req.body?.id ?? "");
 
     if (!eventId) {
@@ -649,115 +290,17 @@ router.post("/webhook", validateMPSignature, async (req, res) => {
     try {
       await conn.beginTransaction();
 
-      // Layer 3: idempotency — UNIQUE(event_id) + FOR UPDATE prevents race conditions
-      const [[existingEvent]] = await conn.query(
-        `SELECT id, status, processed_at
-           FROM webhook_events
-          WHERE event_id = ?
-          FOR UPDATE`,
-        [eventId]
-      );
-
-      let dbEventId = existingEvent?.id;
-
-      if (!existingEvent) {
-        const [insertResult] = await conn.query(
-          `INSERT INTO webhook_events (event_id, signature, event_type, payload, status, created_at)
-           VALUES (?, ?, ?, ?, 'received', NOW())`,
-          [eventId, signatureHeader, type || null, payload]
-        );
-        dbEventId = insertResult.insertId;
-      } else if (existingEvent.processed_at) {
-        await conn.commit();
-        return res.status(200).json({ ok: true, idempotent: true });
-      } else {
-        dbEventId = existingEvent.id;
-        await conn.query(
-          `UPDATE webhook_events
-              SET signature = ?, event_type = ?, payload = ?, status = 'received', updated_at = NOW()
-            WHERE id = ?`,
-          [signatureHeader, type || null, payload, dbEventId]
-        );
-      }
-
-      if (type !== "payment" || !data?.id) {
-        await conn.query(
-          `UPDATE webhook_events
-              SET status = 'ignored', processed_at = NOW(), updated_at = NOW()
-            WHERE id = ?`,
-          [dbEventId]
-        );
-        await conn.commit();
-        return res.status(200).json({ ok: true });
-      }
-
-      // Layer 2: consult the REAL payment status from Mercado Pago API
-      const paymentClient = new Payment(mpClient);
-      const payment = await paymentClient.get({ id: data.id });
-
-      const status = payment.status;
-      const pedidoId = payment.metadata?.pedidoId;
-
-      if (!pedidoId) {
-        console.warn("[payment/webhook] pagamento sem metadata.pedidoId", data.id);
-        await conn.query(
-          `UPDATE webhook_events
-              SET status = 'ignored', processed_at = NOW(), updated_at = NOW()
-            WHERE id = ?`,
-          [dbEventId]
-        );
-        await conn.commit();
-        return res.status(200).json({ ok: true });
-      }
-
-      let novoStatusPagamento = "pendente";
-      if (status === "approved") novoStatusPagamento = "pago";
-      else if (status === "rejected" || status === "cancelled") novoStatusPagamento = "falhou";
-      else if (status === "in_process" || status === "pending") novoStatusPagamento = "pendente";
-      else if (status === "charged_back" || status === "refunded") novoStatusPagamento = "estornado";
-
-      // Restaura estoque se pagamento falhou.
-      // Executado ANTES de atualizar status_pagamento para que a guarda de
-      // idempotência funcione: se o mesmo pedido já está 'falhou' (webhook
-      // duplicado com event_id diferente), o UPDATE não toca os produtos.
-      if (novoStatusPagamento === "falhou") {
-        await conn.query(
-          `UPDATE products p
-              JOIN pedidos_produtos pp ON pp.produto_id = p.id
-              JOIN pedidos ped         ON ped.id        = pp.pedido_id
-             SET p.quantity = p.quantity + pp.quantidade
-           WHERE pp.pedido_id = ?
-             AND ped.status_pagamento <> 'falhou'`,
-          [pedidoId]
-        );
-      }
-
-      // Atualiza status_pagamento e status (campo operacional) de forma atômica.
-      // status espelha status_pagamento para evitar divergência entre os dois campos.
-      await conn.query(
-        `UPDATE pedidos
-            SET status_pagamento = ?, status = ?, pagamento_id = ?
-          WHERE id = ?
-            AND (status_pagamento <> ? OR pagamento_id <> ?)`,
-        [
-          novoStatusPagamento,
-          novoStatusPagamento,
-          String(data.id),
-          pedidoId,
-          novoStatusPagamento,
-          String(data.id),
-        ]
-      );
-
-      await conn.query(
-        `UPDATE webhook_events
-            SET status = ?, processed_at = NOW(), updated_at = NOW()
-          WHERE id = ?`,
-        [novoStatusPagamento, dbEventId]
-      );
+      const outcome = await handleWebhookEvent({
+        conn,
+        eventId,
+        type,
+        dataId: data?.id,
+        payload,
+        signatureHeader,
+      });
 
       await conn.commit();
-      return res.status(200).json({ ok: true });
+      return res.status(200).json({ ok: true, ...(outcome === "idempotent" ? { idempotent: true } : {}) });
     } catch (dbErr) {
       try {
         await conn.rollback();

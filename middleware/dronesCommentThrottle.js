@@ -6,6 +6,19 @@ const attempts = new Map();
 const WINDOW_MS = 30 * 1000; // 30 segundos
 const MAX_ATTEMPTS = 2;      // até 2 tentativas no intervalo
 
+// Limpeza periódica: remove entradas expiradas para evitar vazamento de memória.
+// Sem isso, IPs que nunca retornam acumulam entradas indefinidamente.
+if (process.env.NODE_ENV !== "test") {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of attempts) {
+      if (now - entry.first > WINDOW_MS) {
+        attempts.delete(key);
+      }
+    }
+  }, 5 * 60 * 1000).unref(); // a cada 5 minutos; .unref() não impede o processo de encerrar
+}
+
 module.exports = function dronesCommentThrottle(req, res, next) {
   const userKey = req.user?.id || req.ip;
 

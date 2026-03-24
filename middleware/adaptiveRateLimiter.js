@@ -26,6 +26,20 @@ function createAdaptiveRateLimiter({
     throw new Error("keyGenerator é obrigatório no rate limiter.");
   }
 
+  // Limpeza periódica do store padrão (Map in-memory).
+  // Entradas cujo último acesso ultrapassou o período de decay são removidas.
+  // Não interfere com stores externos (Redis, etc.) que gerenciam TTL por conta própria.
+  if (store instanceof Map && process.env.NODE_ENV !== "test") {
+    setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of store) {
+        if (entry.lastFailure && now - entry.lastFailure > decayMs) {
+          store.delete(key);
+        }
+      }
+    }, decayMs).unref();
+  }
+
   return function adaptiveRateLimiter(req, res, next) {
     req.rateLimit = req.rateLimit || { fail: () => { }, reset: () => { } };
 

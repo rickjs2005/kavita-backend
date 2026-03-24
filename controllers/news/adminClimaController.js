@@ -4,6 +4,13 @@
 const newsModel = require("../../models/newsModel");
 const pool = require("../../config/pool");
 const ERROR_CODES = require("../../constants/ErrorCodes");
+const { logAdminAction } = require("../../services/adminLogs");
+const {
+  ok, created, fail,
+  toInt, toFloat, toBoolTiny,
+  isNonEmptyStr, isOptionalStr, isValidDateTimeLike,
+  normalizeSlug, isValidSlug, nowSql,
+} = require("../../utils/newsHelpers");
 
 /**
  * Sugestão de coordenadas (compatibilidade):
@@ -18,84 +25,8 @@ try {
   console.warn("[CLIMA] Falha ao carregar services/inmetStationsService:", e?.message || e);
 }
 
-/* =========================
- * Helpers: respostas padronizadas
- * ========================= */
-function ok(res, data, meta) {
-  const payload = { ok: true, data };
-  if (meta) payload.meta = meta;
-  return res.status(200).json(payload);
-}
-
-function created(res, data) {
-  return res.status(201).json({ ok: true, data });
-}
-
-function fail(res, status, code, message, details) {
-  const payload = { ok: false, code, message };
-  if (details) payload.details = details;
-  return res.status(status).json(payload);
-}
-
-function toInt(v, def = 0) {
-  const n = Number.parseInt(String(v ?? ""), 10);
-  return Number.isNaN(n) ? def : n;
-}
-
-function toFloat(v) {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number.parseFloat(String(v).replace(",", "."));
-  return Number.isNaN(n) ? null : n;
-}
-
-function normalizeSlug(s) {
-  return String(s || "").trim().toLowerCase();
-}
-
-function isValidSlug(slug) {
-  return typeof slug === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug);
-}
-
-function isNonEmptyStr(v, max = 999999) {
-  return typeof v === "string" && v.trim().length > 0 && v.trim().length <= max;
-}
-
-function isOptionalStr(v, max) {
-  if (v === null || v === undefined || v === "") return true;
-  return typeof v === "string" && v.trim().length <= max;
-}
-
 function normalizeUF(v) {
   return String(v || "").trim().toUpperCase();
-}
-
-function toBoolTiny(v, def = 1) {
-  if (v === null || v === undefined || v === "") return def;
-  if (v === true) return 1;
-  if (v === false) return 0;
-
-  const s = String(v).trim().toLowerCase();
-  if (s === "1" || s === "true" || s === "sim" || s === "yes") return 1;
-  if (s === "0" || s === "false" || s === "nao" || s === "não" || s === "no") return 0;
-
-  const n = toInt(v, def);
-  return n ? 1 : 0;
-}
-
-function isValidDateTimeLike(v) {
-  if (v instanceof Date && !Number.isNaN(v.getTime())) return true;
-  if (typeof v !== "string") return false;
-  const s = v.trim();
-  if (!s) return false;
-  return /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.test(s);
-}
-
-function nowSql() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(
-    d.getMinutes()
-  )}:${pad(d.getSeconds())}`;
 }
 
 function getAdminId(req) {
@@ -106,23 +37,9 @@ function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-/* =========================
- * Logs: grava direto em admin_logs
- * ========================= */
+/* helper local: extrai adminId do req e delega para o serviço centralizado */
 async function logAdmin(req, acao, entidade, entidade_id = null) {
-  try {
-    const admin_id = getAdminId(req);
-    if (!admin_id) return;
-
-    await pool.query("INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)", [
-      admin_id,
-      acao,
-      entidade,
-      entidade_id,
-    ]);
-  } catch {
-    // log nunca pode derrubar a request
-  }
+  await logAdminAction({ adminId: getAdminId(req), acao, entidade, entidadeId: entidade_id });
 }
 
 /* =========================================================

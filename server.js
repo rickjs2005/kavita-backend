@@ -17,6 +17,7 @@ const { setupDocs } = require("./docs/swagger");
 const apiRoutes = require("./routes");
 const createAdaptiveRateLimiter = require("./middleware/adaptiveRateLimiter");
 const { issueCsrfToken } = require("./middleware/csrfProtection");
+const requestLogger = require("./middleware/requestLogger");
 
 // ✅ Importações para tratamento de erro
 const errorHandler = require("./middleware/errorHandler");
@@ -199,6 +200,13 @@ app.use("/uploads", (_req, res, next) => {
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   next();
 });
+
+/* ============================
+ * Logging estruturado (Pino)
+ * Montado após CORS e antes das rotas para capturar todas as requests de API.
+ * Disponibiliza req.log (child logger com requestId) em todos os handlers.
+ * ============================ */
+app.use(requestLogger);
 
 /* ============================
  * Middlewares Globais

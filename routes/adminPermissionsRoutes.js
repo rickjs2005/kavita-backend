@@ -4,7 +4,7 @@ const router = express.Router();
 const pool = require("../config/pool");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const requirePermission = require("../middleware/requirePermission");
-const logAdminAction = require("../utils/adminLogger");
+const { logAdminAction } = require("../services/adminLogs");
 
 /**
  * GET /api/admin/permissions

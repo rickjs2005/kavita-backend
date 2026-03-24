@@ -299,11 +299,18 @@ function buildMessageText({ usuario_nome, carrinho_id, itens, total_estimado }) 
 /*                        GET /api/admin/carrinhos                    */
 /* ------------------------------------------------------------------ */
 
-router.get("/", verifyAdmin, async (req, res) => {
+/* ------------------------------------------------------------------ */
+/*   POST /api/admin/carrinhos/scan                                    */
+/*   Registra em carrinhos_abandonados os carrinhos abertos e antigos  */
+/*   que ainda não foram catalogados, e agenda notificações padrão.    */
+/*   Separado do GET para manter leitura idempotente.                  */
+/* ------------------------------------------------------------------ */
+
+router.post("/scan", verifyAdmin, async (req, res) => {
   const conn = await pool.getConnection();
 
   try {
-    const horasParam = Number(req.query.horas);
+    const horasParam = Number(req.body?.horas ?? req.query.horas);
     const thresholdHours =
       Number.isFinite(horasParam) && horasParam > 0
         ? horasParam
@@ -325,6 +332,8 @@ router.get("/", verifyAdmin, async (req, res) => {
       `,
       [thresholdHours]
     );
+
+    let scanned = 0;
 
     for (const cart of carts) {
       try {
@@ -386,6 +395,7 @@ router.get("/", verifyAdmin, async (req, res) => {
         );
 
         const abandonedId = abandonRes.insertId;
+        scanned += 1;
 
         // ✅ Com UNIQUE (carrinho_abandonado_id, tipo, scheduled_at), use INSERT IGNORE
         // para não dar erro em corrida/duplicidade.
@@ -429,6 +439,25 @@ router.get("/", verifyAdmin, async (req, res) => {
       }
     }
 
+    return res.json({ scanned, message: `${scanned} carrinho(s) registrado(s) como abandonado(s).` });
+  } catch (err) {
+    console.error("Erro em POST /api/admin/carrinhos/scan:", err);
+    return res.status(500).json({ message: "Erro ao escanear carrinhos abandonados" });
+  } finally {
+    conn.release();
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*                        GET /api/admin/carrinhos                    */
+/*   Leitura pura — retorna carrinhos_abandonados já catalogados.     */
+/*   Para descobrir novos carrinhos, chamar POST /scan primeiro.       */
+/* ------------------------------------------------------------------ */
+
+router.get("/", verifyAdmin, async (req, res) => {
+  const conn = await pool.getConnection();
+
+  try {
     const [rows] = await conn.query(
       `
       SELECT

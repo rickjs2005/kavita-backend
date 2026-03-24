@@ -9,40 +9,10 @@ try {
 } catch {
   pool = null;
 }
-
-/* =========================
- * Helpers: respostas padronizadas
- * ========================= */
-function ok(res, data, meta) {
-  const payload = { ok: true, data };
-  if (meta !== undefined) payload.meta = meta;
-  return res.status(200).json(payload);
-}
-
-function fail(res, status, code, message, details) {
-  const payload = { ok: false, code, message };
-  if (details) payload.details = details;
-  return res.status(status).json(payload);
-}
-
-function toInt(v, def = 0) {
-  const n = Number.parseInt(String(v ?? ""), 10);
-  return Number.isNaN(n) ? def : n;
-}
-
-function sanitizeLimitOffset(limit, offset, maxLimit = 50) {
-  const lim = Math.min(Math.max(toInt(limit, 10), 1), maxLimit);
-  const off = Math.max(toInt(offset, 0), 0);
-  return { lim, off };
-}
-
-function normalizeSlug(s) {
-  return String(s || "").trim().toLowerCase();
-}
-
-function isValidSlug(slug) {
-  return typeof slug === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug);
-}
+const {
+  ok, fail,
+  toInt, normalizeSlug, isValidSlug, sanitizeLimitOffset,
+} = require("../utils/newsHelpers");
 
 /* =========================================================
  * PUBLIC - CLIMA

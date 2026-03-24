@@ -2,31 +2,35 @@ const pool = require("../config/pool");
 
 /**
  * Registra um log de ação do admin.
+ * Interface principal — aceita objeto nomeado, silenciosa em caso de erro.
  *
- * @param {number} adminId    - ID do admin que realizou a ação
- * @param {string} acao       - Ação executada (ex: 'criou', 'editou', 'excluiu', 'login', etc.)
- * @param {string} entidade   - Entidade afetada (ex: 'produto', 'pedido', 'cupom', 'servico')
- * @param {number|null} entidadeId - ID do registro afetado (pode ser null para ações genéricas)
+ * @param {{ adminId, acao, entidade, entidadeId? }} params
  *
  * Exemplo:
- *   await registrarLog(req.admin.id, 'criou', 'produto', novoProdutoId);
+ *   await logAdminAction({ adminId: req.admin.id, acao: 'criou', entidade: 'produto', entidadeId: id });
+ */
+async function logAdminAction({ adminId, acao, entidade, entidadeId = null } = {}) {
+  if (!adminId || !acao || !entidade) return;
+
+  try {
+    await pool.query(
+      "INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)",
+      [adminId, acao, entidade, entidadeId]
+    );
+  } catch (err) {
+    console.error("Erro ao registrar log de admin:", err.message);
+  }
+}
+
+/**
+ * @deprecated Use logAdminAction({ adminId, acao, entidade, entidadeId }) em vez disso.
+ * Mantido para compatibilidade com callers que usam a assinatura posicional.
  */
 async function registrarLog(adminId, acao, entidade, entidadeId = null) {
-  if (!adminId || !acao || !entidade) {
-    throw new Error(
-      "registrarLog: adminId, acao e entidade são obrigatórios."
-    );
-  }
-
-  await pool.query(
-    `
-      INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id)
-      VALUES (?, ?, ?, ?)
-    `,
-    [adminId, acao, entidade, entidadeId]
-  );
+  return logAdminAction({ adminId, acao, entidade, entidadeId });
 }
 
 module.exports = {
+  logAdminAction,
   registrarLog,
 };

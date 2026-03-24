@@ -2,20 +2,7 @@
 const fs = require("fs");
 const dronesService = require("../services/dronesService");
 const mediaService = require("../services/mediaService");
-
-/**
- * AppError fallback (compatível):
- * - Se seu projeto já tem AppError global, troque este require pelo caminho real e remova a classe abaixo.
- */
-class AppError extends Error {
-  constructor(message, statusCode = 500, code = "SERVER_ERROR", details = null) {
-    super(message);
-    this.name = "AppError";
-    this.statusCode = statusCode;
-    this.code = code;
-    this.details = details;
-  }
-}
+const AppError = require("../errors/AppError");
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_VIDEO_BYTES = 30 * 1024 * 1024; // 30MB
@@ -108,7 +95,7 @@ async function safeListModelsFromDb() {
 }
 
 function sendError(res, err) {
-  const status = err?.statusCode || 500;
+  const status = err?.status || err?.statusCode || 500;
   const code = err?.code || "SERVER_ERROR";
   const message = err?.message || "Erro inesperado.";
   const details = err?.details ?? null;
