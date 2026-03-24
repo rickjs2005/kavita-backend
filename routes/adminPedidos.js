@@ -1,32 +1,18 @@
+"use strict";
+
 const express = require("express");
 const router = express.Router();
-const pool = require("../config/pool");
-const verifyAdmin = require("../middleware/verifyAdmin");
-const { parseAddress } = require("../utils/address");
-const {
-  dispararEventoComunicacao,
-} = require("../services/comunicacaoService"); // ⬅️ novo import
 
-// 🔄 Função utilitária para tratar erros e exibir logs contextuais
+const verifyAdmin = require("../middleware/verifyAdmin");
+const orderService = require("../services/orderService");
+
+// ---------------------------------------------------------------------------
+// Internal error helper (preserves legacy response shape for 500 errors)
+// ---------------------------------------------------------------------------
+
 const handleErroInterno = (res, err, contexto = "erro") => {
   console.error(`Erro ao ${contexto}:`, err);
   res.status(500).json({ message: `Erro ao ${contexto}` });
-};
-
-/**
- * Helpers: normalização de CEP no endereço parseado
- * Mantém compatibilidade com o objeto retornado por parseAddress
- */
-const onlyDigits = (v) => String(v ?? "").replace(/\D/g, "");
-const formatCep = (cep) => {
-  const d = onlyDigits(cep);
-  if (d.length === 8) return `${d.slice(0, 5)}-${d.slice(5)}`;
-  return cep;
-};
-const normalizeEndereco = (endereco) => {
-  if (!endereco || typeof endereco !== "object") return endereco;
-  if (!("cep" in endereco)) return endereco;
-  return { ...endereco, cep: formatCep(endereco.cep) };
 };
 
 /**
@@ -152,69 +138,10 @@ const normalizeEndereco = (endereco) => {
  *       500:
  *         description: Erro ao buscar pedidos
  */
-
-// ✅ GET /api/admin/pedidos — Lista todos os pedidos com itens e endereço
 router.get("/", verifyAdmin, async (req, res) => {
   try {
-    const [pedidos] = await pool.query(`
-      SELECT
-        p.id AS pedido_id,
-        p.usuario_id,
-        u.nome AS usuario_nome,
-        u.email AS usuario_email,
-        u.telefone AS usuario_telefone,
-        u.cpf AS usuario_cpf,
-        p.endereco,
-        p.forma_pagamento,
-        p.status_pagamento,
-        p.status_entrega,
-        p.total,
-        COALESCE(p.shipping_price, 0) AS shipping_price,
-        p.data_pedido
-      FROM pedidos p
-      JOIN usuarios u ON p.usuario_id = u.id
-      ORDER BY p.data_pedido DESC
-    `);
-
-    const [itens] = await pool.query(`
-      SELECT
-        pp.pedido_id,
-        pr.name AS produto_nome,
-        pp.quantidade,
-        pp.valor_unitario AS preco_unitario
-      FROM pedidos_produtos pp
-      JOIN products pr ON pp.produto_id = pr.id
-    `);
-
-    const pedidosComItens = pedidos.map((p) => {
-      const endereco = normalizeEndereco(parseAddress(p.endereco));
-
-      return {
-        id: p.pedido_id,
-        usuario_id: p.usuario_id,
-        usuario: p.usuario_nome,
-        email: p.usuario_email ?? null,
-        telefone: p.usuario_telefone ?? null,
-        cpf: p.usuario_cpf ?? null,
-        endereco,
-        forma_pagamento: p.forma_pagamento,
-        status_pagamento: p.status_pagamento,
-        status_entrega: p.status_entrega,
-        // total final cobrado = subtotal de produtos + frete
-        total: Number(p.total ?? 0) + Number(p.shipping_price ?? 0),
-        shipping_price: Number(p.shipping_price ?? 0),
-        data_pedido: p.data_pedido,
-        itens: itens
-          .filter((i) => i.pedido_id === p.pedido_id)
-          .map((i) => ({
-            produto: i.produto_nome,
-            quantidade: i.quantidade,
-            preco_unitario: Number(i.preco_unitario),
-          })),
-      };
-    });
-
-    res.json(pedidosComItens);
+    const pedidos = await orderService.listOrders();
+    res.json(pedidos);
   } catch (err) {
     handleErroInterno(res, err, "buscar pedidos");
   }
@@ -249,73 +176,15 @@ router.get("/", verifyAdmin, async (req, res) => {
  *       500:
  *         description: Erro ao buscar pedido
  */
-
-// ✅ GET /api/admin/pedidos/:id — Detalhe do pedido
 router.get("/:id", verifyAdmin, async (req, res) => {
-  const { id } = req.params;
-
   try {
-    const [[pedido]] = await pool.query(
-      `
-      SELECT
-        p.id AS pedido_id,
-        p.usuario_id,
-        u.nome AS usuario_nome,
-        u.email AS usuario_email,
-        u.telefone AS usuario_telefone,
-        u.cpf AS usuario_cpf,
-        p.endereco,
-        p.forma_pagamento,
-        p.status_pagamento,
-        p.status_entrega,
-        p.total,
-        COALESCE(p.shipping_price, 0) AS shipping_price,
-        p.data_pedido
-      FROM pedidos p
-      JOIN usuarios u ON p.usuario_id = u.id
-      WHERE p.id = ?
-    `,
-      [id]
-    );
+    const pedido = await orderService.getOrderById(req.params.id);
 
     if (!pedido) {
       return res.status(404).json({ message: "Pedido não encontrado" });
     }
 
-    const [itens] = await pool.query(
-      `
-      SELECT
-        pr.name AS produto_nome,
-        pp.quantidade,
-        pp.valor_unitario AS preco_unitario
-      FROM pedidos_produtos pp
-      JOIN products pr ON pp.produto_id = pr.id
-      WHERE pp.pedido_id = ?
-    `,
-      [id]
-    );
-
-    res.json({
-      id: pedido.pedido_id,
-      usuario_id: pedido.usuario_id,
-      usuario: pedido.usuario_nome,
-      email: pedido.usuario_email ?? null,
-      telefone: pedido.usuario_telefone ?? null,
-      cpf: pedido.usuario_cpf ?? null,
-      endereco: normalizeEndereco(parseAddress(pedido.endereco)),
-      forma_pagamento: pedido.forma_pagamento,
-      status_pagamento: pedido.status_pagamento,
-      status_entrega: pedido.status_entrega,
-      // total final cobrado = subtotal de produtos + frete
-      total: Number(pedido.total ?? 0) + Number(pedido.shipping_price ?? 0),
-      shipping_price: Number(pedido.shipping_price ?? 0),
-      data_pedido: pedido.data_pedido,
-      itens: itens.map((i) => ({
-        produto: i.produto_nome,
-        quantidade: i.quantidade,
-        preco_unitario: Number(i.preco_unitario),
-      })),
-    });
+    res.json(pedido);
   } catch (err) {
     handleErroInterno(res, err, "buscar detalhamento de pedido");
   }
@@ -355,41 +224,22 @@ router.get("/:id", verifyAdmin, async (req, res) => {
  *       500:
  *         description: Erro ao atualizar status de pagamento
  */
-
-// ✅ PUT /api/admin/pedidos/:id/pagamento
 router.put("/:id/pagamento", verifyAdmin, async (req, res) => {
   const { id } = req.params;
   const { status_pagamento } = req.body;
 
-  const permitidos = ["pendente", "pago", "falhou", "estornado"];
-  if (!permitidos.includes(status_pagamento)) {
+  // Input guard — preserves legacy 400 response shape { message, status_pagamento }
+  if (!orderService.ALLOWED_PAYMENT_STATUSES.includes(status_pagamento)) {
     return res
       .status(400)
       .json({ message: "status_pagamento inválido", status_pagamento });
   }
 
   try {
-    // Atualiza status_pagamento e status juntos para manter consistência operacional.
-    // status espelha status_pagamento — mesma regra do webhook.
-    const [result] = await pool.query(
-      "UPDATE pedidos SET status_pagamento = ?, status = ? WHERE id = ?",
-      [status_pagamento, status_pagamento, id]
-    );
+    const result = await orderService.updatePaymentStatus(id, status_pagamento);
 
-    if (result.affectedRows === 0) {
+    if (!result.found) {
       return res.status(404).json({ message: "Pedido não encontrado" });
-    }
-
-    // 🔔 Se o pagamento foi marcado como "pago", dispara comunicação automática
-    if (status_pagamento === "pago") {
-      try {
-        await dispararEventoComunicacao("pagamento_aprovado", Number(id));
-      } catch (errCom) {
-        console.error(
-          "[adminPedidos] Erro ao disparar comunicação de pagamento aprovado:",
-          errCom
-        );
-      }
     }
 
     res.json({ message: "Status de pagamento atualizado com sucesso" });
@@ -432,94 +282,22 @@ router.put("/:id/pagamento", verifyAdmin, async (req, res) => {
  *       500:
  *         description: Erro ao atualizar status de entrega
  */
-
-// ✅ PUT /api/admin/pedidos/:id/entrega
 router.put("/:id/entrega", verifyAdmin, async (req, res) => {
   const { id } = req.params;
   const { status_entrega } = req.body;
 
-  const permitidos = [
-    "em_separacao",
-    "processando",
-    "enviado",
-    "entregue",
-    "cancelado",
-  ];
-  if (!permitidos.includes(status_entrega)) {
+  // Input guard — preserves legacy 400 response shape { message, status_entrega }
+  if (!orderService.ALLOWED_DELIVERY_STATUSES.includes(status_entrega)) {
     return res
       .status(400)
       .json({ message: "status_entrega inválido", status_entrega });
   }
 
   try {
-    if (status_entrega === "cancelado") {
-      // Cancelamento requer transação: lê estado atual, devolve estoque de forma
-      // idempotente e só então atualiza o status.
-      const conn = await pool.getConnection();
-      try {
-        await conn.beginTransaction();
+    const result = await orderService.updateDeliveryStatus(id, status_entrega);
 
-        // FOR UPDATE serializa cancelamentos concorrentes sobre o mesmo pedido.
-        const [[pedido]] = await conn.query(
-          "SELECT status_entrega, status_pagamento FROM pedidos WHERE id = ? FOR UPDATE",
-          [id]
-        );
-
-        if (!pedido) {
-          await conn.rollback();
-          return res.status(404).json({ message: "Pedido não encontrado" });
-        }
-
-        // Devolve estoque apenas se ainda não foi cancelado (idempotência) e
-        // se o webhook de pagamento ainda não devolveu por falha (status_pagamento <> 'falhou').
-        // Isso cobre pedidos "a prazo" (nunca passam pelo webhook) e demais
-        // pedidos cancelados manualmente antes de qualquer falha de gateway.
-        if (
-          pedido.status_entrega !== "cancelado" &&
-          pedido.status_pagamento !== "falhou"
-        ) {
-          await conn.query(
-            `UPDATE products p
-               JOIN pedidos_produtos pp ON pp.produto_id = p.id
-              SET p.quantity = p.quantity + pp.quantidade
-            WHERE pp.pedido_id = ?`,
-            [id]
-          );
-        }
-
-        await conn.query(
-          "UPDATE pedidos SET status_entrega = 'cancelado' WHERE id = ?",
-          [id]
-        );
-
-        await conn.commit();
-      } catch (err) {
-        await conn.rollback();
-        throw err;
-      } finally {
-        conn.release();
-      }
-    } else {
-      const [result] = await pool.query(
-        "UPDATE pedidos SET status_entrega = ? WHERE id = ?",
-        [status_entrega, id]
-      );
-
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ message: "Pedido não encontrado" });
-      }
-    }
-
-    // 🔔 Se o status de entrega foi marcado como "enviado", dispara comunicação automática
-    if (status_entrega === "enviado") {
-      try {
-        await dispararEventoComunicacao("pedido_enviado", Number(id));
-      } catch (errCom) {
-        console.error(
-          "[adminPedidos] Erro ao disparar comunicação de pedido enviado:",
-          errCom
-        );
-      }
+    if (!result.found) {
+      return res.status(404).json({ message: "Pedido não encontrado" });
     }
 
     res.json({ message: "Status de entrega atualizado com sucesso" });
