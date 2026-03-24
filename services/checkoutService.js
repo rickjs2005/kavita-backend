@@ -2,14 +2,16 @@
 
 const pool = require("../config/pool");
 const { dispararEventoComunicacao } = require("./comunicacaoService");
+const checkoutRepo = require("../repositories/checkoutRepository");
+const cartRepo = require("../repositories/cartRepository");
+const orderRepo = require("../repositories/orderRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 
 // ---------------------------------------------------------------------------
-// Stock operations — exported for future use by orderService and
-// paymentRepository (Phase 5 / Phase 6).
-// Callers are responsible for guards (e.g., checking order status before
-// calling restoreStock to prevent double-restore).
+// Stock operations — exported for backward compatibility.
+// restoreStock is now owned by orderRepository; re-exported here so that
+// existing callers (orderService) can migrate at their own pace.
 // ---------------------------------------------------------------------------
 
 /**
@@ -58,16 +60,8 @@ async function reserveStock(conn, pedidoId, produtos, mapProdutos, mapPromocoes)
     // Promotion price takes precedence; fall back to list price.
     const valorUnitario = mapPromocoes[produtoId] ?? info.price;
 
-    await conn.query(
-      `INSERT INTO pedidos_produtos (pedido_id, produto_id, quantidade, valor_unitario)
-       VALUES (?, ?, ?, ?)`,
-      [pedidoId, produtoId, qtd, valorUnitario]
-    );
-
-    await conn.query(
-      "UPDATE products SET quantity = quantity - ? WHERE id = ?",
-      [qtd, produtoId]
-    );
+    await checkoutRepo.insertOrderItem(conn, pedidoId, produtoId, qtd, valorUnitario);
+    await checkoutRepo.debitStock(conn, produtoId, qtd);
 
     total += valorUnitario * qtd;
   }
@@ -77,26 +71,13 @@ async function reserveStock(conn, pedidoId, produtos, mapProdutos, mapPromocoes)
 
 /**
  * Restores stock for all items of a cancelled or failed order.
- *
- * Pass a connection object when called inside a transaction, or pass `pool`
- * for a standalone (auto-committed) update.
- *
- * Callers MUST apply the idempotency guard before calling this function:
- *   - adminPedidos guard: status_entrega <> 'cancelado' AND status_pagamento <> 'falhou'
- *   - paymentRepository guard: status_pagamento <> 'falhou'
- * The guard prevents double-restore when both webhook and admin cancel fire.
+ * Delegates to orderRepository.restoreStock.
  *
  * @param {object} connOrPool  MySQL2 connection (in transaction) or pool (standalone)
  * @param {number} pedidoId
  */
 async function restoreStock(connOrPool, pedidoId) {
-  await connOrPool.query(
-    `UPDATE products p
-        JOIN pedidos_produtos pp ON pp.produto_id = p.id
-        SET p.quantity = p.quantity + pp.quantidade
-      WHERE pp.pedido_id = ?`,
-    [pedidoId]
-  );
+  await orderRepo.restoreStock(connOrPool, pedidoId);
 }
 
 // ---------------------------------------------------------------------------
@@ -114,12 +95,6 @@ async function restoreStock(connOrPool, pedidoId) {
  * @param {number} userId
  * @param {object} body  Validated checkout payload (from req.body, after
  *                       validateCheckoutBody + recalcShippingMiddleware).
- *                       Expected fields:
- *                         formaPagamento, endereco, produtos,
- *                         nome?, cpf?, telefone?,
- *                         cupom_codigo?,
- *                         shipping_price, shipping_rule_applied,
- *                         shipping_prazo_dias, shipping_cep
  *
  * @returns {object}
  *   Duplicate:  { idempotente: true,  pedido_id }
@@ -150,8 +125,7 @@ async function create(userId, body) {
 
     /* 0) Advisory lock — serializes concurrent checkouts from the same user.
      *    GET_LOCK is a MySQL global advisory lock by name.
-     *    Timeout: 5 s. Returns 409 if another transaction from the same user
-     *    holds the lock for more than 5 s (extreme latency, not the normal case).
+     *    Timeout: 5 s. Returns 409 if another transaction holds the lock.
      *    RELEASE_LOCK must be called BEFORE connection.release() — see finally block. */
     const [[lockRow]] = await connection.query(
       "SELECT GET_LOCK(?, 5) AS ok",
@@ -171,36 +145,7 @@ async function create(userId, body) {
 
     /* 1) Update user info — non-blocking (does not abort the order on failure) */
     try {
-      const campos = [];
-      const valores = [];
-
-      if (nome && String(nome).trim()) {
-        campos.push("nome = ?");
-        valores.push(String(nome).trim());
-      }
-
-      if (telefone && String(telefone).trim()) {
-        const telDigits = String(telefone).replace(/\D/g, "");
-        if (telDigits) {
-          campos.push("telefone = ?");
-          valores.push(telDigits);
-        }
-      }
-
-      if (cpf && String(cpf).trim()) {
-        const cpfDigits = String(cpf).replace(/\D/g, "");
-        if (cpfDigits) {
-          campos.push("cpf = ?");
-          valores.push(cpfDigits);
-        }
-      }
-
-      if (campos.length > 0) {
-        await connection.query(
-          `UPDATE usuarios SET ${campos.join(", ")} WHERE id = ?`,
-          [...valores, userId]
-        );
-      }
+      await checkoutRepo.updateUserInfo(connection, userId, { nome, telefone, cpf });
     } catch (err) {
       console.error("[checkoutService] Erro ao atualizar dados do usuário:", err);
     }
@@ -208,17 +153,7 @@ async function create(userId, body) {
     /* 2) Find open cart — non-blocking (used later to mark abandoned cart recovered) */
     let carrinhoAberto = null;
     try {
-      const [rowsCarrinho] = await connection.query(
-        `SELECT id
-           FROM carrinhos
-          WHERE usuario_id = ? AND status = "aberto"
-          ORDER BY id DESC
-          LIMIT 1`,
-        [userId]
-      );
-      if (rowsCarrinho && rowsCarrinho.length > 0) {
-        carrinhoAberto = rowsCarrinho[0];
-      }
+      carrinhoAberto = await checkoutRepo.findOpenCartId(connection, userId);
     } catch (err) {
       console.error("[checkoutService] Erro ao buscar carrinho aberto:", err);
     }
@@ -229,8 +164,7 @@ async function create(userId, body) {
      *  Same products + different coupon = NOT a duplicate (intentional re-submit).
      *  Window: 2 min — covers high latency, double-click, and auto-retry.
      *  GET_LOCK (step 0) ensures only one transaction from this user reaches here
-     *  at a time, so the SELECT reads the already-committed state of the previous
-     *  transaction — no race condition.                                           */
+     *  at a time — no race condition.                                            */
     const cupomNorm = cupom_codigo
       ? String(cupom_codigo).trim().toUpperCase()
       : null;
@@ -240,22 +174,7 @@ async function create(userId, body) {
       .sort()
       .join(",");
 
-    const [recentOrders] = await connection.query(
-      `SELECT pp.pedido_id,
-              GROUP_CONCAT(
-                CONCAT(pp.produto_id, ':', pp.quantidade)
-                ORDER BY pp.produto_id SEPARATOR ','
-              ) AS composicao,
-              p.cupom_codigo AS cupom
-         FROM pedidos_produtos pp
-         JOIN pedidos p ON p.id = pp.pedido_id
-        WHERE p.usuario_id       = ?
-          AND p.status           = 'pendente'
-          AND p.status_pagamento = 'pendente'
-          AND p.data_pedido      >= NOW() - INTERVAL 2 MINUTE
-        GROUP BY pp.pedido_id, p.cupom_codigo`,
-      [userId]
-    );
+    const recentOrders = await checkoutRepo.findRecentOrders(connection, userId);
 
     const pedidoDuplicado = recentOrders.find(
       (row) =>
@@ -271,41 +190,23 @@ async function create(userId, body) {
     /* 3) Create order record with status = 'pendente' */
     const enderecoStr = JSON.stringify(endereco || {});
 
-    const [pedidoIns] = await connection.query(
-      `INSERT INTO pedidos (
-         usuario_id, endereco, forma_pagamento,
-         status, status_pagamento, status_entrega,
-         total, data_pedido, pagamento_id, cupom_codigo
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)`,
-      [
-        userId,
-        enderecoStr,
-        formaPagamento,
-        "pendente",
-        "pendente",
-        "em_separacao",
-        0,
-        null,
-        cupomNorm,
-      ]
-    );
+    const pedidoId = await checkoutRepo.createOrder(connection, {
+      userId,
+      enderecoStr,
+      formaPagamento,
+      cupomNorm,
+    });
 
-    const pedidoId = pedidoIns.insertId;
-
-    /* 4) Lock product rows (stock + price) and fetch active promotions.
+    /* 4) Lock product rows and fetch active promotions.
      *
      *  Pricing rule:
-     *    products.price         = list price (never changed by promotions)
+     *    products.price               = list price (never changed by promotions)
      *    product_promotions.final_price = effective price when a promotion is active
      *    Coupon applies on the post-promotion subtotal.
-     *    Same formula used in publicPromocoes.js and preview-cupom.          */
+     *    Same formula used in publicPromocoes.js and preview-cupom.             */
     const ids = produtos.map((p) => Number(p.id));
 
-    const [prodRows] = await connection.query(
-      "SELECT id, price, quantity FROM products WHERE id IN (?) FOR UPDATE",
-      [ids]
-    );
-
+    const prodRows = await checkoutRepo.lockProducts(connection, ids);
     const mapProdutos = {};
     prodRows.forEach((row) => {
       mapProdutos[Number(row.id)] = {
@@ -314,27 +215,7 @@ async function create(userId, body) {
       };
     });
 
-    const [promoRows] = await connection.query(
-      `SELECT
-         pp.product_id,
-         CAST(
-           CASE
-             WHEN pp.promo_price IS NOT NULL
-               THEN pp.promo_price
-             WHEN pp.discount_percent IS NOT NULL
-               THEN p.price - (p.price * (pp.discount_percent / 100))
-             ELSE p.price
-           END
-         AS DECIMAL(10,2)) AS final_price
-       FROM product_promotions pp
-       JOIN products p ON p.id = pp.product_id
-       WHERE pp.product_id IN (?)
-         AND pp.is_active = 1
-         AND (pp.start_at IS NULL OR pp.start_at <= NOW())
-         AND (pp.end_at   IS NULL OR pp.end_at   >= NOW())`,
-      [ids]
-    );
-
+    const promoRows = await checkoutRepo.getActivePromotions(connection, ids);
     const mapPromocoes = {};
     promoRows.forEach((row) => {
       mapPromocoes[Number(row.product_id)] = Number(row.final_price);
@@ -358,24 +239,15 @@ async function create(userId, body) {
       const codigo = String(cupom_codigo).trim();
 
       try {
-        const [rowsCupom] = await connection.query(
-          `SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, ativo
-             FROM cupons
-            WHERE codigo = ?
-            LIMIT 1
-            FOR UPDATE`,
-          [codigo]
-        );
+        const cupom = await checkoutRepo.lockCoupon(connection, codigo);
 
-        if (!rowsCupom || rowsCupom.length === 0) {
+        if (!cupom) {
           throw new AppError(
             "Cupom inválido ou não encontrado.",
             ERROR_CODES.VALIDATION_ERROR,
             400
           );
         }
-
-        const cupom = rowsCupom[0];
 
         if (!cupom.ativo) {
           throw new AppError(
@@ -437,10 +309,7 @@ async function create(userId, body) {
           valor,
         };
 
-        await connection.query(
-          "UPDATE cupons SET usos = usos + 1 WHERE id = ?",
-          [cupom.id]
-        );
+        await checkoutRepo.incrementCouponUsage(connection, cupom.id);
       } catch (errCupom) {
         if (errCupom instanceof AppError) throw errCupom;
         console.error("[checkoutService] Erro ao aplicar cupom:", errCupom);
@@ -453,40 +322,22 @@ async function create(userId, body) {
     }
 
     /* 7) Persist final total */
-    await connection.query(
-      "UPDATE pedidos SET total = ? WHERE id = ?",
-      [totalFinal, pedidoId]
-    );
+    await checkoutRepo.updateOrderTotal(connection, pedidoId, totalFinal);
 
     /* 7.1) Persist shipping data inside the transaction.
      *  Values were injected into req.body by recalcShippingMiddleware.
      *  The controller passes them through as part of `body`. */
-    await connection.query(
-      `UPDATE pedidos
-          SET shipping_price        = ?,
-              shipping_rule_applied = ?,
-              shipping_prazo_dias   = ?,
-              shipping_cep          = ?
-        WHERE id = ?`,
-      [
-        Number(shipping_price ?? 0),
-        String(shipping_rule_applied ?? "ZONE"),
-        shipping_prazo_dias == null ? null : Number(shipping_prazo_dias),
-        shipping_cep == null ? null : String(shipping_cep),
-        pedidoId,
-      ]
-    );
+    await checkoutRepo.updateOrderShipping(connection, pedidoId, {
+      shipping_price,
+      shipping_rule_applied,
+      shipping_prazo_dias,
+      shipping_cep,
+    });
 
     /* 8) Mark abandoned cart as recovered — non-blocking */
     try {
       if (carrinhoAberto?.id) {
-        await connection.query(
-          `UPDATE carrinhos_abandonados
-              SET recuperado    = 1,
-                  atualizado_em = NOW()
-            WHERE carrinho_id = ?`,
-          [carrinhoAberto.id]
-        );
+        await checkoutRepo.markAbandonedCartRecovered(connection, carrinhoAberto.id);
       }
     } catch (err) {
       console.error(
@@ -509,10 +360,7 @@ async function create(userId, body) {
      *  A crash here leaves the cart as "aberto" but the order exists — acceptable,
      *  does not affect inventory or order integrity. */
     try {
-      await pool.query(
-        'UPDATE carrinhos SET status = "convertido" WHERE usuario_id = ? AND status = "aberto"',
-        [userId]
-      );
+      await cartRepo.convertCart(userId);
     } catch (err) {
       console.error("[checkoutService] Erro ao fechar carrinho:", err);
     }

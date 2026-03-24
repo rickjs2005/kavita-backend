@@ -1,6 +1,7 @@
 "use strict";
 
 const pool = require("../config/pool");
+const cartRepo = require("../repositories/cartRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 
@@ -30,29 +31,9 @@ function makeStockLimitError({ max, requested, current }) {
  * @returns {{ carrinho_id: number|null, items: object[] }}
  */
 async function getCart(userId) {
-  const [[carrinho]] = await pool.query(
-    'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-    [userId]
-  );
-
-  if (!carrinho) return { carrinho_id: null, items: [] };
-
-  const [itens] = await pool.query(
-    `SELECT
-        ci.id AS item_id,
-        ci.produto_id,
-        ci.quantidade,
-        ci.valor_unitario,
-        p.name     AS nome,
-        p.image    AS image,
-        p.quantity AS stock
-     FROM carrinho_itens ci
-     JOIN products p ON p.id = ci.produto_id
-     WHERE ci.carrinho_id = ?`,
-    [carrinho.id]
-  );
-
-  return { carrinho_id: carrinho.id, items: itens };
+  const { cart, items } = await cartRepo.getCartWithItems(userId);
+  if (!cart) return { carrinho_id: null, items: [] };
+  return { carrinho_id: cart.id, items };
 }
 
 /**
@@ -76,26 +57,11 @@ async function addItem(userId, { produto_id, quantidade }) {
     await conn.beginTransaction();
 
     // 1) find or create open cart
-    const [[carrinho]] = await conn.query(
-      'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-      [userId]
-    );
-
-    let carrinhoId = carrinho?.id;
-
-    if (!carrinhoId) {
-      const [newCart] = await conn.query(
-        "INSERT INTO carrinhos (usuario_id) VALUES (?)",
-        [userId]
-      );
-      carrinhoId = newCart.insertId;
-    }
+    const carrinho = await cartRepo.findOpenCart(conn, userId);
+    const carrinhoId = carrinho?.id ?? await cartRepo.createCart(conn, userId);
 
     // 2) lock product row (stock + price)
-    const [[produto]] = await conn.query(
-      "SELECT id, price, quantity FROM products WHERE id = ? FOR UPDATE",
-      [produtoIdNum]
-    );
+    const produto = await cartRepo.lockProduct(conn, produtoIdNum);
 
     if (!produto) {
       throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
@@ -107,10 +73,7 @@ async function addItem(userId, { produto_id, quantidade }) {
     }
 
     // 3) lock existing cart item (if any)
-    const [[existente]] = await conn.query(
-      "SELECT id, quantidade FROM carrinho_itens WHERE carrinho_id = ? AND produto_id = ? FOR UPDATE",
-      [carrinhoId, produtoIdNum]
-    );
+    const existente = await cartRepo.lockCartItem(conn, carrinhoId, produtoIdNum);
 
     const currentQty = Number(existente?.quantidade ?? 0);
     const desired = currentQty + qtdNum;
@@ -121,16 +84,9 @@ async function addItem(userId, { produto_id, quantidade }) {
 
     // 4) update or insert
     if (existente) {
-      await conn.query(
-        "UPDATE carrinho_itens SET quantidade = ? WHERE id = ?",
-        [desired, existente.id]
-      );
+      await cartRepo.updateCartItemById(conn, existente.id, desired);
     } else {
-      await conn.query(
-        `INSERT INTO carrinho_itens (carrinho_id, produto_id, quantidade, valor_unitario)
-         VALUES (?, ?, ?, ?)`,
-        [carrinhoId, produtoIdNum, desired, produto.price]
-      );
+      await cartRepo.insertCartItem(conn, carrinhoId, produtoIdNum, desired, produto.price);
     }
 
     await conn.commit();
@@ -166,10 +122,7 @@ async function updateItem(userId, { produto_id, quantidade }) {
   try {
     await conn.beginTransaction();
 
-    const [[carrinho]] = await conn.query(
-      'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-      [userId]
-    );
+    const carrinho = await cartRepo.findOpenCart(conn, userId);
 
     if (!carrinho) {
       await conn.commit();
@@ -177,10 +130,7 @@ async function updateItem(userId, { produto_id, quantidade }) {
     }
 
     // lock product row (stock)
-    const [[produto]] = await conn.query(
-      "SELECT id, quantity FROM products WHERE id = ? FOR UPDATE",
-      [produtoIdNum]
-    );
+    const produto = await cartRepo.lockProduct(conn, produtoIdNum);
 
     if (!produto) {
       throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
@@ -195,10 +145,7 @@ async function updateItem(userId, { produto_id, quantidade }) {
       throw makeStockLimitError({ max: stock, requested: qtdNum, current: null });
     }
 
-    await conn.query(
-      "UPDATE carrinho_itens SET quantidade = ? WHERE carrinho_id = ? AND produto_id = ?",
-      [qtdNum, carrinho.id, produtoIdNum]
-    );
+    await cartRepo.updateCartItemByProduct(conn, carrinho.id, produtoIdNum, qtdNum);
 
     await conn.commit();
     return { produto_id: produtoIdNum, quantidade: qtdNum, stock, emptyCart: false };
@@ -227,20 +174,14 @@ async function removeItem(userId, produtoId) {
   try {
     await conn.beginTransaction();
 
-    const [[carrinho]] = await conn.query(
-      'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-      [userId]
-    );
+    const carrinho = await cartRepo.findOpenCart(conn, userId);
 
     if (!carrinho) {
       await conn.commit();
       return { removed: false };
     }
 
-    await conn.query(
-      "DELETE FROM carrinho_itens WHERE carrinho_id = ? AND produto_id = ?",
-      [carrinho.id, produtoId]
-    );
+    await cartRepo.deleteCartItem(conn, carrinho.id, produtoId);
 
     await conn.commit();
     return { removed: true };
@@ -268,25 +209,15 @@ async function clearCart(userId) {
   try {
     await conn.beginTransaction();
 
-    const [[carrinho]] = await conn.query(
-      'SELECT * FROM carrinhos WHERE usuario_id = ? AND status = "aberto" ORDER BY id DESC LIMIT 1',
-      [userId]
-    );
+    const carrinho = await cartRepo.findOpenCart(conn, userId);
 
     if (!carrinho) {
       await conn.commit();
       return { cleared: false };
     }
 
-    await conn.query(
-      "DELETE FROM carrinho_itens WHERE carrinho_id = ?",
-      [carrinho.id]
-    );
-
-    await conn.query(
-      'UPDATE carrinhos SET status = "fechado" WHERE id = ?',
-      [carrinho.id]
-    );
+    await cartRepo.deleteAllCartItems(conn, carrinho.id);
+    await cartRepo.closeCart(conn, carrinho.id);
 
     await conn.commit();
     return { cleared: true };

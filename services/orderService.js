@@ -1,11 +1,11 @@
 "use strict";
 
-const pool = require("../config/pool");
 const { dispararEventoComunicacao } = require("./comunicacaoService");
-const { restoreStock } = require("./checkoutService");
-const { parseAddress } = require("../utils/address");
+const pool = require("../config/pool");
+const orderRepo = require("../repositories/orderRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const { parseAddress } = require("../utils/address");
 
 // ---------------------------------------------------------------------------
 // Allowed status transitions — single source of truth for this domain.
@@ -63,39 +63,6 @@ function formatOrder(row, itens) {
 }
 
 // ---------------------------------------------------------------------------
-// Queries
-// ---------------------------------------------------------------------------
-
-const ORDER_SELECT = `
-  SELECT
-    p.id                          AS pedido_id,
-    p.usuario_id,
-    u.nome                        AS usuario_nome,
-    u.email                       AS usuario_email,
-    u.telefone                    AS usuario_telefone,
-    u.cpf                         AS usuario_cpf,
-    p.endereco,
-    p.forma_pagamento,
-    p.status_pagamento,
-    p.status_entrega,
-    p.total,
-    COALESCE(p.shipping_price, 0) AS shipping_price,
-    p.data_pedido
-  FROM pedidos p
-  JOIN usuarios u ON p.usuario_id = u.id
-`;
-
-const ITENS_SELECT = `
-  SELECT
-    pp.pedido_id,
-    pr.name        AS produto_nome,
-    pp.quantidade,
-    pp.valor_unitario AS preco_unitario
-  FROM pedidos_produtos pp
-  JOIN products pr ON pp.produto_id = pr.id
-`;
-
-// ---------------------------------------------------------------------------
 // Service functions
 // ---------------------------------------------------------------------------
 
@@ -105,8 +72,8 @@ const ITENS_SELECT = `
  * @returns {object[]}
  */
 async function listOrders() {
-  const [pedidos] = await pool.query(`${ORDER_SELECT} ORDER BY p.data_pedido DESC`);
-  const [itens] = await pool.query(ITENS_SELECT);
+  const pedidos = await orderRepo.findAllOrderRows();
+  const itens = await orderRepo.findAllOrderItems();
 
   return pedidos.map((p) =>
     formatOrder(
@@ -123,18 +90,10 @@ async function listOrders() {
  * @returns {object|null}
  */
 async function getOrderById(id) {
-  const [[pedido]] = await pool.query(
-    `${ORDER_SELECT} WHERE p.id = ?`,
-    [id]
-  );
-
+  const pedido = await orderRepo.findOrderRowById(id);
   if (!pedido) return null;
 
-  const [itens] = await pool.query(
-    `${ITENS_SELECT} WHERE pp.pedido_id = ?`,
-    [id]
-  );
-
+  const itens = await orderRepo.findOrderItemsById(id);
   return formatOrder(pedido, itens);
 }
 
@@ -142,7 +101,7 @@ async function getOrderById(id) {
  * Updates the payment status of an order.
  *
  * Rules:
- * - `status` field mirrors `status_pagamento` — both are updated together.
+ * - `status` field mirrors `status_pagamento` — both updated together.
  * - Dispatches `pagamento_aprovado` event when newStatus === "pago".
  *
  * @param {number|string} pedidoId
@@ -159,13 +118,8 @@ async function updatePaymentStatus(pedidoId, newStatus) {
     );
   }
 
-  // status mirrors status_pagamento — same rule applied in paymentWebhookService.
-  const [result] = await pool.query(
-    "UPDATE pedidos SET status_pagamento = ?, status = ? WHERE id = ?",
-    [newStatus, newStatus, pedidoId]
-  );
-
-  if (result.affectedRows === 0) return { found: false };
+  const affectedRows = await orderRepo.setPaymentStatus(pedidoId, newStatus);
+  if (affectedRows === 0) return { found: false };
 
   if (newStatus === "pago") {
     try {
@@ -189,9 +143,7 @@ async function updatePaymentStatus(pedidoId, newStatus) {
  * - Cancellation (newStatus === "cancelado") runs in a transaction:
  *     1. Locks the order row with FOR UPDATE (serializes concurrent cancels).
  *     2. Restores stock only if not already cancelled AND payment did not
- *        already fail (guard: status_pagamento <> 'falhou').
- *        This guard is critical — it prevents double-restore when the payment
- *        webhook already restored stock on failure.
+ *        already fail — guard prevents double-restore with webhook.
  *     3. Sets status_entrega = 'cancelado'.
  *
  * @param {number|string} pedidoId
@@ -214,10 +166,7 @@ async function updateDeliveryStatus(pedidoId, newStatus) {
       await conn.beginTransaction();
 
       // FOR UPDATE serializes concurrent cancellations on the same order.
-      const [[pedido]] = await conn.query(
-        "SELECT status_entrega, status_pagamento FROM pedidos WHERE id = ? FOR UPDATE",
-        [pedidoId]
-      );
+      const pedido = await orderRepo.lockOrderForUpdate(conn, pedidoId);
 
       if (!pedido) {
         await conn.rollback();
@@ -231,13 +180,10 @@ async function updateDeliveryStatus(pedidoId, newStatus) {
         pedido.status_entrega !== "cancelado" &&
         pedido.status_pagamento !== "falhou"
       ) {
-        await restoreStock(conn, pedidoId);
+        await orderRepo.restoreStock(conn, pedidoId);
       }
 
-      await conn.query(
-        "UPDATE pedidos SET status_entrega = 'cancelado' WHERE id = ?",
-        [pedidoId]
-      );
+      await orderRepo.setDeliveryStatus(conn, pedidoId, "cancelado");
 
       await conn.commit();
     } catch (err) {
@@ -247,12 +193,8 @@ async function updateDeliveryStatus(pedidoId, newStatus) {
       conn.release();
     }
   } else {
-    const [result] = await pool.query(
-      "UPDATE pedidos SET status_entrega = ? WHERE id = ?",
-      [newStatus, pedidoId]
-    );
-
-    if (result.affectedRows === 0) return { found: false };
+    const affectedRows = await orderRepo.setDeliveryStatus(pool, pedidoId, newStatus);
+    if (affectedRows === 0) return { found: false };
   }
 
   if (newStatus === "enviado") {
