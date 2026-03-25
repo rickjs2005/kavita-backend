@@ -67,7 +67,7 @@ Todas as rotas são montadas em `routes/index.js` sob o prefixo `/api`. **Nunca 
 
 Convenção de proteção:
 - Rotas admin: `verifyAdmin + validateCSRF`
-- Rotas autenticadas de usuário: `authenticateToken + validateCSRF` (ou `verifyUser`)
+- Rotas autenticadas de usuário: `authenticateToken + validateCSRF`
 - O `validateCSRF` é no-op para GET/HEAD/OPTIONS — só valida mutações
 
 ### Banco de dados
@@ -100,7 +100,7 @@ Dois contextos independentes de auth, ambos via cookie HttpOnly:
 | Contexto | Cookie | Validade | Middleware |
 |----------|--------|----------|------------|
 | Admin | `adminToken` | 2h | `verifyAdmin` |
-| Usuário | `auth_token` | 7d | `authenticateToken` / `verifyUser` |
+| Usuário | `auth_token` | 7d | `authenticateToken` |
 
 CSRF: double-submit cookie. Frontend obtém token em `GET /api/csrf-token`, envia em toda mutação no header `x-csrf-token` (deve coincidir com cookie `csrf_token`). O token é readable por JS (`httpOnly: false`).
 
@@ -124,3 +124,51 @@ Erros padronizados via `errors/AppError.js`. O handler global (`middleware/error
 - Ao responder sobre um bug: causa raiz → arquivos afetados → patch exato → como testar
 - Priorizar correções pequenas e reversíveis
 - Uploads seguem a convenção centralizada do `mediaService` — nunca usar `fs.writeFile` direto ou multer sem passar por `persistMedia`
+
+## Convenções (Phase 9 — fixadas em 2025-03)
+
+### Nomenclatura de arquivos
+
+| Camada | Padrão | Exemplos |
+|--------|--------|---------|
+| Rotas admin | `admin{Domínio}.js` | `adminDrones.js`, `adminProdutos.js` |
+| Rotas públicas | `public{Domínio}.js` | `publicDrones.js`, `publicProdutos.js` |
+| Controllers | `{domínio}Controller.js` ou subdir `{domínio}/` | `checkoutController.js`, `drones/galleryController.js` |
+| Services | `{domínio}Service.js` ou subdir `{domínio}/` | `cartService.js`, `drones/pageService.js` |
+| Repositories | `{domínio}Repository.js` | `cartRepository.js`, `orderRepository.js` |
+
+Domínios usam **português** para nomes de negócio existentes (pedidos, produtos, servicos).
+Novos módulos de infraestrutura podem usar inglês (auth, media, cache).
+
+### Middleware de autenticação
+
+- **`authenticateToken`** — padrão para rotas de usuário. **Sempre use este**.
+- `verifyAdmin` — rotas admin.
+- `verifyUser` — **removido**. Era alias de `authenticateToken`; não existe mais.
+- `requireRole` — **removido**. Era código morto; usar `verifyAdmin` que já valida papel.
+
+### Validação
+
+| Local | Sistema | Quando usar |
+|-------|---------|-------------|
+| `schemas/` | **Zod** | Todos os módulos novos e refatorados |
+| `validators/authValidator.js` | express-validator | Rotas de auth **apenas** (legado, não estender) |
+| Inline `if (!campo)...` em rota | — | **Proibido** em código novo |
+
+Use `middleware/validate.js` para aplicar schemas Zod como middleware de rota.
+Use `formatDronesErrors(zodError)` → `{ field, reason }` no módulo drones.
+Use `formatZodErrors(zodError)` → `{ field, message }` nos demais módulos.
+
+### Resposta da API
+
+Helper oficial: `lib/response.js` (exportado por `lib/index.js`).
+
+```js
+const { response } = require("../lib");
+response.ok(res, data);
+response.created(res, data);
+response.paginated(res, { items, total, page, limit });
+response.badRequest(res, message, details);
+```
+
+Módulos legados usam `res.json(...)` direto — migrar aos poucos, não de uma vez.
