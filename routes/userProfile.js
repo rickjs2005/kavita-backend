@@ -1,7 +1,7 @@
 // routes/userProfile.js
 const express = require("express");
 const router = express.Router();
-const pool = require("../config/pool");
+const userRepo = require("../repositories/userRepository");
 const { sanitizeCPF, isValidCPF } = require("../utils/cpf");
 const authenticateToken = require("../middleware/authenticateToken");
 const verifyAdmin = require("../middleware/verifyAdmin");
@@ -101,21 +101,11 @@ router.get("/me", authenticateToken, async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
-      `
-      SELECT 
-        id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia
-      FROM usuarios
-      WHERE id = ?
-    `,
-      [userId]
-    );
-
-    if (!rows.length) {
+    const user = await userRepo.findProfileById(userId);
+    if (!user) {
       return res.status(404).json({ mensagem: "Usuário não encontrado." });
     }
-
-    return res.json(rows[0]);
+    return res.json(user);
   } catch (e) {
     console.error("GET /me erro:", e);
     return res.status(500).json({ mensagem: "Erro interno." });
@@ -149,11 +139,7 @@ router.put("/me", authenticateToken, async (req, res) => {
           return res.status(400).json({ mensagem: "CPF inválido." });
         }
 
-        const [outros] = await pool.query(
-          "SELECT id FROM usuarios WHERE cpf = ? AND id <> ?",
-          [cpfLimpo, userId]
-        );
-        if (outros.length > 0) {
+        if (await userRepo.cpfExistsForOtherUser(cpfLimpo, userId)) {
           return res
             .status(409)
             .json({ mensagem: "CPF já cadastrado para outro usuário." });
@@ -186,22 +172,10 @@ router.put("/me", authenticateToken, async (req, res) => {
       return res.status(400).json({ mensagem: "Nada para atualizar." });
     }
 
-    await pool.query(`UPDATE usuarios SET ${sets.join(", ")} WHERE id = ?`, [
-      ...values,
-      userId,
-    ]);
+    await userRepo.updateUserById(userId, sets, values);
 
-    const [rows] = await pool.query(
-      `
-      SELECT
-        id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia
-      FROM usuarios
-      WHERE id = ?
-    `,
-      [userId]
-    );
-
-    return res.json(rows[0]);
+    const updated = await userRepo.findProfileById(userId);
+    return res.json(updated);
   } catch (e) {
     console.error("PUT /me erro:", e);
     return res.status(500).json({ mensagem: "Erro interno ao salvar." });
@@ -218,21 +192,11 @@ router.get("/admin/:id", verifyAdmin, async (req, res) => {
   if (!id) return res.status(400).json({ mensagem: "ID inválido." });
 
   try {
-    const [rows] = await pool.query(
-      `
-      SELECT 
-        id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia, status_conta
-      FROM usuarios 
-      WHERE id = ?
-    `,
-      [id]
-    );
-
-    if (!rows.length) {
+    const user = await userRepo.findProfileByIdAdmin(id);
+    if (!user) {
       return res.status(404).json({ mensagem: "Usuário não encontrado." });
     }
-
-    return res.json(rows[0]);
+    return res.json(user);
   } catch (e) {
     console.error("ADMIN GET erro:", e);
     return res.status(500).json({ mensagem: "Erro interno." });
@@ -259,11 +223,7 @@ router.put("/admin/:id", verifyAdmin, async (req, res) => {
           return res.status(400).json({ mensagem: "CPF inválido." });
         }
 
-        const [outros] = await pool.query(
-          "SELECT id FROM usuarios WHERE cpf = ? AND id <> ?",
-          [cpfLimpo, id]
-        );
-        if (outros.length > 0) {
+        if (await userRepo.cpfExistsForOtherUser(cpfLimpo, id)) {
           return res
             .status(409)
             .json({ mensagem: "CPF já cadastrado para outro usuário." });
@@ -296,26 +256,13 @@ router.put("/admin/:id", verifyAdmin, async (req, res) => {
       return res.status(400).json({ mensagem: "Nada para atualizar." });
     }
 
-    await pool.query(`UPDATE usuarios SET ${sets.join(", ")} WHERE id = ?`, [
-      ...values,
-      id,
-    ]);
+    await userRepo.updateUserById(id, sets, values);
 
-    const [rows] = await pool.query(
-      `
-      SELECT 
-        id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia, status_conta
-      FROM usuarios
-      WHERE id = ?
-    `,
-      [id]
-    );
-
-    if (!rows.length) {
+    const updated = await userRepo.findProfileByIdAdmin(id);
+    if (!updated) {
       return res.status(404).json({ mensagem: "Usuário não encontrado." });
     }
-
-    return res.json(rows[0]);
+    return res.json(updated);
   } catch (e) {
     console.error("ADMIN PUT erro:", e);
     return res.status(500).json({ mensagem: "Erro interno." });

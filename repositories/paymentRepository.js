@@ -217,22 +217,6 @@ async function markWebhookEventProcessed(conn, dbEventId, status) {
 }
 
 /**
- * Restaura estoque dos produtos do pedido (apenas se pedido ainda não está 'falhou').
- * @param {import("mysql2").PoolConnection} conn
- */
-async function restoreStockOnFailure(conn, pedidoId) {
-  await conn.query(
-    `UPDATE products p
-        JOIN pedidos_produtos pp ON pp.produto_id = p.id
-        JOIN pedidos ped         ON ped.id        = pp.pedido_id
-       SET p.quantity = p.quantity + pp.quantidade
-     WHERE pp.pedido_id = ?
-       AND ped.status_pagamento <> 'falhou'`,
-    [pedidoId]
-  );
-}
-
-/**
  * Atualiza status_pagamento, status e pagamento_id de forma idempotente.
  * Só executa se o estado ou pagamento_id mudou.
  * @param {import("mysql2").PoolConnection} conn
@@ -265,6 +249,5 @@ module.exports = {
   markWebhookEventReceived,
   markWebhookEventIgnored,
   markWebhookEventProcessed,
-  restoreStockOnFailure,
   updatePedidoPayment,
 };

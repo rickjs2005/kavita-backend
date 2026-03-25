@@ -1,11 +1,11 @@
 // controllers/authController.js
 const bcrypt = require("bcrypt");
-const pool = require("../config/pool");
 const authConfig = require("../config/auth");
 const jwt = require("jsonwebtoken");
 const passwordResetTokens = require("../services/passwordResetTokenService");
 const { sendResetPasswordEmail } = require("../services/mailService");
 const { assertNotLocked, incrementFailure, resetFailures, syncFromRedis } = require("../utils/accountLockout");
+const userRepo = require("../repositories/userRepository");
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -57,18 +57,13 @@ const AuthController = {
       await syncFromRedis(lockoutKey);
       assertNotLocked(lockoutKey);
 
-      const [users] = await pool.query(
-        "SELECT id, nome, email, senha, tokenVersion FROM usuarios WHERE email = ?",
-        [email]
-      );
+      const user = await userRepo.findUserByEmail(email);
 
-      if (users.length === 0) {
+      if (!user) {
         await incrementFailure(lockoutKey);
         req.rateLimit?.fail?.();
         return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
       }
-
-      const user = users[0];
 
       const ok = await bcrypt.compare(senha, user.senha);
       if (!ok) {
@@ -107,13 +102,12 @@ const AuthController = {
     const { nome, email, senha } = req.body;
 
     try {
-      const [users] = await pool.query("SELECT id FROM usuarios WHERE email = ?", [email]);
-      if (users.length > 0) {
+      if (await userRepo.emailExists(email)) {
         return next(new AppError("Este email já está cadastrado.", ERROR_CODES.VALIDATION_ERROR, 400));
       }
 
       const hashed = await bcrypt.hash(senha, 10);
-      await pool.query("INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?)", [nome, email, hashed]);
+      await userRepo.createUser({ nome, email, senha: hashed });
 
       return res.status(201).json({ message: "Usuário cadastrado com sucesso!" });
     } catch (error) {
@@ -127,11 +121,7 @@ const AuthController = {
       // Increment tokenVersion to invalidate all existing JWT tokens for this user
       const userId = req.user?.id;
       if (userId) {
-        // ✅ FIX: COALESCE garante que NULL + 1 = 1 em vez de NULL (MySQL behavior)
-        await pool.query(
-          "UPDATE usuarios SET tokenVersion = COALESCE(tokenVersion, 0) + 1 WHERE id = ?",
-          [userId]
-        );
+        await userRepo.incrementTokenVersion(userId);
       }
       res.clearCookie("auth_token", getAuthCookieOptions());
       return res.status(200).json({ message: "Logout bem-sucedido!" });
@@ -149,22 +139,21 @@ const AuthController = {
         return next(new AppError("Email é obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400));
       }
 
-      const [rows] = await pool.execute("SELECT id FROM usuarios WHERE email = ?", [email]);
+      const userRow = await userRepo.findUserByEmail(email);
 
       // segurança: resposta neutra
-      if (!rows || rows.length === 0) {
+      if (!userRow) {
         req.rateLimit?.reset?.();
         return res.status(200).json({
           mensagem: "Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.",
         });
       }
 
-      const user = rows[0];
       const token = passwordResetTokens.generateToken();
       const expires = new Date(Date.now() + 3600000);
 
-      await passwordResetTokens.revokeAllForUser(user.id);
-      await passwordResetTokens.storeToken(user.id, token, expires);
+      await passwordResetTokens.revokeAllForUser(userRow.id);
+      await passwordResetTokens.storeToken(userRow.id, token, expires);
       await sendResetPasswordEmail(email, token);
 
       req.rateLimit?.reset?.();
@@ -194,7 +183,7 @@ const AuthController = {
       }
 
       const novaSenhaHash = await bcrypt.hash(novaSenha, 10);
-      await pool.execute("UPDATE usuarios SET senha = ? WHERE id = ?", [novaSenhaHash, record.user_id]);
+      await userRepo.updatePassword(record.user_id, novaSenhaHash);
 
       await passwordResetTokens.revokeToken(record.id);
       await passwordResetTokens.revokeAllForUser(record.user_id);

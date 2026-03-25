@@ -4,6 +4,7 @@
 const { Payment } = require("mercadopago");
 const { getMPClient } = require("../config/mercadopago");
 const repo = require("../repositories/paymentRepository");
+const orderRepo = require("../repositories/orderRepository");
 
 // ---------------------------------------------------------------------------
 // Status mapping
@@ -96,8 +97,9 @@ async function handleWebhookEvent({
 
   // Restaura estoque ANTES de atualizar status para que a guarda de idempotência
   // funcione corretamente em duplicatas com event_id diferente.
+  // Stock operations are owned by orderRepository.
   if (novoStatus === "falhou") {
-    await repo.restoreStockOnFailure(conn, pedidoId);
+    await orderRepo.restoreStockOnFailure(conn, pedidoId);
   }
 
   await repo.updatePedidoPayment(conn, pedidoId, novoStatus, dataId);

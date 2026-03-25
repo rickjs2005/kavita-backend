@@ -140,14 +140,12 @@ async function lockOrderForUpdate(conn, pedidoId) {
 }
 
 /**
- * Restores stock for all items of a cancelled or failed order.
+ * Restores stock for all items of a cancelled order.
  *
  * Accepts pool (standalone) or conn (inside a transaction).
- *
- * Callers MUST apply the idempotency guard before calling this function:
- *   - orderService guard: status_entrega <> 'cancelado' AND status_pagamento <> 'falhou'
- *   - paymentRepository guard: embeds its guard directly in SQL (status_pagamento <> 'falhou')
- * The guard prevents double-restore when webhook and admin-cancel both fire.
+ * No SQL-level idempotency guard — callers MUST apply the pre-check:
+ *   status_entrega <> 'cancelado' AND status_pagamento <> 'falhou'
+ * (see orderService.updateDeliveryStatus for the authoritative guard)
  *
  * @param {object} db  pool or connection
  * @param {number|string} pedidoId
@@ -158,6 +156,33 @@ async function restoreStock(db, pedidoId) {
         JOIN pedidos_produtos pp ON pp.produto_id = p.id
         SET p.quantity = p.quantity + pp.quantidade
       WHERE pp.pedido_id = ?`,
+    [pedidoId]
+  );
+}
+
+/**
+ * Restores stock for all items of a payment-failed order.
+ * Used exclusively by the payment webhook path.
+ *
+ * Unlike restoreStock, the idempotency guard is embedded in the SQL:
+ *   AND ped.status_pagamento <> 'falhou'
+ * This prevents double-restore when a webhook fires twice with different
+ * event IDs: the first run sets status to 'falhou', the second run sees it
+ * and skips the UPDATE automatically.
+ *
+ * Must be called inside an open transaction on `conn`.
+ *
+ * @param {object} conn  MySQL2 connection (inside a transaction)
+ * @param {number|string} pedidoId
+ */
+async function restoreStockOnFailure(conn, pedidoId) {
+  await conn.query(
+    `UPDATE products p
+        JOIN pedidos_produtos pp ON pp.produto_id = p.id
+        JOIN pedidos ped         ON ped.id        = pp.pedido_id
+       SET p.quantity = p.quantity + pp.quantidade
+     WHERE pp.pedido_id = ?
+       AND ped.status_pagamento <> 'falhou'`,
     [pedidoId]
   );
 }
@@ -175,4 +200,5 @@ module.exports = {
   setDeliveryStatus,
   lockOrderForUpdate,
   restoreStock,
+  restoreStockOnFailure,
 };

@@ -6,6 +6,8 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { getQuote, parseCep, normalizeItems } = require("../services/shippingQuoteService");
 const { validateCSRF } = require("../middleware/csrfProtection");
+const { validate } = require("../middleware/validate");
+const { checkoutBodySchema } = require("../schemas/checkoutSchemas");
 
 /* ------------------------------------------------------------------ */
 /*                               Swagger                              */
@@ -237,170 +239,8 @@ const { validateCSRF } = require("../middleware/csrfProtection");
  */
 
 /* ------------------------------------------------------------------ */
-/*                           Helpers / Normalização                    */
+/*            Body validation — see schemas/checkoutSchemas.js        */
 /* ------------------------------------------------------------------ */
-
-function isNonEmptyString(v) {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
-function asStr(v) {
-  return typeof v === "string" ? v.trim() : "";
-}
-
-function upper(v, fallback) {
-  const s = asStr(v) || (fallback || "");
-  return s.toUpperCase();
-}
-
-function normalizeEntregaTipo(raw) {
-  const tipo = upper(raw, "ENTREGA");
-  if (tipo !== "ENTREGA" && tipo !== "RETIRADA") return "ENTREGA";
-  return tipo;
-}
-
-/**
- * Normaliza "endereco" aceitando aliases do frontend e do legado:
- * - rua | endereco | logradouro
- * - ponto_referencia | referencia | complemento
- */
-function normalizeCheckoutEndereco(rawEndereco) {
-  const e = rawEndereco && typeof rawEndereco === "object" ? rawEndereco : {};
-
-  const tipo_localidade = upper(e.tipo_localidade, "URBANA") === "RURAL" ? "RURAL" : "URBANA";
-
-  const rua = asStr(e.rua) || asStr(e.endereco) || asStr(e.logradouro);
-
-  const ponto_referencia =
-    asStr(e.ponto_referencia) ||
-    asStr(e.referencia) ||
-    asStr(e.complemento);
-
-  const observacoes_acesso = asStr(e.observacoes_acesso);
-  const comunidade = asStr(e.comunidade);
-
-  const sem_numero =
-    e.sem_numero === true ||
-    upper(e.sem_numero) === "TRUE" ||
-    upper(e.sem_numero) === "1";
-
-  const numero = asStr(e.numero);
-
-  return {
-    ...e,
-    cep: asStr(e.cep),
-    cidade: asStr(e.cidade),
-    estado: upper(e.estado),
-    tipo_localidade,
-    rua,
-    bairro: asStr(e.bairro),
-    numero,
-    sem_numero,
-    ponto_referencia,
-    observacoes_acesso,
-    comunidade,
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/*                           Validação básica                         */
-/* ------------------------------------------------------------------ */
-
-function validateCheckoutBody(req, _res, next) {
-  const body = req.body || {};
-  const errors = [];
-
-  // usuário vem exclusivamente do token
-  const usuarioIdFromToken = req.user?.id;
-
-  if (!usuarioIdFromToken) {
-    return next(
-      new AppError(
-        "Usuário não autenticado para realizar o checkout.",
-        ERROR_CODES.AUTH_ERROR,
-        401
-      )
-    );
-  }
-
-  // normaliza entrega_tipo (default ENTREGA)
-  body.entrega_tipo = normalizeEntregaTipo(body.entrega_tipo);
-
-  const { endereco, produtos } = body;
-
-  // ENTREGA => endereço obrigatório; RETIRADA => endereço opcional
-  if (body.entrega_tipo === "ENTREGA") {
-    if (!endereco) {
-      errors.push("endereco é obrigatório quando entrega_tipo = ENTREGA.");
-    } else {
-      const endNorm = normalizeCheckoutEndereco(endereco);
-      body.endereco = endNorm; // normaliza no payload (compatível com controller)
-
-      // obrigatórios comuns
-      if (!endNorm.cep) errors.push("endereco.cep é obrigatório.");
-      if (!endNorm.cidade) errors.push("endereco.cidade é obrigatório.");
-      if (!endNorm.estado) errors.push("endereco.estado é obrigatório.");
-
-      // valida tipo_localidade
-      if (endNorm.tipo_localidade !== "URBANA" && endNorm.tipo_localidade !== "RURAL") {
-        errors.push("endereco.tipo_localidade deve ser 'URBANA' ou 'RURAL'.");
-      }
-
-      if (endNorm.tipo_localidade === "URBANA") {
-        // URBANA: rua + bairro obrigatórios
-        if (!endNorm.rua) errors.push("endereco.rua é obrigatório.");
-        if (!endNorm.bairro) errors.push("endereco.bairro é obrigatório.");
-
-        // número obrigatório, com opção "não tem número"
-        if (!endNorm.sem_numero && !endNorm.numero) {
-          errors.push("endereco.numero é obrigatório.");
-        }
-        if (endNorm.sem_numero && !endNorm.numero) {
-          body.endereco.numero = "S/N";
-        }
-      } else {
-        // RURAL: exige comunidade + observacoes_acesso (ou ponto_referencia)
-        if (!isNonEmptyString(endNorm.comunidade)) {
-          errors.push("endereco.comunidade é obrigatório quando tipo_localidade = RURAL.");
-        }
-
-        const ref = endNorm.observacoes_acesso || endNorm.ponto_referencia;
-        if (!isNonEmptyString(ref)) {
-          errors.push(
-            "endereco.observacoes_acesso (ou ponto_referencia) é obrigatório quando tipo_localidade = RURAL."
-          );
-        }
-      }
-    }
-  } else {
-    // RETIRADA: se vier endereco, normaliza para consistência, mas não exige campos
-    if (endereco) {
-      body.endereco = normalizeCheckoutEndereco(endereco);
-    }
-  }
-
-  // produtos obrigatórios sempre (ENTREGA e RETIRADA)
-  if (!Array.isArray(produtos) || produtos.length === 0) {
-    errors.push("produtos deve ser um array com ao menos um item.");
-  } else {
-    produtos.forEach((p, i) => {
-      if (!p.id) errors.push(`produtos[${i}].id é obrigatório.`);
-      if (!Number.isInteger(p.quantidade) || p.quantidade <= 0) {
-        errors.push(`produtos[${i}].quantidade deve ser um inteiro maior que zero.`);
-      }
-    });
-  }
-
-  if (errors.length > 0) {
-    return next(new AppError(errors.join(" "), ERROR_CODES.VALIDATION_ERROR, 400));
-  }
-
-  // compatibilidade com controller/logs (deprecated)
-  req.body = body;
-  req.body.usuario_id = usuarioIdFromToken;
-
-  return next();
-}
 
 /* ------------------------------------------------------------------ */
 /*                 Resolve o handler do controller                     */
@@ -442,7 +282,9 @@ if (typeof controller === "function") {
 async function recalcShippingMiddleware(req, _res, next) {
   try {
     const body = req.body || {};
-    const entregaTipo = normalizeEntregaTipo(body.entrega_tipo);
+    // entrega_tipo is already normalized by checkoutBodySchema — defensive re-check
+    const tipo = String(body.entrega_tipo || "").trim().toUpperCase();
+    const entregaTipo = tipo === "RETIRADA" ? "RETIRADA" : "ENTREGA";
 
     // RETIRADA: sem frete e sem prazo
     if (entregaTipo === "RETIRADA") {
@@ -576,7 +418,7 @@ router.post(
   "/",
   authenticateToken,
   validateCSRF,
-  validateCheckoutBody,
+  validate(checkoutBodySchema),
   recalcShippingMiddleware,
   checkoutHandler
 );

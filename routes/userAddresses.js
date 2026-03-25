@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/pool");
+const addressRepo = require("../repositories/addressRepository");
 const authenticateToken = require("../middleware/authenticateToken");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -406,32 +407,7 @@ router.use(authenticateToken);
 router.get("/", async (req, res, next) => {
   try {
     const userId = req.user?.id;
-
-    const [rows] = await pool.query(
-      `
-      SELECT
-        id,
-        apelido,
-        cep,
-        endereco,
-        numero,
-        bairro,
-        cidade,
-        estado,
-        complemento,
-        ponto_referencia,
-        telefone,
-        is_default,
-        tipo_localidade,
-        comunidade,
-        observacoes_acesso
-      FROM enderecos_usuario
-      WHERE usuario_id = ?
-      ORDER BY is_default DESC, id DESC
-      `,
-      [userId]
-    );
-
+    const rows = await addressRepo.findByUserId(userId);
     return res.json(rows);
   } catch (err) {
     return next(
@@ -459,73 +435,16 @@ router.post("/", async (req, res, next) => {
       );
     }
 
-    const {
-      apelido,
-      cep,
-      endereco,
-      numero,
-      bairro,
-      cidade,
-      estado,
-      complemento,
-      ponto_referencia,
-      telefone,
-      is_default,
-      tipo_localidade,
-      comunidade,
-      observacoes_acesso,
-    } = norm.data;
-
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
 
       // Se marcar como default, desmarca os outros
-      if (is_default) {
-        await connection.query(
-          "UPDATE enderecos_usuario SET is_default = 0 WHERE usuario_id = ?",
-          [userId]
-        );
+      if (norm.data.is_default) {
+        await addressRepo.clearDefaultForUser(connection, userId);
       }
 
-      await connection.query(
-        `
-        INSERT INTO enderecos_usuario (
-          usuario_id,
-          apelido,
-          cep,
-          endereco,
-          numero,
-          bairro,
-          cidade,
-          estado,
-          complemento,
-          ponto_referencia,
-          telefone,
-          is_default,
-          tipo_localidade,
-          comunidade,
-          observacoes_acesso
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          userId,
-          apelido,
-          cep,
-          endereco,
-          numero,
-          bairro,
-          cidade,
-          estado,
-          complemento,
-          ponto_referencia,
-          telefone,
-          is_default,
-          tipo_localidade,
-          comunidade,
-          observacoes_acesso,
-        ]
-      );
+      await addressRepo.createAddress(connection, userId, norm.data);
 
       await connection.commit();
       return res.status(201).json({ success: true });
@@ -574,73 +493,15 @@ router.put("/:id", async (req, res, next) => {
       );
     }
 
-    const {
-      apelido,
-      cep,
-      endereco,
-      numero,
-      bairro,
-      cidade,
-      estado,
-      complemento,
-      ponto_referencia,
-      telefone,
-      is_default,
-      tipo_localidade,
-      comunidade,
-      observacoes_acesso,
-    } = norm.data;
-
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
 
-      if (is_default) {
-        await connection.query(
-          "UPDATE enderecos_usuario SET is_default = 0 WHERE usuario_id = ?",
-          [userId]
-        );
+      if (norm.data.is_default) {
+        await addressRepo.clearDefaultForUser(connection, userId);
       }
 
-      const [result] = await connection.query(
-        `
-        UPDATE enderecos_usuario
-        SET
-          apelido = ?,
-          cep = ?,
-          endereco = ?,
-          numero = ?,
-          bairro = ?,
-          cidade = ?,
-          estado = ?,
-          complemento = ?,
-          ponto_referencia = ?,
-          telefone = ?,
-          is_default = ?,
-          tipo_localidade = ?,
-          comunidade = ?,
-          observacoes_acesso = ?
-        WHERE id = ? AND usuario_id = ?
-        `,
-        [
-          apelido,
-          cep,
-          endereco,
-          numero,
-          bairro,
-          cidade,
-          estado,
-          complemento,
-          ponto_referencia,
-          telefone,
-          is_default,
-          tipo_localidade,
-          comunidade,
-          observacoes_acesso,
-          addressId,
-          userId,
-        ]
-      );
+      const result = await addressRepo.updateAddress(connection, addressId, userId, norm.data);
 
       if (result.affectedRows === 0) {
         throw new AppError(
@@ -679,10 +540,7 @@ router.delete("/:id", async (req, res, next) => {
     const userId = req.user?.id;
     const addressId = Number(req.params.id);
 
-    const [result] = await pool.query(
-      "DELETE FROM enderecos_usuario WHERE id = ? AND usuario_id = ?",
-      [addressId, userId]
-    );
+    const result = await addressRepo.deleteById(userId, addressId);
 
     if (result.affectedRows === 0) {
       return next(
