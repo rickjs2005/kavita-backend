@@ -9,6 +9,67 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 
 // ---------------------------------------------------------------------------
+// Coupon validation (shared between preview and real checkout)
+// ---------------------------------------------------------------------------
+
+/**
+ * Validates a coupon row against the given subtotal.
+ * Throws AppError for any rule violation.
+ * Does NOT touch the database — no usage increment here.
+ *
+ * @param {object} cupom   Row from cupons table
+ * @param {number} subtotal  Pre-coupon order total
+ * @returns {{ desconto: number, cupomAplicado: object }}
+ */
+function _validateCoupon(cupom, subtotal) {
+  if (!cupom.ativo) {
+    throw new AppError("Este cupom está inativo.", ERROR_CODES.VALIDATION_ERROR, 400);
+  }
+
+  if (cupom.expiracao) {
+    const exp = new Date(cupom.expiracao);
+    if (exp.getTime() < Date.now()) {
+      throw new AppError("Este cupom está expirado.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+  }
+
+  const usos = Number(cupom.usos || 0);
+  const maxUsos =
+    cupom.max_usos === null || cupom.max_usos === undefined
+      ? null
+      : Number(cupom.max_usos);
+
+  if (maxUsos !== null && usos >= maxUsos) {
+    throw new AppError(
+      "Este cupom já atingiu o limite de usos.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
+
+  const minimo = Number(cupom.minimo || 0);
+  if (minimo > 0 && subtotal < minimo) {
+    throw new AppError(
+      `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(2)}.`,
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
+
+  const valor = Number(cupom.valor || 0);
+  let desconto =
+    cupom.tipo === "percentual" ? (subtotal * valor) / 100 : valor;
+
+  if (desconto < 0) desconto = 0;
+  if (desconto > subtotal) desconto = subtotal;
+
+  return {
+    desconto,
+    cupomAplicado: { id: cupom.id, codigo: cupom.codigo, tipo: cupom.tipo, valor },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Stock operations — exported for backward compatibility.
 // restoreStock is now owned by orderRepository; re-exported here so that
 // existing callers (orderService) can migrate at their own pace.
@@ -249,65 +310,10 @@ async function create(userId, body) {
           );
         }
 
-        if (!cupom.ativo) {
-          throw new AppError(
-            "Este cupom está inativo.",
-            ERROR_CODES.VALIDATION_ERROR,
-            400
-          );
-        }
-
-        if (cupom.expiracao) {
-          const exp = new Date(cupom.expiracao);
-          if (exp.getTime() < Date.now()) {
-            throw new AppError(
-              "Este cupom está expirado.",
-              ERROR_CODES.VALIDATION_ERROR,
-              400
-            );
-          }
-        }
-
-        const usos = Number(cupom.usos || 0);
-        const maxUsos =
-          cupom.max_usos === null || cupom.max_usos === undefined
-            ? null
-            : Number(cupom.max_usos);
-
-        if (maxUsos !== null && usos >= maxUsos) {
-          throw new AppError(
-            "Este cupom já atingiu o limite de usos.",
-            ERROR_CODES.VALIDATION_ERROR,
-            400
-          );
-        }
-
-        const minimo = Number(cupom.minimo || 0);
-        if (minimo > 0 && totalPedido < minimo) {
-          throw new AppError(
-            `Este cupom exige um valor mínimo de R$ ${minimo.toFixed(2)}.`,
-            ERROR_CODES.VALIDATION_ERROR,
-            400
-          );
-        }
-
-        const valor = Number(cupom.valor || 0);
-        let desconto =
-          cupom.tipo === "percentual"
-            ? (totalPedido * valor) / 100
-            : valor;
-
-        if (desconto < 0) desconto = 0;
-        if (desconto > totalPedido) desconto = totalPedido;
-
+        const { desconto, cupomAplicado: info } = _validateCoupon(cupom, totalPedido);
         descontoTotal = desconto;
         totalFinal = totalPedido - descontoTotal;
-        cupomAplicado = {
-          id: cupom.id,
-          codigo: cupom.codigo,
-          tipo: cupom.tipo,
-          valor,
-        };
+        cupomAplicado = info;
 
         await checkoutRepo.incrementCouponUsage(connection, cupom.id);
       } catch (errCupom) {
@@ -398,7 +404,81 @@ async function create(userId, body) {
 }
 
 // ---------------------------------------------------------------------------
+// Preview coupon (read-only — no transaction, no usage increment)
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculates the discount for a coupon without creating an order.
+ * Uses the same pricing rules and validation logic as the real checkout.
+ *
+ * @param {{ codigo: string, produtos: Array<{ id: number, quantidade: number }> }} params
+ * @returns {{ desconto: number, total_original: number, total_com_desconto: number, cupom: object }}
+ */
+async function previewCoupon({ codigo, produtos }) {
+  const codigoNorm = String(codigo).trim();
+
+  const items = (Array.isArray(produtos) ? produtos : []).filter(
+    (p) => Number.isFinite(Number(p.id)) && Number(p.id) > 0
+  );
+
+  if (!items.length) {
+    throw new AppError(
+      "Informe os produtos para calcular o cupom.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
+
+  const ids = items.map((p) => Number(p.id));
+
+  const [prodRows, promoRows, cupom] = await Promise.all([
+    checkoutRepo.getProductPrices(pool, ids),
+    checkoutRepo.getActivePromotions(pool, ids),
+    checkoutRepo.findCouponByCode(pool, codigoNorm),
+  ]);
+
+  if (!cupom) {
+    throw new AppError(
+      "Cupom inválido ou não encontrado.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
+
+  const precos = {};
+  prodRows.forEach((r) => { precos[Number(r.id)] = Number(r.price); });
+  const promos = {};
+  promoRows.forEach((r) => { promos[Number(r.product_id)] = Number(r.final_price); });
+
+  let subtotal = 0;
+  for (const item of items) {
+    const id = Number(item.id);
+    const qty = Number(item.quantidade || 0);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const preco = promos[id] ?? precos[id] ?? 0;
+    subtotal += preco * qty;
+  }
+
+  if (!Number.isFinite(subtotal) || subtotal <= 0) {
+    throw new AppError(
+      "Total inválido para cálculo do cupom.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
+
+  const { desconto, cupomAplicado } = _validateCoupon(cupom, subtotal);
+
+  return {
+    desconto,
+    total_original: subtotal,
+    total_com_desconto: subtotal - desconto,
+    cupom: cupomAplicado,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = { create, reserveStock, restoreStock };
+module.exports = { create, reserveStock, restoreStock, previewCoupon };

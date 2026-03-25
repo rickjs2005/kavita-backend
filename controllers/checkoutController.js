@@ -113,8 +113,53 @@ async function create(req, res, next) {
   }
 }
 
+/**
+ * POST /api/checkout/preview-cupom
+ *
+ * Validates a coupon and returns the calculated discount without creating an order.
+ * Preserves the same response shape as the legacy inline route handler.
+ */
+async function previewCoupon(req, res, next) {
+  const { codigo, produtos } = req.body || {};
+
+  if (!codigo || !String(codigo).trim()) {
+    return next(
+      new AppError("Informe o código do cupom.", ERROR_CODES.VALIDATION_ERROR, 400)
+    );
+  }
+
+  if (!Array.isArray(produtos) || produtos.length === 0) {
+    return next(
+      new AppError(
+        "Informe os produtos para calcular o cupom.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400
+      )
+    );
+  }
+
+  try {
+    const result = await checkoutService.previewCoupon({ codigo, produtos });
+    return res.status(200).json({
+      success: true,
+      message: "Cupom aplicado com sucesso.",
+      desconto: result.desconto,
+      total_original: result.total_original,
+      total_com_desconto: result.total_com_desconto,
+      cupom: result.cupom,
+    });
+  } catch (err) {
+    console.error("[checkout] Erro em /preview-cupom:", err);
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao validar o cupom.", ERROR_CODES.SERVER_ERROR, 500)
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = { create };
+module.exports = { create, previewCoupon };

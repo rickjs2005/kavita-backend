@@ -168,6 +168,41 @@ async function debitStock(conn, productId, quantidade) {
 }
 
 /**
+ * Returns product prices (id, price) for the given IDs.
+ * Read-only — does not require a transaction.
+ *
+ * @param {object} dbOrConn  MySQL2 pool or connection
+ * @param {number[]} ids  Product IDs
+ * @returns {object[]}  Rows with { id, price }
+ */
+async function getProductPrices(dbOrConn, ids) {
+  const [rows] = await dbOrConn.query(
+    "SELECT id, price FROM products WHERE id IN (?)",
+    [ids]
+  );
+  return rows;
+}
+
+/**
+ * Finds a coupon by code without locking (read-only, for preview).
+ * Use lockCoupon (FOR UPDATE) inside a transaction when actually applying it.
+ *
+ * @param {object} dbOrConn  MySQL2 pool or connection
+ * @param {string} codigo
+ * @returns {object|null}
+ */
+async function findCouponByCode(dbOrConn, codigo) {
+  const [rows] = await dbOrConn.query(
+    `SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, ativo
+       FROM cupons
+      WHERE codigo = ?
+      LIMIT 1`,
+    [codigo]
+  );
+  return rows && rows.length > 0 ? rows[0] : null;
+}
+
+/**
  * Locks a coupon row with FOR UPDATE and returns it, or null if not found.
  *
  * @param {object} conn
@@ -311,9 +346,11 @@ module.exports = {
   findRecentOrders,
   createOrder,
   lockProducts,
+  getProductPrices,
   getActivePromotions,
   insertOrderItem,
   debitStock,
+  findCouponByCode,
   lockCoupon,
   incrementCouponUsage,
   updateOrderTotal,
