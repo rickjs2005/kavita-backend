@@ -3,31 +3,11 @@
 const dronesService = require("../../services/dronesService");
 const AppError = require("../../errors/AppError");
 const { sendError } = require("./helpers");
-
-function normalizePhoneDigits(v) {
-  return String(v || "").replace(/\D/g, "");
-}
-
-function validateRepresentativePayload(body = {}) {
-  const errors = [];
-
-  if (!body.name || !String(body.name).trim()) {
-    errors.push({ field: "name", reason: "obrigatório" });
-  }
-
-  const digits = normalizePhoneDigits(body.whatsapp || "");
-  if (!digits) {
-    errors.push({ field: "whatsapp", reason: "obrigatório" });
-  } else if (digits.length < 10 || digits.length > 13) {
-    errors.push({ field: "whatsapp", reason: "deve ter 10-13 dígitos" });
-  }
-
-  if (!body.cnpj || !String(body.cnpj).trim()) {
-    errors.push({ field: "cnpj", reason: "obrigatório" });
-  }
-
-  return { valid: errors.length === 0, errors };
-}
+const {
+  createRepresentativeBodySchema,
+  updateRepresentativeBodySchema,
+  formatDronesErrors,
+} = require("../../schemas/dronesSchemas");
 
 async function listRepresentatives(req, res) {
   try {
@@ -46,17 +26,12 @@ async function listRepresentatives(req, res) {
 
 async function createRepresentative(req, res) {
   try {
-    const body = req.body || {};
-    const { valid, errors } = validateRepresentativePayload(body);
-
-    if (!valid) {
-      throw new AppError("Dados inválidos.", 400, "VALIDATION_ERROR", { fields: errors });
+    const bodyResult = createRepresentativeBodySchema.safeParse(req.body || {});
+    if (!bodyResult.success) {
+      throw new AppError("Dados inválidos.", 400, "VALIDATION_ERROR", { fields: formatDronesErrors(bodyResult.error) });
     }
 
-    const id = await dronesService.createRepresentative({
-      ...body,
-      whatsapp: normalizePhoneDigits(body.whatsapp || ""),
-    });
+    const id = await dronesService.createRepresentative(bodyResult.data);
 
     return res.status(201).json({ message: "Representante criado.", id });
   } catch (e) {
@@ -70,14 +45,12 @@ async function updateRepresentative(req, res) {
     const id = parseInt(req.params.id, 10);
     if (!id) throw new AppError("ID inválido.", 400, "VALIDATION_ERROR");
 
-    const body = req.body || {};
-    const patch = { ...body };
-
-    if (patch.whatsapp !== undefined) {
-      patch.whatsapp = normalizePhoneDigits(patch.whatsapp || "");
+    const bodyResult = updateRepresentativeBodySchema.safeParse(req.body || {});
+    if (!bodyResult.success) {
+      throw new AppError("Dados inválidos.", 400, "VALIDATION_ERROR", { fields: formatDronesErrors(bodyResult.error) });
     }
 
-    const affected = await dronesService.updateRepresentative(id, patch);
+    const affected = await dronesService.updateRepresentative(id, bodyResult.data);
     if (!affected) throw new AppError("Representante não encontrado.", 404, "NOT_FOUND");
 
     return res.json({ message: "Representante atualizado.", id });

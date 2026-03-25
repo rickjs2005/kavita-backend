@@ -10,6 +10,11 @@ const {
   ensureModelExists,
   sendError,
 } = require("./helpers");
+const {
+  createModelBodySchema,
+  mediaSelectionBodySchema,
+  formatDronesErrors,
+} = require("../../schemas/dronesSchemas");
 
 async function listModels(req, res) {
   try {
@@ -26,19 +31,12 @@ async function listModels(req, res) {
 
 async function createModel(req, res) {
   try {
-    const body = req.body || {};
-
-    const key = String(body.key || "").trim().toLowerCase();
-    const label = dronesService.sanitizeText(body.label, 120);
-
-    if (!key) throw new AppError("key é obrigatório.", 400, "VALIDATION_ERROR", { field: "key" });
-    if (!/^[a-z0-9_]{2,20}$/.test(key)) {
-      throw new AppError("key inválido (use a-z, 0-9, _; 2-20 chars).", 400, "VALIDATION_ERROR", { field: "key" });
+    const bodyResult = createModelBodySchema.safeParse(req.body || {});
+    if (!bodyResult.success) {
+      throw new AppError("Dados inválidos.", 400, "VALIDATION_ERROR", { fields: formatDronesErrors(bodyResult.error) });
     }
-    if (!label) throw new AppError("label é obrigatório.", 400, "VALIDATION_ERROR", { field: "label" });
 
-    const sort_order = Number(body.sort_order) || 0;
-    const is_active = body.is_active === undefined ? 1 : (String(body.is_active) === "1" ? 1 : 0);
+    const { key, label, sort_order, is_active } = bodyResult.data;
 
     try {
       await dronesService.createDroneModel({ key, label, sort_order, is_active });
@@ -156,15 +154,12 @@ async function setModelMediaSelection(req, res) {
     const modelKey = parseModelKey(req.params.modelKey);
     await ensureModelExists(modelKey);
 
-    const { target, media_id } = req.body || {};
-
-    const t = String(target || "").trim().toUpperCase();
-    if (!["HERO", "CARD"].includes(t)) {
-      throw new AppError("target inválido. Use HERO ou CARD.", 400, "VALIDATION_ERROR", { field: "target" });
+    const bodyResult = mediaSelectionBodySchema.safeParse(req.body || {});
+    if (!bodyResult.success) {
+      throw new AppError("Dados inválidos.", 400, "VALIDATION_ERROR", { fields: formatDronesErrors(bodyResult.error) });
     }
 
-    const id = Number(media_id);
-    if (!id) throw new AppError("media_id inválido.", 400, "VALIDATION_ERROR", { field: "media_id" });
+    const { target: t, media_id: id } = bodyResult.data;
 
     const galleryResult = await dronesService.listGalleryAdmin({ page: 1, limit: 5000 });
     const items = extractItems(galleryResult);
