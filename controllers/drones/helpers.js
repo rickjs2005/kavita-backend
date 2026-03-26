@@ -3,6 +3,7 @@
 const fs = require("fs");
 const dronesService = require("../../services/dronesService");
 const AppError = require("../../errors/AppError");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 30 * 1024 * 1024;
@@ -50,14 +51,14 @@ function parseModelKey(modelKey) {
   const key = String(modelKey || "").trim().toLowerCase();
 
   if (!key) {
-    throw new AppError("Modelo inválido", "VALIDATION_ERROR", 400, {
+    throw new AppError("Modelo inválido", ERROR_CODES.VALIDATION_ERROR, 400, {
       field: "modelKey",
       reason: "empty",
     });
   }
 
   if (!/^[a-z0-9_]{2,20}$/.test(key)) {
-    throw new AppError("Modelo inválido", "VALIDATION_ERROR", 400, {
+    throw new AppError("Modelo inválido", ERROR_CODES.VALIDATION_ERROR, 400, {
       field: "modelKey",
       reason: "format",
       example: "t25p",
@@ -70,7 +71,7 @@ function parseModelKey(modelKey) {
 async function ensureModelExists(modelKey) {
   const existing = await dronesService.getDroneModelByKey(modelKey);
   if (!existing) {
-    throw new AppError("Modelo não encontrado.", "NOT_FOUND", 404, { modelKey });
+    throw new AppError("Modelo não encontrado.", ERROR_CODES.NOT_FOUND, 404, { modelKey });
   }
   return existing;
 }

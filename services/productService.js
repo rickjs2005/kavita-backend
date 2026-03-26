@@ -1,6 +1,7 @@
 // services/productService.js
 // Business logic for the public products domain.
 "use strict";
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 const productRepo = require("../repositories/productRepository");
 const AppError = require("../errors/AppError");
@@ -110,7 +111,7 @@ async function listProducts(query) {
       const name = _normalizeSlug(category);
       const cat = await productRepo.findCategoryByName(name);
       if (!cat) {
-        throw new AppError("Categoria não encontrada.", "NOT_FOUND", 404);
+        throw new AppError("Categoria não encontrada.", ERROR_CODES.NOT_FOUND, 404);
       }
       category_id = cat.id;
     }
@@ -166,10 +167,10 @@ async function searchProducts(query) {
   const maxP = _parseNumberOrNull(maxPrice);
 
   if (minP != null && Number.isNaN(minP)) {
-    throw new AppError("minPrice inválido", "VALIDATION_ERROR", 400);
+    throw new AppError("minPrice inválido", ERROR_CODES.VALIDATION_ERROR, 400);
   }
   if (maxP != null && Number.isNaN(maxP)) {
-    throw new AppError("maxPrice inválido", "VALIDATION_ERROR", 400);
+    throw new AppError("maxPrice inválido", ERROR_CODES.VALIDATION_ERROR, 400);
   }
 
   const catIds = _parseCategoryIds(query);

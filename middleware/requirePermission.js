@@ -18,14 +18,24 @@ const SUPERUSER_ROLES = new Set(["master"]);
  */
 function requirePermission(permissionKey) {
   return function (req, _res, next) {
-    const role = req.admin?.role || "";
+    if (!req.admin) {
+      return next(
+        new AppError(
+          "Não autenticado.",
+          ERROR_CODES.AUTH_ERROR,
+          401
+        )
+      );
+    }
+
+    const role = req.admin.role || "";
 
     // Superusuários têm acesso total sem verificação de permissão individual
     if (SUPERUSER_ROLES.has(role)) {
       return next();
     }
 
-    const perms = req.admin?.permissions || [];
+    const perms = req.admin.permissions || [];
 
     if (!perms.includes(permissionKey)) {
       return next(

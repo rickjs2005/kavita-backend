@@ -3,6 +3,7 @@
 const dronesService = require("../../services/dronesService");
 const mediaService = require("../../services/mediaService");
 const AppError = require("../../errors/AppError");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 const { classify, safeUnlink, parseModelKey, ensureModelExists, sendError } = require("./helpers");
 
 // ========================
@@ -21,7 +22,7 @@ async function listModelGallery(req, res) {
     return res.json(result);
   } catch (e) {
     console.error("[drones/admin] listModelGallery error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao listar galeria.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao listar galeria.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -32,24 +33,24 @@ async function createModelGalleryItem(req, res) {
     const modelKey = parseModelKey(req.params.modelKey);
     await ensureModelExists(modelKey);
 
-    if (!file) throw new AppError("Arquivo de mídia obrigatório.", "VALIDATION_ERROR", 400);
+    if (!file) throw new AppError("Arquivo de mídia obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400);
 
     const info = classify(file);
     if (!info) {
       safeUnlink(file);
-      throw new AppError("Tipo de arquivo inválido. Use jpg/png/webp ou mp4.", "VALIDATION_ERROR", 400);
+      throw new AppError("Tipo de arquivo inválido. Use jpg/png/webp ou mp4.", ERROR_CODES.VALIDATION_ERROR, 400);
     }
 
     if (file.size > info.max) {
       safeUnlink(file);
       const mb = Math.round(info.max / 1024 / 1024);
-      throw new AppError(`Arquivo excede ${mb}MB.`, "VALIDATION_ERROR", 400);
+      throw new AppError(`Arquivo excede ${mb}MB.`, ERROR_CODES.VALIDATION_ERROR, 400);
     }
 
     const saved = await mediaService.persistMedia([file], { folder: "drones" });
     const media_path = saved?.[0]?.path;
     if (!media_path) {
-      throw new AppError("Falha ao salvar arquivo.", "SERVER_ERROR", 500);
+      throw new AppError("Falha ao salvar arquivo.", ERROR_CODES.SERVER_ERROR, 500);
     }
 
     const sort_order = parseInt(req.body.sort_order, 10) || 0;
@@ -69,7 +70,7 @@ async function createModelGalleryItem(req, res) {
   } catch (e) {
     console.error("[drones/admin] createModelGalleryItem error:", e);
     if (file) safeUnlink(file);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar item.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -80,7 +81,7 @@ async function updateModelGalleryItem(req, res) {
     const modelKey = parseModelKey(req.params.modelKey);
     const itemId = parseInt(req.params.itemId, 10);
 
-    if (!itemId) throw new AppError("ID do item inválido.", "VALIDATION_ERROR", 400);
+    if (!itemId) throw new AppError("ID do item inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
 
     await ensureModelExists(modelKey);
 
@@ -91,12 +92,12 @@ async function updateModelGalleryItem(req, res) {
       const info = classify(file);
       if (!info) {
         safeUnlink(file);
-        throw new AppError("Tipo inválido.", "VALIDATION_ERROR", 400);
+        throw new AppError("Tipo inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
       }
       if (file.size > info.max) {
         safeUnlink(file);
         const mb = Math.round(info.max / 1024 / 1024);
-        throw new AppError(`Excede ${mb}MB.`, "VALIDATION_ERROR", 400);
+        throw new AppError(`Excede ${mb}MB.`, ERROR_CODES.VALIDATION_ERROR, 400);
       }
       const saved = await mediaService.persistMedia([file], { folder: "drones" });
       patch.media_path = saved?.[0]?.path;
@@ -113,7 +114,7 @@ async function updateModelGalleryItem(req, res) {
   } catch (e) {
     console.error("[drones/admin] updateModelGalleryItem error:", e);
     if (file) safeUnlink(file);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao atualizar item.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao atualizar item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -122,17 +123,17 @@ async function deleteModelGalleryItem(req, res) {
     const modelKey = parseModelKey(req.params.modelKey);
     const itemId = parseInt(req.params.itemId, 10);
 
-    if (!itemId) throw new AppError("ID do item inválido.", "VALIDATION_ERROR", 400);
+    if (!itemId) throw new AppError("ID do item inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
 
     await ensureModelExists(modelKey);
 
     const affected = await dronesService.deleteGalleryItem(itemId);
-    if (!affected) throw new AppError("Item não encontrado.", "NOT_FOUND", 404);
+    if (!affected) throw new AppError("Item não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
     return res.json({ message: "Item removido.", id: itemId });
   } catch (e) {
     console.error("[drones/admin] deleteModelGalleryItem error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover item.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -150,7 +151,7 @@ async function listGallery(req, res) {
     return res.json(result);
   } catch (e) {
     console.error("[drones/admin] listGallery error:", e);
-    return sendError(res, new AppError("Erro ao listar galeria.", "SERVER_ERROR", 500));
+    return sendError(res, new AppError("Erro ao listar galeria.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -158,23 +159,23 @@ async function createGalleryItem(req, res) {
   const file = req.file || null;
 
   try {
-    if (!file) throw new AppError("Arquivo de mídia obrigatório.", "VALIDATION_ERROR", 400);
+    if (!file) throw new AppError("Arquivo de mídia obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400);
 
     const info = classify(file);
     if (!info) {
       safeUnlink(file);
-      throw new AppError("Tipo inválido. Use jpg/png/webp ou mp4.", "VALIDATION_ERROR", 400);
+      throw new AppError("Tipo inválido. Use jpg/png/webp ou mp4.", ERROR_CODES.VALIDATION_ERROR, 400);
     }
 
     if (file.size > info.max) {
       safeUnlink(file);
       const mb = Math.round(info.max / 1024 / 1024);
-      throw new AppError(`Excede ${mb}MB.`, "VALIDATION_ERROR", 400);
+      throw new AppError(`Excede ${mb}MB.`, ERROR_CODES.VALIDATION_ERROR, 400);
     }
 
     const saved = await mediaService.persistMedia([file], { folder: "drones" });
     const media_path = saved?.[0]?.path;
-    if (!media_path) throw new AppError("Falha ao salvar arquivo.", "SERVER_ERROR", 500);
+    if (!media_path) throw new AppError("Falha ao salvar arquivo.", ERROR_CODES.SERVER_ERROR, 500);
 
     const body = req.body || {};
     const model_key = body.model_key ? String(body.model_key).trim() || null : null;
@@ -195,7 +196,7 @@ async function createGalleryItem(req, res) {
   } catch (e) {
     console.error("[drones/admin] createGalleryItem error:", e);
     if (file) safeUnlink(file);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar item.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -204,7 +205,7 @@ async function updateGalleryItem(req, res) {
 
   try {
     const itemId = parseInt(req.params.id, 10);
-    if (!itemId) throw new AppError("ID inválido.", "VALIDATION_ERROR", 400);
+    if (!itemId) throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
 
     const patch = {};
     const body = req.body || {};
@@ -213,12 +214,12 @@ async function updateGalleryItem(req, res) {
       const info = classify(file);
       if (!info) {
         safeUnlink(file);
-        throw new AppError("Tipo inválido.", "VALIDATION_ERROR", 400);
+        throw new AppError("Tipo inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
       }
       if (file.size > info.max) {
         safeUnlink(file);
         const mb = Math.round(info.max / 1024 / 1024);
-        throw new AppError(`Excede ${mb}MB.`, "VALIDATION_ERROR", 400);
+        throw new AppError(`Excede ${mb}MB.`, ERROR_CODES.VALIDATION_ERROR, 400);
       }
       const saved = await mediaService.persistMedia([file], { folder: "drones" });
       patch.media_path = saved?.[0]?.path;
@@ -233,28 +234,28 @@ async function updateGalleryItem(req, res) {
     if (Object.prototype.hasOwnProperty.call(body, "title")) patch.title = String(body.title || "").trim() || null;
 
     const affected = await dronesService.updateGalleryItem(itemId, patch);
-    if (!affected) throw new AppError("Item não encontrado.", "NOT_FOUND", 404);
+    if (!affected) throw new AppError("Item não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
     return res.json({ message: "Item atualizado.", id: itemId });
   } catch (e) {
     console.error("[drones/admin] updateGalleryItem error:", e);
     if (file) safeUnlink(file);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao atualizar item.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao atualizar item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
 async function deleteGalleryItem(req, res) {
   try {
     const itemId = parseInt(req.params.id, 10);
-    if (!itemId) throw new AppError("ID inválido.", "VALIDATION_ERROR", 400);
+    if (!itemId) throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
 
     const affected = await dronesService.deleteGalleryItem(itemId);
-    if (!affected) throw new AppError("Item não encontrado.", "NOT_FOUND", 404);
+    if (!affected) throw new AppError("Item não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
     return res.json({ message: "Item removido.", id: itemId });
   } catch (e) {
     console.error("[drones/admin] deleteGalleryItem error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover item.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 

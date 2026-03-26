@@ -1,6 +1,7 @@
 "use strict";
 
 const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 const heroRepo = require("../repositories/heroRepository");
 const mediaService = require("../services/mediaService");
 
@@ -84,21 +85,21 @@ exports.updateHero = async (req, res) => {
     const subtitle = String(subtitleRaw || "").trim();
 
     if (label && label.length > 80) {
-      throw new AppError("Label do botão muito grande.", "VALIDATION_ERROR", 400, {
+      throw new AppError("Label do botão muito grande.", ERROR_CODES.VALIDATION_ERROR, 400, {
         field: "button_label",
         max: 80,
       });
     }
 
     if (title && title.length > 255) {
-      throw new AppError("Título muito grande.", "VALIDATION_ERROR", 400, {
+      throw new AppError("Título muito grande.", ERROR_CODES.VALIDATION_ERROR, 400, {
         field: "title",
         max: 255,
       });
     }
 
     if (subtitle && subtitle.length > 500) {
-      throw new AppError("Subtítulo muito grande.", "VALIDATION_ERROR", 400, {
+      throw new AppError("Subtítulo muito grande.", ERROR_CODES.VALIDATION_ERROR, 400, {
         field: "subtitle",
         max: 500,
       });
@@ -113,7 +114,7 @@ exports.updateHero = async (req, res) => {
 
     if (heroVideo) {
       if (!String(heroVideo.mimetype || "").startsWith("video/")) {
-        throw new AppError("Arquivo de vídeo inválido.", "VALIDATION_ERROR", 400, {
+        throw new AppError("Arquivo de vídeo inválido.", ERROR_CODES.VALIDATION_ERROR, 400, {
           field: "heroVideo",
         });
       }
@@ -124,7 +125,7 @@ exports.updateHero = async (req, res) => {
 
     if (heroImage) {
       if (!String(heroImage.mimetype || "").startsWith("image/")) {
-        throw new AppError("Arquivo de imagem inválido.", "VALIDATION_ERROR", 400, {
+        throw new AppError("Arquivo de imagem inválido.", ERROR_CODES.VALIDATION_ERROR, 400, {
           field: "heroImage",
         });
       }

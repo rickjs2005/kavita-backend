@@ -1,6 +1,7 @@
 "use strict";
 
 const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 /**
  * Returns an Express middleware that validates req[source] against a Zod schema.
@@ -26,7 +27,7 @@ function validate(schema, source = "body") {
         field: issue.path.join(".") || source,
         message: issue.message,
       }));
-      return next(new AppError("Dados inválidos.", "VALIDATION_ERROR", 400, { fields }));
+      return next(new AppError("Dados inválidos.", ERROR_CODES.VALIDATION_ERROR, 400, { fields }));
     }
     req[source] = result.data;
     return next();

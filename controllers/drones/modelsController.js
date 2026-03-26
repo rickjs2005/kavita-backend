@@ -2,6 +2,7 @@
 
 const dronesService = require("../../services/dronesService");
 const AppError = require("../../errors/AppError");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 const {
   DEFAULT_DRONE_MODELS,
   parseJsonField,
@@ -25,7 +26,7 @@ async function listModels(req, res) {
     });
   } catch (e) {
     console.error("[drones/admin] listModels error:", e);
-    return sendError(res, new AppError("Erro ao listar modelos.", "SERVER_ERROR", 500));
+    return sendError(res, new AppError("Erro ao listar modelos.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -33,7 +34,7 @@ async function createModel(req, res) {
   try {
     const bodyResult = createModelBodySchema.safeParse(req.body || {});
     if (!bodyResult.success) {
-      throw new AppError("Dados inválidos.", "VALIDATION_ERROR", 400, { fields: formatDronesErrors(bodyResult.error) });
+      throw new AppError("Dados inválidos.", ERROR_CODES.VALIDATION_ERROR, 400, { fields: formatDronesErrors(bodyResult.error) });
     }
 
     const { key, label, sort_order, is_active } = bodyResult.data;
@@ -50,7 +51,7 @@ async function createModel(req, res) {
     return res.status(201).json({ message: "Modelo criado.", key });
   } catch (e) {
     console.error("[drones/admin] createModel error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar modelo.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar modelo.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -70,7 +71,7 @@ async function deleteModel(req, res) {
     return res.json({ message: "Modelo desativado.", modelKey });
   } catch (e) {
     console.error("[drones/admin] deleteModel error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao excluir modelo.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao excluir modelo.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -93,7 +94,7 @@ async function getModelAggregate(req, res) {
     });
   } catch (e) {
     console.error("[drones/admin] getModelAggregate error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao carregar modelo.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao carregar modelo.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -146,7 +147,7 @@ async function upsertModelInfo(req, res) {
     });
   } catch (e) {
     console.error("[drones/admin] upsertModelInfo error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar modelo.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar modelo.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -157,7 +158,7 @@ async function setModelMediaSelection(req, res) {
 
     const bodyResult = mediaSelectionBodySchema.safeParse(req.body || {});
     if (!bodyResult.success) {
-      throw new AppError("Dados inválidos.", "VALIDATION_ERROR", 400, { fields: formatDronesErrors(bodyResult.error) });
+      throw new AppError("Dados inválidos.", ERROR_CODES.VALIDATION_ERROR, 400, { fields: formatDronesErrors(bodyResult.error) });
     }
 
     const { target: t, media_id: id } = bodyResult.data;
@@ -166,10 +167,10 @@ async function setModelMediaSelection(req, res) {
     const items = extractItems(galleryResult);
 
     const found = items.find((x) => Number(x.id) === id);
-    if (!found) throw new AppError("Mídia não encontrada.", "NOT_FOUND", 404, { id });
+    if (!found) throw new AppError("Mídia não encontrada.", ERROR_CODES.NOT_FOUND, 404, { id });
 
     if (String(found.model_key || "").trim().toLowerCase() !== modelKey) {
-      throw new AppError("Mídia não pertence a este modelo.", "FORBIDDEN", 403, { id, modelKey });
+      throw new AppError("Mídia não pertence a este modelo.", ERROR_CODES.FORBIDDEN, 403, { id, modelKey });
     }
 
     await dronesService.upsertModelSelection(modelKey, t, id);
@@ -179,7 +180,7 @@ async function setModelMediaSelection(req, res) {
     return res.json({ message: "Seleção salva.", modelKey, target: t, media_id: id, model: updated });
   } catch (e) {
     console.error("[drones/admin] setModelMediaSelection error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar seleção.", "SERVER_ERROR", 500));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar seleção.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
