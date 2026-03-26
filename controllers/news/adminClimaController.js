@@ -1,15 +1,11 @@
 // controllers/news/adminClimaController.js
-// Admin controller do Kavita News - CLIMA (CRUD + validações + logs em admin_logs via pool)
+// Admin controller do Kavita News - CLIMA (CRUD + logs em admin_logs via pool)
 
 const climaRepo = require("../../repositories/climaRepository");
-const pool = require("../../config/pool");
-const ERROR_CODES = require("../../constants/ErrorCodes");
 const { logAdminAction } = require("../../services/adminLogs");
 const {
   ok, created, fail,
-  toInt, toFloat, toBoolTiny,
-  isNonEmptyStr, isOptionalStr, isValidDateTimeLike,
-  normalizeSlug, isValidSlug, nowSql,
+  toInt, nowSql,
 } = require("../../services/news/helpers");
 
 /**
@@ -25,16 +21,8 @@ try {
   console.warn("[CLIMA] Falha ao carregar services/inmetStationsService:", e?.message || e);
 }
 
-function normalizeUF(v) {
-  return String(v || "").trim().toUpperCase();
-}
-
 function getAdminId(req) {
   return req.admin?.id || req.user?.id || req.adminId || req.userId || null;
-}
-
-function hasOwn(obj, key) {
-  return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
 /* helper local: extrai adminId do req e delega para o serviço centralizado */
@@ -45,65 +33,6 @@ async function logAdmin(req, acao, entidade, entidade_id = null) {
 /* =========================================================
  * ADMIN - CLIMA (news_clima)
  * ========================================================= */
-
-function validateStationCodeOrNull(v, field = "station_code") {
-  if (v === null || v === undefined || v === "") return { value: null };
-
-  const sc = String(v).trim().toUpperCase();
-  const isA3 = /^[A-Z]\d{3}$/.test(sc);
-  const isNum = /^\d{4,7}$/.test(sc);
-
-  if (!isA3 && !isNum) {
-    return {
-      error: {
-        status: 400,
-        code: "VALIDATION_ERROR",
-        message: `${field} inválido (ex.: A827 ou 83692).`,
-        details: { field },
-      },
-    };
-  }
-  if (sc.length > 10) {
-    return {
-      error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (máx 10).`, details: { field } },
-    };
-  }
-  return { value: sc };
-}
-
-function validateOptionalFloat(body, field) {
-  if (!hasOwn(body, field)) return { skip: true };
-  const raw = body[field];
-  const n = toFloat(raw);
-  if (raw !== null && raw !== "" && raw !== undefined && n === null) {
-    return { error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (número).`, details: { field } } };
-  }
-  return { value: raw === "" ? null : n };
-}
-
-function validateOptionalDateLike(body, field) {
-  if (!hasOwn(body, field)) return { skip: true };
-  const raw = body[field];
-  if (raw !== null && raw !== "" && raw !== undefined && !isValidDateTimeLike(raw)) {
-    return {
-      error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (YYYY-MM-DD HH:mm:ss).`, details: { field } },
-    };
-  }
-  return { value: raw ?? null };
-}
-
-function validateOptionalStrMax(body, field, max = 120) {
-  if (!hasOwn(body, field)) return { skip: true };
-  const raw = body[field];
-  if (raw !== null && raw !== "" && raw !== undefined && !isOptionalStr(raw, max)) {
-    return { error: { status: 400, code: ERROR_CODES.VALIDATION_ERROR, message: `${field} inválido (máx ${max}).`, details: { field } } };
-  }
-  return { value: raw ? String(raw).trim() : null };
-}
-
-function applyFail(res, f) {
-  return fail(res, f.status, f.code, f.message, f.details);
-}
 
 /* =========================
  * Handlers - Clima
@@ -168,75 +97,10 @@ async function suggestClimaStations(req, res) {
   }
 }
 
+// req.body is pre-validated and coerced by validate(createClimaBodySchema)
 async function createClima(req, res) {
   try {
-    const body = req.body || {};
-
-    const city_name = isNonEmptyStr(body.city_name, 120) ? body.city_name.trim() : null;
-    const slug = normalizeSlug(body.slug);
-    const uf = normalizeUF(body.uf);
-
-    if (!city_name) return fail(res, 400, "VALIDATION_ERROR", "city_name é obrigatório (máx 120).", { field: "city_name" });
-    if (!isValidSlug(slug)) return fail(res, 400, "VALIDATION_ERROR", "slug inválido.", { field: "slug" });
-    if (uf.length !== 2) return fail(res, 400, "VALIDATION_ERROR", "uf inválido (use 2 letras).", { field: "uf" });
-
-    let ibge_id = null;
-    if (body.ibge_id !== undefined && body.ibge_id !== null && body.ibge_id !== "") {
-      const n = toInt(body.ibge_id, 0);
-      if (!n || n < 1) return fail(res, 400, "VALIDATION_ERROR", "ibge_id inválido (inteiro > 0).", { field: "ibge_id" });
-      ibge_id = n;
-    }
-
-    const stationCodeRes = validateStationCodeOrNull(body.station_code, "station_code");
-    if (stationCodeRes.error) return applyFail(res, stationCodeRes.error);
-    const station_code = stationCodeRes.value;
-
-    const mm_24h = toFloat(body.mm_24h);
-    const mm_7d = toFloat(body.mm_7d);
-
-    if (body.mm_24h !== undefined && body.mm_24h !== null && body.mm_24h !== "" && mm_24h === null)
-      return fail(res, 400, "VALIDATION_ERROR", "mm_24h inválido (deve ser número).", { field: "mm_24h" });
-
-    if (body.mm_7d !== undefined && body.mm_7d !== null && body.mm_7d !== "" && mm_7d === null)
-      return fail(res, 400, "VALIDATION_ERROR", "mm_7d inválido (deve ser número).", { field: "mm_7d" });
-
-    const dateFields = ["last_update_at", "last_sync_observed_at", "last_sync_forecast_at"];
-    for (const f of dateFields) {
-      if (body[f] !== undefined && body[f] !== null && body[f] !== "" && !isValidDateTimeLike(body[f])) {
-        return fail(res, 400, "VALIDATION_ERROR", `${f} inválido (YYYY-MM-DD HH:mm:ss).`, { field: f });
-      }
-    }
-
-    const optStr120 = ["source", "station_name", "ibge_source", "station_source"];
-    for (const f of optStr120) {
-      if (body[f] !== undefined && body[f] !== null && body[f] !== "" && !isOptionalStr(body[f], 120)) {
-        return fail(res, 400, "VALIDATION_ERROR", `${f} inválido (máx 120).`, { field: f });
-      }
-    }
-
-    const payload = {
-      city_name,
-      slug,
-      uf,
-      ibge_id,
-      station_code,
-      station_name: body.station_name ? String(body.station_name).trim() : null,
-      station_uf: body.station_uf ? normalizeUF(body.station_uf) : null,
-      station_lat: toFloat(body.station_lat),
-      station_lon: toFloat(body.station_lon),
-      station_distance: toFloat(body.station_distance),
-      ibge_source: body.ibge_source ? String(body.ibge_source).trim() : null,
-      station_source: body.station_source ? String(body.station_source).trim() : null,
-      last_sync_observed_at: body.last_sync_observed_at ?? null,
-      last_sync_forecast_at: body.last_sync_forecast_at ?? null,
-      mm_24h,
-      mm_7d,
-      source: body.source ? String(body.source).trim() : null,
-      last_update_at: body.last_update_at ?? null,
-      ativo: toBoolTiny(body.ativo, 1),
-    };
-
-    const row = await climaRepo.createClima(payload);
+    const row = await climaRepo.createClima(req.body);
     await logAdmin(req, "criou", "news_clima", row?.id ?? null);
     return created(res, row);
   } catch (error) {
@@ -246,79 +110,18 @@ async function createClima(req, res) {
   }
 }
 
+// req.body is pre-validated and coerced by validate(updateClimaBodySchema)
+// Only keys present in req.body are patched (the repo checks hasOwnProperty).
 async function updateClima(req, res) {
   try {
     const id = toInt(req.params.id, 0);
     if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
 
-    const body = req.body || {};
-    const patch = {};
-
-    if (hasOwn(body, "city_name")) {
-      if (body.city_name !== null && body.city_name !== "" && !isNonEmptyStr(body.city_name, 120))
-        return fail(res, 400, "VALIDATION_ERROR", "city_name inválido (máx 120).", { field: "city_name" });
-      patch.city_name = body.city_name ? String(body.city_name).trim() : null;
+    if (Object.keys(req.body).length === 0) {
+      return fail(res, 400, "VALIDATION_ERROR", "Nenhum campo para atualizar.");
     }
 
-    if (hasOwn(body, "slug")) {
-      const slug = normalizeSlug(body.slug);
-      if (body.slug !== null && body.slug !== "" && !isValidSlug(slug))
-        return fail(res, 400, "VALIDATION_ERROR", "slug inválido.", { field: "slug" });
-      patch.slug = body.slug ? slug : null;
-    }
-
-    if (hasOwn(body, "uf")) {
-      const uf = normalizeUF(body.uf);
-      if (body.uf !== null && body.uf !== "" && uf.length !== 2)
-        return fail(res, 400, "VALIDATION_ERROR", "uf inválido (use 2 letras).", { field: "uf" });
-      patch.uf = body.uf ? uf : null;
-    }
-
-    if (hasOwn(body, "ibge_id")) {
-      if (body.ibge_id === null || body.ibge_id === "") patch.ibge_id = null;
-      else {
-        const n = toInt(body.ibge_id, 0);
-        if (!n || n < 1) return fail(res, 400, "VALIDATION_ERROR", "ibge_id inválido (inteiro > 0).", { field: "ibge_id" });
-        patch.ibge_id = n;
-      }
-    }
-
-    if (hasOwn(body, "station_code")) {
-      const stationCodeRes = validateStationCodeOrNull(body.station_code, "station_code");
-      if (stationCodeRes.error) return applyFail(res, stationCodeRes.error);
-      patch.station_code = stationCodeRes.value;
-    }
-
-    for (const f of ["station_lat", "station_lon", "station_distance", "mm_24h", "mm_7d"]) {
-      const r = validateOptionalFloat(body, f);
-      if (r.error) return applyFail(res, r.error);
-      if (!r.skip) patch[f] = r.value;
-    }
-
-    for (const f of ["source", "station_name", "ibge_source", "station_source"]) {
-      const r = validateOptionalStrMax(body, f, 120);
-      if (r.error) return applyFail(res, r.error);
-      if (!r.skip) patch[f] = r.value;
-    }
-
-    if (hasOwn(body, "station_uf")) {
-      if (body.station_uf === null || body.station_uf === "") patch.station_uf = null;
-      else {
-        const uf = normalizeUF(body.station_uf);
-        if (uf.length !== 2) return fail(res, 400, "VALIDATION_ERROR", "station_uf inválido (2 letras).", { field: "station_uf" });
-        patch.station_uf = uf;
-      }
-    }
-
-    for (const f of ["last_update_at", "last_sync_observed_at", "last_sync_forecast_at"]) {
-      const r = validateOptionalDateLike(body, f);
-      if (r.error) return applyFail(res, r.error);
-      if (!r.skip) patch[f] = r.value;
-    }
-
-    if (hasOwn(body, "ativo")) patch.ativo = toBoolTiny(body.ativo, 1);
-
-    const result = await climaRepo.updateClima(id, patch);
+    const result = await climaRepo.updateClima(id, req.body);
     await logAdmin(req, "editou", "news_clima", id);
     return ok(res, result);
   } catch (error) {

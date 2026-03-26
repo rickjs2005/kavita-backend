@@ -27,6 +27,8 @@
 const request = require("supertest");
 const express = require("express");
 const { makeTestApp } = require("../../testUtils");
+const { validate } = require("../../../middleware/validate");
+const { createCotacaoBodySchema, updateCotacaoBodySchema } = require("../../../schemas/cotacoesSchemas");
 
 // ─────────────────────────────────────────────
 // Helpers de teste
@@ -73,8 +75,8 @@ function buildRouter(controller) {
   router.get("/cotacoes/meta", asyncWrap(controller.getCotacoesMeta));
   router.post("/cotacoes/sync-all", asyncWrap(controller.syncCotacoesAll));
   router.get("/cotacoes", asyncWrap(controller.listCotacoes));
-  router.post("/cotacoes", asyncWrap(controller.createCotacao));
-  router.put("/cotacoes/:id", asyncWrap(controller.updateCotacao));
+  router.post("/cotacoes", validate(createCotacaoBodySchema), asyncWrap(controller.createCotacao));
+  router.put("/cotacoes/:id", validate(updateCotacaoBodySchema), asyncWrap(controller.updateCotacao));
   router.delete("/cotacoes/:id", asyncWrap(controller.deleteCotacao));
   router.post("/cotacoes/:id/sync", asyncWrap(controller.syncCotacao));
   return router;
@@ -239,7 +241,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/name/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando slug é inválido", async () => {
@@ -252,7 +254,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/slug/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando type está ausente", async () => {
@@ -265,7 +267,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/type/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando price é string não numérica", async () => {
@@ -280,7 +282,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/price/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando last_update_at tem formato inválido", async () => {

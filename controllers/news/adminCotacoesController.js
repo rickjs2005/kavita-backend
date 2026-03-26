@@ -1,14 +1,11 @@
 // controllers/news/adminCotacoesController.js
-// Admin controller do Kavita News - COTAÇÕES (CRUD + validações + logs em admin_logs via pool)
+// Admin controller do Kavita News - COTAÇÕES (CRUD + logs em admin_logs via pool)
 
 const cotacoesRepo = require("../../repositories/cotacoesRepository");
-const pool = require("../../config/pool");
 const { logAdminAction } = require("../../services/adminLogs");
 const {
   ok, created, fail,
-  toInt, toFloat, toBoolTiny,
-  isNonEmptyStr, isOptionalStr, isValidDateTimeLike,
-  normalizeSlug, isValidSlug, nowSql,
+  toInt, toBoolTiny, nowSql,
 } = require("../../services/news/helpers");
 
 let cotacoesProviders = null;
@@ -16,10 +13,6 @@ try {
   cotacoesProviders = require("../../services/cotacoesProviders");
 } catch {
   cotacoesProviders = null;
-}
-
-function hasOwn(obj, key) {
-  return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
 /* helper local: extrai adminId do req e delega para o serviço centralizado */
@@ -157,57 +150,10 @@ async function getCotacoesMeta(req, res) {
   }
 }
 
+// req.body is pre-validated and coerced by validate(createCotacaoBodySchema)
 async function createCotacao(req, res) {
   try {
-    const body = req.body || {};
-
-    const name = isNonEmptyStr(body.name, 120) ? body.name.trim() : null;
-    const slug = normalizeSlug(body.slug);
-    const type = isNonEmptyStr(body.type, 60) ? body.type.trim() : null;
-
-    if (!name) return fail(res, 400, "VALIDATION_ERROR", "name é obrigatório (máx 120).", { field: "name" });
-    if (!isValidSlug(slug)) return fail(res, 400, "VALIDATION_ERROR", "slug inválido.", { field: "slug" });
-    if (!type) return fail(res, 400, "VALIDATION_ERROR", "type é obrigatório (máx 60).", { field: "type" });
-
-    const price = toFloat(body.price);
-    const variation_day = toFloat(body.variation_day);
-
-    if (body.price !== undefined && body.price !== null && body.price !== "" && price === null)
-      return fail(res, 400, "VALIDATION_ERROR", "price inválido (número).", { field: "price" });
-
-    if (body.variation_day !== undefined && body.variation_day !== null && body.variation_day !== "" && variation_day === null)
-      return fail(res, 400, "VALIDATION_ERROR", "variation_day inválido (número).", { field: "variation_day" });
-
-    const optStr120 = ["unit", "market", "source"];
-    for (const f of optStr120) {
-      if (body[f] !== undefined && body[f] !== null && body[f] !== "" && !isOptionalStr(body[f], 120)) {
-        return fail(res, 400, "VALIDATION_ERROR", `${f} inválido (máx 120).`, { field: f });
-      }
-    }
-
-    if (
-      body.last_update_at !== undefined &&
-      body.last_update_at !== null &&
-      body.last_update_at !== "" &&
-      !isValidDateTimeLike(body.last_update_at)
-    ) {
-      return fail(res, 400, "VALIDATION_ERROR", "last_update_at inválido (YYYY-MM-DD HH:mm:ss).", { field: "last_update_at" });
-    }
-
-    const payload = {
-      name,
-      slug,
-      type,
-      price,
-      unit: body.unit ? String(body.unit).trim() : null,
-      variation_day,
-      market: body.market ? String(body.market).trim() : null,
-      source: body.source ? String(body.source).trim() : null,
-      last_update_at: body.last_update_at ?? null,
-      ativo: toBoolTiny(body.ativo, 1),
-    };
-
-    const row = await cotacoesRepo.createCotacao(payload);
+    const row = await cotacoesRepo.createCotacao(req.body);
     await logAdmin(req, "criou", "news_cotacoes", row?.id ?? null);
     return created(res, row);
   } catch (error) {
@@ -217,61 +163,18 @@ async function createCotacao(req, res) {
   }
 }
 
+// req.body is pre-validated and coerced by validate(updateCotacaoBodySchema)
+// Only keys present in req.body are patched (the repo checks hasOwnProperty).
 async function updateCotacao(req, res) {
   try {
     const id = toInt(req.params.id, 0);
     if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
 
-    const body = req.body || {};
-    const patch = {};
-
-    if (hasOwn(body, "name")) {
-      if (body.name !== null && body.name !== "" && !isNonEmptyStr(body.name, 120))
-        return fail(res, 400, "VALIDATION_ERROR", "name inválido (máx 120).", { field: "name" });
-      patch.name = body.name ? String(body.name).trim() : null;
+    if (Object.keys(req.body).length === 0) {
+      return fail(res, 400, "VALIDATION_ERROR", "Nenhum campo para atualizar.");
     }
 
-    if (hasOwn(body, "slug")) {
-      const slug = normalizeSlug(body.slug);
-      if (body.slug !== null && body.slug !== "" && !isValidSlug(slug))
-        return fail(res, 400, "VALIDATION_ERROR", "slug inválido.", { field: "slug" });
-      patch.slug = body.slug ? slug : null;
-    }
-
-    if (hasOwn(body, "type")) {
-      if (body.type !== null && body.type !== "" && !isNonEmptyStr(body.type, 60))
-        return fail(res, 400, "VALIDATION_ERROR", "type inválido (máx 60).", { field: "type" });
-      patch.type = body.type ? String(body.type).trim() : null;
-    }
-
-    for (const f of ["price", "variation_day"]) {
-      if (hasOwn(body, f)) {
-        const n = toFloat(body[f]);
-        if (body[f] !== null && body[f] !== "" && n === null) {
-          return fail(res, 400, "VALIDATION_ERROR", `${f} inválido (número).`, { field: f });
-        }
-        patch[f] = body[f] === "" ? null : n;
-      }
-    }
-
-    for (const f of ["unit", "market", "source"]) {
-      if (hasOwn(body, f)) {
-        if (body[f] !== null && body[f] !== "" && !isOptionalStr(body[f], 120))
-          return fail(res, 400, "VALIDATION_ERROR", `${f} inválido (máx 120).`, { field: f });
-        patch[f] = body[f] ? String(body[f]).trim() : null;
-      }
-    }
-
-    if (hasOwn(body, "last_update_at")) {
-      if (body.last_update_at !== null && body.last_update_at !== "" && !isValidDateTimeLike(body.last_update_at)) {
-        return fail(res, 400, "VALIDATION_ERROR", "last_update_at inválido (YYYY-MM-DD HH:mm:ss).", { field: "last_update_at" });
-      }
-      patch.last_update_at = body.last_update_at ?? null;
-    }
-
-    if (hasOwn(body, "ativo")) patch.ativo = toBoolTiny(body.ativo, 1);
-
-    const result = await cotacoesRepo.updateCotacao(id, patch);
+    const result = await cotacoesRepo.updateCotacao(id, req.body);
     await logAdmin(req, "editou", "news_cotacoes", id);
     return ok(res, result);
   } catch (error) {

@@ -16,7 +16,9 @@ function makeTestApp(mountPath, router) {
     const status = err?.status || err?.statusCode || 500;
     const code = err?.code || "SERVER_ERROR";
     const message = err?.message || "Erro interno.";
-    return res.status(status).json({ code, message });
+    const body = { ok: false, code, message };
+    if (err?.details) body.details = err.details;
+    return res.status(status).json(body);
   });
 
   return app;

@@ -26,6 +26,8 @@
 const request = require("supertest");
 const express = require("express");
 const { makeTestApp } = require("../../testUtils");
+const { validate } = require("../../../middleware/validate");
+const { createClimaBodySchema, updateClimaBodySchema } = require("../../../schemas/climaSchemas");
 
 // ─────────────────────────────────────────────
 // Helpers de teste
@@ -72,8 +74,8 @@ function buildRouter(controller) {
   const router = express.Router();
   router.get("/clima/stations", asyncWrap(controller.suggestClimaStations));
   router.get("/clima", asyncWrap(controller.listClima));
-  router.post("/clima", asyncWrap(controller.createClima));
-  router.put("/clima/:id", asyncWrap(controller.updateClima));
+  router.post("/clima", validate(createClimaBodySchema), asyncWrap(controller.createClima));
+  router.put("/clima/:id", validate(updateClimaBodySchema), asyncWrap(controller.updateClima));
   router.delete("/clima/:id", asyncWrap(controller.deleteClima));
   router.post("/clima/:id/sync", asyncWrap(controller.syncClima));
   return router;
@@ -259,7 +261,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/city_name/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando slug é inválido (contém caracteres especiais)", async () => {
@@ -272,7 +274,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/slug/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando uf tem tamanho diferente de 2", async () => {
@@ -285,7 +287,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/uf/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando ibge_id é inválido (não é inteiro positivo)", async () => {
@@ -300,7 +302,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/ibge_id/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando station_code é inválido", async () => {
@@ -330,7 +332,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/mm_24h/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando last_update_at tem formato inválido", async () => {
