@@ -3,9 +3,18 @@ const pool = require("../config/pool");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const redis = require("../lib/redis");
 
 const COOKIE_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2h
 const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Permission cache TTL: 60 s — curto o suficiente para que mudanças de role
+// propaguem rapidamente sem sacrificar a redução de queries ao banco.
+const PERM_CACHE_TTL_SEC = 60;
+
+function permCacheKey(adminId, tokenVersion) {
+  return `admin:perm:${adminId}:${tokenVersion ?? 0}`;
+}
 
 // Temporary in-memory store for MFA challenges
 // Map<challengeId, { adminId, ip, expiresAt, mfaSecret }>
@@ -23,6 +32,10 @@ if (process.env.NODE_ENV !== "test") {
   }, 5 * 60 * 1000).unref();
 }
 
+// ---------------------------------------------------------------------------
+// Queries
+// ---------------------------------------------------------------------------
+
 async function findAdminByEmail(email) {
   const [rows] = await pool.query(
     `SELECT
@@ -31,6 +44,7 @@ async function findAdminByEmail(email) {
        a.email,
        a.senha,
        a.role,
+       a.ativo,
        a.mfa_secret,
        a.mfa_active,
        a.tokenVersion,
@@ -43,6 +57,10 @@ async function findAdminByEmail(email) {
   return rows[0] ?? null;
 }
 
+/**
+ * Busca admin por ID, incluindo campo `ativo`.
+ * Usado tanto no middleware verifyAdmin quanto no controller de auth.
+ */
 async function findAdminById(id) {
   const [rows] = await pool.query(
     `SELECT
@@ -50,6 +68,7 @@ async function findAdminById(id) {
        a.nome,
        a.email,
        a.role,
+       a.ativo,
        a.tokenVersion,
        r.id AS role_id
      FROM admins a
@@ -60,8 +79,32 @@ async function findAdminById(id) {
   return rows[0] ?? null;
 }
 
-async function getAdminPermissions(adminId) {
+/**
+ * Carrega permissões granulares do admin.
+ * Usa cache Redis quando disponível (TTL: PERM_CACHE_TTL_SEC).
+ * A chave inclui tokenVersion para que o cache seja naturalmente
+ * invalidado após logout (o token antigo nunca mais é enviado).
+ *
+ * @param {number} adminId
+ * @param {number} [tokenVersion] — versão atual do token (para cache key)
+ */
+async function getAdminPermissions(adminId, tokenVersion) {
   if (!adminId) return [];
+
+  const cacheKey = permCacheKey(adminId, tokenVersion);
+
+  // Tenta ler do cache Redis
+  if (redis.ready) {
+    try {
+      const cached = await redis.client.get(cacheKey);
+      if (cached !== null) {
+        return JSON.parse(cached);
+      }
+    } catch {
+      // Cache miss — segue para o banco
+    }
+  }
+
   const [rows] = await pool.query(
     `SELECT DISTINCT p.chave
      FROM admins a
@@ -71,8 +114,22 @@ async function getAdminPermissions(adminId) {
      WHERE a.id = ?`,
     [adminId]
   );
-  return rows.map((r) => r.chave);
+
+  const permissions = rows.map((r) => r.chave);
+
+  // Armazena no Redis (fire-and-forget — não derruba o request se falhar)
+  if (redis.ready) {
+    redis.client
+      .set(cacheKey, JSON.stringify(permissions), "EX", PERM_CACHE_TTL_SEC)
+      .catch(() => {});
+  }
+
+  return permissions;
 }
+
+// ---------------------------------------------------------------------------
+// Auth helpers
+// ---------------------------------------------------------------------------
 
 async function verifyPassword(plain, hash) {
   return bcrypt.compare(String(plain), hash);
@@ -114,6 +171,10 @@ async function incrementTokenVersion(adminId) {
     [adminId]
   );
 }
+
+// ---------------------------------------------------------------------------
+// MFA challenge store
+// ---------------------------------------------------------------------------
 
 function createMfaChallenge(adminId, ip, mfaSecret) {
   const challengeId = crypto.randomBytes(32).toString("hex");

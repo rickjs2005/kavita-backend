@@ -130,6 +130,63 @@ Use sempre as constantes de `constants/ErrorCodes.js` ou strings literais como 2
 - Testes de integração usam banco real — rodar `npm run db:test:reset` antes da primeira execução
 - Cobertura coletada de: `routes/**`, `controllers/**`, `services/**`, `server.js`
 
+## Estado arquitetural dos módulos
+
+O projeto está em migração arquitetural ativa. Dois padrões coexistem. **Todo arquivo novo ou modificado deve seguir o padrão moderno.**
+
+### Módulos modernos — padrão completo
+
+Estes módulos seguem o padrão completo (repository → service → controller → rota magra, Zod, `lib/response.js`, AppError):
+
+| Domínio | Rota | Controller | Service | Repository |
+|---------|------|-----------|---------|------------|
+| Auth admin | `routes/admin/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
+| Drones (admin) | `routes/admin/adminDrones.js` | `controllers/drones/` | `services/drones/` | `repositories/dronesRepository.js` |
+| Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
+| News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js` |
+| Site Hero | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
+| Cart | `routes/ecommerce/cart.js` | — | `services/cartService.js` | `repositories/cartRepository.js` |
+| Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
+| Pedidos | `routes/ecommerce/pedidos.js` | — | `services/orderService.js` | `repositories/orderRepository.js` |
+| Payment | `routes/ecommerce/payment.js` | — | `services/paymentService.js` | `repositories/paymentRepository.js` |
+| Shipping | `routes/ecommerce/shipping.js` | — | `services/shippingQuoteService.js` | — |
+| Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
+| Clima (news) | — | `controllers/news/adminClimaController.js` | — | `repositories/climaRepository.js` |
+| Cotações (news) | — | `controllers/news/adminCotacoesController.js` | — | `repositories/cotacoesRepository.js` |
+
+### Módulos legados — migração pendente
+
+Estes módulos ainda usam `pool.query()` direto na rota, validação inline (`if (!campo)`) e `res.json()` sem helper. **Não ampliar o padrão antigo ao tocar esses arquivos — usar o padrão moderno ao refatorar.**
+
+| Arquivo | Linhas | Problema principal |
+|---------|--------|--------------------|
+| `routes/admin/adminProdutos.js` | 659 | SQL inline, sem repository, sem Zod |
+| `routes/admin/adminConfig.js` | 647 | SQL inline, sem repository, sem Zod |
+| `routes/admin/adminCarts.js` | 671 | SQL + lógica de negócio inline |
+| `routes/admin/adminRoles.js` | 472 | SQL inline |
+| `routes/admin/adminComunicacao.js` | 446 | SQL inline |
+| `routes/admin/adminServicos.js` | 405 | SQL inline |
+| `routes/admin/adminMarketingPromocoes.js` | 378 | SQL inline |
+| `routes/admin/adminPedidos.js` | 309 | SQL inline |
+| `routes/admin/adminCupons.js` | 308 | SQL inline |
+| `routes/admin/adminShippingZones.js` | 306 | SQL inline |
+| `routes/admin/adminStats.js` | 297 | SQL inline |
+| `routes/public/publicServicos.js` | 651 | SQL inline |
+| `routes/public/publicProdutos.js` | 324 | SQL inline |
+| `routes/auth/userAddresses.js` | 559 | SQL inline |
+| `routes/auth/userProfile.js` | 272 | SQL inline |
+| `routes/auth/authRoutes.js` | 103 | bcrypt/pool diretos |
+
+### Regra de ouro para código novo ou modificado
+
+Qualquer arquivo **novo** ou **tocado** durante uma tarefa deve obrigatoriamente:
+
+1. Usar `lib/response.js` para respostas (`response.ok`, `response.created`, etc.) — nunca `res.json()` cru
+2. Usar `AppError` + `ERROR_CODES` para erros — nunca `res.status(4xx).json(...)` inline
+3. Ter schema Zod em `schemas/` para toda rota mutation (POST/PUT/PATCH/DELETE com body)
+4. Não ter `pool.query()` no arquivo de rota — usar repository
+5. Não ter validação manual com `if (!campo)` — usar `middleware/validate.js` com schema Zod
+
 ## Regras do projeto
 
 - Nunca alterar rotas sem verificar `routes/index.js`

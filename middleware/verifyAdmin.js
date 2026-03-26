@@ -1,95 +1,16 @@
 // middleware/verifyAdmin.js
 const jwt = require("jsonwebtoken");
-const pool = require("../config/pool");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
-const redis = require("../lib/redis");
+const authAdminService = require("../services/authAdminService");
 
 const SECRET_KEY = process.env.JWT_SECRET;
 
-// Permission cache TTL: 60 s — curto o suficiente para que mudanças de role
-// propaguem rapidamente sem sacrificar a redução de queries ao banco.
-const PERM_CACHE_TTL_SEC = 60;
-
-function permCacheKey(adminId, tokenVersion) {
-  return `admin:perm:${adminId}:${tokenVersion}`;
-}
-
-/**
- * Busca o admin no banco (incluindo role_id via admin_roles).
- */
-async function findAdminById(adminId) {
-  const [rows] = await pool.query(
-    `
-      SELECT
-        a.id,
-        a.nome,
-        a.email,
-        a.role,
-        a.ativo,
-        a.tokenVersion,
-        r.id AS role_id
-      FROM admins a
-      LEFT JOIN admin_roles r
-        ON r.slug = a.role
-      WHERE a.id = ?
-    `,
-    [adminId]
-  );
-
-  return rows[0] || null;
-}
-
-/**
- * Carrega as permissões do admin com base no role.
- * Usa cache Redis quando disponível (TTL: 60 s).
- */
-async function getAdminPermissions(adminId, tokenVersion) {
-  if (!adminId) return [];
-
-  const cacheKey = permCacheKey(adminId, tokenVersion ?? 0);
-
-  // Tenta ler do cache Redis
-  if (redis.ready) {
-    try {
-      const cached = await redis.client.get(cacheKey);
-      if (cached !== null) {
-        return JSON.parse(cached);
-      }
-    } catch {
-      // Cache miss — segue para o banco
-    }
-  }
-
-  const [rows] = await pool.query(
-    `
-      SELECT DISTINCT p.chave
-      FROM admins a
-      JOIN admin_roles r
-        ON r.slug = a.role
-      JOIN admin_role_permissions rp
-        ON rp.role_id = r.id
-      JOIN admin_permissions p
-        ON p.id = rp.permission_id
-      WHERE a.id = ?
-    `,
-    [adminId]
-  );
-
-  const permissions = rows.map((r) => r.chave);
-
-  // Armazena no Redis (fire-and-forget — não derruba o request se falhar)
-  if (redis.ready) {
-    redis.client
-      .set(cacheKey, JSON.stringify(permissions), "EX", PERM_CACHE_TTL_SEC)
-      .catch(() => {});
-  }
-
-  return permissions;
-}
-
 /**
  * Middleware de autenticação/autorização do admin.
+ *
+ * Queries de banco e cache Redis são delegadas a authAdminService,
+ * que é a fonte canônica para acesso a dados de admin.
  */
 async function verifyAdmin(req, _res, next) {
   if (!SECRET_KEY) {
@@ -135,7 +56,7 @@ async function verifyAdmin(req, _res, next) {
   }
 
   try {
-    const admin = await findAdminById(decoded.id);
+    const admin = await authAdminService.findAdminById(decoded.id);
 
     if (!admin) {
       return next(
@@ -172,7 +93,12 @@ async function verifyAdmin(req, _res, next) {
       );
     }
 
-    const dbPermissions = await getAdminPermissions(admin.id, dbVersion);
+    // Permissões SEMPRE vêm do banco (ou cache Redis) — nunca do JWT.
+    // tokenVersion é passado para que o cache seja vinculado à sessão atual.
+    const dbPermissions = await authAdminService.getAdminPermissions(
+      admin.id,
+      dbVersion
+    );
 
     req.admin = {
       id: admin.id,
@@ -180,7 +106,6 @@ async function verifyAdmin(req, _res, next) {
       nome: admin.nome,
       role: admin.role,
       role_id: admin.role_id ?? null,
-      // Permissões SEMPRE vêm do banco (ou cache Redis) — nunca do JWT.
       permissions: Array.isArray(dbPermissions) ? dbPermissions : [],
     };
 

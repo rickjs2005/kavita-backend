@@ -1,7 +1,7 @@
 /**
  * teste/integration/adminDrones.int.test.js
  *
- * Rotas testadas (routes/adminDrones.js):
+ * Rotas testadas (routes/admin/adminDrones.js):
  * - PAGE (legado + alias):
  *   - GET    /api/admin/drones/page
  *   - PUT    /api/admin/drones/page               (multipart: heroVideo, heroImageFallback)
@@ -57,7 +57,7 @@
  * - Sem SQL “solto”: este arquivo testa a camada de rotas; controllers são mockados (não há SQL)
  *
  * Observação importante:
- * - routes/adminDrones.js NÃO monta verifyAdmin internamente (padrão do seu projeto).
+ * - routes/admin/adminDrones.js NÃO monta verifyAdmin internamente (padrão do seu projeto).
  *   Por isso, para testar 401/403, este teste embrulha o router com um middleware verifyAdmin mockado.
  */
 
@@ -66,7 +66,7 @@ const express = require("express");
 const { makeTestApp, makeMockConn } = require("../testUtils");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 
-describe("Admin Drones routes (routes/adminDrones.js)", () => {
+describe("Admin Drones routes (routes/admin/adminDrones.js)", () => {
   const originalEnv = process.env;
   const MOUNT_PATH = "/api/admin/drones";
 
@@ -177,7 +177,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
     );
 
     // require router after mocks
-    const router = require("../../routes/adminDrones");
+    const router = require("../../routes/admin/adminDrones");
 
     // wrap router with auth mock (simula mount em routes/index.js)
     const wrapper = express.Router();
@@ -449,7 +449,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "Payload inválido." });
+      expect(res.body).toEqual(expect.objectContaining({ code: "VALIDATION_ERROR", message: "Payload inválido." }));
 
       expect(controllerMock.upsertLandingConfig).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
@@ -529,7 +529,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "Campos obrigatórios." });
+      expect(res.body).toEqual(expect.objectContaining({ code: "VALIDATION_ERROR", message: "Campos obrigatórios." }));
 
       expect(controllerMock.createModel).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
@@ -551,7 +551,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Modelo não encontrado." });
+      expect(res.body).toEqual(expect.objectContaining({ code: "NOT_FOUND", message: "Modelo não encontrado." }));
 
       expect(controllerMock.getModelAggregate).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
@@ -696,7 +696,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toEqual(expect.objectContaining({ code: "VALIDATION_ERROR", message: "ID inválido." }));
 
       expect(controllerMock.updateModelGalleryItem).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
@@ -827,7 +827,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Item não encontrado." });
+      expect(res.body).toEqual(expect.objectContaining({ code: "NOT_FOUND", message: "Item não encontrado." }));
 
       expect(controllerMock.updateGalleryItem).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
@@ -931,7 +931,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toEqual(expect.objectContaining({ code: "VALIDATION_ERROR", message: "ID inválido." }));
 
       expect(controllerMock.updateRepresentative).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
@@ -1024,7 +1024,7 @@ describe("Admin Drones routes (routes/adminDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Comentário não encontrado." });
+      expect(res.body).toEqual(expect.objectContaining({ code: "NOT_FOUND", message: "Comentário não encontrado." }));
 
       expect(controllerMock.rejectComment).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);

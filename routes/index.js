@@ -12,13 +12,31 @@ const adminPermissionsRoutes = require("./admin/adminPermissions");
 const adminRolesRoutes = require("./admin/adminRoles");
 const adminAdminsRoutes = require("./admin/adminAdmins");
 
-// Função auxiliar para carregar rotas com tratamento de erros
+// ---------------------------------------------------------------------------
+// Helpers de carregamento de rotas
+// ---------------------------------------------------------------------------
+
+/**
+ * Trata falha de carregamento de rota:
+ * - Em produção: lança erro para abortar a inicialização do processo.
+ *   O supervisor (PM2, Docker) detectará a falha e não subirá a instância.
+ * - Fora de produção: loga com aviso proeminente e continua (dev/CI).
+ */
+function handleRouteLoadError(moduleName, err) {
+  const msg = `❌ Falha ao carregar rota "${moduleName}": ${err.message}`;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(msg);
+  }
+  console.error(msg);
+  console.error("⚠️  ATENÇÃO: esta rota está INDISPONÍVEL. Corrija antes de ir para produção.\n");
+}
+
 function loadRoute(path, moduleName) {
   try {
     const routeModule = require(moduleName);
     router.use(path, routeModule);
   } catch (err) {
-    console.error(`❌ Erro ao carregar rota ${moduleName}:`, err.message);
+    handleRouteLoadError(moduleName, err);
   }
 }
 
@@ -61,25 +79,25 @@ try {
   const userProfileRoutes = require("./auth/userProfile");
   router.use("/users", validateCSRF, userProfileRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./auth/userProfile:", err.message);
+  handleRouteLoadError("./auth/userProfile", err);
 }
 try {
   const userAddressesRoutes = require("./auth/userAddresses");
   router.use("/users/addresses", validateCSRF, userAddressesRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./auth/userAddresses:", err.message);
+  handleRouteLoadError("./auth/userAddresses", err);
 }
 try {
   const cartRoutes = require("./ecommerce/cart");
   router.use("/cart", validateCSRF, cartRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./ecommerce/cart:", err.message);
+  handleRouteLoadError("./ecommerce/cart", err);
 }
 try {
   const favoritesRoutes = require("./ecommerce/favorites");
   router.use("/favorites", validateCSRF, favoritesRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./ecommerce/favorites:", err.message);
+  handleRouteLoadError("./ecommerce/favorites", err);
 }
 loadRoute("/public/site-hero", "./public/publicSiteHero");
 
@@ -92,14 +110,14 @@ try {
   const checkoutRoutes = require("./ecommerce/checkout");
   router.use("/checkout", validateCSRF, checkoutRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./ecommerce/checkout:", err.message);
+  handleRouteLoadError("./ecommerce/checkout", err);
 }
 loadRoute("/payment", "./ecommerce/payment");
 try {
   const pedidosRoutes = require("./ecommerce/pedidos");
   router.use("/pedidos", validateCSRF, pedidosRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./ecommerce/pedidos:", err.message);
+  handleRouteLoadError("./ecommerce/pedidos", err);
 }
 
 /* ============================
@@ -129,7 +147,7 @@ try {
   const adminCategoriasRoutes = require("./admin/adminCategorias");
   router.use("/admin/categorias", verifyAdmin, validateCSRF, adminCategoriasRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminCategorias:", err.message);
+  handleRouteLoadError("./admin/adminCategorias", err);
 }
 
 // Colaboradores
@@ -137,7 +155,7 @@ try {
   const adminColaboradoresRoutes = require("./admin/adminColaboradores");
   router.use("/admin/colaboradores", verifyAdmin, validateCSRF, adminColaboradoresRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminColaboradores:", err.message);
+  handleRouteLoadError("./admin/adminColaboradores", err);
 }
 
 // Marketing > Promoções
@@ -150,7 +168,7 @@ try {
     adminMarketingPromocoesRoutes
   );
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminMarketingPromocoes:", err.message);
+  handleRouteLoadError("./admin/adminMarketingPromocoes", err);
 }
 
 // Especialidades
@@ -158,7 +176,7 @@ try {
   const adminEspecialidadesRoutes = require("./admin/adminEspecialidades");
   router.use("/admin/especialidades", verifyAdmin, validateCSRF, adminEspecialidadesRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminEspecialidades:", err.message);
+  handleRouteLoadError("./admin/adminEspecialidades", err);
 }
 
 // Pedidos (sensível: impacto financeiro)
@@ -166,7 +184,7 @@ try {
   const adminPedidosRoutes = require("./admin/adminPedidos");
   router.use("/admin/pedidos", verifyAdmin, validateCSRF, requirePermission("pedidos.ver"), adminPedidosRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminPedidos:", err.message);
+  handleRouteLoadError("./admin/adminPedidos", err);
 }
 
 // Produtos
@@ -174,7 +192,7 @@ try {
   const adminProdutosRoutes = require("./admin/adminProdutos");
   router.use("/admin/produtos", verifyAdmin, validateCSRF, adminProdutosRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminProdutos:", err.message);
+  handleRouteLoadError("./admin/adminProdutos", err);
 }
 
 // Serviços
@@ -182,7 +200,7 @@ try {
   const adminServicosRoutes = require("./admin/adminServicos");
   router.use("/admin/servicos", verifyAdmin, validateCSRF, adminServicosRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminServicos:", err.message);
+  handleRouteLoadError("./admin/adminServicos", err);
 }
 
 // Solicitações de serviços
@@ -195,7 +213,7 @@ try {
     adminSolicitacoesServicosRoutes
   );
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminSolicitacoesServicos:", err.message);
+  handleRouteLoadError("./admin/adminSolicitacoesServicos", err);
 }
 
 // Usuários (sensível: gerencia contas de clientes)
@@ -203,7 +221,7 @@ try {
   const adminUsersRoutes = require("./admin/adminUsers");
   router.use("/admin/users", verifyAdmin, validateCSRF, requirePermission("usuarios.ver"), adminUsersRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminUsers:", err.message);
+  handleRouteLoadError("./admin/adminUsers", err);
 }
 
 // Stats
@@ -211,7 +229,7 @@ try {
   const adminStatsRoutes = require("./admin/adminStats");
   router.use("/admin/stats", verifyAdmin, validateCSRF, adminStatsRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminStats:", err.message);
+  handleRouteLoadError("./admin/adminStats", err);
 }
 
 // Carrinhos
@@ -219,7 +237,7 @@ try {
   const adminCartsRoutes = require("./admin/adminCarts");
   router.use("/admin/carrinhos", verifyAdmin, validateCSRF, adminCartsRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminCarts:", err.message);
+  handleRouteLoadError("./admin/adminCarts", err);
 }
 
 // Comunicação
@@ -227,7 +245,7 @@ try {
   const adminComunicacaoRoutes = require("./admin/adminComunicacao");
   router.use("/admin/comunicacao", verifyAdmin, validateCSRF, adminComunicacaoRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminComunicacao:", err.message);
+  handleRouteLoadError("./admin/adminComunicacao", err);
 }
 
 // Cupons
@@ -235,7 +253,7 @@ try {
   const adminCuponsRoutes = require("./admin/adminCupons");
   router.use("/admin/cupons", verifyAdmin, validateCSRF, adminCuponsRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminCupons:", err.message);
+  handleRouteLoadError("./admin/adminCupons", err);
 }
 
 // Configurações (sensível: altera comportamento global da loja)
@@ -243,7 +261,7 @@ try {
   const adminConfigRoutes = require("./admin/adminConfig");
   router.use("/admin/config", verifyAdmin, validateCSRF, requirePermission("config.editar"), adminConfigRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminConfig:", err.message);
+  handleRouteLoadError("./admin/adminConfig", err);
 }
 
 // Upload de logo e configurações da loja
@@ -251,7 +269,7 @@ try {
   const adminConfigUploadRoutes = require("./admin/adminConfigUpload");
   router.use("/admin/shop-config/upload", verifyAdmin, validateCSRF, requirePermission("config.editar"), adminConfigUploadRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminConfigUpload:", err.message);
+  handleRouteLoadError("./admin/adminConfigUpload", err);
 }
 
 // Relatórios (sensível: requer permissão explícita além de verifyAdmin)
@@ -259,7 +277,7 @@ try {
   const adminRelatoriosRoutes = require("./admin/adminRelatorios");
   router.use("/admin/relatorios", verifyAdmin, validateCSRF, requirePermission("relatorios.ver"), adminRelatoriosRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminRelatorios:", err.message);
+  handleRouteLoadError("./admin/adminRelatorios", err);
 }
 
 // Kavita News (Admin)
@@ -267,7 +285,7 @@ try {
   const adminNewsRoutes = require("./admin/adminNews");
   router.use("/admin/news", verifyAdmin, validateCSRF, adminNewsRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminNews:", err.message);
+  handleRouteLoadError("./admin/adminNews", err);
 }
 
 // Admin News — upload de imagens (separado para multer)
@@ -275,7 +293,7 @@ try {
   const adminNewsUploadRoutes = require("./admin/adminNewsUpload");
   router.use("/admin/news", verifyAdmin, validateCSRF, adminNewsUploadRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminNewsUpload:", err.message);
+  handleRouteLoadError("./admin/adminNewsUpload", err);
 }
 
 // Admin Drones (Kavita Drones)
@@ -283,7 +301,7 @@ try {
   const adminDronesRoutes = require("./admin/adminDrones");
   router.use("/admin/drones", verifyAdmin, validateCSRF, adminDronesRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminDrones:", err.message);
+  handleRouteLoadError("./admin/adminDrones", err);
 }
 
 // Admin Shipping (Frete por zonas UF/cidades)
@@ -291,7 +309,7 @@ try {
   const adminShippingZonesRoutes = require("./admin/adminShippingZones");
   router.use("/admin/shipping", verifyAdmin, validateCSRF, adminShippingZonesRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminShippingZones:", err.message);
+  handleRouteLoadError("./admin/adminShippingZones", err);
 }
 
 // Site Hero (Admin)
@@ -299,7 +317,7 @@ try {
   const adminSiteHeroRoutes = require("./admin/adminSiteHero");
   router.use("/admin/site-hero", verifyAdmin, validateCSRF, adminSiteHeroRoutes);
 } catch (err) {
-  console.error("❌ Erro ao carregar ./admin/adminSiteHero:", err.message);
+  handleRouteLoadError("./admin/adminSiteHero", err);
 }
 
 /* ============================
