@@ -1,4 +1,4 @@
-// models/newsModel.js
+// repositories/newsModel.js
 // Centraliza queries do módulo Kavita News (clima, cotações, posts)
 
 const db = require("../config/pool");

@@ -54,7 +54,7 @@ function loadController({ mockNewsModel, mockPool, mockInmetService } = {}) {
   };
 
   jest.doMock("../../../config/pool", () => pool);
-  jest.doMock("../../../models/newsModel", () => newsModel);
+  jest.doMock("../../../repositories/newsModel", () => newsModel);
 
   if (mockInmetService !== undefined) {
     jest.doMock("../../../services/inmetStationsService", () => mockInmetService);

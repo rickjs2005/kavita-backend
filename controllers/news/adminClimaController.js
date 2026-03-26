@@ -1,7 +1,7 @@
 // controllers/news/adminClimaController.js
 // Admin controller do Kavita News - CLIMA (CRUD + validações + logs em admin_logs via pool)
 
-const newsModel = require("../../models/newsModel");
+const newsModel = require("../../repositories/newsModel");
 const pool = require("../../config/pool");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const { logAdminAction } = require("../../services/adminLogs");
@@ -10,7 +10,7 @@ const {
   toInt, toFloat, toBoolTiny,
   isNonEmptyStr, isOptionalStr, isValidDateTimeLike,
   normalizeSlug, isValidSlug, nowSql,
-} = require("../../utils/newsHelpers");
+} = require("../../services/news/helpers");
 
 /**
  * Sugestão de coordenadas (compatibilidade):

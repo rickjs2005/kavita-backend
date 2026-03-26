@@ -4,7 +4,7 @@ const authConfig = require("../config/auth");
 const jwt = require("jsonwebtoken");
 const passwordResetTokens = require("../services/passwordResetTokenService");
 const { sendResetPasswordEmail } = require("../services/mailService");
-const { assertNotLocked, incrementFailure, resetFailures, syncFromRedis } = require("../utils/accountLockout");
+const { assertNotLocked, incrementFailure, resetFailures, syncFromRedis } = require("../security/accountLockout");
 const userRepo = require("../repositories/userRepository");
 
 const AppError = require("../errors/AppError");

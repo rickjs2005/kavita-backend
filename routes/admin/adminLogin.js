@@ -8,7 +8,7 @@ const pool = require("../../config/pool");
 const { logAdminAction } = require("../../services/adminLogs");
 const verifyAdmin = require("../../middleware/verifyAdmin");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
-const { assertNotLocked, incrementFailure, resetFailures, syncFromRedis } = require("../../utils/accountLockout");
+const { assertNotLocked, incrementFailure, resetFailures, syncFromRedis } = require("../../security/accountLockout");
 const { ADMIN_LOGIN_SCHEDULE } = require("../../config/rateLimitSchedules");
 require("dotenv").config();
 

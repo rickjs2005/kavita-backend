@@ -2,12 +2,12 @@
 // Público: endpoints consumidos pelo site (sem login)
 // Padrão de resposta: { ok, data, meta? }
 
-const newsModel = require("../models/newsModel");
+const newsModel = require("../repositories/newsModel");
 const newsRepo = require("../repositories/newsRepository");
 const {
   ok, fail,
   toInt, normalizeSlug, isValidSlug, sanitizeLimitOffset,
-} = require("../utils/newsHelpers");
+} = require("../services/news/helpers");
 
 /* =========================================================
  * PUBLIC - CLIMA

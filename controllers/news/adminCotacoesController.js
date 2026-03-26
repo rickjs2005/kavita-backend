@@ -1,7 +1,7 @@
 // controllers/news/adminCotacoesController.js
 // Admin controller do Kavita News - COTAÇÕES (CRUD + validações + logs em admin_logs via pool)
 
-const newsModel = require("../../models/newsModel");
+const newsModel = require("../../repositories/newsModel");
 const pool = require("../../config/pool");
 const { logAdminAction } = require("../../services/adminLogs");
 const {
@@ -9,7 +9,7 @@ const {
   toInt, toFloat, toBoolTiny,
   isNonEmptyStr, isOptionalStr, isValidDateTimeLike,
   normalizeSlug, isValidSlug, nowSql,
-} = require("../../utils/newsHelpers");
+} = require("../../services/news/helpers");
 
 let cotacoesProviders = null;
 try {

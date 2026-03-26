@@ -8,7 +8,7 @@ const {
   ok, created, fail,
   toInt, isNonEmptyStr, isOptionalStr, isValidDateTimeLike,
   normalizeSlug, isValidSlug, nowSql,
-} = require("../../utils/newsHelpers");
+} = require("../../services/news/helpers");
 
 function getAdminId(req) {
   return req.admin?.id || req.user?.id || req.adminId || req.userId || null;

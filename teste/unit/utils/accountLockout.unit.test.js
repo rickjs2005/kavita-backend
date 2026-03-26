@@ -18,7 +18,7 @@
 // Import fresh instance each test by clearing module cache
 function getLockout() {
   jest.resetModules();
-  return require("../../../utils/accountLockout");
+  return require("../../../security/accountLockout");
 }
 
 describe("accountLockout", () => {
@@ -100,7 +100,7 @@ describe("accountLockout — syncFromRedis", () => {
   test("syncFromRedis é no-op quando Redis não está disponível (redis.ready=false)", async () => {
     jest.resetModules();
     // lib/redis.js em NODE_ENV=test retorna ready=false — comportamento padrão
-    const { syncFromRedis, assertNotLocked } = require("../../../utils/accountLockout");
+    const { syncFromRedis, assertNotLocked } = require("../../../security/accountLockout");
     const key = "user:noop-sync@test.com";
 
     await syncFromRedis(key); // deve retornar sem fazer nada
@@ -123,7 +123,7 @@ describe("accountLockout — syncFromRedis", () => {
       },
     }));
 
-    const { syncFromRedis, assertNotLocked } = require("../../../utils/accountLockout");
+    const { syncFromRedis, assertNotLocked } = require("../../../security/accountLockout");
     const key = "user:restart-locked@test.com";
 
     // In-memory está vazia (simula restart), Redis tem o lockout
@@ -155,7 +155,7 @@ describe("accountLockout — syncFromRedis", () => {
       },
     }));
 
-    const { syncFromRedis, assertNotLocked } = require("../../../utils/accountLockout");
+    const { syncFromRedis, assertNotLocked } = require("../../../security/accountLockout");
     const key = "user:no-lockout@test.com";
 
     await syncFromRedis(key);

@@ -177,12 +177,12 @@ describe("Persistent Lockout (accountLockout)", () => {
   });
 
   test("assertNotLocked does not throw for a new identifier", () => {
-    const { assertNotLocked } = require("../../utils/accountLockout");
+    const { assertNotLocked } = require("../../security/accountLockout");
     expect(() => assertNotLocked("user:fresh-unique-p0@example.com")).not.toThrow();
   });
 
   test("lockout error has 30-minute TTL and locked=true flag", async () => {
-    const { assertNotLocked, incrementFailure } = require("../../utils/accountLockout");
+    const { assertNotLocked, incrementFailure } = require("../../security/accountLockout");
     const key = "user:ttl30min-p0@example.com";
 
     for (let i = 0; i < 5; i++) {
