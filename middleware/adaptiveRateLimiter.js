@@ -1,13 +1,12 @@
 // middleware/adaptiveRateLimiter.js
 //
-// LIMITAÇÃO CONHECIDA: o store padrão é um Map() em memória por processo.
-// Em deployments com múltiplas instâncias (PM2 cluster, containers horizontais),
-// o estado de rate limit NÃO é compartilhado entre processos — cada instância
-// mantém seu próprio contador. Reiniciar o servidor zera todos os contadores.
+// Suporta dois tipos de store:
+//   - Map (padrão, in-memory por processo) — sem dependências externas
+//   - RedisRateLimiterStore (lib/redisRateLimiterStore.js) — compartilhado entre instâncias
 //
-// Para produção multi-instância: passe um store compatível com a interface Map
-// (get/set/delete) implementado sobre Redis (ex: usando ioredis).
-// O accountLockout.js já usa ioredis e pode servir de referência.
+// O middleware é async para suportar stores assíncronos (Redis).
+// req.rateLimit.fail() e req.rateLimit.reset() são fire-and-forget:
+//   não precisam ser awaited pelos callers existentes.
 //
 const ERROR_CODES = require("../constants/ErrorCodes");
 
@@ -18,17 +17,13 @@ function createAdaptiveRateLimiter({
   keyGenerator,
   schedule = DEFAULT_SCHEDULE,
   decayMs = DEFAULT_DECAY_MS,
-  // store: permite injetar store externo (ex: Redis-backed) para ambientes multi-instância.
-  // Interface mínima: { get(key), set(key, value), delete(key) } — compatível com Map.
   store = new Map(),
 } = {}) {
   if (typeof keyGenerator !== "function") {
     throw new Error("keyGenerator é obrigatório no rate limiter.");
   }
 
-  // Limpeza periódica do store padrão (Map in-memory).
-  // Entradas cujo último acesso ultrapassou o período de decay são removidas.
-  // Não interfere com stores externos (Redis, etc.) que gerenciam TTL por conta própria.
+  // Limpeza periódica para o store Map in-memory (Redis gerencia TTL por conta própria).
   if (store instanceof Map && process.env.NODE_ENV !== "test") {
     setInterval(() => {
       const now = Date.now();
@@ -40,17 +35,20 @@ function createAdaptiveRateLimiter({
     }, decayMs).unref();
   }
 
-  return function adaptiveRateLimiter(req, res, next) {
-    req.rateLimit = req.rateLimit || { fail: () => { }, reset: () => { } };
+  return async function adaptiveRateLimiter(req, res, next) {
+    req.rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
 
     const key = keyGenerator(req);
     if (!key) return next();
 
     const now = Date.now();
-    let entry = store.get(key);
+
+    // Suporta store sync (Map) e async (Redis) via await
+    let entry = await store.get(key);
     if (!entry) {
       entry = { failCount: 0, blockedUntil: 0, lastFailure: 0 };
-      store.set(key, entry);
+      // Persiste a nova entrada (fire-and-forget)
+      Promise.resolve(store.set(key, entry)).catch(() => {});
     }
 
     if (entry.blockedUntil > now) {
@@ -70,6 +68,7 @@ function createAdaptiveRateLimiter({
       entry.lastFailure = 0;
     }
 
+    // fire-and-forget — callers não precisam awaitar
     req.rateLimit.fail = () => {
       entry.failCount += 1;
       entry.lastFailure = Date.now();
@@ -80,10 +79,14 @@ function createAdaptiveRateLimiter({
       if (blockDuration > 0) {
         entry.blockedUntil = Date.now() + blockDuration;
       }
+
+      // Escrita assíncrona — não bloqueia o caller
+      Promise.resolve(store.set(key, entry)).catch(() => {});
     };
 
     req.rateLimit.reset = () => {
-      store.delete(key);
+      // Escrita assíncrona — não bloqueia o caller
+      Promise.resolve(store.delete(key)).catch(() => {});
     };
 
     return next();

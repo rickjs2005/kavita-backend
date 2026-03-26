@@ -3,8 +3,17 @@ const jwt = require("jsonwebtoken");
 const pool = require("../config/pool");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const redis = require("../lib/redis");
 
 const SECRET_KEY = process.env.JWT_SECRET;
+
+// Permission cache TTL: 60 s — curto o suficiente para que mudanças de role
+// propaguem rapidamente sem sacrificar a redução de queries ao banco.
+const PERM_CACHE_TTL_SEC = 60;
+
+function permCacheKey(adminId, tokenVersion) {
+  return `admin:perm:${adminId}:${tokenVersion}`;
+}
 
 /**
  * Busca o admin no banco (incluindo role_id via admin_roles).
@@ -33,9 +42,24 @@ async function findAdminById(adminId) {
 
 /**
  * Carrega as permissões do admin com base no role.
+ * Usa cache Redis quando disponível (TTL: 60 s).
  */
-async function getAdminPermissions(adminId) {
+async function getAdminPermissions(adminId, tokenVersion) {
   if (!adminId) return [];
+
+  const cacheKey = permCacheKey(adminId, tokenVersion ?? 0);
+
+  // Tenta ler do cache Redis
+  if (redis.ready) {
+    try {
+      const cached = await redis.client.get(cacheKey);
+      if (cached !== null) {
+        return JSON.parse(cached);
+      }
+    } catch {
+      // Cache miss — segue para o banco
+    }
+  }
 
   const [rows] = await pool.query(
     `
@@ -52,7 +76,16 @@ async function getAdminPermissions(adminId) {
     [adminId]
   );
 
-  return rows.map((r) => r.chave);
+  const permissions = rows.map((r) => r.chave);
+
+  // Armazena no Redis (fire-and-forget — não derruba o request se falhar)
+  if (redis.ready) {
+    redis.client
+      .set(cacheKey, JSON.stringify(permissions), "EX", PERM_CACHE_TTL_SEC)
+      .catch(() => {});
+  }
+
+  return permissions;
 }
 
 /**
@@ -125,8 +158,8 @@ async function verifyAdmin(req, _res, next) {
     }
 
     // Validate tokenVersion for logout revocation support.
-    // ✅ FIX: tratar null como 0 — sem esse fallback, admins pré-migração com
-    // tokenVersion NULL no banco ignoram completamente a verificação de revogação.
+    // Tratar null como 0 — sem esse fallback, admins pré-migração com
+    // tokenVersion NULL no banco ignoram a verificação de revogação.
     const dbVersion = admin.tokenVersion ?? 0;
     const jwtVersion = decoded.tokenVersion ?? 0;
     if (jwtVersion !== dbVersion) {
@@ -139,7 +172,7 @@ async function verifyAdmin(req, _res, next) {
       );
     }
 
-    const dbPermissions = await getAdminPermissions(admin.id);
+    const dbPermissions = await getAdminPermissions(admin.id, dbVersion);
 
     req.admin = {
       id: admin.id,
@@ -147,10 +180,7 @@ async function verifyAdmin(req, _res, next) {
       nome: admin.nome,
       role: admin.role,
       role_id: admin.role_id ?? null,
-      // Permissões SEMPRE vêm do banco — nunca do JWT.
-      // Se o banco retorna [], o admin tem zero permissões (menor privilégio).
-      // Usar o JWT como fallback permitiria que permissões removidas no banco
-      // continuassem válidas até a expiração do token.
+      // Permissões SEMPRE vêm do banco (ou cache Redis) — nunca do JWT.
       permissions: Array.isArray(dbPermissions) ? dbPermissions : [],
     };
 
