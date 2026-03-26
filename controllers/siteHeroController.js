@@ -107,7 +107,7 @@ exports.updateHero = async (req, res) => {
     const subtitle = String(subtitleRaw || "").trim();
 
     if (label && label.length > 80) {
-      throw new AppError("Label do botão muito grande.", 400, "VALIDATION_ERROR", {
+      throw new AppError("Label do botão muito grande.", "VALIDATION_ERROR", 400, {
         field: "button_label",
         max: 80,
       });
@@ -115,14 +115,14 @@ exports.updateHero = async (req, res) => {
 
     // limites coerentes com sua tabela (title 255 / subtitle 500)
     if (title && title.length > 255) {
-      throw new AppError("Título muito grande.", 400, "VALIDATION_ERROR", {
+      throw new AppError("Título muito grande.", "VALIDATION_ERROR", 400, {
         field: "title",
         max: 255,
       });
     }
 
     if (subtitle && subtitle.length > 500) {
-      throw new AppError("Subtítulo muito grande.", 400, "VALIDATION_ERROR", {
+      throw new AppError("Subtítulo muito grande.", "VALIDATION_ERROR", 400, {
         field: "subtitle",
         max: 500,
       });
@@ -140,7 +140,7 @@ exports.updateHero = async (req, res) => {
 
     if (heroVideo) {
       if (!String(heroVideo.mimetype || "").startsWith("video/")) {
-        throw new AppError("Arquivo de vídeo inválido.", 400, "VALIDATION_ERROR", {
+        throw new AppError("Arquivo de vídeo inválido.", "VALIDATION_ERROR", 400, {
           field: "heroVideo",
         });
       }
@@ -151,7 +151,7 @@ exports.updateHero = async (req, res) => {
 
     if (heroImage) {
       if (!String(heroImage.mimetype || "").startsWith("image/")) {
-        throw new AppError("Arquivo de imagem inválido.", 400, "VALIDATION_ERROR", {
+        throw new AppError("Arquivo de imagem inválido.", "VALIDATION_ERROR", 400, {
           field: "heroImage",
         });
       }

@@ -1,33 +1,25 @@
 const ERROR_CODES = require("../constants/ErrorCodes");
 
+/**
+ * Erro padronizado da aplicação.
+ *
+ * Assinatura: new AppError(message, code, status, details?)
+ *
+ * @param {string} message   - Mensagem legível para o usuário
+ * @param {string} code      - Código de erro (use ErrorCodes.js)
+ * @param {number} status    - HTTP status code (400, 401, 404, 409, 500, ...)
+ * @param {*}     [details]  - Objeto adicional de contexto (ex: { fields: [...] })
+ *
+ * @example
+ * throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+ * throw new AppError("Dados inválidos.", ERROR_CODES.VALIDATION_ERROR, 400, { fields });
+ */
 class AppError extends Error {
-  /**
-   * Suporta duas convenções de chamada:
-   *   Nova (padrão): new AppError(message, code, status, details?)
-   *   Legado:        new AppError(message, statusCode, code, details?)  ← drones controllers
-   *
-   * A detecção é feita pelo tipo do segundo argumento:
-   *   - número → convenção legada (statusCode, code)
-   *   - string → convenção nova (code, status)
-   *
-   * Quando todos os callers legados forem migrados, remover a detecção e
-   * manter apenas a convenção nova.
-   */
-  constructor(message, codeOrStatus, statusOrCode, details = null) {
+  constructor(message, code, status, details = null) {
     super(message);
-
-    if (typeof codeOrStatus === "number") {
-      // Convenção legada: (message, statusCode, code, details)
-      this.status = codeOrStatus;
-      this.statusCode = codeOrStatus;
-      this.code = statusOrCode ?? ERROR_CODES.SERVER_ERROR;
-    } else {
-      // Convenção nova: (message, code, status, details)
-      this.code = codeOrStatus ?? ERROR_CODES.SERVER_ERROR;
-      this.status = statusOrCode ?? 500;
-      this.statusCode = this.status;
-    }
-
+    this.code = code ?? ERROR_CODES.SERVER_ERROR;
+    this.status = status ?? 500;
+    this.statusCode = this.status;
     if (details !== null && details !== undefined) {
       this.details = details;
     }

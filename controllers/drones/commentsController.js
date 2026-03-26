@@ -15,58 +15,58 @@ async function listComments(req, res) {
     return res.json(result);
   } catch (e) {
     console.error("[drones/admin] listComments error:", e);
-    return sendError(res, new AppError("Erro ao listar comentários.", 500, "SERVER_ERROR"));
+    return sendError(res, new AppError("Erro ao listar comentários.", "SERVER_ERROR", 500));
   }
 }
 
 async function approveComment(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!id) throw new AppError("ID inválido.", 400, "VALIDATION_ERROR");
+    if (!id) throw new AppError("ID inválido.", "VALIDATION_ERROR", 400);
 
     const affected = await dronesService.setCommentApproval(id, true);
-    if (!affected) throw new AppError("Comentário não encontrado.", 404, "NOT_FOUND");
+    if (!affected) throw new AppError("Comentário não encontrado.", "NOT_FOUND", 404);
 
     return res.json({ message: "Comentário aprovado.", id });
   } catch (e) {
     console.error("[drones/admin] approveComment error:", e);
     if (e?.code === "STATUS_UNSUPPORTED") {
-      return sendError(res, new AppError("STATUS não suportado nesta instância.", 422, "UNPROCESSABLE_ENTITY"));
+      return sendError(res, new AppError("STATUS não suportado nesta instância.", "UNPROCESSABLE_ENTITY", 422));
     }
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao aprovar comentário.", 500, "SERVER_ERROR"));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao aprovar comentário.", "SERVER_ERROR", 500));
   }
 }
 
 async function rejectComment(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!id) throw new AppError("ID inválido.", 400, "VALIDATION_ERROR");
+    if (!id) throw new AppError("ID inválido.", "VALIDATION_ERROR", 400);
 
     const affected = await dronesService.setCommentApproval(id, false);
-    if (!affected) throw new AppError("Comentário não encontrado.", 404, "NOT_FOUND");
+    if (!affected) throw new AppError("Comentário não encontrado.", "NOT_FOUND", 404);
 
     return res.json({ message: "Comentário reprovado.", id });
   } catch (e) {
     console.error("[drones/admin] rejectComment error:", e);
     if (e?.code === "STATUS_UNSUPPORTED") {
-      return sendError(res, new AppError("STATUS não suportado nesta instância.", 422, "UNPROCESSABLE_ENTITY"));
+      return sendError(res, new AppError("STATUS não suportado nesta instância.", "UNPROCESSABLE_ENTITY", 422));
     }
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao reprovar comentário.", 500, "SERVER_ERROR"));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao reprovar comentário.", "SERVER_ERROR", 500));
   }
 }
 
 async function deleteComment(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!id) throw new AppError("ID inválido.", 400, "VALIDATION_ERROR");
+    if (!id) throw new AppError("ID inválido.", "VALIDATION_ERROR", 400);
 
     const affected = await dronesService.deleteComment(id);
-    if (!affected) throw new AppError("Comentário não encontrado.", 404, "NOT_FOUND");
+    if (!affected) throw new AppError("Comentário não encontrado.", "NOT_FOUND", 404);
 
     return res.json({ message: "Comentário removido.", id });
   } catch (e) {
     console.error("[drones/admin] deleteComment error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover comentário.", 500, "SERVER_ERROR"));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover comentário.", "SERVER_ERROR", 500));
   }
 }
 

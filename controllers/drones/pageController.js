@@ -20,7 +20,7 @@ async function getPage(req, res) {
     });
   } catch (e) {
     console.error("[drones/admin] getPage error:", e);
-    return sendError(res, new AppError("Erro ao carregar config.", 500, "SERVER_ERROR"));
+    return sendError(res, new AppError("Erro ao carregar config.", "SERVER_ERROR", 500));
   }
 }
 
@@ -35,7 +35,7 @@ async function upsertPage(req, res) {
     if (!hero_title) {
       if (heroVideo) safeUnlink(heroVideo);
       if (heroImageFallback) safeUnlink(heroImageFallback);
-      throw new AppError("hero_title é obrigatório.", 400, "VALIDATION_ERROR", { field: "hero_title" });
+      throw new AppError("hero_title é obrigatório.", "VALIDATION_ERROR", 400, { field: "hero_title" });
     }
 
     const specs_items_json = body.specs_items_json ? JSON.parse(body.specs_items_json) : null;
@@ -69,13 +69,13 @@ async function upsertPage(req, res) {
       const info = classify(heroVideo);
       if (!info || info.media_type !== "VIDEO") {
         safeUnlink(heroVideo);
-        throw new AppError("heroVideo inválido. Aceito: mp4 até 30MB.", 400, "VALIDATION_ERROR", {
+        throw new AppError("heroVideo inválido. Aceito: mp4 até 30MB.", "VALIDATION_ERROR", 400, {
           field: "heroVideo", allowed: ["video/mp4"],
         });
       }
       if (Number(heroVideo.size || 0) > MAX_VIDEO_BYTES) {
         safeUnlink(heroVideo);
-        throw new AppError("heroVideo excede 30MB.", 400, "VALIDATION_ERROR", { field: "heroVideo", maxBytes: MAX_VIDEO_BYTES });
+        throw new AppError("heroVideo excede 30MB.", "VALIDATION_ERROR", 400, { field: "heroVideo", maxBytes: MAX_VIDEO_BYTES });
       }
       const saved = await mediaService.persistMedia([heroVideo], { folder: "drones" });
       payload.hero_video_path = saved?.[0]?.path || payload.hero_video_path;
@@ -85,13 +85,13 @@ async function upsertPage(req, res) {
       const info = classify(heroImageFallback);
       if (!info || info.media_type !== "IMAGE") {
         safeUnlink(heroImageFallback);
-        throw new AppError("heroImageFallback inválido. Aceito: jpg/png/webp até 5MB.", 400, "VALIDATION_ERROR", {
+        throw new AppError("heroImageFallback inválido. Aceito: jpg/png/webp até 5MB.", "VALIDATION_ERROR", 400, {
           field: "heroImageFallback", allowed: ["image/jpeg", "image/png", "image/webp"],
         });
       }
       if (Number(heroImageFallback.size || 0) > MAX_IMAGE_BYTES) {
         safeUnlink(heroImageFallback);
-        throw new AppError("heroImageFallback excede 5MB.", 400, "VALIDATION_ERROR", {
+        throw new AppError("heroImageFallback excede 5MB.", "VALIDATION_ERROR", 400, {
           field: "heroImageFallback", maxBytes: MAX_IMAGE_BYTES,
         });
       }
@@ -105,7 +105,7 @@ async function upsertPage(req, res) {
     console.error("[drones/admin] upsertPage error:", e);
     if (heroVideo) safeUnlink(heroVideo);
     if (heroImageFallback) safeUnlink(heroImageFallback);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar config.", 500, "SERVER_ERROR"));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar config.", "SERVER_ERROR", 500));
   }
 }
 
@@ -137,7 +137,7 @@ async function resetPageToDefault(req, res) {
     return res.json({ message: "Página resetada para padrão." });
   } catch (e) {
     console.error("[drones/admin] resetPageToDefault error:", e);
-    return sendError(res, new AppError("Erro ao resetar.", 500, "SERVER_ERROR"));
+    return sendError(res, new AppError("Erro ao resetar.", "SERVER_ERROR", 500));
   }
 }
 
@@ -160,7 +160,7 @@ async function getLandingConfig(req, res) {
     });
   } catch (e) {
     console.error("[drones/admin] getLandingConfig error:", e);
-    return sendError(res, new AppError("Erro ao carregar Config Landing.", 500, "SERVER_ERROR"));
+    return sendError(res, new AppError("Erro ao carregar Config Landing.", "SERVER_ERROR", 500));
   }
 }
 
@@ -174,7 +174,7 @@ async function upsertLandingConfig(req, res) {
     if (!hero_title) {
       if (heroVideo) safeUnlink(heroVideo);
       if (heroImageFallback) safeUnlink(heroImageFallback);
-      throw new AppError("hero_title é obrigatório.", 400, "VALIDATION_ERROR", { field: "hero_title" });
+      throw new AppError("hero_title é obrigatório.", "VALIDATION_ERROR", 400, { field: "hero_title" });
     }
 
     const sections_order_json = body.sections_order_json ? JSON.parse(body.sections_order_json) : null;
@@ -196,13 +196,13 @@ async function upsertLandingConfig(req, res) {
       const info = classify(heroVideo);
       if (!info || info.media_type !== "VIDEO") {
         safeUnlink(heroVideo);
-        throw new AppError("heroVideo inválido. Aceito: mp4 até 30MB.", 400, "VALIDATION_ERROR", {
+        throw new AppError("heroVideo inválido. Aceito: mp4 até 30MB.", "VALIDATION_ERROR", 400, {
           field: "heroVideo", allowed: ["video/mp4"],
         });
       }
       if (Number(heroVideo.size || 0) > MAX_VIDEO_BYTES) {
         safeUnlink(heroVideo);
-        throw new AppError("heroVideo excede 30MB.", 400, "VALIDATION_ERROR", { field: "heroVideo", maxBytes: MAX_VIDEO_BYTES });
+        throw new AppError("heroVideo excede 30MB.", "VALIDATION_ERROR", 400, { field: "heroVideo", maxBytes: MAX_VIDEO_BYTES });
       }
       const saved = await mediaService.persistMedia([heroVideo], { folder: "drones" });
       payload.hero_video_path = saved?.[0]?.path || payload.hero_video_path;
@@ -212,13 +212,13 @@ async function upsertLandingConfig(req, res) {
       const info = classify(heroImageFallback);
       if (!info || info.media_type !== "IMAGE") {
         safeUnlink(heroImageFallback);
-        throw new AppError("heroImageFallback inválido. Aceito: jpg/png/webp até 5MB.", 400, "VALIDATION_ERROR", {
+        throw new AppError("heroImageFallback inválido. Aceito: jpg/png/webp até 5MB.", "VALIDATION_ERROR", 400, {
           field: "heroImageFallback", allowed: ["image/jpeg", "image/png", "image/webp"],
         });
       }
       if (Number(heroImageFallback.size || 0) > MAX_IMAGE_BYTES) {
         safeUnlink(heroImageFallback);
-        throw new AppError("heroImageFallback excede 5MB.", 400, "VALIDATION_ERROR", {
+        throw new AppError("heroImageFallback excede 5MB.", "VALIDATION_ERROR", 400, {
           field: "heroImageFallback", maxBytes: MAX_IMAGE_BYTES,
         });
       }
@@ -232,7 +232,7 @@ async function upsertLandingConfig(req, res) {
     console.error("[drones/admin] upsertLandingConfig error:", e);
     if (heroVideo) safeUnlink(heroVideo);
     if (heroImageFallback) safeUnlink(heroImageFallback);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar Config Landing.", 500, "SERVER_ERROR"));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar Config Landing.", "SERVER_ERROR", 500));
   }
 }
 

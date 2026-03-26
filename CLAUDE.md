@@ -110,6 +110,20 @@ CSRF: double-submit cookie. Frontend obtém token em `GET /api/csrf-token`, envi
 
 Erros padronizados via `errors/AppError.js`. O handler global (`middleware/errorHandler.js`) está montado como último middleware em `server.js`. Controllers e rotas devem chamar `next(new AppError(...))` para erros esperados, ou simplesmente deixar erros síncronos/async propagar.
 
+**Assinatura única de `AppError` (Phase 1 — 2026-03):**
+
+```js
+// CORRETO
+throw new AppError(message, code, status, details?)
+throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+throw new AppError("Dados inválidos.", ERROR_CODES.VALIDATION_ERROR, 400, { fields });
+
+// PROIBIDO — convenção legada removida
+throw new AppError("msg", 404, "NOT_FOUND"); // ← não use (number como 2º arg)
+```
+
+Use sempre as constantes de `constants/ErrorCodes.js` ou strings literais como 2º argumento.
+
 ### Testes
 
 - Setup de ambiente: `teste/setup/env.setup.js` (define vars mínimas para NODE_ENV=test)
@@ -156,8 +170,18 @@ Novos módulos de infraestrutura podem usar inglês (auth, media, cache).
 | Inline `if (!campo)...` em rota | — | **Proibido** em código novo |
 
 Use `middleware/validate.js` para aplicar schemas Zod como middleware de rota.
-Use `formatDronesErrors(zodError)` → `{ field, reason }` no módulo drones.
-Use `formatZodErrors(zodError)` → `{ field, message }` nos demais módulos.
+
+**Formato único de erro de validação Zod (Phase 1 — 2026-03):**
+
+```js
+// CORRETO — { field, message } em todos os módulos
+formatZodErrors(zodError)    // schemas/requests.js
+formatDronesErrors(zodError) // schemas/dronesSchemas.js — mesmo formato agora
+
+// Ambos retornam: [{ field: "campo", message: "descrição do erro" }]
+```
+
+Não use `{ field, reason }` — campo `reason` foi removido de todos os formatters.
 
 ### Resposta da API
 
@@ -171,4 +195,4 @@ response.paginated(res, { items, total, page, limit });
 response.badRequest(res, message, details);
 ```
 
-Módulos legados usam `res.json(...)` direto — migrar aos poucos, não de uma vez.
+**Regra:** Todo código novo obrigatoriamente usa `lib/response.js`. Módulos legados ainda usam `res.json(...)` direto — migrar progressivamente ao tocar o arquivo.

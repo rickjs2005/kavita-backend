@@ -11,13 +11,12 @@ const MODEL_KEY_RE = /^[a-z0-9_]{2,20}$/;
 const PHONE_DIGITS_RE = /^\d{10,13}$/;
 
 /**
- * Formats Zod issues into the drones error convention: [{ field, reason }].
- * Keeps the same shape as the pre-Zod validateRepresentativePayload output.
+ * Formats Zod issues into the standard error convention: [{ field, message }].
  */
 function formatDronesErrors(zodError) {
   return zodError.issues.map((issue) => ({
     field: issue.path.join(".") || "body",
-    reason: issue.message,
+    message: issue.message,
   }));
 }
 

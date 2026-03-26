@@ -20,7 +20,7 @@ async function listRepresentatives(req, res) {
     return res.json(result);
   } catch (e) {
     console.error("[drones/admin] listRepresentatives error:", e);
-    return sendError(res, new AppError("Erro ao listar representantes.", 500, "SERVER_ERROR"));
+    return sendError(res, new AppError("Erro ao listar representantes.", "SERVER_ERROR", 500));
   }
 }
 
@@ -28,7 +28,7 @@ async function createRepresentative(req, res) {
   try {
     const bodyResult = createRepresentativeBodySchema.safeParse(req.body || {});
     if (!bodyResult.success) {
-      throw new AppError("Dados inválidos.", 400, "VALIDATION_ERROR", { fields: formatDronesErrors(bodyResult.error) });
+      throw new AppError("Dados inválidos.", "VALIDATION_ERROR", 400, { fields: formatDronesErrors(bodyResult.error) });
     }
 
     const id = await dronesService.createRepresentative(bodyResult.data);
@@ -36,42 +36,42 @@ async function createRepresentative(req, res) {
     return res.status(201).json({ message: "Representante criado.", id });
   } catch (e) {
     console.error("[drones/admin] createRepresentative error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar representante.", 500, "SERVER_ERROR"));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar representante.", "SERVER_ERROR", 500));
   }
 }
 
 async function updateRepresentative(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!id) throw new AppError("ID inválido.", 400, "VALIDATION_ERROR");
+    if (!id) throw new AppError("ID inválido.", "VALIDATION_ERROR", 400);
 
     const bodyResult = updateRepresentativeBodySchema.safeParse(req.body || {});
     if (!bodyResult.success) {
-      throw new AppError("Dados inválidos.", 400, "VALIDATION_ERROR", { fields: formatDronesErrors(bodyResult.error) });
+      throw new AppError("Dados inválidos.", "VALIDATION_ERROR", 400, { fields: formatDronesErrors(bodyResult.error) });
     }
 
     const affected = await dronesService.updateRepresentative(id, bodyResult.data);
-    if (!affected) throw new AppError("Representante não encontrado.", 404, "NOT_FOUND");
+    if (!affected) throw new AppError("Representante não encontrado.", "NOT_FOUND", 404);
 
     return res.json({ message: "Representante atualizado.", id });
   } catch (e) {
     console.error("[drones/admin] updateRepresentative error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao atualizar representante.", 500, "SERVER_ERROR"));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao atualizar representante.", "SERVER_ERROR", 500));
   }
 }
 
 async function deleteRepresentative(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!id) throw new AppError("ID inválido.", 400, "VALIDATION_ERROR");
+    if (!id) throw new AppError("ID inválido.", "VALIDATION_ERROR", 400);
 
     const affected = await dronesService.deleteRepresentative(id);
-    if (!affected) throw new AppError("Representante não encontrado.", 404, "NOT_FOUND");
+    if (!affected) throw new AppError("Representante não encontrado.", "NOT_FOUND", 404);
 
     return res.json({ message: "Representante removido.", id });
   } catch (e) {
     console.error("[drones/admin] deleteRepresentative error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover representante.", 500, "SERVER_ERROR"));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover representante.", "SERVER_ERROR", 500));
   }
 }
 

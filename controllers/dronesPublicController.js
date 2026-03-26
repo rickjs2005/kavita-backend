@@ -50,7 +50,7 @@ function parseModelKey(modelKey) {
   const key = String(modelKey || "").trim().toLowerCase();
 
   if (!key) {
-    throw new AppError("Modelo inválido", 400, "VALIDATION_ERROR", {
+    throw new AppError("Modelo inválido", "VALIDATION_ERROR", 400, {
       field: "modelKey",
       reason: "empty",
     });
@@ -58,7 +58,7 @@ function parseModelKey(modelKey) {
 
   // Mesmo padrão do admin: a-z, 0-9, _; 2-20 chars
   if (!/^[a-z0-9_]{2,20}$/.test(key)) {
-    throw new AppError("Modelo inválido", 400, "VALIDATION_ERROR", {
+    throw new AppError("Modelo inválido", "VALIDATION_ERROR", 400, {
       field: "modelKey",
       reason: "format",
       example: "t25p",
@@ -75,11 +75,11 @@ function parseModelKey(modelKey) {
 async function ensureModelExists(modelKey) {
   const existing = await dronesService.getDroneModelByKey(modelKey);
   if (!existing) {
-    throw new AppError("Modelo não encontrado.", 404, "NOT_FOUND", { modelKey });
+    throw new AppError("Modelo não encontrado.", "NOT_FOUND", 404, { modelKey });
   }
   // Se sua tabela tiver is_active e o service não filtrar:
   // if (existing.is_active === 0 || existing.is_active === false) {
-  //   throw new AppError("Modelo indisponível.", 404, "NOT_FOUND", { modelKey });
+  //   throw new AppError("Modelo indisponível.", "NOT_FOUND", 404, { modelKey });
   // }
   return existing;
 }
@@ -133,7 +133,7 @@ async function getPage(req, res) {
     });
   } catch (e) {
     console.error("[drones/public] getPage error:", e);
-    return sendError(res, new AppError("Erro ao carregar página de drones.", 500, "SERVER_ERROR"));
+    return sendError(res, new AppError("Erro ao carregar página de drones.", "SERVER_ERROR", 500));
   }
 }
 
@@ -190,7 +190,7 @@ async function getRoot(req, res) {
     });
   } catch (e) {
     console.error("[drones/public] getRoot error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao carregar dados públicos.", 500, "SERVER_ERROR"));
+    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao carregar dados públicos.", "SERVER_ERROR", 500));
   }
 }
 
@@ -273,7 +273,7 @@ async function listModels(req, res) {
         return res.json({ items: enriched });
       } catch (e) {
         console.error("[drones/public] listModels error:", e);
-        return sendError(res, new AppError("Erro ao listar modelos.", 500, "SERVER_ERROR"));
+        return sendError(res, new AppError("Erro ao listar modelos.", "SERVER_ERROR", 500));
       }
     }
   
@@ -321,7 +321,7 @@ async function listModels(req, res) {
         });
       } catch (e) {
         console.error("[drones/public] getModelAggregate error:", e);
-        return sendError(res, e instanceof AppError ? e : new AppError("Erro ao carregar modelo público.", 500, "SERVER_ERROR"));
+        return sendError(res, e instanceof AppError ? e : new AppError("Erro ao carregar modelo público.", "SERVER_ERROR", 500));
       }
     }
 
@@ -337,7 +337,7 @@ async function listModels(req, res) {
         return res.json(rows);
       } catch (e) {
         console.error("[drones/public] getGallery error:", e);
-        return sendError(res, new AppError("Erro ao carregar galeria.", 500, "SERVER_ERROR"));
+        return sendError(res, new AppError("Erro ao carregar galeria.", "SERVER_ERROR", 500));
       }
     }
 
@@ -353,7 +353,7 @@ async function listModels(req, res) {
         return res.json(data);
       } catch (e) {
         console.error("[drones/public] listRepresentatives error:", e);
-        return sendError(res, new AppError("Erro ao listar representantes.", 500, "SERVER_ERROR"));
+        return sendError(res, new AppError("Erro ao listar representantes.", "SERVER_ERROR", 500));
       }
     }
   
@@ -373,7 +373,7 @@ async function listModels(req, res) {
         return res.json(data);
       } catch (e) {
         console.error("[drones/public] listApprovedComments error:", e);
-        return sendError(res, e instanceof AppError ? e : new AppError("Erro ao listar comentários.", 500, "SERVER_ERROR"));
+        return sendError(res, e instanceof AppError ? e : new AppError("Erro ao listar comentários.", "SERVER_ERROR", 500));
       }
     }
 
@@ -384,14 +384,14 @@ async function listModels(req, res) {
         // LOGIN obrigatório (verifyUser deve setar req.user)
         if (!req.user) {
           files.forEach(safeUnlink);
-          throw new AppError("Usuário não autenticado.", 401, "UNAUTHORIZED");
+          throw new AppError("Usuário não autenticado.", "UNAUTHORIZED", 401);
         }
   
         // Nome vem do usuário logado
         const display_name = req.user.nome || req.user.name || req.user.email;
         if (!display_name) {
           files.forEach(safeUnlink);
-          throw new AppError("Não foi possível identificar o nome do usuário logado.", 400, "VALIDATION_ERROR");
+          throw new AppError("Não foi possível identificar o nome do usuário logado.", "VALIDATION_ERROR", 400);
         }
   
         // model opcional (dinâmico)
@@ -402,7 +402,7 @@ async function listModels(req, res) {
         const textSan = dronesService.sanitizeText(comment_text, 1000);
         if (!textSan) {
           files.forEach(safeUnlink);
-          throw new AppError("comment_text é obrigatório.", 400, "VALIDATION_ERROR", { field: "comment_text" });
+          throw new AppError("comment_text é obrigatório.", "VALIDATION_ERROR", 400, { field: "comment_text" });
         }
   
         // Valida arquivos antes de persistir
@@ -411,11 +411,11 @@ async function listModels(req, res) {
             const info = classifyMedia(f);
             if (!info) {
               files.forEach(safeUnlink);
-              throw new AppError("Arquivo inválido. Aceito: jpg/png/webp/mp4.", 400, "VALIDATION_ERROR");
+              throw new AppError("Arquivo inválido. Aceito: jpg/png/webp/mp4.", "VALIDATION_ERROR", 400);
             }
             if (Number(f.size || 0) > info.max) {
               files.forEach(safeUnlink);
-              throw new AppError(info.media_type === "VIDEO" ? "Vídeo excede 30MB." : "Imagem excede 5MB.", 400, "VALIDATION_ERROR");
+              throw new AppError(info.media_type === "VIDEO" ? "Vídeo excede 30MB." : "Imagem excede 5MB.", "VALIDATION_ERROR", 400);
             }
           }
         }
@@ -459,7 +459,7 @@ async function listModels(req, res) {
       } catch (e) {
         console.error("[drones/public] createComment error:", e);
         files.forEach(safeUnlink);
-        return sendError(res, e instanceof AppError ? e : new AppError("Erro ao enviar comentário.", 500, "SERVER_ERROR"));
+        return sendError(res, e instanceof AppError ? e : new AppError("Erro ao enviar comentário.", "SERVER_ERROR", 500));
       }
     }
   

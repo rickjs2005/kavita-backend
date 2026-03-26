@@ -50,14 +50,14 @@ function parseModelKey(modelKey) {
   const key = String(modelKey || "").trim().toLowerCase();
 
   if (!key) {
-    throw new AppError("Modelo inválido", 400, "VALIDATION_ERROR", {
+    throw new AppError("Modelo inválido", "VALIDATION_ERROR", 400, {
       field: "modelKey",
       reason: "empty",
     });
   }
 
   if (!/^[a-z0-9_]{2,20}$/.test(key)) {
-    throw new AppError("Modelo inválido", 400, "VALIDATION_ERROR", {
+    throw new AppError("Modelo inválido", "VALIDATION_ERROR", 400, {
       field: "modelKey",
       reason: "format",
       example: "t25p",
@@ -70,7 +70,7 @@ function parseModelKey(modelKey) {
 async function ensureModelExists(modelKey) {
   const existing = await dronesService.getDroneModelByKey(modelKey);
   if (!existing) {
-    throw new AppError("Modelo não encontrado.", 404, "NOT_FOUND", { modelKey });
+    throw new AppError("Modelo não encontrado.", "NOT_FOUND", 404, { modelKey });
   }
   return existing;
 }

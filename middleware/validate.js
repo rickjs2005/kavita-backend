@@ -9,7 +9,7 @@ const AppError = require("../errors/AppError");
  * handlers receive clean, typed values.
  *
  * On failure, calls next(AppError(400, VALIDATION_ERROR)) with a fields array
- * that mirrors the { field, reason } convention used across the drones module.
+ * that mirrors the { field, message } convention used across the application.
  *
  * @param {import("zod").ZodTypeAny} schema
  * @param {"body"|"query"|"params"} [source="body"]
@@ -24,9 +24,9 @@ function validate(schema, source = "body") {
     if (!result.success) {
       const fields = result.error.issues.map((issue) => ({
         field: issue.path.join(".") || source,
-        reason: issue.message,
+        message: issue.message,
       }));
-      return next(new AppError("Dados inválidos.", 400, "VALIDATION_ERROR", { fields }));
+      return next(new AppError("Dados inválidos.", "VALIDATION_ERROR", 400, { fields }));
     }
     req[source] = result.data;
     return next();

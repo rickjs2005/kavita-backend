@@ -54,13 +54,14 @@ describe("siteHeroController (unit)", () => {
   function mockModuleOnce(mockPool) {
     jest.resetModules();
 
-    // ✅ AppError real pode ter statusCode/status; aqui garantimos statusCode
+    // MockAppError segue a assinatura nova: (message, code, status, details?)
     class MockAppError extends Error {
-      constructor(message, status = 500, code = "INTERNAL_ERROR", details = null) {
+      constructor(message, code = "INTERNAL_ERROR", status = 500, details = null) {
         super(message);
         this.name = "AppError";
-        this.statusCode = status;
         this.code = code;
+        this.status = status;
+        this.statusCode = status;
         this.details = details;
       }
     }
