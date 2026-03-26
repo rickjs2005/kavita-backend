@@ -1,7 +1,7 @@
 // controllers/news/adminPostsController.js
 // Admin controller do Kavita News - POSTS (CRUD + listagem paginada)
 
-const newsRepo = require("../../repositories/newsRepository");
+const postsRepo = require("../../repositories/postsRepository");
 const { sanitizeText, sanitizeRichText } = require("../../utils/sanitize");
 const { logAdminAction } = require("../../services/adminLogs");
 const {
@@ -63,7 +63,7 @@ function slugifyFromTitle(title) {
 }
 
 async function slugExists(slug) {
-  return newsRepo.slugExists(slug);
+  return postsRepo.slugExists(slug);
 }
 
 // Se slug foi gerado automaticamente, tenta cafe, cafe-2, cafe-3...
@@ -109,8 +109,8 @@ async function listPosts(req, res) {
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    const total = await newsRepo.countPosts(whereSql, params);
-    const rows = await newsRepo.listPosts(whereSql, params, limit, offset);
+    const total = await postsRepo.countPosts(whereSql, params);
+    const rows = await postsRepo.listPosts(whereSql, params, limit, offset);
 
     return ok(res, rows, { status, search, limit, offset, total });
   } catch (error) {
@@ -193,13 +193,13 @@ async function createPost(req, res) {
     const category = body.category ? sanitizeText(String(body.category), 80) : null;
     const tags = body.tags ? sanitizeText(String(body.tags), 500) : null;
 
-    const id = await newsRepo.insertPost(
+    const id = await postsRepo.insertPost(
       title, slug, excerpt, content, cover_image_url,
       category, tags, status, published_at, author_admin_id
     );
     await logAdmin(req, "criou", "news_posts", id);
 
-    const row = await newsRepo.findPostById(id);
+    const row = await postsRepo.findPostById(id);
     return created(res, row || { id });
   } catch (error) {
     console.error("adminPostsController.createPost:", error);
@@ -241,7 +241,7 @@ async function updatePost(req, res) {
         if (slug.length > 240) return fail(res, 400, "VALIDATION_ERROR", "slug inválido (máx 240).", { field: "slug" });
 
         // opcional: bloquear se já existir em outro post
-        if (await newsRepo.slugExistsExcept(slug, id)) {
+        if (await postsRepo.slugExistsExcept(slug, id)) {
           return fail(res, 409, "DUPLICATE", "Já existe um post com esse slug. Escolha outro slug.", { field: "slug", slug });
         }
 
@@ -319,14 +319,14 @@ async function updatePost(req, res) {
       return fail(res, 400, "VALIDATION_ERROR", "Nenhum campo para atualizar.");
     }
 
-    const affected = await newsRepo.updatePost(id, sets, params);
+    const affected = await postsRepo.updatePost(id, sets, params);
     if (!affected) {
       return fail(res, 404, "NOT_FOUND", "Post não encontrado.");
     }
 
     await logAdmin(req, "editou", "news_posts", id);
 
-    const row = await newsRepo.findPostById(id);
+    const row = await postsRepo.findPostById(id);
     return ok(res, row || { id });
   } catch (error) {
     console.error("adminPostsController.updatePost:", error);
@@ -345,7 +345,7 @@ async function deletePost(req, res) {
     const id = toInt(req.params.id, 0);
     if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
 
-    const affected = await newsRepo.deletePost(id);
+    const affected = await postsRepo.deletePost(id);
     if (!affected) {
       return fail(res, 404, "NOT_FOUND", "Post não encontrado.");
     }

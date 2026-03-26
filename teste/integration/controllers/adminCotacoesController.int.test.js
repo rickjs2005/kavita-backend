@@ -13,7 +13,7 @@
  * - POST   /api/admin/news/cotacoes/sync-all  syncCotacoesAll
  *
  * Regras do projeto:
- * - Sem MySQL real: mock de config/pool e models/newsModel
+ * - Sem MySQL real: mock de config/pool e repositories/cotacoesRepository
  * - AAA em todos os testes
  * - Erros: validar { ok, code, message } e status HTTP
  *
@@ -39,12 +39,12 @@ function asyncWrap(fn) {
 /**
  * Carrega o controller com mocks isolados.
  */
-function loadController({ mockNewsModel, mockPool, mockCotacoesProviders } = {}) {
+function loadController({ mockCotacoesRepo, mockPool, mockCotacoesProviders } = {}) {
   jest.resetModules();
 
   const pool = mockPool || { query: jest.fn().mockResolvedValue([[], {}]), getConnection: jest.fn() };
 
-  const newsModel = mockNewsModel || {
+  const cotacoesRepo = mockCotacoesRepo || {
     listCotacoes: jest.fn().mockResolvedValue([]),
     getCotacaoById: jest.fn().mockResolvedValue(null),
     createCotacao: jest.fn().mockResolvedValue({ id: 1 }),
@@ -55,7 +55,7 @@ function loadController({ mockNewsModel, mockPool, mockCotacoesProviders } = {})
   };
 
   jest.doMock("../../../config/pool", () => pool);
-  jest.doMock("../../../repositories/newsModel", () => newsModel);
+  jest.doMock("../../../repositories/cotacoesRepository", () => cotacoesRepo);
 
   if (mockCotacoesProviders !== undefined) {
     jest.doMock("../../../services/cotacoesProviders", () => mockCotacoesProviders);
@@ -64,7 +64,7 @@ function loadController({ mockNewsModel, mockPool, mockCotacoesProviders } = {})
   }
 
   const controller = require("../../../controllers/news/adminCotacoesController");
-  return { controller, pool, newsModel };
+  return { controller, pool, cotacoesRepo };
 }
 
 function buildRouter(controller) {
@@ -95,8 +95,8 @@ describe("adminCotacoesController", () => {
         { id: 1, name: "Soja", slug: "soja", type: "graos", ativo: 1 },
         { id: 2, name: "Milho", slug: "milho", type: "graos", ativo: 1 },
       ];
-      const { controller, newsModel } = loadController({
-        mockNewsModel: { listCotacoes: jest.fn().mockResolvedValue(rows) },
+      const { controller, cotacoesRepo } = loadController({
+        mockCotacoesRepo: { listCotacoes: jest.fn().mockResolvedValue(rows) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -107,13 +107,13 @@ describe("adminCotacoesController", () => {
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ ok: true, data: expect.any(Array) });
       expect(res.body.data).toHaveLength(2);
-      expect(newsModel.listCotacoes).toHaveBeenCalledTimes(1);
+      expect(cotacoesRepo.listCotacoes).toHaveBeenCalledTimes(1);
     });
 
     test("200 — lista vazia quando não há registros", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { listCotacoes: jest.fn().mockResolvedValue([]) },
+        mockCotacoesRepo: { listCotacoes: jest.fn().mockResolvedValue([]) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -125,10 +125,10 @@ describe("adminCotacoesController", () => {
       expect(res.body).toMatchObject({ ok: true, data: [] });
     });
 
-    test("500 quando newsModel.listCotacoes lança exceção", async () => {
+    test("500 quando cotacoesRepo.listCotacoes lança exceção", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { listCotacoes: jest.fn().mockRejectedValue(new Error("DB down")) },
+        mockCotacoesRepo: { listCotacoes: jest.fn().mockRejectedValue(new Error("DB down")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -152,7 +152,7 @@ describe("adminCotacoesController", () => {
         types: ["graos", "carnes"],
       };
       const { controller } = loadController({
-        mockNewsModel: { cotacoesMeta: jest.fn().mockResolvedValue(meta) },
+        mockCotacoesRepo: { cotacoesMeta: jest.fn().mockResolvedValue(meta) },
         mockCotacoesProviders: { PRESETS: { soja: { name: "Soja" } }, resolveProvider: jest.fn() },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
@@ -175,7 +175,7 @@ describe("adminCotacoesController", () => {
     test("200 — retorna estrutura válida quando cotacoesProviders é null", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { cotacoesMeta: jest.fn().mockResolvedValue({ markets: [], sources: [], units: [], types: [] }) },
+        mockCotacoesRepo: { cotacoesMeta: jest.fn().mockResolvedValue({ markets: [], sources: [], units: [], types: [] }) },
         mockCotacoesProviders: null,
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
@@ -194,7 +194,7 @@ describe("adminCotacoesController", () => {
     test("500 quando cotacoesMeta lança exceção", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { cotacoesMeta: jest.fn().mockRejectedValue(new Error("DB error")) },
+        mockCotacoesRepo: { cotacoesMeta: jest.fn().mockRejectedValue(new Error("DB error")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -214,8 +214,8 @@ describe("adminCotacoesController", () => {
     test("201 happy path — cria cotação com dados mínimos", async () => {
       // Arrange
       const createdRow = { id: 5, name: "Soja", slug: "soja", type: "graos" };
-      const { controller, newsModel } = loadController({
-        mockNewsModel: { createCotacao: jest.fn().mockResolvedValue(createdRow) },
+      const { controller, cotacoesRepo } = loadController({
+        mockCotacoesRepo: { createCotacao: jest.fn().mockResolvedValue(createdRow) },
         mockPool: { query: jest.fn().mockResolvedValue([[], {}]), getConnection: jest.fn() },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
@@ -226,7 +226,7 @@ describe("adminCotacoesController", () => {
       // Assert
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ ok: true, data: expect.objectContaining({ id: 5 }) });
-      expect(newsModel.createCotacao).toHaveBeenCalledTimes(1);
+      expect(cotacoesRepo.createCotacao).toHaveBeenCalledTimes(1);
     });
 
     test("400 quando name está ausente", async () => {
@@ -313,12 +313,12 @@ describe("adminCotacoesController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
-    test("409 quando newsModel.createCotacao lança ER_DUP_ENTRY", async () => {
+    test("409 quando cotacoesRepo.createCotacao lança ER_DUP_ENTRY", async () => {
       // Arrange
       const dupErr = new Error("Duplicate entry");
       dupErr.code = "ER_DUP_ENTRY";
       const { controller } = loadController({
-        mockNewsModel: { createCotacao: jest.fn().mockRejectedValue(dupErr) },
+        mockCotacoesRepo: { createCotacao: jest.fn().mockRejectedValue(dupErr) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -330,10 +330,10 @@ describe("adminCotacoesController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
     });
 
-    test("500 quando newsModel.createCotacao lança erro genérico", async () => {
+    test("500 quando cotacoesRepo.createCotacao lança erro genérico", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { createCotacao: jest.fn().mockRejectedValue(new Error("DB error")) },
+        mockCotacoesRepo: { createCotacao: jest.fn().mockRejectedValue(new Error("DB error")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -350,8 +350,8 @@ describe("adminCotacoesController", () => {
   describe("PUT /cotacoes/:id — updateCotacao()", () => {
     test("200 happy path — atualiza campo price", async () => {
       // Arrange
-      const { controller, newsModel } = loadController({
-        mockNewsModel: { updateCotacao: jest.fn().mockResolvedValue({ affectedRows: 1 }) },
+      const { controller, cotacoesRepo } = loadController({
+        mockCotacoesRepo: { updateCotacao: jest.fn().mockResolvedValue({ affectedRows: 1 }) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -361,7 +361,7 @@ describe("adminCotacoesController", () => {
       // Assert
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ ok: true });
-      expect(newsModel.updateCotacao).toHaveBeenCalledWith(3, expect.objectContaining({ price: 120.5 }));
+      expect(cotacoesRepo.updateCotacao).toHaveBeenCalledWith(3, expect.objectContaining({ price: 120.5 }));
     });
 
     test("400 quando id é inválido (string não numérica)", async () => {
@@ -403,12 +403,12 @@ describe("adminCotacoesController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
-    test("409 quando newsModel.updateCotacao lança ER_DUP_ENTRY", async () => {
+    test("409 quando cotacoesRepo.updateCotacao lança ER_DUP_ENTRY", async () => {
       // Arrange
       const dupErr = new Error("Duplicate entry");
       dupErr.code = "ER_DUP_ENTRY";
       const { controller } = loadController({
-        mockNewsModel: { updateCotacao: jest.fn().mockRejectedValue(dupErr) },
+        mockCotacoesRepo: { updateCotacao: jest.fn().mockRejectedValue(dupErr) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -420,10 +420,10 @@ describe("adminCotacoesController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
     });
 
-    test("500 quando newsModel.updateCotacao lança erro genérico", async () => {
+    test("500 quando cotacoesRepo.updateCotacao lança erro genérico", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { updateCotacao: jest.fn().mockRejectedValue(new Error("DB error")) },
+        mockCotacoesRepo: { updateCotacao: jest.fn().mockRejectedValue(new Error("DB error")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -440,8 +440,8 @@ describe("adminCotacoesController", () => {
   describe("DELETE /cotacoes/:id — deleteCotacao()", () => {
     test("200 happy path — remove cotação existente", async () => {
       // Arrange
-      const { controller, newsModel } = loadController({
-        mockNewsModel: { deleteCotacao: jest.fn().mockResolvedValue({ affectedRows: 1 }) },
+      const { controller, cotacoesRepo } = loadController({
+        mockCotacoesRepo: { deleteCotacao: jest.fn().mockResolvedValue({ affectedRows: 1 }) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -451,7 +451,7 @@ describe("adminCotacoesController", () => {
       // Assert
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ ok: true });
-      expect(newsModel.deleteCotacao).toHaveBeenCalledWith(7);
+      expect(cotacoesRepo.deleteCotacao).toHaveBeenCalledWith(7);
     });
 
     test("400 quando id é zero", async () => {
@@ -467,10 +467,10 @@ describe("adminCotacoesController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
-    test("500 quando newsModel.deleteCotacao lança exceção", async () => {
+    test("500 quando cotacoesRepo.deleteCotacao lança exceção", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { deleteCotacao: jest.fn().mockRejectedValue(new Error("FK error")) },
+        mockCotacoesRepo: { deleteCotacao: jest.fn().mockRejectedValue(new Error("FK error")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -501,7 +501,7 @@ describe("adminCotacoesController", () => {
     test("404 quando cotação não existe", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { getCotacaoById: jest.fn().mockResolvedValue(null) },
+        mockCotacoesRepo: { getCotacaoById: jest.fn().mockResolvedValue(null) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -517,7 +517,7 @@ describe("adminCotacoesController", () => {
       // Arrange
       const row = { id: 1, name: "Soja", slug: "soja", type: "graos", price: 100, ativo: 1 };
       const { controller } = loadController({
-        mockNewsModel: {
+        mockCotacoesRepo: {
           getCotacaoById: jest.fn().mockResolvedValue(row),
           updateCotacao: jest.fn().mockResolvedValue({ affectedRows: 1 }),
           insertCotacaoHistory: jest.fn().mockResolvedValue({ id: 1 }),
@@ -550,7 +550,7 @@ describe("adminCotacoesController", () => {
         }),
       };
       const { controller } = loadController({
-        mockNewsModel: {
+        mockCotacoesRepo: {
           getCotacaoById: jest.fn()
             .mockResolvedValueOnce(row)
             .mockResolvedValueOnce(updatedRow),
@@ -575,10 +575,10 @@ describe("adminCotacoesController", () => {
       });
     });
 
-    test("500 quando newsModel.getCotacaoById lança exceção", async () => {
+    test("500 quando cotacoesRepo.getCotacaoById lança exceção", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { getCotacaoById: jest.fn().mockRejectedValue(new Error("DB down")) },
+        mockCotacoesRepo: { getCotacaoById: jest.fn().mockRejectedValue(new Error("DB down")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -600,7 +600,7 @@ describe("adminCotacoesController", () => {
         { id: 2, slug: "milho", ativo: 0, price: 80 }, // inativo, deve ser ignorado
       ];
       const { controller } = loadController({
-        mockNewsModel: {
+        mockCotacoesRepo: {
           listCotacoes: jest.fn().mockResolvedValue(rows),
           updateCotacao: jest.fn().mockResolvedValue({ affectedRows: 1 }),
           insertCotacaoHistory: jest.fn().mockResolvedValue({ id: 1 }),
@@ -627,7 +627,7 @@ describe("adminCotacoesController", () => {
     test("200 — retorna summary vazio quando não há cotações", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { listCotacoes: jest.fn().mockResolvedValue([]) },
+        mockCotacoesRepo: { listCotacoes: jest.fn().mockResolvedValue([]) },
         mockCotacoesProviders: null,
         mockPool: { query: jest.fn().mockResolvedValue([[], {}]), getConnection: jest.fn() },
       });
@@ -644,10 +644,10 @@ describe("adminCotacoesController", () => {
       });
     });
 
-    test("500 quando newsModel.listCotacoes lança exceção", async () => {
+    test("500 quando cotacoesRepo.listCotacoes lança exceção", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { listCotacoes: jest.fn().mockRejectedValue(new Error("DB down")) },
+        mockCotacoesRepo: { listCotacoes: jest.fn().mockRejectedValue(new Error("DB down")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 

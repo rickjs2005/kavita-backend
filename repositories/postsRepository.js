@@ -1,13 +1,23 @@
 "use strict";
 
+// repositories/postsRepository.js
+// Queries do domínio Kavita News — POSTS (tabela: news_posts)
+// Unifica newsRepository.js (admin) + funções públicas de newsModel.js
+
 const pool = require("../config/pool");
 
-// ─── news_posts ─────────────────────────────────────────────────────────────
+function clampInt(v, def, min, max) {
+  const n = Number.parseInt(String(v ?? ""), 10);
+  if (Number.isNaN(n)) return def;
+  return Math.max(min, Math.min(max, n));
+}
 
 const POST_COLS = `
   id, title, slug, excerpt, content, cover_image_url, category, tags, status,
-  published_at, author_admin_id, views, criado_em, atualizado_em
+  published_at, author_admin_id, views, ativo, criado_em, atualizado_em
 `;
+
+// ─── Admin ───────────────────────────────────────────────────────────────────
 
 async function slugExists(slug) {
   const [[row]] = await pool.query(
@@ -82,6 +92,34 @@ async function incrementPostViews(slug) {
   );
 }
 
+// ─── Public (site, sem autenticação) ─────────────────────────────────────────
+
+async function listPostsPublic({ limit = 10, offset = 0 } = {}) {
+  const lim = clampInt(limit, 10, 1, 50);
+  const off = clampInt(offset, 0, 0, 1000000);
+
+  const [rows] = await pool.query(
+    `SELECT ${POST_COLS}
+     FROM news_posts
+     WHERE status = 'published' AND (ativo = 1 OR ativo IS NULL)
+     ORDER BY published_at DESC, id DESC
+     LIMIT ? OFFSET ?`,
+    [lim, off]
+  );
+  return rows;
+}
+
+async function getPostPublicBySlug(slug) {
+  const [[row]] = await pool.query(
+    `SELECT ${POST_COLS}
+     FROM news_posts
+     WHERE slug = ? AND status = 'published' AND (ativo = 1 OR ativo IS NULL)
+     LIMIT 1`,
+    [slug]
+  );
+  return row ?? null;
+}
+
 module.exports = {
   slugExists,
   slugExistsExcept,
@@ -92,4 +130,6 @@ module.exports = {
   updatePost,
   deletePost,
   incrementPostViews,
+  listPostsPublic,
+  getPostPublicBySlug,
 };

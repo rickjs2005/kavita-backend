@@ -12,7 +12,7 @@
  * - POST   /api/admin/news/clima/:id/sync         syncClima
  *
  * Regras do projeto:
- * - Sem MySQL real: mock de config/pool e models/newsModel
+ * - Sem MySQL real: mock de config/pool e repositories/climaRepository
  * - AAA em todos os testes
  * - Erros: validar { ok, code, message } e status HTTP
  *
@@ -37,15 +37,15 @@ function asyncWrap(fn) {
 
 /**
  * Carrega o controller com mocks isolados a cada chamada.
- * @param {object} mockNewsModel  - mock completo de models/newsModel
+ * @param {object} mockClimaRepo  - mock completo de repositories/climaRepository
  * @param {object} mockPool       - mock de config/pool (para logAdmin)
  * @param {object} mockInmetService - mock de services/inmetStationsService
  */
-function loadController({ mockNewsModel, mockPool, mockInmetService } = {}) {
+function loadController({ mockClimaRepo, mockPool, mockInmetService } = {}) {
   jest.resetModules();
 
   const pool = mockPool || { query: jest.fn().mockResolvedValue([[], {}]), getConnection: jest.fn() };
-  const newsModel = mockNewsModel || {
+  const climaRepo = mockClimaRepo || {
     listClima: jest.fn().mockResolvedValue([]),
     getClimaById: jest.fn().mockResolvedValue(null),
     createClima: jest.fn().mockResolvedValue({ id: 1 }),
@@ -54,7 +54,7 @@ function loadController({ mockNewsModel, mockPool, mockInmetService } = {}) {
   };
 
   jest.doMock("../../../config/pool", () => pool);
-  jest.doMock("../../../repositories/newsModel", () => newsModel);
+  jest.doMock("../../../repositories/climaRepository", () => climaRepo);
 
   if (mockInmetService !== undefined) {
     jest.doMock("../../../services/inmetStationsService", () => mockInmetService);
@@ -65,7 +65,7 @@ function loadController({ mockNewsModel, mockPool, mockInmetService } = {}) {
   }
 
   const controller = require("../../../controllers/news/adminClimaController");
-  return { controller, pool, newsModel };
+  return { controller, pool, climaRepo };
 }
 
 function buildRouter(controller) {
@@ -94,8 +94,8 @@ describe("adminClimaController", () => {
         { id: 1, city_name: "Manhuaçu", slug: "manhuacu", uf: "MG", ativo: 1 },
         { id: 2, city_name: "Belo Horizonte", slug: "belo-horizonte", uf: "MG", ativo: 1 },
       ];
-      const { controller, newsModel } = loadController({
-        mockNewsModel: { listClima: jest.fn().mockResolvedValue(rows) },
+      const { controller, climaRepo } = loadController({
+        mockClimaRepo: { listClima: jest.fn().mockResolvedValue(rows) },
       });
 
       const app = makeTestApp(MOUNT, buildRouter(controller));
@@ -107,13 +107,13 @@ describe("adminClimaController", () => {
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ ok: true, data: expect.any(Array) });
       expect(res.body.data).toHaveLength(2);
-      expect(newsModel.listClima).toHaveBeenCalledTimes(1);
+      expect(climaRepo.listClima).toHaveBeenCalledTimes(1);
     });
 
     test("200 — lista vazia quando não há registros", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { listClima: jest.fn().mockResolvedValue([]) },
+        mockClimaRepo: { listClima: jest.fn().mockResolvedValue([]) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -125,10 +125,10 @@ describe("adminClimaController", () => {
       expect(res.body).toMatchObject({ ok: true, data: [] });
     });
 
-    test("500 quando newsModel.listClima lança exceção", async () => {
+    test("500 quando climaRepo.listClima lança exceção", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { listClima: jest.fn().mockRejectedValue(new Error("DB down")) },
+        mockClimaRepo: { listClima: jest.fn().mockRejectedValue(new Error("DB down")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -234,8 +234,8 @@ describe("adminClimaController", () => {
     test("201 happy path — cria clima com dados mínimos", async () => {
       // Arrange
       const createdRow = { id: 10, city_name: "Manhuaçu", slug: "manhuacu", uf: "MG" };
-      const { controller, newsModel, pool } = loadController({
-        mockNewsModel: { createClima: jest.fn().mockResolvedValue(createdRow) },
+      const { controller, climaRepo, pool } = loadController({
+        mockClimaRepo: { createClima: jest.fn().mockResolvedValue(createdRow) },
         mockPool: { query: jest.fn().mockResolvedValue([[], {}]), getConnection: jest.fn() },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
@@ -246,7 +246,7 @@ describe("adminClimaController", () => {
       // Assert
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ ok: true, data: expect.objectContaining({ id: 10 }) });
-      expect(newsModel.createClima).toHaveBeenCalledTimes(1);
+      expect(climaRepo.createClima).toHaveBeenCalledTimes(1);
     });
 
     test("400 quando city_name está ausente", async () => {
@@ -348,12 +348,12 @@ describe("adminClimaController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
-    test("409 quando newsModel.createClima lança ER_DUP_ENTRY", async () => {
+    test("409 quando climaRepo.createClima lança ER_DUP_ENTRY", async () => {
       // Arrange
       const dupErr = new Error("Duplicate entry");
       dupErr.code = "ER_DUP_ENTRY";
       const { controller } = loadController({
-        mockNewsModel: { createClima: jest.fn().mockRejectedValue(dupErr) },
+        mockClimaRepo: { createClima: jest.fn().mockRejectedValue(dupErr) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -365,10 +365,10 @@ describe("adminClimaController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
     });
 
-    test("500 quando newsModel.createClima lança erro genérico", async () => {
+    test("500 quando climaRepo.createClima lança erro genérico", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { createClima: jest.fn().mockRejectedValue(new Error("DB error")) },
+        mockClimaRepo: { createClima: jest.fn().mockRejectedValue(new Error("DB error")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -401,7 +401,7 @@ describe("adminClimaController", () => {
       // Arrange
       const createdRow = { id: 11, city_name: "'; DROP TABLE news_clima; --", slug: "sql-test", uf: "MG" };
       const { controller } = loadController({
-        mockNewsModel: { createClima: jest.fn().mockResolvedValue(createdRow) },
+        mockClimaRepo: { createClima: jest.fn().mockResolvedValue(createdRow) },
         mockPool: { query: jest.fn().mockResolvedValue([[], {}]), getConnection: jest.fn() },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
@@ -420,8 +420,8 @@ describe("adminClimaController", () => {
   describe("PUT /clima/:id — updateClima()", () => {
     test("200 happy path — atualiza campo ativo", async () => {
       // Arrange
-      const { controller, newsModel } = loadController({
-        mockNewsModel: {
+      const { controller, climaRepo } = loadController({
+        mockClimaRepo: {
           updateClima: jest.fn().mockResolvedValue({ affectedRows: 1 }),
         },
       });
@@ -433,7 +433,7 @@ describe("adminClimaController", () => {
       // Assert
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ ok: true });
-      expect(newsModel.updateClima).toHaveBeenCalledWith(5, expect.objectContaining({ ativo: 0 }));
+      expect(climaRepo.updateClima).toHaveBeenCalledWith(5, expect.objectContaining({ ativo: 0 }));
     });
 
     test("400 quando id é inválido (string)", async () => {
@@ -475,12 +475,12 @@ describe("adminClimaController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
-    test("409 quando newsModel.updateClima lança ER_DUP_ENTRY", async () => {
+    test("409 quando climaRepo.updateClima lança ER_DUP_ENTRY", async () => {
       // Arrange
       const dupErr = new Error("Duplicate entry");
       dupErr.code = "ER_DUP_ENTRY";
       const { controller } = loadController({
-        mockNewsModel: { updateClima: jest.fn().mockRejectedValue(dupErr) },
+        mockClimaRepo: { updateClima: jest.fn().mockRejectedValue(dupErr) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -492,10 +492,10 @@ describe("adminClimaController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
     });
 
-    test("500 quando newsModel.updateClima lança erro genérico", async () => {
+    test("500 quando climaRepo.updateClima lança erro genérico", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { updateClima: jest.fn().mockRejectedValue(new Error("DB error")) },
+        mockClimaRepo: { updateClima: jest.fn().mockRejectedValue(new Error("DB error")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -512,8 +512,8 @@ describe("adminClimaController", () => {
   describe("DELETE /clima/:id — deleteClima()", () => {
     test("200 happy path — deleta clima existente", async () => {
       // Arrange
-      const { controller, newsModel } = loadController({
-        mockNewsModel: { deleteClima: jest.fn().mockResolvedValue({ affectedRows: 1 }) },
+      const { controller, climaRepo } = loadController({
+        mockClimaRepo: { deleteClima: jest.fn().mockResolvedValue({ affectedRows: 1 }) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -523,7 +523,7 @@ describe("adminClimaController", () => {
       // Assert
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ ok: true });
-      expect(newsModel.deleteClima).toHaveBeenCalledWith(3);
+      expect(climaRepo.deleteClima).toHaveBeenCalledWith(3);
     });
 
     test("400 quando id é inválido (zero)", async () => {
@@ -539,10 +539,10 @@ describe("adminClimaController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
-    test("500 quando newsModel.deleteClima lança exceção", async () => {
+    test("500 quando climaRepo.deleteClima lança exceção", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { deleteClima: jest.fn().mockRejectedValue(new Error("FK constraint")) },
+        mockClimaRepo: { deleteClima: jest.fn().mockRejectedValue(new Error("FK constraint")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -573,7 +573,7 @@ describe("adminClimaController", () => {
     test("404 quando clima não existe no banco", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { getClimaById: jest.fn().mockResolvedValue(null) },
+        mockClimaRepo: { getClimaById: jest.fn().mockResolvedValue(null) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 
@@ -589,7 +589,7 @@ describe("adminClimaController", () => {
       // Arrange
       const climaRow = { id: 1, city_name: "", uf: "", station_lat: null, station_lon: null };
       const { controller } = loadController({
-        mockNewsModel: {
+        mockClimaRepo: {
           getClimaById: jest.fn().mockResolvedValue(climaRow),
           updateClima: jest.fn().mockResolvedValue({ affectedRows: 1 }),
         },
@@ -604,10 +604,10 @@ describe("adminClimaController", () => {
       expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
-    test("500 quando newsModel.getClimaById lança exceção", async () => {
+    test("500 quando climaRepo.getClimaById lança exceção", async () => {
       // Arrange
       const { controller } = loadController({
-        mockNewsModel: { getClimaById: jest.fn().mockRejectedValue(new Error("DB down")) },
+        mockClimaRepo: { getClimaById: jest.fn().mockRejectedValue(new Error("DB down")) },
       });
       const app = makeTestApp(MOUNT, buildRouter(controller));
 

@@ -1,7 +1,7 @@
 // controllers/news/adminCotacoesController.js
 // Admin controller do Kavita News - COTAÇÕES (CRUD + validações + logs em admin_logs via pool)
 
-const newsModel = require("../../repositories/newsModel");
+const cotacoesRepo = require("../../repositories/cotacoesRepository");
 const pool = require("../../config/pool");
 const { logAdminAction } = require("../../services/adminLogs");
 const {
@@ -93,8 +93,8 @@ async function writeCotacaoHistorySafe({
   sync_message,
 }) {
   try {
-    if (typeof newsModel.insertCotacaoHistory !== "function") return;
-    await newsModel.insertCotacaoHistory({
+    if (typeof cotacoesRepo.insertCotacaoHistory !== "function") return;
+    await cotacoesRepo.insertCotacaoHistory({
       cotacao_id,
       price,
       variation_day,
@@ -121,7 +121,7 @@ function calcVariationDay(priceNow, prevPrice) {
 
 async function listCotacoes(req, res) {
   try {
-    const rows = await newsModel.listCotacoes();
+    const rows = await cotacoesRepo.listCotacoes();
     return ok(res, rows);
   } catch (error) {
     console.error("adminCotacoesController.listCotacoes:", error);
@@ -139,8 +139,8 @@ async function listCotacoes(req, res) {
 async function getCotacoesMeta(req, res) {
   try {
     const suggestions =
-      typeof newsModel.cotacoesMeta === "function"
-        ? await newsModel.cotacoesMeta()
+      typeof cotacoesRepo.cotacoesMeta === "function"
+        ? await cotacoesRepo.cotacoesMeta()
         : { markets: [], sources: [], units: [], types: [] };
 
     const presets = cotacoesProviders && cotacoesProviders.PRESETS ? cotacoesProviders.PRESETS : {};
@@ -207,7 +207,7 @@ async function createCotacao(req, res) {
       ativo: toBoolTiny(body.ativo, 1),
     };
 
-    const row = await newsModel.createCotacao(payload);
+    const row = await cotacoesRepo.createCotacao(payload);
     await logAdmin(req, "criou", "news_cotacoes", row?.id ?? null);
     return created(res, row);
   } catch (error) {
@@ -271,7 +271,7 @@ async function updateCotacao(req, res) {
 
     if (hasOwn(body, "ativo")) patch.ativo = toBoolTiny(body.ativo, 1);
 
-    const result = await newsModel.updateCotacao(id, patch);
+    const result = await cotacoesRepo.updateCotacao(id, patch);
     await logAdmin(req, "editou", "news_cotacoes", id);
     return ok(res, result);
   } catch (error) {
@@ -285,7 +285,7 @@ async function deleteCotacao(req, res) {
   try {
     const id = toInt(req.params.id, 0);
     if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
-    const result = await newsModel.deleteCotacao(id);
+    const result = await cotacoesRepo.deleteCotacao(id);
     await logAdmin(req, "removeu", "news_cotacoes", id);
     return ok(res, result);
   } catch (error) {
@@ -303,7 +303,7 @@ async function syncCotacao(req, res) {
     const id = toInt(req.params.id, 0);
     if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
 
-    const row = await newsModel.getCotacaoById(id);
+    const row = await cotacoesRepo.getCotacaoById(id);
     if (!row) return fail(res, 404, "NOT_FOUND", "Cotação não encontrada.");
 
     const resolved = await resolveCotacaoProvider(row);
@@ -324,7 +324,7 @@ async function syncCotacao(req, res) {
         last_sync_message: null,
       };
 
-      await newsModel.updateCotacao(id, patch);
+      await cotacoesRepo.updateCotacao(id, patch);
 
       await writeCotacaoHistorySafe({
         cotacao_id: id,
@@ -338,7 +338,7 @@ async function syncCotacao(req, res) {
 
       await logAdmin(req, "sincronizou", "news_cotacoes", id);
 
-      const updated = await newsModel.getCotacaoById(id);
+      const updated = await cotacoesRepo.getCotacaoById(id);
       return ok(res, updated, {
         provider: { ok: true, ...(d.meta ? d.meta : null) },
         took_ms: Date.now() - startedAt.getTime(),
@@ -354,7 +354,7 @@ async function syncCotacao(req, res) {
     };
 
     try {
-      await newsModel.updateCotacao(id, patchErr);
+      await cotacoesRepo.updateCotacao(id, patchErr);
     } catch (e) {
       console.error("[COTACOES][SYNC] falha ao atualizar status error:", e?.message || e);
     }
@@ -371,7 +371,7 @@ async function syncCotacao(req, res) {
 
     console.error("[COTACOES][SYNC] provider error:", resolved?.details || resolved);
 
-    const updated = await newsModel.getCotacaoById(id);
+    const updated = await cotacoesRepo.getCotacaoById(id);
     return ok(res, updated || row, {
       provider: {
         ok: false,
@@ -393,7 +393,7 @@ async function syncCotacao(req, res) {
 async function syncCotacoesAll(req, res) {
   const startedAt = new Date();
   try {
-    const rows = await newsModel.listCotacoes();
+    const rows = await cotacoesRepo.listCotacoes();
 
     const ativos = Array.isArray(rows) ? rows.filter((r) => Number(r?.ativo ?? 1) === 1) : [];
 
@@ -427,7 +427,7 @@ async function syncCotacoesAll(req, res) {
             last_sync_message: null,
           };
 
-          await newsModel.updateCotacao(id, patch);
+          await cotacoesRepo.updateCotacao(id, patch);
 
           await writeCotacaoHistorySafe({
             cotacao_id: id,
@@ -446,7 +446,7 @@ async function syncCotacoesAll(req, res) {
 
         const msg = normalizeSyncMessage(resolved?.message || "Falha ao consultar provedor de cotação.");
 
-        await newsModel.updateCotacao(id, {
+        await cotacoesRepo.updateCotacao(id, {
           last_update_at: now,
           last_sync_status: "error",
           last_sync_message: msg,

@@ -1,7 +1,7 @@
 // controllers/news/adminClimaController.js
 // Admin controller do Kavita News - CLIMA (CRUD + validações + logs em admin_logs via pool)
 
-const newsModel = require("../../repositories/newsModel");
+const climaRepo = require("../../repositories/climaRepository");
 const pool = require("../../config/pool");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const { logAdminAction } = require("../../services/adminLogs");
@@ -111,7 +111,7 @@ function applyFail(res, f) {
 
 async function listClima(req, res) {
   try {
-    const rows = await newsModel.listClima();
+    const rows = await climaRepo.listClima();
     return ok(res, rows);
   } catch (error) {
     console.error("adminClimaController.listClima:", error);
@@ -236,7 +236,7 @@ async function createClima(req, res) {
       ativo: toBoolTiny(body.ativo, 1),
     };
 
-    const row = await newsModel.createClima(payload);
+    const row = await climaRepo.createClima(payload);
     await logAdmin(req, "criou", "news_clima", row?.id ?? null);
     return created(res, row);
   } catch (error) {
@@ -318,7 +318,7 @@ async function updateClima(req, res) {
 
     if (hasOwn(body, "ativo")) patch.ativo = toBoolTiny(body.ativo, 1);
 
-    const result = await newsModel.updateClima(id, patch);
+    const result = await climaRepo.updateClima(id, patch);
     await logAdmin(req, "editou", "news_clima", id);
     return ok(res, result);
   } catch (error) {
@@ -332,7 +332,7 @@ async function deleteClima(req, res) {
   try {
     const id = toInt(req.params.id, 0);
     if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
-    const result = await newsModel.deleteClima(id);
+    const result = await climaRepo.deleteClima(id);
     await logAdmin(req, "removeu", "news_clima", id);
     return ok(res, result);
   } catch (error) {
@@ -475,7 +475,7 @@ async function syncClima(req, res) {
     const id = toInt(req.params.id, 0);
     if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
 
-    const row = await newsModel.getClimaById(id);
+    const row = await climaRepo.getClimaById(id);
     if (!row) return fail(res, 404, "NOT_FOUND", "Registro de clima não encontrado.");
 
     let providerData = null;
@@ -526,10 +526,10 @@ async function syncClima(req, res) {
       last_sync_observed_at: nowSql(),
     };
 
-    await newsModel.updateClima(id, patch);
+    await climaRepo.updateClima(id, patch);
     await logAdmin(req, "sincronizou", "news_clima", id);
 
-    const updated = await newsModel.getClimaById(id);
+    const updated = await climaRepo.getClimaById(id);
     return ok(res, updated, providerData?.meta ? { provider: { ok: true, ...providerData.meta } } : undefined);
   } catch (error) {
     console.error("adminClimaController.syncClima:", error);

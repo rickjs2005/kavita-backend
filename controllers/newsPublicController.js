@@ -2,8 +2,9 @@
 // Público: endpoints consumidos pelo site (sem login)
 // Padrão de resposta: { ok, data, meta? }
 
-const newsModel = require("../repositories/newsModel");
-const newsRepo = require("../repositories/newsRepository");
+const climaRepo = require("../repositories/climaRepository");
+const cotacoesRepo = require("../repositories/cotacoesRepository");
+const postsRepo = require("../repositories/postsRepository");
 const {
   ok, fail,
   toInt, normalizeSlug, isValidSlug, sanitizeLimitOffset,
@@ -16,7 +17,7 @@ const {
 // GET /api/news/clima  (lista ativa)
 exports.listClima = async (req, res) => {
   try {
-    const rows = await newsModel.listClimaPublic?.();
+    const rows = await climaRepo.listClimaPublic?.();
     if (!Array.isArray(rows)) return ok(res, []);
     return ok(res, rows);
   } catch (error) {
@@ -33,7 +34,7 @@ exports.getClima = async (req, res) => {
   }
 
   try {
-    const clima = await newsModel.getClimaPublicBySlug?.(slug);
+    const clima = await climaRepo.getClimaPublicBySlug?.(slug);
     if (!clima) return fail(res, 404, "NOT_FOUND", "Clima não encontrado.");
     return ok(res, clima);
   } catch (error) {
@@ -50,7 +51,7 @@ exports.getClima = async (req, res) => {
 exports.listCotacoes = async (req, res) => {
   try {
     const group_key = req.query.group_key ? String(req.query.group_key).trim() : null;
-    const rows = await newsModel.listCotacoesPublic?.({ group_key });
+    const rows = await cotacoesRepo.listCotacoesPublic?.({ group_key });
 
     return ok(
       res,
@@ -71,7 +72,7 @@ exports.getCotacao = async (req, res) => {
   }
 
   try {
-    const cotacao = await newsModel.getCotacaoPublicBySlug?.(slug);
+    const cotacao = await cotacoesRepo.getCotacaoPublicBySlug?.(slug);
     if (!cotacao) return fail(res, 404, "NOT_FOUND", "Cotação não encontrada.");
     return ok(res, cotacao);
   } catch (error) {
@@ -89,7 +90,7 @@ exports.listPosts = async (req, res) => {
   const { lim: limit, off: offset } = sanitizeLimitOffset(req.query.limit, req.query.offset, 50);
 
   try {
-    const posts = await newsModel.listPostsPublic?.({ limit, offset });
+    const posts = await postsRepo.listPostsPublic?.({ limit, offset });
     return ok(res, Array.isArray(posts) ? posts : [], { limit, offset });
   } catch (error) {
     console.error("newsPublicController.listPosts:", error);
@@ -107,12 +108,12 @@ exports.getPost = async (req, res) => {
 
   try {
     // 1) busca post publicado/ativo
-    const post = await newsModel.getPostPublicBySlug?.(slug);
+    const post = await postsRepo.getPostPublicBySlug?.(slug);
     if (!post) return fail(res, 404, "NOT_FOUND", "Post não encontrado (ou não publicado).");
 
     // 2) incrementa views (best-effort)
     try {
-      await newsRepo.incrementPostViews(slug);
+      await postsRepo.incrementPostViews(slug);
     } catch {
       // não derruba a request
     }
@@ -135,9 +136,9 @@ exports.overview = async (req, res) => {
     const postsLimit = Math.min(Math.max(toInt(req.query.posts_limit, 6), 1), 20);
 
     const [clima, cotacoes, posts] = await Promise.all([
-      newsModel.listClimaPublic?.(),
-      newsModel.listCotacoesPublic?.({ group_key: null }),
-      newsModel.listPostsPublic?.({ limit: postsLimit, offset: 0 }),
+      climaRepo.listClimaPublic?.(),
+      cotacoesRepo.listCotacoesPublic?.({ group_key: null }),
+      postsRepo.listPostsPublic?.({ limit: postsLimit, offset: 0 }),
     ]);
 
     return ok(res, {
