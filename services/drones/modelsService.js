@@ -1,6 +1,6 @@
 "use strict";
 
-const pool = require("../../config/pool");
+const dronesRepo = require("../../repositories/dronesRepository");
 const { clampInt, safeParseJson, sanitizeText } = require("./helpers");
 const { getPageSettings, upsertPageSettings } = require("./pageService");
 
@@ -105,12 +105,7 @@ async function upsertModelInfo(modelKey, payload = {}) {
   const merged = { ...modelsJson, [modelKey]: next };
 
   const currentPage = await getPageSettings();
-  const [result] = await pool.query(
-    "UPDATE drone_page_settings SET models_json=? WHERE id=?",
-    [jsonToDb(merged), currentPage.id]
-  );
-
-  return result.affectedRows || 0;
+  return dronesRepo.updatePageModelsJson(currentPage.id, jsonToDb(merged));
 }
 
 // =====================
@@ -119,13 +114,7 @@ async function upsertModelInfo(modelKey, payload = {}) {
 
 async function hasSelectionsTable() {
   try {
-    const [rows] = await pool.query(
-      `SELECT COUNT(*) AS total
-       FROM information_schema.TABLES
-       WHERE TABLE_SCHEMA = DATABASE()
-         AND TABLE_NAME = 'drone_model_media_selections'`
-    );
-    return Number(rows?.[0]?.total || 0) > 0;
+    return dronesRepo.tableExists("drone_model_media_selections");
   } catch {
     return false;
   }
@@ -142,10 +131,7 @@ async function getModelSelections(modelKey) {
 
   if (!(await hasSelectionsTable())) return { HERO: null, CARD: null };
 
-  const [rows] = await pool.query(
-    "SELECT target, media_id FROM drone_model_media_selections WHERE model_key = ?",
-    [k]
-  );
+  const rows = await dronesRepo.findModelSelections(k);
 
   const out = { HERO: null, CARD: null };
   for (const r of rows) {
@@ -182,14 +168,7 @@ async function upsertModelSelection(modelKey, target, mediaId) {
     throw err;
   }
 
-  const [result] = await pool.query(
-    `INSERT INTO drone_model_media_selections (model_key, target, media_id)
-     VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE media_id = VALUES(media_id)`,
-    [k, t, id]
-  );
-
-  return result.affectedRows || 0;
+  return dronesRepo.upsertModelSelection(k, t, id);
 }
 
 async function setDroneModelSelection(modelKey, target, mediaId) {
@@ -205,10 +184,7 @@ async function getSelectionsMapForModels(modelKeys = []) {
 
   if (!keys.length) return {};
 
-  const [rows] = await pool.query(
-    "SELECT model_key, target, media_id FROM drone_model_media_selections WHERE model_key IN (?)",
-    [keys]
-  );
+  const rows = await dronesRepo.findSelectionsForModels(keys);
 
   return rows.reduce((acc, r) => {
     const mk = String(r.model_key || "").trim();
@@ -230,26 +206,13 @@ async function listDroneModels({ includeInactive } = {}) {
   const params = [];
   if (!inc) where += " AND is_active=1";
 
-  const [rows] = await pool.query(
-    `SELECT id, \`key\`, label, is_active, sort_order, created_at, updated_at
-     FROM drone_models ${where} ORDER BY sort_order ASC, id ASC`,
-    params
-  );
-
-  return rows;
+  return dronesRepo.listModels(where, params);
 }
 
 async function getDroneModelByKey(modelKey) {
   const k = sanitizeText(modelKey, 20);
   if (!k) return null;
-
-  const [rows] = await pool.query(
-    `SELECT id, \`key\`, label, is_active, sort_order, created_at, updated_at
-     FROM drone_models WHERE \`key\` = ? LIMIT 1`,
-    [k]
-  );
-
-  return rows[0] || null;
+  return dronesRepo.findModelByKey(k);
 }
 
 async function createDroneModel({ key, label, is_active, sort_order } = {}) {
@@ -265,12 +228,7 @@ async function createDroneModel({ key, label, is_active, sort_order } = {}) {
   const active = is_active == null ? 1 : Number(is_active) ? 1 : 0;
   const sort = clampInt(sort_order, 0, 0, 999999);
 
-  const [result] = await pool.query(
-    "INSERT INTO drone_models (`key`, label, is_active, sort_order) VALUES (?, ?, ?, ?)",
-    [k, l, active, sort]
-  );
-
-  return result.insertId;
+  return dronesRepo.insertModel(k, l, active, sort);
 }
 
 async function updateDroneModel(id, payload = {}) {
@@ -303,14 +261,7 @@ async function updateDroneModel(id, payload = {}) {
 
   if (!sets.length) return 0;
 
-  params.push(modelId);
-
-  const [result] = await pool.query(
-    `UPDATE drone_models SET ${sets.join(", ")} WHERE id=?`,
-    params
-  );
-
-  return result.affectedRows || 0;
+  return dronesRepo.updateModel(modelId, sets, params);
 }
 
 async function deleteDroneModel(id) {
@@ -320,9 +271,7 @@ async function deleteDroneModel(id) {
     err.code = "VALIDATION_ERROR";
     throw err;
   }
-
-  const [result] = await pool.query("DELETE FROM drone_models WHERE id=?", [modelId]);
-  return result.affectedRows || 0;
+  return dronesRepo.deleteModel(modelId);
 }
 
 module.exports = {

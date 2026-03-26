@@ -1,7 +1,7 @@
 "use strict";
 
 const AppError = require("../errors/AppError");
-const pool = require("../config/pool");
+const heroRepo = require("../repositories/heroRepository");
 const mediaService = require("../services/mediaService");
 
 function pickFile(files, field) {
@@ -18,42 +18,22 @@ function normalizeHref(href) {
 }
 
 async function ensureSingleRow() {
-  const [rows] = await pool.query("SELECT id FROM site_hero_settings LIMIT 1");
-  if (rows?.length) return rows[0].id;
-
-  const [result] = await pool.query(
-    "INSERT INTO site_hero_settings (button_label, button_href) VALUES (?, ?)",
-    ["Saiba Mais", "/drones"]
-  );
-  return result.insertId;
+  const id = await heroRepo.findHeroId();
+  if (id != null) return id;
+  return heroRepo.insertDefaultHeroRow();
 }
 
 async function getHeroBase() {
   await ensureSingleRow();
 
-  const [rows] = await pool.query(
-    `SELECT
-        hero_video_url, hero_video_path,
-        hero_image_url, hero_image_path,
-        title, subtitle,
-        button_label, button_href,
-        updated_at, created_at
-     FROM site_hero_settings
-     ORDER BY id ASC
-     LIMIT 1`
-  );
-
-  const r = rows?.[0] || {};
+  const r = await heroRepo.findHeroSettings() || {};
   return {
     hero_video_url: r.hero_video_url || "",
     hero_video_path: r.hero_video_path || "",
     hero_image_url: r.hero_image_url || "",
     hero_image_path: r.hero_image_path || "",
-
-    // ✅ opcionais
     title: r.title || "",
     subtitle: r.subtitle || "",
-
     button_label: r.button_label || "Saiba Mais",
     button_href: normalizeHref(r.button_href || "/drones"),
     updated_at: r.updated_at || null,
@@ -63,7 +43,7 @@ async function getHeroBase() {
 
 async function updateHeroRow(fields) {
   const id = await ensureSingleRow();
-  await pool.query("UPDATE site_hero_settings SET ? WHERE id = ?", [fields, id]);
+  await heroRepo.updateHeroSettings(id, fields);
 }
 
 
@@ -84,25 +64,22 @@ exports.updateHero = async (req, res) => {
     const heroVideo =
       pickFile(req.files, "heroVideo") ||
       pickFile(req.files, "hero_video") ||
-      pickFile(req.files, "video"); // compat extra
+      pickFile(req.files, "video");
 
     const heroImage =
-      pickFile(req.files, "heroImageFallback") || // ✅ o seu mais provável
+      pickFile(req.files, "heroImageFallback") ||
       pickFile(req.files, "heroImage") ||
       pickFile(req.files, "heroFallbackImage") ||
       pickFile(req.files, "hero_image") ||
-      pickFile(req.files, "image"); // compat extra
+      pickFile(req.files, "image");
 
     const labelRaw = req.body?.button_label ?? req.body?.hero_button_label;
     const hrefRaw = req.body?.button_href ?? req.body?.hero_button_href;
-
-    // ✅ NOVO (opcional): title/subtitle (mantém lógica: só atualiza se vier preenchido)
     const titleRaw = req.body?.title ?? req.body?.hero_title;
     const subtitleRaw = req.body?.subtitle ?? req.body?.hero_subtitle;
 
     const label = String(labelRaw || "").trim();
     const href = normalizeHref(hrefRaw);
-
     const title = String(titleRaw || "").trim();
     const subtitle = String(subtitleRaw || "").trim();
 
@@ -113,7 +90,6 @@ exports.updateHero = async (req, res) => {
       });
     }
 
-    // limites coerentes com sua tabela (title 255 / subtitle 500)
     if (title && title.length > 255) {
       throw new AppError("Título muito grande.", "VALIDATION_ERROR", 400, {
         field: "title",
@@ -130,11 +106,8 @@ exports.updateHero = async (req, res) => {
 
     const patch = {};
 
-    // atualiza label/href (mesma lógica de antes)
     if (label) patch.button_label = label;
     if (href) patch.button_href = href;
-
-    // ✅ atualiza title/subtitle só se vier preenchido (não obriga)
     if (title) patch.title = title;
     if (subtitle) patch.subtitle = subtitle;
 

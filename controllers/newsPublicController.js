@@ -3,12 +3,7 @@
 // Padrão de resposta: { ok, data, meta? }
 
 const newsModel = require("../models/newsModel");
-let pool = null;
-try {
-  pool = require("../config/pool");
-} catch {
-  pool = null;
-}
+const newsRepo = require("../repositories/newsRepository");
 const {
   ok, fail,
   toInt, normalizeSlug, isValidSlug, sanitizeLimitOffset,
@@ -117,12 +112,7 @@ exports.getPost = async (req, res) => {
 
     // 2) incrementa views (best-effort)
     try {
-      if (pool) {
-        await pool.query(
-          "UPDATE news_posts SET views = COALESCE(views, 0) + 1 WHERE slug = ? LIMIT 1",
-          [slug]
-        );
-      }
+      await newsRepo.incrementPostViews(slug);
     } catch {
       // não derruba a request
     }

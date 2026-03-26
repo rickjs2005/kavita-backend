@@ -1,6 +1,6 @@
 "use strict";
 
-const pool = require("../../config/pool");
+const dronesRepo = require("../../repositories/dronesRepository");
 const { clampInt, sanitizeText, hasColumn } = require("./helpers");
 
 async function resolveGalleryTitleColumn() {
@@ -27,25 +27,11 @@ async function listGalleryPublic({ page, limit, model_key } = {}) {
     params.push(String(model_key));
   }
 
-  const [[countRow]] = await pool.query(
-    `SELECT COUNT(*) AS total FROM drone_gallery_items ${where}`,
-    params
-  );
-
-  const total = Number(countRow?.total || 0);
+  const total = await dronesRepo.countGallery(where, params);
   const totalPages = Math.max(1, Math.ceil(total / l));
-
   const selectTitle = titleCol ? `, ${titleCol} AS title` : ", NULL AS title";
 
-  const [rows] = await pool.query(
-    `SELECT id, model_key, media_type, media_path, sort_order, is_active, created_at, updated_at
-     ${selectTitle}
-     FROM drone_gallery_items
-     ${where}
-     ORDER BY sort_order ASC, id DESC
-     LIMIT ? OFFSET ?`,
-    [...params, l, offset]
-  );
+  const rows = await dronesRepo.listGallery(where, params, selectTitle, l, offset);
 
   return { items: rows, page: p, limit: l, total, totalPages };
 }
@@ -66,25 +52,11 @@ async function listGalleryAdmin({ page, limit, model_key } = {}) {
     params.push(String(model_key));
   }
 
-  const [[countRow]] = await pool.query(
-    `SELECT COUNT(*) AS total FROM drone_gallery_items ${where}`,
-    params
-  );
-
-  const total = Number(countRow?.total || 0);
+  const total = await dronesRepo.countGallery(where, params);
   const totalPages = Math.max(1, Math.ceil(total / l));
-
   const selectTitle = titleCol ? `, ${titleCol} AS title` : ", NULL AS title";
 
-  const [rows] = await pool.query(
-    `SELECT id, model_key, media_type, media_path, sort_order, is_active, created_at, updated_at
-     ${selectTitle}
-     FROM drone_gallery_items
-     ${where}
-     ORDER BY sort_order ASC, id DESC
-     LIMIT ? OFFSET ?`,
-    [...params, l, offset]
-  );
+  const rows = await dronesRepo.listGallery(where, params, selectTitle, l, offset);
 
   return { items: rows, page: p, limit: l, total, totalPages };
 }
@@ -128,13 +100,7 @@ async function createGalleryItem({ model_key = null, media_type, media_path, tit
   cols.push("is_active");
   vals.push(active);
 
-  const placeholders = cols.map(() => "?").join(", ");
-
-  const [result] = await pool.query(
-    `INSERT INTO drone_gallery_items (${cols.join(", ")}) VALUES (${placeholders})`,
-    vals
-  );
-  return result.insertId;
+  return dronesRepo.insertGalleryItem(cols, vals);
 }
 
 async function updateGalleryItem(id, payload = {}) {
@@ -179,14 +145,7 @@ async function updateGalleryItem(id, payload = {}) {
 
   if (!sets.length) return 0;
 
-  params.push(itemId);
-
-  const [result] = await pool.query(
-    `UPDATE drone_gallery_items SET ${sets.join(", ")} WHERE id=?`,
-    params
-  );
-
-  return result.affectedRows || 0;
+  return dronesRepo.updateGalleryItem(itemId, sets, params);
 }
 
 async function deleteGalleryItem(id) {
@@ -196,9 +155,7 @@ async function deleteGalleryItem(id) {
     err.code = "VALIDATION_ERROR";
     throw err;
   }
-
-  const [result] = await pool.query("DELETE FROM drone_gallery_items WHERE id=?", [itemId]);
-  return result.affectedRows || 0;
+  return dronesRepo.deleteGalleryItem(itemId);
 }
 
 async function getGalleryItemsByIds(ids = []) {
@@ -208,13 +165,7 @@ async function getGalleryItemsByIds(ids = []) {
 
   if (!list.length) return [];
 
-  const [rows] = await pool.query(
-    `SELECT id, model_key, media_type, media_path, is_active
-     FROM drone_gallery_items WHERE id IN (?) LIMIT 5000`,
-    [list]
-  );
-
-  return rows || [];
+  return dronesRepo.findGalleryItemsByIds(list);
 }
 
 module.exports = {

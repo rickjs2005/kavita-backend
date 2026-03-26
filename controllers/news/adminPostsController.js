@@ -1,7 +1,7 @@
 // controllers/news/adminPostsController.js
 // Admin controller do Kavita News - POSTS (CRUD + listagem paginada)
 
-const pool = require("../../config/pool");
+const newsRepo = require("../../repositories/newsRepository");
 const { sanitizeText, sanitizeRichText } = require("../../utils/sanitize");
 const { logAdminAction } = require("../../services/adminLogs");
 const {
@@ -63,11 +63,7 @@ function slugifyFromTitle(title) {
 }
 
 async function slugExists(slug) {
-  const [[row]] = await pool.query(
-    "SELECT 1 AS ok FROM news_posts WHERE slug = ? LIMIT 1",
-    [slug]
-  );
-  return !!row?.ok;
+  return newsRepo.slugExists(slug);
 }
 
 // Se slug foi gerado automaticamente, tenta cafe, cafe-2, cafe-3...
@@ -113,39 +109,8 @@ async function listPosts(req, res) {
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    const sqlCount = `
-      SELECT COUNT(*) AS total
-      FROM news_posts
-      ${whereSql}
-    `;
-
-    const sqlList = `
-      SELECT
-        id,
-        title,
-        slug,
-        excerpt,
-        content,
-        cover_image_url,
-        category,
-        tags,
-        status,
-        published_at,
-        author_admin_id,
-        views,
-        criado_em,
-        atualizado_em
-      FROM news_posts
-      ${whereSql}
-      ORDER BY criado_em DESC, id DESC
-      LIMIT ? OFFSET ?
-    `;
-
-    const [[countRow]] = await pool.query(sqlCount, params);
-    const total = Number(countRow?.total || 0);
-
-    const listParams = [...params, limit, offset];
-    const [rows] = await pool.query(sqlList, listParams);
+    const total = await newsRepo.countPosts(whereSql, params);
+    const rows = await newsRepo.listPosts(whereSql, params, limit, offset);
 
     return ok(res, rows, { status, search, limit, offset, total });
   } catch (error) {
@@ -228,39 +193,13 @@ async function createPost(req, res) {
     const category = body.category ? sanitizeText(String(body.category), 80) : null;
     const tags = body.tags ? sanitizeText(String(body.tags), 500) : null;
 
-    const sql = `
-      INSERT INTO news_posts
-        (title, slug, excerpt, content, cover_image_url, category, tags, status, published_at, author_admin_id, views)
-      VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `;
-
-    const [result] = await pool.query(sql, [
-      title,
-      slug,
-      excerpt,
-      content,
-      cover_image_url,
-      category,
-      tags,
-      status,
-      published_at,
-      author_admin_id,
-    ]);
-
-    const id = result?.insertId;
+    const id = await newsRepo.insertPost(
+      title, slug, excerpt, content, cover_image_url,
+      category, tags, status, published_at, author_admin_id
+    );
     await logAdmin(req, "criou", "news_posts", id);
 
-    const [[row]] = await pool.query(
-      `SELECT
-        id, title, slug, excerpt, content, cover_image_url, category, tags, status, published_at,
-        author_admin_id, views, criado_em, atualizado_em
-       FROM news_posts
-       WHERE id = ?
-       LIMIT 1`,
-      [id]
-    );
-
+    const row = await newsRepo.findPostById(id);
     return created(res, row || { id });
   } catch (error) {
     console.error("adminPostsController.createPost:", error);
@@ -302,11 +241,7 @@ async function updatePost(req, res) {
         if (slug.length > 240) return fail(res, 400, "VALIDATION_ERROR", "slug inválido (máx 240).", { field: "slug" });
 
         // opcional: bloquear se já existir em outro post
-        const [[row]] = await pool.query(
-          "SELECT id FROM news_posts WHERE slug = ? AND id <> ? LIMIT 1",
-          [slug, id]
-        );
-        if (row?.id) {
+        if (await newsRepo.slugExistsExcept(slug, id)) {
           return fail(res, 409, "DUPLICATE", "Já existe um post com esse slug. Escolha outro slug.", { field: "slug", slug });
         }
 
@@ -384,26 +319,14 @@ async function updatePost(req, res) {
       return fail(res, 400, "VALIDATION_ERROR", "Nenhum campo para atualizar.");
     }
 
-    const sql = `UPDATE news_posts SET ${sets.join(", ")} WHERE id = ?`;
-    params.push(id);
-
-    const [result] = await pool.query(sql, params);
-    if (!result || result.affectedRows === 0) {
+    const affected = await newsRepo.updatePost(id, sets, params);
+    if (!affected) {
       return fail(res, 404, "NOT_FOUND", "Post não encontrado.");
     }
 
     await logAdmin(req, "editou", "news_posts", id);
 
-    const [[row]] = await pool.query(
-      `SELECT
-        id, title, slug, excerpt, content, cover_image_url, category, tags, status, published_at,
-        author_admin_id, views, criado_em, atualizado_em
-       FROM news_posts
-       WHERE id = ?
-       LIMIT 1`,
-      [id]
-    );
-
+    const row = await newsRepo.findPostById(id);
     return ok(res, row || { id });
   } catch (error) {
     console.error("adminPostsController.updatePost:", error);
@@ -422,8 +345,8 @@ async function deletePost(req, res) {
     const id = toInt(req.params.id, 0);
     if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
 
-    const [result] = await pool.query("DELETE FROM news_posts WHERE id = ?", [id]);
-    if (!result || result.affectedRows === 0) {
+    const affected = await newsRepo.deletePost(id);
+    if (!affected) {
       return fail(res, 404, "NOT_FOUND", "Post não encontrado.");
     }
 

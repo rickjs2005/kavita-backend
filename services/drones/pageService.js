@@ -1,6 +1,6 @@
 "use strict";
 
-const pool = require("../../config/pool");
+const dronesRepo = require("../../repositories/dronesRepository");
 const { sanitizeText } = require("./helpers");
 
 // =====================
@@ -25,13 +25,7 @@ function jsonToDb(v) {
 // =====================
 
 async function getPageSettings() {
-  const [rows] = await pool.query(
-    `SELECT *
-     FROM drone_page_settings
-     ORDER BY id DESC
-     LIMIT 1`
-  );
-  return rows[0] || null;
+  return dronesRepo.findPageSettings();
 }
 
 async function upsertPageSettings(payload = {}) {
@@ -59,80 +53,22 @@ async function upsertPageSettings(payload = {}) {
   const benefits_title = sanitizeText(valueOrCurrent("benefits_title"), 120);
   const benefits_items_json = jsonToDb(valueOrCurrent("benefits_items_json"));
   const sections_order_json = jsonToDb(valueOrCurrent("sections_order_json"));
-
   const models_json = jsonToDb(valueOrCurrent("models_json"));
 
+  const vals = [
+    hero_title, hero_subtitle, hero_video_path, hero_image_fallback_path,
+    cta_title, cta_message_template, cta_button_label,
+    specs_title, specs_items_json,
+    features_title, features_items_json,
+    benefits_title, benefits_items_json,
+    sections_order_json, models_json,
+  ];
+
   if (!current) {
-    const [result] = await pool.query(
-      `INSERT INTO drone_page_settings
-       (hero_title, hero_subtitle, hero_video_path, hero_image_fallback_path,
-        cta_title, cta_message_template, cta_button_label,
-        specs_title, specs_items_json,
-        features_title, features_items_json,
-        benefits_title, benefits_items_json,
-        sections_order_json,
-        models_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        hero_title,
-        hero_subtitle,
-        hero_video_path,
-        hero_image_fallback_path,
-        cta_title,
-        cta_message_template,
-        cta_button_label,
-        specs_title,
-        specs_items_json,
-        features_title,
-        features_items_json,
-        benefits_title,
-        benefits_items_json,
-        sections_order_json,
-        models_json,
-      ]
-    );
-    return result.insertId;
+    return dronesRepo.insertPageSettings(vals);
   }
 
-  const [result] = await pool.query(
-    `UPDATE drone_page_settings
-     SET hero_title=?,
-         hero_subtitle=?,
-         hero_video_path=?,
-         hero_image_fallback_path=?,
-         cta_title=?,
-         cta_message_template=?,
-         cta_button_label=?,
-         specs_title=?,
-         specs_items_json=?,
-         features_title=?,
-         features_items_json=?,
-         benefits_title=?,
-         benefits_items_json=?,
-         sections_order_json=?,
-         models_json=?
-     WHERE id=?`,
-    [
-      hero_title,
-      hero_subtitle,
-      hero_video_path,
-      hero_image_fallback_path,
-      cta_title,
-      cta_message_template,
-      cta_button_label,
-      specs_title,
-      specs_items_json,
-      features_title,
-      features_items_json,
-      benefits_title,
-      benefits_items_json,
-      sections_order_json,
-      models_json,
-      current.id,
-    ]
-  );
-
-  return result.affectedRows || 0;
+  return dronesRepo.updatePageSettings(current.id, vals);
 }
 
 module.exports = { getPageSettings, upsertPageSettings };

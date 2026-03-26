@@ -1,6 +1,6 @@
 "use strict";
 
-const pool = require("../../config/pool");
+const dronesRepo = require("../../repositories/dronesRepository");
 const { clampInt, sanitizeText, hasColumn } = require("./helpers");
 
 function sha256Hex(v) {
@@ -26,32 +26,17 @@ async function listApprovedComments({ page, limit, model_key } = {}) {
     params.push(String(model_key));
   }
 
-  const [[countRow]] = await pool.query(
-    `SELECT COUNT(*) AS total FROM drone_comments ${where}`,
-    params
-  );
-
-  const total = Number(countRow?.total || 0);
+  const total = await dronesRepo.countComments(where, params);
   const totalPages = Math.max(1, Math.ceil(total / l));
 
-  const [rows] = await pool.query(
-    `SELECT id, model_key, display_name, comment_text, status, created_at
-     FROM drone_comments ${where}
-     ORDER BY created_at DESC, id DESC
-     LIMIT ? OFFSET ?`,
-    [...params, l, offset]
-  );
+  const cols = "id, model_key, display_name, comment_text, status, created_at";
+  const rows = await dronesRepo.listCommentRows(where, params, cols, l, offset);
 
   const ids = rows.map((r) => r.id).filter(Boolean);
   let mediaByComment = {};
 
   if (ids.length) {
-    const [mediaRows] = await pool.query(
-      `SELECT comment_id, media_type, media_path, created_at
-       FROM drone_comment_media
-       WHERE comment_id IN (?) ORDER BY id ASC`,
-      [ids]
-    );
+    const mediaRows = await dronesRepo.findCommentMediaByCommentIds(ids);
     mediaByComment = mediaRows.reduce((acc, m) => {
       const k = String(m.comment_id);
       if (!acc[k]) acc[k] = [];
@@ -93,31 +78,17 @@ async function listCommentsAdmin({ page, limit, status, model_key } = {}) {
     params.push(String(model_key));
   }
 
-  const [[countRow]] = await pool.query(
-    `SELECT COUNT(*) AS total FROM drone_comments ${where}`,
-    params
-  );
-
-  const total = Number(countRow?.total || 0);
+  const total = await dronesRepo.countComments(where, params);
   const totalPages = Math.max(1, Math.ceil(total / l));
 
-  const [rows] = await pool.query(
-    `SELECT id, model_key, display_name, comment_text, status, ip_hash, user_agent, created_at, updated_at
-     FROM drone_comments ${where}
-     ORDER BY created_at DESC, id DESC
-     LIMIT ? OFFSET ?`,
-    [...params, l, offset]
-  );
+  const cols = "id, model_key, display_name, comment_text, status, ip_hash, user_agent, created_at, updated_at";
+  const rows = await dronesRepo.listCommentRows(where, params, cols, l, offset);
 
   const ids = rows.map((r) => r.id).filter(Boolean);
   let mediaCounts = {};
 
   if (ids.length) {
-    const [mrows] = await pool.query(
-      `SELECT comment_id, COUNT(*) AS total FROM drone_comment_media
-       WHERE comment_id IN (?) GROUP BY comment_id`,
-      [ids]
-    );
+    const mrows = await dronesRepo.countMediaByCommentIds(ids);
     mediaCounts = mrows.reduce((acc, r) => {
       acc[String(r.comment_id)] = Number(r.total || 0);
       return acc;
@@ -133,20 +104,10 @@ async function getCommentById(id) {
   const commentId = clampInt(id, null, 1, 999999999);
   if (!commentId) return null;
 
-  const [rows] = await pool.query(
-    `SELECT id, model_key, display_name, comment_text, status, ip_hash, user_agent, created_at, updated_at
-     FROM drone_comments WHERE id=? LIMIT 1`,
-    [commentId]
-  );
-
-  const row = rows[0];
+  const row = await dronesRepo.findCommentById(commentId);
   if (!row) return null;
 
-  const [media] = await pool.query(
-    `SELECT id, media_type, media_path, created_at FROM drone_comment_media
-     WHERE comment_id=? ORDER BY id ASC`,
-    [commentId]
-  );
+  const media = await dronesRepo.findCommentMedia(commentId);
 
   return { ...row, media };
 }
@@ -190,14 +151,7 @@ async function createComment({ model_key = null, display_name, comment_text, sta
   cols.push("user_agent");
   vals.push(ua);
 
-  const placeholders = cols.map(() => "?").join(", ");
-
-  const [result] = await pool.query(
-    `INSERT INTO drone_comments (${cols.join(", ")}) VALUES (${placeholders})`,
-    vals
-  );
-
-  const commentId = result.insertId;
+  const commentId = await dronesRepo.insertComment(cols, vals);
 
   if (Array.isArray(mediaItems) && mediaItems.length) {
     const clean = mediaItems
@@ -209,10 +163,7 @@ async function createComment({ model_key = null, display_name, comment_text, sta
 
     if (clean.length) {
       const values = clean.map((m) => [commentId, m.media_type, m.media_path]);
-      await pool.query(
-        "INSERT INTO drone_comment_media (comment_id, media_type, media_path) VALUES ?",
-        [values]
-      );
+      await dronesRepo.insertCommentMedia(values);
     }
   }
 
@@ -226,9 +177,7 @@ async function deleteComment(id) {
     err.code = "VALIDATION_ERROR";
     throw err;
   }
-
-  const [result] = await pool.query("DELETE FROM drone_comments WHERE id=?", [commentId]);
-  return result.affectedRows || 0;
+  return dronesRepo.deleteComment(commentId);
 }
 
 async function setCommentStatus(id, status) {
@@ -254,8 +203,7 @@ async function setCommentStatus(id, status) {
     throw err;
   }
 
-  const [result] = await pool.query("UPDATE drone_comments SET status=? WHERE id=?", [st, commentId]);
-  return result.affectedRows || 0;
+  return dronesRepo.setCommentStatus(commentId, st);
 }
 
 async function setCommentApproval(id, isApproved) {

@@ -1,6 +1,6 @@
 "use strict";
 
-const pool = require("../../config/pool");
+const dronesRepo = require("../../repositories/dronesRepository");
 
 // =====================
 // Pure helpers (no DB)
@@ -36,24 +36,15 @@ function sanitizeText(v, maxLen) {
 }
 
 // =====================
-// DB schema helpers
+// DB schema helpers (delegate to repository)
 // =====================
 
 async function hasColumn(table, col) {
-  const [rows] = await pool.query(
-    `SELECT COUNT(*) AS total
-     FROM information_schema.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE()
-       AND TABLE_NAME = ?
-       AND COLUMN_NAME = ?`,
-    [table, col]
-  );
-  return Number(rows?.[0]?.total || 0) > 0;
+  return dronesRepo.columnExists(table, col);
 }
 
 async function getTableRowCount(table) {
-  const [rows] = await pool.query(`SELECT COUNT(*) AS total FROM ${table}`);
-  return Number(rows?.[0]?.total || 0);
+  return dronesRepo.tableRowCount(table);
 }
 
 module.exports = { clampInt, safeParseJson, sanitizeText, hasColumn, getTableRowCount };

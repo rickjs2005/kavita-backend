@@ -1,6 +1,6 @@
 "use strict";
 
-const pool = require("../../config/pool");
+const dronesRepo = require("../../repositories/dronesRepository");
 const { clampInt, sanitizeText } = require("./helpers");
 
 async function listRepresentativesPublic({ page, limit, busca, orderBy, orderDir } = {}) {
@@ -22,20 +22,10 @@ async function listRepresentativesPublic({ page, limit, busca, orderBy, orderDir
     params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
 
-  const [[countRow]] = await pool.query(
-    `SELECT COUNT(*) AS total FROM drone_representatives ${where}`,
-    params
-  );
-
-  const total = Number(countRow?.total || 0);
+  const total = await dronesRepo.countRepresentatives(where, params);
   const totalPages = Math.max(1, Math.ceil(total / l));
 
-  const [rows] = await pool.query(
-    `SELECT * FROM drone_representatives ${where}
-     ORDER BY ${ob} ${od}, id DESC
-     LIMIT ? OFFSET ?`,
-    [...params, l, offset]
-  );
+  const rows = await dronesRepo.listRepresentativeRows(where, params, ob, od, l, offset);
 
   return { items: rows, page: p, limit: l, total, totalPages };
 }
@@ -58,20 +48,10 @@ async function listRepresentativesAdmin({ page, limit, busca, includeInactive } 
     params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
 
-  const [[countRow]] = await pool.query(
-    `SELECT COUNT(*) AS total FROM drone_representatives ${where}`,
-    params
-  );
-
-  const total = Number(countRow?.total || 0);
+  const total = await dronesRepo.countRepresentatives(where, params);
   const totalPages = Math.max(1, Math.ceil(total / l));
 
-  const [rows] = await pool.query(
-    `SELECT * FROM drone_representatives ${where}
-     ORDER BY sort_order ASC, id DESC
-     LIMIT ? OFFSET ?`,
-    [...params, l, offset]
-  );
+  const rows = await dronesRepo.listRepresentativeRows(where, params, "sort_order", "ASC", l, offset);
 
   return { items: rows, page: p, limit: l, total, totalPages };
 }
@@ -99,22 +79,12 @@ async function createRepresentative(payload = {}) {
   const sort_order = clampInt(payload.sort_order, 0, 0, 999999);
   const is_active = payload.is_active == null ? 1 : Number(payload.is_active) ? 1 : 0;
 
-  const [result] = await pool.query(
-    `INSERT INTO drone_representatives
-     (name, whatsapp, cnpj, instagram_url,
-      address_street, address_number, address_complement,
-      address_neighborhood, address_city, address_uf, address_cep,
-      notes, sort_order, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      name, whatsapp, cnpj, instagram_url,
-      address_street || "", address_number || "", address_complement,
-      address_neighborhood, address_city, address_uf, address_cep,
-      notes, sort_order, is_active,
-    ]
-  );
-
-  return result.insertId;
+  return dronesRepo.insertRepresentative([
+    name, whatsapp, cnpj, instagram_url,
+    address_street || "", address_number || "", address_complement,
+    address_neighborhood, address_city, address_uf, address_cep,
+    notes, sort_order, is_active,
+  ]);
 }
 
 async function updateRepresentative(id, payload = {}) {
@@ -153,14 +123,7 @@ async function updateRepresentative(id, payload = {}) {
 
   if (!sets.length) return 0;
 
-  params.push(repId);
-
-  const [result] = await pool.query(
-    `UPDATE drone_representatives SET ${sets.join(", ")} WHERE id=?`,
-    params
-  );
-
-  return result.affectedRows || 0;
+  return dronesRepo.updateRepresentative(repId, sets, params);
 }
 
 async function deleteRepresentative(id) {
@@ -170,9 +133,7 @@ async function deleteRepresentative(id) {
     err.code = "VALIDATION_ERROR";
     throw err;
   }
-
-  const [result] = await pool.query("DELETE FROM drone_representatives WHERE id=?", [repId]);
-  return result.affectedRows || 0;
+  return dronesRepo.deleteRepresentative(repId);
 }
 
 module.exports = {
