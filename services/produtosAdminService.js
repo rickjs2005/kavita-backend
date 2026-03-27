@@ -7,6 +7,7 @@ const mediaService = require("./mediaService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/produtosRepository");
+const { logger } = require("../lib");
 
 // ---------------------------------------------------------------------------
 // Conversores de tipo (inputs chegam como string via multipart/form-data)
@@ -94,14 +95,14 @@ function parseAndValidateProductFields(data) {
 // ---------------------------------------------------------------------------
 
 async function listProducts() {
-  const rows = await repo.findAll(pool);
-  return repo.attachImages(pool, rows);
+  const rows = await repo.findAll();
+  return repo.attachImages(rows);
 }
 
 async function getProduct(id) {
-  const row = await repo.findById(pool, id);
+  const row = await repo.findById(id);
   if (!row) throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
-  const [withImages] = await repo.attachImages(pool, [row]);
+  const [withImages] = await repo.attachImages([row]);
   return withImages;
 }
 
@@ -155,8 +156,7 @@ async function updateProduct(id, body, files) {
 
     const affectedRows = await repo.update(conn, id, fields);
     if (affectedRows === 0) {
-      await conn.rollback();
-      await mediaService.enqueueOrphanCleanup(rawFileTargets(files));
+      // Lança diretamente — o bloco catch gerencia rollback e cleanup
       throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
     }
 
@@ -183,7 +183,7 @@ async function updateProduct(id, body, files) {
 
     if (removedDuringUpdate.length) {
       mediaService.removeMedia(removedDuringUpdate).catch((e) => {
-        console.error("Falha ao remover mídias antigas de produto:", e);
+        logger.error({ err: e, productId: id }, "Falha ao remover mídias antigas de produto");
       });
     }
   } catch (err) {
@@ -205,7 +205,7 @@ async function deleteProduct(id) {
     const affectedRows = await repo.remove(conn, id);
 
     if (affectedRows === 0) {
-      await conn.rollback();
+      // Lança diretamente — o bloco catch gerencia rollback
       throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
     }
 
@@ -213,7 +213,7 @@ async function deleteProduct(id) {
 
     if (imgs.length) {
       mediaService.removeMedia(imgs.map((r) => r.path)).catch((e) => {
-        console.error("Falha ao remover mídias de produto excluído:", e);
+        logger.error({ err: e, productId: id }, "Falha ao remover mídias de produto excluído");
       });
     }
   } catch (err) {

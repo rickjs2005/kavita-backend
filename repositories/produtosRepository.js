@@ -10,7 +10,15 @@
 // Para listagem/busca pública, use: repositories/productRepository.js
 //
 // Consumidor: services/produtosAdminService.js
-// Pool/conn: recebidos como parâmetro para suporte a transações (BEGIN/COMMIT/ROLLBACK).
+//
+// Convenção de conexão:
+//   Funções de leitura (findAll, findById, findImagesByProductIds, attachImages)
+//   usam o pool interno — sem parâmetro extra.
+//   Funções de escrita (insert, update, remove, insertImages, deleteImages,
+//   setMainImage) e findImagesByProductId recebem `conn` para participar de
+//   transações gerenciadas pelo service (BEGIN/COMMIT/ROLLBACK).
+
+const pool = require("../config/pool");
 
 const PRODUCTS_TABLE = "products";
 const PRODUCT_IMAGES_TABLE = "product_images";
@@ -39,14 +47,14 @@ function normalizeShippingFields(row) {
 // Queries de leitura
 // ---------------------------------------------------------------------------
 
-async function findAll(pool) {
+async function findAll() {
   const [rows] = await pool.query(
     `SELECT * FROM ${PRODUCTS_TABLE} ORDER BY id DESC`
   );
   return (rows || []).map(normalizeShippingFields);
 }
 
-async function findById(pool, id) {
+async function findById(id) {
   const [rows] = await pool.query(
     `SELECT * FROM ${PRODUCTS_TABLE} WHERE id = ? LIMIT 1`,
     [id]
@@ -55,8 +63,8 @@ async function findById(pool, id) {
   return normalizeShippingFields(rows[0]);
 }
 
-/** Busca todas as imagens de uma lista de product IDs (batch). */
-async function findImagesByProductIds(pool, ids) {
+/** Busca todas as imagens de uma lista de product IDs (batch — leitura via pool interno). */
+async function findImagesByProductIds(ids) {
   if (!ids.length) return [];
   const [imgs] = await pool.query(
     `SELECT product_id, path FROM ${PRODUCT_IMAGES_TABLE} WHERE product_id IN (?)`,
@@ -140,13 +148,13 @@ async function setMainImage(conn, productId, imagePath) {
 }
 
 // ---------------------------------------------------------------------------
-// Utilitário: anexa imagens a uma lista de produtos
+// Utilitário: anexa imagens a uma lista de produtos (leitura via pool interno)
 // ---------------------------------------------------------------------------
 
-async function attachImages(pool, rows) {
+async function attachImages(rows) {
   if (!rows.length) return rows;
   const ids = rows.map((r) => r.id);
-  const imgs = await findImagesByProductIds(pool, ids);
+  const imgs = await findImagesByProductIds(ids);
   const bucket = imgs.reduce((acc, r) => {
     (acc[r.product_id] ||= []).push(r.path);
     return acc;
