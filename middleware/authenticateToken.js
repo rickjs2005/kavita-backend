@@ -1,13 +1,15 @@
 // middleware/authenticateToken.js
 const authConfig = require("../config/auth");
 const pool = require("../config/pool");
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
-module.exports = async function authenticateToken(req, res, next) {
+module.exports = async function authenticateToken(req, _res, next) {
   // Cookie-only authentication — Bearer tokens are not accepted
   const token = req.cookies?.auth_token || null;
 
   if (!token) {
-    return res.status(401).json({ message: "Usuário não autenticado." });
+    return next(new AppError("Usuário não autenticado.", ERROR_CODES.UNAUTHORIZED, 401));
   }
 
   try {
@@ -15,7 +17,7 @@ module.exports = async function authenticateToken(req, res, next) {
 
     const userId = payload?.id;
     if (!userId) {
-      return res.status(401).json({ message: "Token inválido." });
+      return next(new AppError("Token inválido.", ERROR_CODES.AUTH_ERROR, 401));
     }
 
     const [rows] = await pool.query(
@@ -29,7 +31,7 @@ module.exports = async function authenticateToken(req, res, next) {
     );
 
     if (!rows.length) {
-      return res.status(401).json({ message: "Usuário não encontrado." });
+      return next(new AppError("Usuário não encontrado.", ERROR_CODES.AUTH_ERROR, 401));
     }
 
     const user = rows[0];
@@ -40,7 +42,7 @@ module.exports = async function authenticateToken(req, res, next) {
     const dbVersion = user.tokenVersion ?? 0;
     const jwtVersion = payload.tokenVersion ?? 0;
     if (jwtVersion !== dbVersion) {
-      return res.status(401).json({ message: "Sessão inválida. Faça login novamente." });
+      return next(new AppError("Sessão inválida. Faça login novamente.", ERROR_CODES.AUTH_ERROR, 401));
     }
 
     req.user = {
@@ -53,12 +55,12 @@ module.exports = async function authenticateToken(req, res, next) {
     return next();
   } catch (err) {
     const isExpired = err?.name === "TokenExpiredError";
-    console.error("authenticateToken error:", err?.message);
-
-    return res.status(401).json({
-      message: isExpired
-        ? "Sessão expirada. Faça login novamente."
-        : "Token inválido.",
-    });
+    return next(
+      new AppError(
+        isExpired ? "Sessão expirada. Faça login novamente." : "Token inválido.",
+        ERROR_CODES.AUTH_ERROR,
+        401
+      )
+    );
   }
 };
