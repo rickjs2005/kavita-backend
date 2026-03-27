@@ -1,3 +1,24 @@
+// =============================================================================
+// ARQUIVO LEGADO — NÃO USE COMO REFERÊNCIA DE IMPLEMENTAÇÃO
+// =============================================================================
+// Este arquivo usa o padrão antigo: SQL inline na rota, validação manual
+// e res.json() direto, sem controller/service/repository separados.
+//
+// Padrão canônico atual:
+//   rota magra → controller → service → repository  (+  Zod em schemas/)
+//   Referência: routes/admin/adminDrones.js
+//
+// Ao modificar este arquivo:
+//   - prefira migrar para o padrão canônico na mesma PR
+//   - se a mudança for pontual, adicione ou atualize o teste correspondente
+//   - nunca amplie o padrão legado com novas rotas neste arquivo
+// =============================================================================
+//
+// Escopo: detalhe de produto por ID.
+// Prefixo montado: /api/products  →  GET /api/products/:id
+//
+// Montado no mesmo prefixo que publicProducts.js (que cobre GET / e GET /search).
+// =============================================================================
 // routes/productById.js
 const express = require("express");
 const router = express.Router();

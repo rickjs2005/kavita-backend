@@ -13,6 +13,20 @@
 //   - se a mudança for pontual, adicione ou atualize o teste correspondente
 //   - nunca amplie o padrão legado com novas rotas neste arquivo
 // =============================================================================
+//
+// Escopo: avaliações de produtos + quick search por nome.
+// Prefixo montado: /api/public/produtos
+//
+// Endpoints:
+//   GET  /api/public/produtos?busca=  — quick search por nome (possível dead code,
+//                                       ver comentário inline; validar no frontend
+//                                       antes de remover)
+//   POST /api/public/produtos/avaliacoes       — registrar avaliação (auth obrigatória)
+//   GET  /api/public/produtos/:id/avaliacoes   — listar avaliações de um produto
+//
+// NÃO é duplicata de publicProducts.js — serve URLs e responsabilidades distintas.
+// Para listagem/busca do catálogo: routes/public/publicProducts.js
+// =============================================================================
 
 // routes/publicProdutos.js
 const express = require("express");

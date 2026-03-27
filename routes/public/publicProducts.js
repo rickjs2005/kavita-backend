@@ -1,3 +1,14 @@
+// routes/public/publicProducts.js
+//
+// Escopo: catálogo público de produtos — listagem e busca.
+// Prefixo montado: /api/products
+//
+// Endpoints:
+//   GET /api/products          — listagem paginada (categoria, busca, ordenação)
+//   GET /api/products/search   — busca avançada (promoções, faixa de preço, filtros)
+//
+// Padrão: MODERNO — delega para productService → productRepository
+// NÃO contém avaliações de produto. Para avaliações: routes/public/publicProdutos.js
 const express = require("express");
 const router = express.Router();
 const productService = require("../../services/productService");
