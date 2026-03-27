@@ -54,7 +54,7 @@
  * - AAA (Arrange -> Act -> Assert) em todos os testes
  * - ENV controlado + jest.resetModules() antes de importar a rota
  * - Sem snapshots
- * - Sem SQL “solto”: este arquivo testa a camada de rotas; controllers são mockados (não há SQL)
+ * - Sem SQL "solto": este arquivo testa a camada de rotas; controllers são mockados (não há SQL)
  *
  * Observação importante:
  * - routes/admin/adminDrones.js NÃO monta verifyAdmin internamente (padrão do seu projeto).
@@ -117,44 +117,43 @@ describe("Admin Drones routes (routes/admin/adminDrones.js)", () => {
       }),
     };
 
-    // --- Controller mock (rota é “integration de rotas”, controller fica isolado) ---
-    const controllerMock = {
-      // page
+    // --- Controller mocks (cada módulo concreto é mockado individualmente) ---
+    const pageCtrlMock = {
       getPage: jest.fn(),
       upsertPage: jest.fn(),
       resetPageToDefault: jest.fn(),
-
-      // config
       getLandingConfig: jest.fn(),
       upsertLandingConfig: jest.fn(),
+    };
 
-      // models
+    const modelsCtrlMock = {
       listModels: jest.fn(),
       createModel: jest.fn(),
       getModelAggregate: jest.fn(),
       upsertModelInfo: jest.fn(),
       deleteModel: jest.fn(),
+      setModelMediaSelection: jest.fn(),
+    };
 
-      // model gallery
+    const galleryCtrlMock = {
       listModelGallery: jest.fn(),
       createModelGalleryItem: jest.fn(),
       updateModelGalleryItem: jest.fn(),
-      setModelMediaSelection: jest.fn(),
       deleteModelGalleryItem: jest.fn(),
-
-      // legado galeria
       listGallery: jest.fn(),
       createGalleryItem: jest.fn(),
       updateGalleryItem: jest.fn(),
       deleteGalleryItem: jest.fn(),
+    };
 
-      // representantes
+    const representativesCtrlMock = {
       listRepresentatives: jest.fn(),
       createRepresentative: jest.fn(),
       updateRepresentative: jest.fn(),
       deleteRepresentative: jest.fn(),
+    };
 
-      // comentarios
+    const commentsCtrlMock = {
       listComments: jest.fn(),
       approveComment: jest.fn(),
       rejectComment: jest.fn(),
@@ -162,12 +161,20 @@ describe("Admin Drones routes (routes/admin/adminDrones.js)", () => {
     };
 
     // resolve absolute paths so the mock matches what the router resolves internally
-    const pathPool = require.resolve("../../config/pool");
-    const pathController = require.resolve("../../controllers/dronesAdminController");
+    const pathPool        = require.resolve("../../config/pool");
+    const pathPageCtrl    = require.resolve("../../controllers/drones/pageController");
+    const pathModelsCtrl  = require.resolve("../../controllers/drones/modelsController");
+    const pathGalleryCtrl = require.resolve("../../controllers/drones/galleryController");
+    const pathRepresentativesCtrl = require.resolve("../../controllers/drones/representativesController");
+    const pathCommentsCtrl = require.resolve("../../controllers/drones/commentsController");
     const pathMediaService = require.resolve("../../services/mediaService");
 
     jest.doMock(pathPool, () => poolMock, { virtual: false });
-    jest.doMock(pathController, () => controllerMock, { virtual: false });
+    jest.doMock(pathPageCtrl,            () => pageCtrlMock,            { virtual: false });
+    jest.doMock(pathModelsCtrl,          () => modelsCtrlMock,          { virtual: false });
+    jest.doMock(pathGalleryCtrl,         () => galleryCtrlMock,         { virtual: false });
+    jest.doMock(pathRepresentativesCtrl, () => representativesCtrlMock, { virtual: false });
+    jest.doMock(pathCommentsCtrl,        () => commentsCtrlMock,        { virtual: false });
     jest.doMock(
       pathMediaService,
       () => ({
@@ -185,6 +192,17 @@ describe("Admin Drones routes (routes/admin/adminDrones.js)", () => {
     wrapper.use(router);
 
     const app = makeTestApp(MOUNT_PATH, wrapper);
+
+    // Expose a single merged controllerMock so all existing tests continue to work.
+    // The spread shares the same jest.fn() references, so mockImplementation on
+    // controllerMock.getPage is the same object as pageCtrlMock.getPage.
+    const controllerMock = {
+      ...pageCtrlMock,
+      ...modelsCtrlMock,
+      ...galleryCtrlMock,
+      ...representativesCtrlMock,
+      ...commentsCtrlMock,
+    };
 
     return {
       app,

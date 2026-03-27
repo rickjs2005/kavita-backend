@@ -7,7 +7,11 @@ const express = require("express");
 const router = express.Router();
 
 // ✅ Padrão: verifyAdmin fica no mount em routes/index.js
-const dronesAdminController = require("../../controllers/dronesAdminController");
+const pageCtrl          = require("../../controllers/drones/pageController");
+const modelsCtrl        = require("../../controllers/drones/modelsController");
+const galleryCtrl       = require("../../controllers/drones/galleryController");
+const representativesCtrl = require("../../controllers/drones/representativesController");
+const commentsCtrl      = require("../../controllers/drones/commentsController");
 
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
@@ -32,7 +36,7 @@ const jsonParser = express.json({ limit: "2mb" });
  * PAGE (LEGADO) /page + alias /page-settings
  * ========================================================= */
 
-router.get("/page", dronesAdminController.getPage);
+router.get("/page", pageCtrl.getPage);
 
 router.put(
   "/page",
@@ -40,7 +44,7 @@ router.put(
     { name: "heroVideo", maxCount: 1 },
     { name: "heroImageFallback", maxCount: 1 },
   ]),
-  dronesAdminController.upsertPage
+  pageCtrl.upsertPage
 );
 
 // mantém POST legado também
@@ -50,13 +54,13 @@ router.post(
     { name: "heroVideo", maxCount: 1 },
     { name: "heroImageFallback", maxCount: 1 },
   ]),
-  dronesAdminController.upsertPage
+  pageCtrl.upsertPage
 );
 
-router.delete("/page", dronesAdminController.resetPageToDefault);
+router.delete("/page", pageCtrl.resetPageToDefault);
 
 // alias compatível
-router.get("/page-settings", dronesAdminController.getPage);
+router.get("/page-settings", pageCtrl.getPage);
 
 router.put(
   "/page-settings",
@@ -64,7 +68,7 @@ router.put(
     { name: "heroVideo", maxCount: 1 },
     { name: "heroImageFallback", maxCount: 1 },
   ]),
-  dronesAdminController.upsertPage
+  pageCtrl.upsertPage
 );
 
 router.post(
@@ -73,14 +77,14 @@ router.post(
     { name: "heroVideo", maxCount: 1 },
     { name: "heroImageFallback", maxCount: 1 },
   ]),
-  dronesAdminController.upsertPage
+  pageCtrl.upsertPage
 );
 
 /* =========================================================
  * CONFIG (landing-only)
  * ========================================================= */
 
-router.get("/config", dronesAdminController.getLandingConfig);
+router.get("/config", pageCtrl.getLandingConfig);
 
 router.put(
   "/config",
@@ -88,19 +92,19 @@ router.put(
     { name: "heroVideo", maxCount: 1 },
     { name: "heroImageFallback", maxCount: 1 },
   ]),
-  dronesAdminController.upsertLandingConfig
+  pageCtrl.upsertLandingConfig
 );
 
 /* =========================================================
  * MODELS (drone_models) + model aggregate + model info
  * ========================================================= */
 
-router.get("/models", dronesAdminController.listModels);
-router.post("/models", jsonParser, dronesAdminController.createModel);
+router.get("/models", modelsCtrl.listModels);
+router.post("/models", jsonParser, modelsCtrl.createModel);
 
-router.get("/models/:modelKey", dronesAdminController.getModelAggregate);
-router.put("/models/:modelKey", jsonParser, dronesAdminController.upsertModelInfo);
-router.delete("/models/:modelKey", dronesAdminController.deleteModel);
+router.get("/models/:modelKey", modelsCtrl.getModelAggregate);
+router.put("/models/:modelKey", jsonParser, modelsCtrl.upsertModelInfo);
+router.delete("/models/:modelKey", modelsCtrl.deleteModel);
 
 /* =========================================================
  * MODEL GALLERY: /models/:modelKey/gallery
@@ -114,29 +118,29 @@ router.delete("/models/:modelKey", dronesAdminController.deleteModel);
  *     summary: "Atualiza item de galeria do modelo (multipart: opcionalmente troca a mídia)"
  */
 
-router.get("/models/:modelKey/gallery", dronesAdminController.listModelGallery);
+router.get("/models/:modelKey/gallery", galleryCtrl.listModelGallery);
 
 router.post(
   "/models/:modelKey/gallery",
   upload.single("media"),
-  dronesAdminController.createModelGalleryItem
+  galleryCtrl.createModelGalleryItem
 );
 
 router.put(
   "/models/:modelKey/gallery/:id",
   upload.single("media"),
-  dronesAdminController.updateModelGalleryItem
+  galleryCtrl.updateModelGalleryItem
 );
 
 router.put(
   "/models/:modelKey/media-selection",
   jsonParser,
-  dronesAdminController.setModelMediaSelection
+  modelsCtrl.setModelMediaSelection
 );
 
 router.delete(
   "/models/:modelKey/gallery/:id",
-  dronesAdminController.deleteModelGalleryItem
+  galleryCtrl.deleteModelGalleryItem
 );
 
 /* =========================================================
@@ -151,38 +155,38 @@ router.delete(
  *     summary: "Atualiza item de galeria (legado) (multipart: opcionalmente troca a mídia)"
  */
 
-router.get("/galeria", dronesAdminController.listGallery);
+router.get("/galeria", galleryCtrl.listGallery);
 
 router.post(
   "/galeria",
   upload.single("media"),
-  dronesAdminController.createGalleryItem
+  galleryCtrl.createGalleryItem
 );
 
 router.put(
   "/galeria/:id",
   upload.single("media"),
-  dronesAdminController.updateGalleryItem
+  galleryCtrl.updateGalleryItem
 );
 
-router.delete("/galeria/:id", dronesAdminController.deleteGalleryItem);
+router.delete("/galeria/:id", galleryCtrl.deleteGalleryItem);
 
 /* =========================================================
  * REPRESENTANTES (CRUD)
  * ========================================================= */
 
-router.get("/representantes", dronesAdminController.listRepresentatives);
-router.post("/representantes", jsonParser, dronesAdminController.createRepresentative);
-router.put("/representantes/:id", jsonParser, dronesAdminController.updateRepresentative);
-router.delete("/representantes/:id", dronesAdminController.deleteRepresentative);
+router.get("/representantes", representativesCtrl.listRepresentatives);
+router.post("/representantes", jsonParser, representativesCtrl.createRepresentative);
+router.put("/representantes/:id", jsonParser, representativesCtrl.updateRepresentative);
+router.delete("/representantes/:id", representativesCtrl.deleteRepresentative);
 
 /* =========================================================
  * COMENTÁRIOS (moderação)
  * ========================================================= */
 
-router.get("/comentarios", dronesAdminController.listComments);
-router.put("/comentarios/:id/aprovar", dronesAdminController.approveComment);
-router.put("/comentarios/:id/reprovar", dronesAdminController.rejectComment);
-router.delete("/comentarios/:id", dronesAdminController.deleteComment);
+router.get("/comentarios", commentsCtrl.listComments);
+router.put("/comentarios/:id/aprovar", commentsCtrl.approveComment);
+router.put("/comentarios/:id/reprovar", commentsCtrl.rejectComment);
+router.delete("/comentarios/:id", commentsCtrl.deleteComment);
 
 module.exports = router;
