@@ -195,7 +195,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -474,7 +474,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
 
     // Security: SQL injection — slug é validado pelo regex, então tentativas são bloqueadas
@@ -753,7 +753,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -854,7 +854,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 });

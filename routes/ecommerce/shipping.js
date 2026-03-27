@@ -13,7 +13,7 @@ const { getQuote } = require("../../services/shippingQuoteService");
 function parseCep(raw) {
   const cepDigits = String(raw || "").replace(/\D/g, "");
   if (cepDigits.length !== 8) {
-    throw new AppError("CEP inválido.", ERROR_CODES.INVALID_INPUT, 400);
+    throw new AppError("CEP inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
   }
   return cepDigits;
 }
@@ -26,12 +26,12 @@ function parseItems(raw) {
     try {
       items = JSON.parse(raw);
     } catch (e) {
-      throw new AppError("Parâmetro 'items' inválido (JSON).", ERROR_CODES.INVALID_INPUT, 400);
+      throw new AppError("Parâmetro 'items' inválido (JSON).", ERROR_CODES.VALIDATION_ERROR, 400);
     }
   }
 
   if (!Array.isArray(items) || items.length === 0) {
-    throw new AppError("Carrinho vazio ou 'items' inválido.", ERROR_CODES.INVALID_INPUT, 400);
+    throw new AppError("Carrinho vazio ou 'items' inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
   }
 
   const normalized = items
@@ -42,7 +42,7 @@ function parseItems(raw) {
     .filter((it) => Number.isFinite(it.id) && it.id > 0);
 
   if (!normalized.length) {
-    throw new AppError("Itens inválidos: IDs ausentes/invalidos.", ERROR_CODES.INVALID_INPUT, 400);
+    throw new AppError("Itens inválidos: IDs ausentes/invalidos.", ERROR_CODES.VALIDATION_ERROR, 400);
   }
 
   // quantidade deve ser >= 1 para cotação
@@ -50,7 +50,7 @@ function parseItems(raw) {
     if (!Number.isFinite(it.quantidade) || it.quantidade < 1) {
       throw new AppError(
         "Itens inválidos: 'quantidade' deve ser >= 1.",
-        ERROR_CODES.INVALID_INPUT,
+        ERROR_CODES.VALIDATION_ERROR,
         400
       );
     }

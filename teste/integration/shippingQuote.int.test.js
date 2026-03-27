@@ -4,7 +4,7 @@ const request = require("supertest");
 const { makeTestApp } = require("../testUtils");
 
 describe("Shipping Routes (integration)", () => {
-  const routerPath = require.resolve("../../routes/shippingRoutes");
+  const routerPath = require.resolve("../../routes/ecommerce/shipping");
   const svcPath = require.resolve("../../services/shippingQuoteService");
   const appErrorPath = require.resolve("../../errors/AppError");
   const errorCodesPath = require.resolve("../../constants/ErrorCodes");
@@ -16,9 +16,9 @@ describe("Shipping Routes (integration)", () => {
     jest.resetModules();
     jest.clearAllMocks();
 
-    // ErrorCodes: shippingRoutes usa INVALID_INPUT e SERVER_ERROR.
+    // ErrorCodes: shippingRoutes usa VALIDATION_ERROR e SERVER_ERROR.
     jest.doMock(errorCodesPath, () => ({
-      INVALID_INPUT: "INVALID_INPUT",
+      VALIDATION_ERROR: "VALIDATION_ERROR",
       SERVER_ERROR: "SERVER_ERROR",
     }));
 
@@ -92,7 +92,7 @@ describe("Shipping Routes (integration)", () => {
       });
     });
 
-    test("400 CEP inválido (len != 8) => INVALID_INPUT", async () => {
+    test("400 CEP inválido (len != 8) => VALIDATION_ERROR", async () => {
       // Act
       const res = await request(app)
         .get("/api/shipping/quote")
@@ -101,7 +101,7 @@ describe("Shipping Routes (integration)", () => {
       // Assert
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({
-        code: "INVALID_INPUT",
+        code: "VALIDATION_ERROR",
       });
       expect(String(res.body.message)).toContain("CEP inválido");
       expect(getQuoteMock).not.toHaveBeenCalled();
@@ -115,7 +115,7 @@ describe("Shipping Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ code: "INVALID_INPUT" });
+      expect(res.body).toMatchObject({ code: "VALIDATION_ERROR" });
       expect(String(res.body.message)).toContain("Parâmetro 'items' inválido");
       expect(getQuoteMock).not.toHaveBeenCalled();
     });
@@ -128,7 +128,7 @@ describe("Shipping Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ code: "INVALID_INPUT" });
+      expect(res.body).toMatchObject({ code: "VALIDATION_ERROR" });
       expect(String(res.body.message)).toContain("Carrinho vazio");
       expect(getQuoteMock).not.toHaveBeenCalled();
     });
@@ -144,12 +144,12 @@ describe("Shipping Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ code: "INVALID_INPUT" });
+      expect(res.body).toMatchObject({ code: "VALIDATION_ERROR" });
       expect(String(res.body.message)).toContain("IDs ausentes/invalidos");
       expect(getQuoteMock).not.toHaveBeenCalled();
     });
 
-    test("400 quantidade < 1 => INVALID_INPUT", async () => {
+    test("400 quantidade < 1 => VALIDATION_ERROR", async () => {
       // Arrange
       const items = [{ id: 1, quantidade: 0 }];
 
@@ -160,7 +160,7 @@ describe("Shipping Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ code: "INVALID_INPUT" });
+      expect(res.body).toMatchObject({ code: "VALIDATION_ERROR" });
       expect(String(res.body.message)).toContain("quantidade");
       expect(getQuoteMock).not.toHaveBeenCalled();
     });
@@ -171,7 +171,7 @@ describe("Shipping Routes (integration)", () => {
         getQuoteImpl: async () => {
           const AppError = require(appErrorPath);
           const ERROR_CODES = require(errorCodesPath);
-          throw new AppError("CEP sem cobertura.", ERROR_CODES.INVALID_INPUT, 404);
+          throw new AppError("CEP sem cobertura.", ERROR_CODES.VALIDATION_ERROR, 404);
         },
       });
 
@@ -183,7 +183,7 @@ describe("Shipping Routes (integration)", () => {
       // Assert
       expect(res.status).toBe(404);
       expect(res.body).toMatchObject({
-        code: "INVALID_INPUT",
+        code: "VALIDATION_ERROR",
         message: "CEP sem cobertura.",
       });
     });
@@ -203,7 +203,8 @@ describe("Shipping Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({
+        ok: false,
         code: "SERVER_ERROR",
         message: "Erro ao cotar frete.",
       });

@@ -9,6 +9,7 @@ const {
   toInt, isNonEmptyStr, isOptionalStr, isValidDateTimeLike,
   normalizeSlug, isValidSlug, nowSql,
 } = require("../../services/news/helpers");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 function getAdminId(req) {
   return req.admin?.id || req.user?.id || req.adminId || req.userId || null;
@@ -115,7 +116,7 @@ async function listPosts(req, res) {
     return ok(res, rows, { status, search, limit, offset, total });
   } catch (error) {
     console.error("adminPostsController.listPosts:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao listar posts.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao listar posts.");
   }
 }
 
@@ -206,7 +207,7 @@ async function createPost(req, res) {
     if (String(error?.code || "").includes("ER_DUP_ENTRY")) {
       return fail(res, 409, "DUPLICATE", "Já existe um post com esse slug.");
     }
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao criar post.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao criar post.");
   }
 }
 
@@ -333,7 +334,7 @@ async function updatePost(req, res) {
     if (String(error?.code || "").includes("ER_DUP_ENTRY")) {
       return fail(res, 409, "DUPLICATE", "Já existe um post com esse slug.");
     }
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao atualizar post.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao atualizar post.");
   }
 }
 
@@ -354,7 +355,7 @@ async function deletePost(req, res) {
     return ok(res, { deleted: true, id });
   } catch (error) {
     console.error("adminPostsController.deletePost:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao remover post.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao remover post.");
   }
 }
 

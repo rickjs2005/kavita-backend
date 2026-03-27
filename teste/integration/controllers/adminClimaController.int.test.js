@@ -139,7 +139,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -379,7 +379,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
 
     // Security: boundary testing
@@ -506,7 +506,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -553,7 +553,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -618,7 +618,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 });

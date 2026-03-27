@@ -117,7 +117,7 @@ function setupModuleWithMocks() {
 
   // ✅ assinatura nova: (message, code, status, details?) — alinhada com AppError.js
   class MockAppError extends Error {
-    constructor(message, code = "INTERNAL_ERROR", status = 500, details = null) {
+    constructor(message, code = "SERVER_ERROR", status = 500, details = null) {
       super(message);
       this.name = "AppError";
       this.code = code;

@@ -1,17 +1,20 @@
 const ERROR_CODES = {
-  // Auth / Permissões (já usados em testes e middlewares)
+  // Auth / Permissões
+  // AUTH_ERROR    → credenciais inválidas (senha errada, token inválido) — HTTP 401
+  // UNAUTHORIZED  → usuário não autenticado (sem cookie/token) — HTTP 401
+  // FORBIDDEN     → autenticado mas sem permissão — HTTP 403
   AUTH_ERROR: "AUTH_ERROR",
   UNAUTHORIZED: "UNAUTHORIZED",
   FORBIDDEN: "FORBIDDEN",
 
   // Validação / Input
+  // VALIDATION_ERROR → falha de schema Zod ou validação de parâmetro de entrada — HTTP 400
   VALIDATION_ERROR: "VALIDATION_ERROR",
-  INVALID_INPUT: "INVALID_INPUT",
 
   // Recursos / Sistema
   NOT_FOUND: "NOT_FOUND",
+  // SERVER_ERROR → erro interno não previsto — HTTP 500
   SERVER_ERROR: "SERVER_ERROR",
-  INTERNAL_ERROR: "INTERNAL_ERROR",
 
   // Pagamento
   PAYMENT_ERROR: "PAYMENT_ERROR",

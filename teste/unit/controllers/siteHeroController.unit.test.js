@@ -56,7 +56,7 @@ describe("siteHeroController (unit)", () => {
 
     // MockAppError segue a assinatura nova: (message, code, status, details?)
     class MockAppError extends Error {
-      constructor(message, code = "INTERNAL_ERROR", status = 500, details = null) {
+      constructor(message, code = "SERVER_ERROR", status = 500, details = null) {
         super(message);
         this.name = "AppError";
         this.code = code;

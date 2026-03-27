@@ -6,6 +6,7 @@ const { logAdminAction } = require("../../services/adminLogs");
 const { toInt, nowSql } = require("../../services/news/helpers");
 const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 /**
  * Sugestão de coordenadas (compatibilidade):
@@ -43,7 +44,7 @@ async function listClima(req, res, next) {
     return response.ok(res, rows);
   } catch (error) {
     console.error("adminClimaController.listClima:", error);
-    return next(new AppError("Erro ao listar clima.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao listar clima.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -97,7 +98,7 @@ async function createClima(req, res, next) {
   } catch (error) {
     console.error("adminClimaController.createClima:", error);
     if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", "DUPLICATE", 409));
-    return next(new AppError("Erro ao criar clima.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao criar clima.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -118,7 +119,7 @@ async function updateClima(req, res, next) {
   } catch (error) {
     console.error("adminClimaController.updateClima:", error);
     if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", "DUPLICATE", 409));
-    return next(new AppError("Erro ao atualizar clima.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao atualizar clima.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -131,7 +132,7 @@ async function deleteClima(req, res, next) {
     return response.ok(res, result);
   } catch (error) {
     console.error("adminClimaController.deleteClima:", error);
-    return next(new AppError("Erro ao remover clima.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao remover clima.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -342,7 +343,7 @@ async function syncClima(req, res, next) {
     return response.ok(res, updated);
   } catch (error) {
     console.error("adminClimaController.syncClima:", error);
-    return next(new AppError("Erro ao sincronizar clima.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao sincronizar clima.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 

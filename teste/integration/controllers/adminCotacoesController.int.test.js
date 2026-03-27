@@ -139,7 +139,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -205,7 +205,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -344,7 +344,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -434,7 +434,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -481,7 +481,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -589,7 +589,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 
@@ -658,7 +658,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ ok: false, code: "INTERNAL_ERROR" });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR" });
     });
   });
 });

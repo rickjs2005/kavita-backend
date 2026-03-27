@@ -9,6 +9,7 @@ const {
   ok, fail,
   toInt, normalizeSlug, isValidSlug, sanitizeLimitOffset,
 } = require("../services/news/helpers");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 /* =========================================================
  * PUBLIC - CLIMA
@@ -22,7 +23,7 @@ exports.listClima = async (req, res) => {
     return ok(res, rows);
   } catch (error) {
     console.error("newsPublicController.listClima:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao listar clima.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao listar clima.");
   }
 };
 
@@ -39,7 +40,7 @@ exports.getClima = async (req, res) => {
     return ok(res, clima);
   } catch (error) {
     console.error("newsPublicController.getClima:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao buscar clima.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao buscar clima.");
   }
 };
 
@@ -60,7 +61,7 @@ exports.listCotacoes = async (req, res) => {
     );
   } catch (error) {
     console.error("newsPublicController.listCotacoes:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao listar cotações.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao listar cotações.");
   }
 };
 
@@ -77,7 +78,7 @@ exports.getCotacao = async (req, res) => {
     return ok(res, cotacao);
   } catch (error) {
     console.error("newsPublicController.getCotacao:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao buscar cotação.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao buscar cotação.");
   }
 };
 
@@ -94,7 +95,7 @@ exports.listPosts = async (req, res) => {
     return ok(res, Array.isArray(posts) ? posts : [], { limit, offset });
   } catch (error) {
     console.error("newsPublicController.listPosts:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao listar posts.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao listar posts.");
   }
 };
 
@@ -121,7 +122,7 @@ exports.getPost = async (req, res) => {
     return ok(res, post);
   } catch (error) {
     console.error("newsPublicController.getPost:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao buscar post.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao buscar post.");
   }
 };
 
@@ -148,6 +149,6 @@ exports.overview = async (req, res) => {
     });
   } catch (error) {
     console.error("newsPublicController.overview:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao carregar overview.");
+    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao carregar overview.");
   }
 };

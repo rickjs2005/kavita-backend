@@ -6,6 +6,7 @@ const { logAdminAction } = require("../../services/adminLogs");
 const { toInt, toBoolTiny, nowSql } = require("../../services/news/helpers");
 const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 let cotacoesProviders = null;
 try {
@@ -117,7 +118,7 @@ async function listCotacoes(req, res, next) {
     return response.ok(res, rows);
   } catch (error) {
     console.error("adminCotacoesController.listCotacoes:", error);
-    return next(new AppError("Erro ao listar cotações.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao listar cotações.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -145,7 +146,7 @@ async function getCotacoesMeta(req, res, next) {
     });
   } catch (error) {
     console.error("adminCotacoesController.getCotacoesMeta:", error);
-    return next(new AppError("Erro ao carregar meta de cotações.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao carregar meta de cotações.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -158,7 +159,7 @@ async function createCotacao(req, res, next) {
   } catch (error) {
     console.error("adminCotacoesController.createCotacao:", error);
     if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe uma cotação com esse slug.", "DUPLICATE", 409));
-    return next(new AppError("Erro ao criar cotação.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao criar cotação.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -179,7 +180,7 @@ async function updateCotacao(req, res, next) {
   } catch (error) {
     console.error("adminCotacoesController.updateCotacao:", error);
     if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe uma cotação com esse slug.", "DUPLICATE", 409));
-    return next(new AppError("Erro ao atualizar cotação.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao atualizar cotação.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -192,7 +193,7 @@ async function deleteCotacao(req, res, next) {
     return response.ok(res, result);
   } catch (error) {
     console.error("adminCotacoesController.deleteCotacao:", error);
-    return next(new AppError("Erro ao remover cotação.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao remover cotação.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -293,7 +294,7 @@ async function syncCotacao(req, res, next) {
     });
   } catch (error) {
     console.error("adminCotacoesController.syncCotacao:", error);
-    return next(new AppError("Erro ao sincronizar cotação.", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao sincronizar cotação.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -405,7 +406,7 @@ async function syncCotacoesAll(req, res, next) {
     });
   } catch (error) {
     console.error("adminCotacoesController.syncCotacoesAll:", error);
-    return next(new AppError("Erro ao sincronizar cotações (all).", "INTERNAL_ERROR", 500));
+    return next(new AppError("Erro ao sincronizar cotações (all).", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
