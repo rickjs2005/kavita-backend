@@ -247,7 +247,7 @@ describe("Login Response Security (no token in body)", () => {
     expect(res.status).toBe(200);
     expect(res.body).not.toHaveProperty("token");
     expect(res.body).toHaveProperty("message");
-    expect(res.body).toHaveProperty("user");
+    expect(res.body.data).toHaveProperty("user");
   });
 
   test("POST /api/login sets HttpOnly auth_token cookie", async () => {
@@ -283,7 +283,7 @@ describe("Login Response Security (no token in body)", () => {
     expect(res.status).toBe(200);
     expect(res.body).not.toHaveProperty("token");
     expect(res.body).toHaveProperty("message");
-    expect(res.body).toHaveProperty("admin");
+    expect(res.body.data).toHaveProperty("admin");
   });
 });
 

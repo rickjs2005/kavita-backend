@@ -12,7 +12,7 @@ describe("Checkout Routes (integration)", () => {
   const shippingSvcPath = require.resolve("../../services/shippingQuoteService");
   const appErrorPath = require.resolve("../../errors/AppError");
   const errorCodesPath = require.resolve("../../constants/ErrorCodes");
-  const routerPath = require.resolve("../../routes/checkoutRoutes");
+  const routerPath = require.resolve("../../routes/ecommerce/checkout");
 
   let pool;
   let app;

@@ -1,7 +1,7 @@
 /**
  * teste/integration/payment.int.test.js
  *
- * Rotas testadas: routes/payment.js
+ * Rotas testadas: routes/ecommerce/payment.js
  *
  * Endpoints:
  * - GET    /api/payment/methods                         (public)
@@ -88,7 +88,7 @@ function setupModuleWithMocks({ asAdmin = true } = {}) {
   });
 
   // Importa o router real só depois dos mocks
-  const router = require("../../routes/payment");
+  const router = require("../../routes/ecommerce/payment");
 
   return { router, mockPool };
 }
@@ -115,11 +115,11 @@ function setupWebhookWithMocks({ mpPaymentGet } = {}) {
     })),
   }));
 
-  const router = require("../../routes/payment");
+  const router = require("../../routes/ecommerce/payment");
   return { router, mockPool };
 }
 
-describe("Payment Routes (integration) - routes/payment.js", () => {
+describe("Payment Routes (integration) - routes/ecommerce/payment.js", () => {
   test("GET /api/payment/methods -> 200 lista somente métodos ativos", async () => {
     // Arrange
     const { router, mockPool } = setupModuleWithMocks();
@@ -216,7 +216,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({ ok: false,
         code: "VALIDATION_ERROR",
         message: "code e label são obrigatórios.",
       });
@@ -325,7 +325,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({ ok: false,
         code: "VALIDATION_ERROR",
         message: "Já existe um método com esse code.",
       });
@@ -344,7 +344,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "id inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "id inválido." });
       expect(mockPool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -360,7 +360,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({ ok: false,
         code: "VALIDATION_ERROR",
         message: "Nenhum campo para atualizar.",
       });
@@ -378,7 +378,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
       conn.query.mockImplementation(
         makeQueryRouter([
           {
-            match: (sqlNorm) => sqlNorm === "select id from payment_methods where id = ?",
+            match: (sqlNorm) => sqlNorm.includes("from payment_methods") && sqlNorm.includes("where id = ?"),
             reply: async () => [[undefined]], // não existe
           },
         ])
@@ -391,7 +391,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Método não encontrado." });
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Método não encontrado." });
       expect(conn.release).toHaveBeenCalledTimes(1);
     });
 
@@ -404,12 +404,28 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
       mockPool.getConnection.mockResolvedValue(conn);
 
       let sawUpdate = false;
+      let findCallCount = 0;
+
+      const fullRow = {
+        id: 10,
+        code: "pix",
+        label: "Pix atualizado",
+        description: null,
+        is_active: 1,
+        sort_order: 10,
+        created_at: "2026-02-10 10:00:00",
+        updated_at: "2026-02-18 10:00:00",
+      };
 
       conn.query.mockImplementation(
         makeQueryRouter([
           {
-            match: (sqlNorm) => sqlNorm === "select id from payment_methods where id = ?",
-            reply: async () => [[{ id: 10 }]],
+            // findMethodById is called twice: 1st for existence check, 2nd by updateMethodById
+            match: (sqlNorm) => sqlNorm.includes("from payment_methods") && sqlNorm.includes("where id = ?"),
+            reply: async () => {
+              findCallCount++;
+              return [[findCallCount === 1 ? { id: 10 } : fullRow]];
+            },
           },
           {
             match: (sqlNorm) =>
@@ -428,26 +444,6 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
               return [{ affectedRows: 1 }];
             },
           },
-          {
-            match: (sqlNorm) =>
-              sqlNorm.includes("select id, code, label") &&
-              sqlNorm.includes("from payment_methods") &&
-              sqlNorm.includes("where id = ?"),
-            reply: async () => [
-              [
-                {
-                  id: 10,
-                  code: "pix",
-                  label: "Pix atualizado",
-                  description: null,
-                  is_active: 1,
-                  sort_order: 10,
-                  created_at: "2026-02-10 10:00:00",
-                  updated_at: "2026-02-18 10:00:00",
-                },
-              ],
-            ],
-          },
         ])
       );
 
@@ -465,7 +461,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
         description: null,
       });
       expect(sawUpdate).toBe(true);
-      expect(conn.release).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(2);
     });
 
     test("DELETE 404 se método não existe", async () => {
@@ -479,7 +475,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
       conn.query.mockImplementation(
         makeQueryRouter([
           {
-            match: (sqlNorm) => sqlNorm === "select id from payment_methods where id = ?",
+            match: (sqlNorm) => sqlNorm.includes("from payment_methods") && sqlNorm.includes("where id = ?"),
             reply: async () => [[undefined]],
           },
         ])
@@ -490,7 +486,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Método não encontrado." });
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Método não encontrado." });
       expect(conn.release).toHaveBeenCalledTimes(1);
     });
 
@@ -507,7 +503,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
       conn.query.mockImplementation(
         makeQueryRouter([
           {
-            match: (sqlNorm) => sqlNorm === "select id from payment_methods where id = ?",
+            match: (sqlNorm) => sqlNorm.includes("from payment_methods") && sqlNorm.includes("where id = ?"),
             reply: async () => [[{ id: 10 }]],
           },
           {
@@ -530,7 +526,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
       expect(sawSoftDelete).toBe(true);
-      expect(conn.release).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -777,7 +773,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
         next();
       });
 
-      const router = require("../../routes/payment");
+      const router = require("../../routes/ecommerce/payment");
       return { router, mockPool };
     }
 
@@ -822,7 +818,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Pedido não encontrado." });
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Pedido não encontrado." });
       expect(conn.release).toHaveBeenCalledTimes(1);
     });
 
@@ -838,7 +834,7 @@ describe("Payment Routes (integration) - routes/payment.js", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "pedidoId é obrigatório." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "pedidoId é obrigatório." });
     });
   });
 });

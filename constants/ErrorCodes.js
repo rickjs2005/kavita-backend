@@ -13,6 +13,8 @@ const ERROR_CODES = {
 
   // Recursos / Sistema
   NOT_FOUND: "NOT_FOUND",
+  // CONFLICT → recurso já existe ou estado incompatível — HTTP 409
+  CONFLICT: "CONFLICT",
   // SERVER_ERROR → erro interno não previsto — HTTP 500
   SERVER_ERROR: "SERVER_ERROR",
 

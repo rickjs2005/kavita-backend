@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../../config/pool");
 const verifyAdmin = require("../../middleware/verifyAdmin");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 /**
  * @openapi
@@ -37,7 +38,7 @@ router.get("/", verifyAdmin, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("Erro ao buscar especialidades:", err);
-    res.status(500).json({ message: "Erro ao buscar especialidades." });
+    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao buscar especialidades." });
   }
 });
 /**
@@ -58,7 +59,7 @@ router.get("/public", async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("Erro ao buscar especialidades (público):", err);
-    res.status(500).json({ message: "Erro ao buscar especialidades." });
+    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao buscar especialidades." });
   }
 });
 

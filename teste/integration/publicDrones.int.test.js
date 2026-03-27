@@ -111,7 +111,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
     // resolve absolute paths to match project imports
     const pathPool = require.resolve("../../config/pool");
     const pathController = require.resolve("../../controllers/dronesPublicController");
-    const pathVerifyUser = require.resolve("../../middleware/verifyUser");
+    const pathVerifyUser = require.resolve("../../middleware/authenticateToken");
     const pathThrottle = require.resolve("../../middleware/dronesCommentThrottle");
     const pathMediaService = require.resolve("../../services/mediaService");
 
@@ -128,7 +128,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
     );
 
     // require router after mocks
-    const router = require("../../routes/publicDrones");
+    const router = require("../../routes/public/publicDrones");
     const app = makeTestApp(MOUNT_PATH, router);
 
     return {
@@ -203,7 +203,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "Modelo inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "Modelo inválido." });
       expect(controllerMock.getRoot).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
       expect(mockConn.release).toHaveBeenCalledTimes(1);
@@ -224,7 +224,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Modelo não encontrado." });
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Modelo não encontrado." });
       expect(controllerMock.getRoot).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
       expect(mockConn.release).toHaveBeenCalledTimes(1);
@@ -316,7 +316,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "Modelo inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "Modelo inválido." });
       expect(controllerMock.getModelAggregate).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
       expect(mockConn.release).toHaveBeenCalledTimes(1);
@@ -334,7 +334,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Modelo não encontrado." });
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Modelo não encontrado." });
       expect(controllerMock.getModelAggregate).toHaveBeenCalledTimes(1);
       expect(poolMock.getConnection).toHaveBeenCalledTimes(1);
       expect(mockConn.release).toHaveBeenCalledTimes(1);

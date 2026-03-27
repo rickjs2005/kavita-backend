@@ -6,6 +6,7 @@ const pool = require("../../config/pool");
 const verifyAdmin = require("../../middleware/verifyAdmin");
 const mediaService = require("../../services/mediaService");
 const { validateFileMagicBytes } = require("../../utils/fileValidation");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 const upload = mediaService.upload;
 
@@ -48,8 +49,9 @@ router.post("/public", upload.single("imagem"), async (req, res) => {
     if (!nome || !whatsapp || !especialidade_id || !email) {
       if (req.file) safeUnlink(req.file.path);
       return res.status(400).json({
-        message:
-          "Campos obrigatórios: nome, WhatsApp, e-mail e especialidade.",
+        ok: false,
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: "Campos obrigatórios: nome, WhatsApp, e-mail e especialidade.",
       });
     }
 
@@ -58,7 +60,7 @@ router.post("/public", upload.single("imagem"), async (req, res) => {
       const { valid } = validateFileMagicBytes(req.file.path);
       if (!valid) {
         safeUnlink(req.file.path);
-        return res.status(400).json({ message: "Arquivo inválido. Envie uma imagem PNG, JPEG, WEBP ou GIF." });
+        return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Arquivo inválido. Envie uma imagem PNG, JPEG, WEBP ou GIF." });
       }
     }
 
@@ -103,9 +105,7 @@ router.post("/public", upload.single("imagem"), async (req, res) => {
   } catch (err) {
     if (req.file) safeUnlink(req.file.path);
     console.error("Erro ao cadastrar colaborador (public):", err);
-    return res
-      .status(500)
-      .json({ message: "Erro interno ao salvar o cadastro." });
+    return res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro interno ao salvar o cadastro." });
   }
 });
 
@@ -127,8 +127,9 @@ router.post("/", verifyAdmin, upload.single("imagem"), async (req, res) => {
     if (!nome || !whatsapp || !especialidade_id || !email) {
       if (req.file) safeUnlink(req.file.path);
       return res.status(400).json({
-        message:
-          "Campos obrigatórios: nome, WhatsApp, e-mail e especialidade.",
+        ok: false,
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: "Campos obrigatórios: nome, WhatsApp, e-mail e especialidade.",
       });
     }
 
@@ -137,7 +138,7 @@ router.post("/", verifyAdmin, upload.single("imagem"), async (req, res) => {
       const { valid } = validateFileMagicBytes(req.file.path);
       if (!valid) {
         safeUnlink(req.file.path);
-        return res.status(400).json({ message: "Arquivo inválido. Envie uma imagem PNG, JPEG, WEBP ou GIF." });
+        return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Arquivo inválido. Envie uma imagem PNG, JPEG, WEBP ou GIF." });
       }
     }
 
@@ -175,13 +176,11 @@ router.post("/", verifyAdmin, upload.single("imagem"), async (req, res) => {
       );
     }
 
-    return res
-      .status(201)
-      .json({ message: "Colaborador cadastrado com sucesso!" });
+    return res.status(201).json({ message: "Colaborador cadastrado com sucesso!" });
   } catch (err) {
     if (req.file) safeUnlink(req.file.path);
     console.error("Erro ao salvar colaborador (admin):", err);
-    return res.status(500).json({ message: "Erro ao salvar colaborador." });
+    return res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao salvar colaborador." });
   }
 });
 
@@ -205,9 +204,7 @@ router.get("/pending", verifyAdmin, async (_req, res) => {
     return res.json(rows);
   } catch (err) {
     console.error("Erro ao listar colaboradores pendentes:", err);
-    return res
-      .status(500)
-      .json({ message: "Erro ao listar colaboradores pendentes." });
+    return res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao listar colaboradores pendentes." });
   }
 });
 
@@ -225,7 +222,7 @@ router.put("/:id/verify", verifyAdmin, async (req, res) => {
     );
 
     if (!rows.length) {
-      return res.status(404).json({ message: "Colaborador não encontrado." });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Colaborador não encontrado." });
     }
 
     await pool.query(
@@ -238,7 +235,7 @@ router.put("/:id/verify", verifyAdmin, async (req, res) => {
     return res.json({ message: "Colaborador verificado com sucesso!" });
   } catch (err) {
     console.error("Erro ao verificar colaborador:", err);
-    return res.status(500).json({ message: "Erro ao verificar colaborador." });
+    return res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao verificar colaborador." });
   }
 });
 
@@ -265,7 +262,7 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
     );
 
     if (!result.affectedRows) {
-      return res.status(404).json({ message: "Colaborador não encontrado." });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Colaborador não encontrado." });
     }
 
     if (images.length) {
@@ -277,7 +274,7 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
     return res.json({ message: "Colaborador removido com sucesso." });
   } catch (err) {
     console.error("Erro ao deletar colaborador:", err);
-    return res.status(500).json({ message: "Erro ao deletar colaborador." });
+    return res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao deletar colaborador." });
   }
 });
 

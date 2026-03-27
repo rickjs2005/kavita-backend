@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../../config/pool");
 const verifyAdmin = require("../../middleware/verifyAdmin");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 const CUPONS_TABLE = "cupons";
 const IS_DEV = process.env.NODE_ENV !== "production";
@@ -90,8 +91,10 @@ router.get("/", verifyAdmin, async (req, res) => {
   } catch (err) {
     console.error("Erro ao buscar cupons:", err);
     res.status(500).json({
+      ok: false,
+      code: ERROR_CODES.SERVER_ERROR,
       message: "Erro ao buscar cupons.",
-      ...(IS_DEV && { error: err.message, code: err.code }),
+      ...(IS_DEV && { _debug: { error: err.message, dbCode: err.code } }),
     });
   }
 });
@@ -128,14 +131,14 @@ router.post("/", verifyAdmin, async (req, res) => {
 
     if (!codigo || !tipo || !valor) {
       return res.status(400).json({
+        ok: false,
+        code: ERROR_CODES.VALIDATION_ERROR,
         message: "Campos obrigatórios: codigo, tipo, valor.",
       });
     }
 
     if (!["percentual", "valor"].includes(tipo)) {
-      return res
-        .status(400)
-        .json({ message: "Tipo inválido. Use 'percentual' ou 'valor'." });
+      return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Tipo inválido. Use 'percentual' ou 'valor'." });
     }
 
     valor = Number(valor) || 0;
@@ -164,14 +167,18 @@ router.post("/", verifyAdmin, async (req, res) => {
 
     if (err.code === "ER_DUP_ENTRY") {
       return res.status(409).json({
+        ok: false,
+        code: ERROR_CODES.CONFLICT,
         message: "Já existe um cupom com esse código.",
-        ...(IS_DEV && { error: err.message }),
+        ...(IS_DEV && { _debug: { error: err.message } }),
       });
     }
 
     res.status(500).json({
+      ok: false,
+      code: ERROR_CODES.SERVER_ERROR,
       message: "Erro ao criar cupom.",
-      ...(IS_DEV && { error: err.message, code: err.code }),
+      ...(IS_DEV && { _debug: { error: err.message, dbCode: err.code } }),
     });
   }
 });
@@ -210,14 +217,14 @@ router.put("/:id", verifyAdmin, async (req, res) => {
 
     if (!codigo || !tipo || !valor) {
       return res.status(400).json({
+        ok: false,
+        code: ERROR_CODES.VALIDATION_ERROR,
         message: "Campos obrigatórios: codigo, tipo, valor.",
       });
     }
 
     if (!["percentual", "valor"].includes(tipo)) {
-      return res
-        .status(400)
-        .json({ message: "Tipo inválido. Use 'percentual' ou 'valor'." });
+      return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Tipo inválido. Use 'percentual' ou 'valor'." });
     }
 
     valor = Number(valor) || 0;
@@ -234,7 +241,7 @@ router.put("/:id", verifyAdmin, async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "Cupom não encontrado." });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Cupom não encontrado." });
     }
 
     const [rows] = await pool.query(
@@ -250,14 +257,18 @@ router.put("/:id", verifyAdmin, async (req, res) => {
 
     if (err.code === "ER_DUP_ENTRY") {
       return res.status(409).json({
+        ok: false,
+        code: ERROR_CODES.CONFLICT,
         message: "Já existe um cupom com esse código.",
-        ...(IS_DEV && { error: err.message }),
+        ...(IS_DEV && { _debug: { error: err.message } }),
       });
     }
 
     res.status(500).json({
+      ok: false,
+      code: ERROR_CODES.SERVER_ERROR,
       message: "Erro ao atualizar cupom.",
-      ...(IS_DEV && { error: err.message, code: err.code }),
+      ...(IS_DEV && { _debug: { error: err.message, dbCode: err.code } }),
     });
   }
 });
@@ -292,15 +303,17 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "Cupom não encontrado." });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Cupom não encontrado." });
     }
 
     res.json({ message: "Cupom removido com sucesso." });
   } catch (err) {
     console.error("Erro ao remover cupom:", err);
     res.status(500).json({
+      ok: false,
+      code: ERROR_CODES.SERVER_ERROR,
       message: "Erro ao remover cupom.",
-      ...(IS_DEV && { error: err.message, code: err.code }),
+      ...(IS_DEV && { _debug: { error: err.message, dbCode: err.code } }),
     });
   }
 });

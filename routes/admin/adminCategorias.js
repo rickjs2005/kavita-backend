@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../../config/pool");
 const verifyAdmin = require("../../middleware/verifyAdmin");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 // helper simples para gerar slug a partir do nome
 function slugify(str = "") {
@@ -52,7 +53,7 @@ router.get("/", verifyAdmin, async (_req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("Erro ao buscar categorias:", err);
-    res.status(500).json({ message: "Erro ao buscar categorias" });
+    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao buscar categorias" });
   }
 });
 
@@ -90,7 +91,7 @@ router.post("/", verifyAdmin, async (req, res) => {
     const { name = "", slug = "", sort_order = 0 } = req.body;
 
     if (!name.trim()) {
-      return res.status(400).json({ message: "Nome é obrigatório." });
+      return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Nome é obrigatório." });
     }
 
     const finalSlug = slug.trim() ? slugify(slug) : slugify(name);
@@ -110,11 +111,9 @@ router.post("/", verifyAdmin, async (req, res) => {
   } catch (err) {
     console.error("Erro ao criar categoria:", err);
     if (err.code === "ER_DUP_ENTRY") {
-      return res
-        .status(400)
-        .json({ message: "Já existe uma categoria com esse slug." });
+      return res.status(409).json({ ok: false, code: ERROR_CODES.CONFLICT, message: "Já existe uma categoria com esse slug." });
     }
-    res.status(500).json({ message: "Erro ao criar categoria." });
+    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao criar categoria." });
   }
 });
 
@@ -159,7 +158,7 @@ router.put("/:id", verifyAdmin, async (req, res) => {
       [id]
     );
     if (!rows.length) {
-      return res.status(404).json({ message: "Categoria não encontrada." });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Categoria não encontrada." });
     }
 
     const current = rows[0];
@@ -188,7 +187,7 @@ router.put("/:id", verifyAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error("Erro ao atualizar categoria:", err);
-    res.status(500).json({ message: "Erro ao atualizar categoria." });
+    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao atualizar categoria." });
   }
 });
 
@@ -232,13 +231,13 @@ router.patch("/:id/status", verifyAdmin, async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "Categoria não encontrada." });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Categoria não encontrada." });
     }
 
     res.json({ message: "Status atualizado com sucesso." });
   } catch (err) {
     console.error("Erro ao atualizar status da categoria:", err);
-    res.status(500).json({ message: "Erro ao atualizar status." });
+    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao atualizar status." });
   }
 });
 
@@ -274,13 +273,13 @@ router.delete("/:id", verifyAdmin, async (req, res) => {
     ]);
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "Categoria não encontrada." });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Categoria não encontrada." });
     }
 
     res.json({ message: "Categoria removida com sucesso." });
   } catch (err) {
     console.error("Erro ao remover categoria:", err);
-    res.status(500).json({ message: "Erro ao remover categoria." });
+    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao remover categoria." });
   }
 });
 

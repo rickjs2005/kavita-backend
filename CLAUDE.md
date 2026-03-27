@@ -122,7 +122,35 @@ throw new AppError("Dados inválidos.", ERROR_CODES.VALIDATION_ERROR, 400, { fie
 throw new AppError("msg", 404, "NOT_FOUND"); // ← não use (number como 2º arg)
 ```
 
-Use sempre as constantes de `constants/ErrorCodes.js` ou strings literais como 2º argumento.
+Use sempre as constantes de `constants/ErrorCodes.js`. Nunca use strings literais (ex: `"INTERNAL_ERROR"`, `"INVALID_INPUT"`) — esses aliases foram removidos.
+
+**Contrato oficial de resposta (Phase 1 — 2026-03):**
+
+```
+Sucesso  → { ok: true, data?, message?, meta? }           via lib/response.js
+Erro     → { ok: false, code, message, details? }         via errorHandler (AppError)
+```
+
+Mapeamento de códigos de erro HTTP → `ERROR_CODES`:
+
+| HTTP | Código canônico | Quando usar |
+|------|----------------|-------------|
+| 400 | `VALIDATION_ERROR` | Falha de schema Zod ou parâmetro inválido |
+| 401 | `AUTH_ERROR` | Credenciais inválidas, token inválido |
+| 401 | `UNAUTHORIZED` | Usuário não autenticado (sem token) |
+| 403 | `FORBIDDEN` | Autenticado mas sem permissão |
+| 404 | `NOT_FOUND` | Recurso não encontrado |
+| 409 | `CONFLICT` | Recurso já existe ou estado incompatível |
+| 429 | `RATE_LIMIT` | Rate limit excedido |
+| 500 | `SERVER_ERROR` | Erro interno não previsto |
+
+**Regra de negação:**
+
+Todo arquivo **novo ou modificado** deve:
+1. Usar `lib/response.js` para respostas de sucesso — nunca `res.json({ ... })` cru
+2. Usar `next(new AppError(...))` para erros — nunca `res.status(4xx).json(...)` inline
+3. Qualquer `res.status(NNN).json(...)` que ainda existir em código legado DEVE incluir `ok: false, code: ERROR_CODES.XXX`
+4. Nunca usar `{ error: "msg" }` como chave — sempre `{ message: "msg" }`
 
 ### Testes
 

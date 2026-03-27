@@ -5,14 +5,15 @@ const router = express.Router();
 
 const verifyAdmin = require("../../middleware/verifyAdmin");
 const orderService = require("../../services/orderService");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 // ---------------------------------------------------------------------------
-// Internal error helper (preserves legacy response shape for 500 errors)
+// Internal error helper
 // ---------------------------------------------------------------------------
 
 const handleErroInterno = (res, err, contexto = "erro") => {
   console.error(`Erro ao ${contexto}:`, err);
-  res.status(500).json({ message: `Erro ao ${contexto}` });
+  res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: `Erro ao ${contexto}` });
 };
 
 /**
@@ -181,7 +182,7 @@ router.get("/:id", verifyAdmin, async (req, res) => {
     const pedido = await orderService.getOrderById(req.params.id);
 
     if (!pedido) {
-      return res.status(404).json({ message: "Pedido não encontrado" });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Pedido não encontrado" });
     }
 
     res.json(pedido);
@@ -228,18 +229,15 @@ router.put("/:id/pagamento", verifyAdmin, async (req, res) => {
   const { id } = req.params;
   const { status_pagamento } = req.body;
 
-  // Input guard — preserves legacy 400 response shape { message, status_pagamento }
   if (!orderService.ALLOWED_PAYMENT_STATUSES.includes(status_pagamento)) {
-    return res
-      .status(400)
-      .json({ message: "status_pagamento inválido", status_pagamento });
+    return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "status_pagamento inválido", status_pagamento });
   }
 
   try {
     const result = await orderService.updatePaymentStatus(id, status_pagamento);
 
     if (!result.found) {
-      return res.status(404).json({ message: "Pedido não encontrado" });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Pedido não encontrado" });
     }
 
     res.json({ message: "Status de pagamento atualizado com sucesso" });
@@ -286,18 +284,15 @@ router.put("/:id/entrega", verifyAdmin, async (req, res) => {
   const { id } = req.params;
   const { status_entrega } = req.body;
 
-  // Input guard — preserves legacy 400 response shape { message, status_entrega }
   if (!orderService.ALLOWED_DELIVERY_STATUSES.includes(status_entrega)) {
-    return res
-      .status(400)
-      .json({ message: "status_entrega inválido", status_entrega });
+    return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "status_entrega inválido", status_entrega });
   }
 
   try {
     const result = await orderService.updateDeliveryStatus(id, status_entrega);
 
     if (!result.found) {
-      return res.status(404).json({ message: "Pedido não encontrado" });
+      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Pedido não encontrado" });
     }
 
     res.json({ message: "Status de entrega atualizado com sucesso" });

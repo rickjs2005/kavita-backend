@@ -8,6 +8,7 @@ const db = require("../../config/pool");
 const verifyAdmin = require("../../middleware/verifyAdmin");
 const mediaService = require("../../services/mediaService");
 const { validateFileMagicBytes } = require("../../utils/fileValidation");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
 
@@ -67,7 +68,7 @@ router.post("/logo", verifyAdmin, upload.single("logo"), async (req, res, next) 
     console.log("📦 Upload logo iniciado:", req.file?.originalname);
 
     if (!req.file) {
-      return res.status(400).json({ error: "Arquivo não enviado." });
+      return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Arquivo não enviado." });
     }
 
     const filePath = req.file.path;
@@ -76,7 +77,7 @@ router.post("/logo", verifyAdmin, upload.single("logo"), async (req, res, next) 
     const { valid } = validateFileMagicBytes(filePath, ["image/png", "image/jpeg", "image/webp"]);
     if (!valid) {
       safeUnlink(filePath);
-      return res.status(400).json({ error: "Formato inválido. Envie PNG, JPG ou WEBP." });
+      return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Formato inválido. Envie PNG, JPG ou WEBP." });
     }
 
     const id = await ensureDefaultSettings();
@@ -116,13 +117,12 @@ router.post("/logo", verifyAdmin, upload.single("logo"), async (req, res, next) 
 router.use((err, req, res, next) => {
   const msg = err?.message || "Erro no upload.";
   if (msg.includes("File too large") || err?.code === "LIMIT_FILE_SIZE") {
-    return res.status(400).json({ error: "Arquivo muito grande. Envie até 2MB." });
+    return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Arquivo muito grande. Envie até 2MB." });
   }
   if (msg.includes("Formato inválido")) {
-    return res.status(400).json({ error: msg });
+    return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: msg });
   }
   return next(err);
 });
 
 module.exports = router;
-

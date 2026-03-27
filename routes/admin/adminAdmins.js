@@ -6,6 +6,7 @@ const pool = require("../../config/pool");
 const verifyAdmin = require("../../middleware/verifyAdmin");
 const requirePermission = require("../../middleware/requirePermission");
 const { logAdminAction } = require("../../services/adminLogs");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 /**
  * @openapi
@@ -42,7 +43,7 @@ router.get("/", verifyAdmin, requirePermission("admins_manage"), async (req, res
   try {
     const [rows] = await pool.query(
       `
-        SELECT 
+        SELECT
           id, nome, email, role, ativo, criado_em, ultimo_login
         FROM admins
         ORDER BY role = 'master' DESC, nome ASC
@@ -51,7 +52,7 @@ router.get("/", verifyAdmin, requirePermission("admins_manage"), async (req, res
     res.json(rows);
   } catch (err) {
     console.error("Erro ao listar admins:", err.message);
-    res.status(500).json({ message: "Erro ao listar admins." });
+    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao listar admins." });
   }
 });
 
@@ -65,9 +66,7 @@ router.post("/", verifyAdmin, requirePermission("admins_manage"), async (req, re
   const { nome, email, senha, role } = req.body || {};
 
   if (!nome || !email || !senha || !role) {
-    return res
-      .status(400)
-      .json({ message: "Nome, email, senha e role são obrigatórios." });
+    return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Nome, email, senha e role são obrigatórios." });
   }
 
   const emailNorm = String(email).trim().toLowerCase();
@@ -80,9 +79,7 @@ router.post("/", verifyAdmin, requirePermission("admins_manage"), async (req, re
       [roleSlug]
     );
     if (!roleRows || roleRows.length === 0) {
-      return res.status(400).json({
-        message: "Role inválido. Crie o perfil primeiro em admin_roles.",
-      });
+      return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Role inválido. Crie o perfil primeiro em admin_roles." });
     }
 
     // verifica se já existe admin com esse email
@@ -91,9 +88,7 @@ router.post("/", verifyAdmin, requirePermission("admins_manage"), async (req, re
       [emailNorm]
     );
     if (existe.length > 0) {
-      return res
-        .status(409)
-        .json({ message: "Já existe um admin com esse email." });
+      return res.status(409).json({ ok: false, code: ERROR_CODES.CONFLICT, message: "Já existe um admin com esse email." });
     }
 
     const hash = await bcrypt.hash(String(senha), 10);
@@ -119,7 +114,7 @@ router.post("/", verifyAdmin, requirePermission("admins_manage"), async (req, re
     });
   } catch (err) {
     console.error("Erro ao criar admin:", err.message);
-    res.status(500).json({ message: "Erro ao criar admin." });
+    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao criar admin." });
   }
 });
 
@@ -138,9 +133,7 @@ router.put(
     const { role, ativo } = req.body || {};
 
     if (!role && typeof ativo === "undefined") {
-      return res.status(400).json({
-        message: "Envie pelo menos role ou ativo para atualizar.",
-      });
+      return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Envie pelo menos role ou ativo para atualizar." });
     }
 
     try {
@@ -156,9 +149,7 @@ router.put(
           [roleSlug]
         );
         if (!roleRows || roleRows.length === 0) {
-          return res.status(400).json({
-            message: "Role inválido. Crie o perfil primeiro em admin_roles.",
-          });
+          return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Role inválido. Crie o perfil primeiro em admin_roles." });
         }
 
         campos.push("role = ?");
@@ -178,7 +169,7 @@ router.put(
       );
 
       if (result.affectedRows === 0) {
-        return res.status(404).json({ message: "Admin não encontrado." });
+        return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Admin não encontrado." });
       }
 
       logAdminAction({
@@ -191,7 +182,7 @@ router.put(
       res.json({ message: "Admin atualizado com sucesso." });
     } catch (err) {
       console.error("Erro ao atualizar admin:", err.message);
-      res.status(500).json({ message: "Erro ao atualizar admin." });
+      res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao atualizar admin." });
     }
   }
 );
@@ -217,23 +208,19 @@ router.delete(
       );
 
       if (!rows.length) {
-        return res.status(404).json({ message: "Admin não encontrado." });
+        return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Admin não encontrado." });
       }
 
       const admin = rows[0];
 
       // evita remover a si mesmo
       if (Number(admin.id) === Number(req.admin.id)) {
-        return res.status(400).json({
-          message: "Você não pode remover a si mesmo.",
-        });
+        return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Você não pode remover a si mesmo." });
       }
 
       // evita remover master
       if (admin.role === "master") {
-        return res.status(400).json({
-          message: "O admin master não pode ser removido.",
-        });
+        return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "O admin master não pode ser removido." });
       }
 
       await pool.query("DELETE FROM admins WHERE id = ?", [id]);
@@ -248,7 +235,7 @@ router.delete(
       res.json({ message: "Admin removido com sucesso." });
     } catch (err) {
       console.error("Erro ao remover admin:", err.message);
-      res.status(500).json({ message: "Erro ao remover admin." });
+      res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao remover admin." });
     }
   }
 );

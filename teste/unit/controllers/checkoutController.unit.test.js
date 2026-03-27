@@ -62,6 +62,25 @@ describe("checkoutController.create (unit)", () => {
     };
   }
 
+  // Handlers para queries adicionadas pelo checkoutService (advisory lock,
+  // deduplication, promotions, shipping update). Devem ser PREPENDED às listas
+  // específicas de cada teste para não sobrescrever handlers mais precisos.
+  function baseHandlers() {
+    return [
+      { match: (s) => s.includes("get_lock"), reply: async () => [[{ ok: 1 }]] },
+      { match: (s) => s.includes("release_lock"), reply: async () => [[{ ok: 1 }]] },
+      {
+        match: (s) => s.includes("pp.pedido_id") || (s.includes("pedidos_produtos pp") && s.includes("composicao")),
+        reply: async () => [[], {}],
+      },
+      { match: (s) => s.includes("product_promotions"), reply: async () => [[], {}] },
+      {
+        match: (s) => s.startsWith("update pedidos set") && s.includes("shipping_price"),
+        reply: async () => [[], {}],
+      },
+    ];
+  }
+
   function mockModuleOnce(mockPool, mockDisparar) {
     jest.resetModules();
 
@@ -172,7 +191,7 @@ describe("checkoutController.create (unit)", () => {
     const carrinhoId = 77;
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.startsWith("update usuarios set"), reply: async () => [[], {}] },
         {
           match: (s) =>
@@ -237,15 +256,12 @@ describe("checkoutController.create (unit)", () => {
     expect(res.status).toHaveBeenCalledWith(201);
     const payload = res.json.mock.calls[0][0];
 
-    expect(payload).toMatchObject({
-      success: true,
-      pedido_id: pedidoId,
-      cupom_aplicado: null,
-    });
+    expect(payload).toMatchObject({ ok: true });
+    expect(payload.data).toMatchObject({ pedido_id: pedidoId, cupom_aplicado: null });
 
-    expect(payload.total_sem_desconto).toBeCloseTo(41, 5);
-    expect(payload.desconto_total).toBeCloseTo(0, 5);
-    expect(payload.total).toBeCloseTo(41, 5);
+    expect(payload.data.total_sem_desconto).toBeCloseTo(41, 5);
+    expect(payload.data.desconto_total).toBeCloseTo(0, 5);
+    expect(payload.data.total).toBeCloseTo(41, 5);
   });
 
   test("400: estoque insuficiente deve rollback e next(AppError)", async () => {
@@ -256,7 +272,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         {
           match: (s) =>
             s.includes("from carrinhos") && s.includes('status = "aberto"'),
@@ -335,7 +351,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.startsWith("update usuarios set"), reply: async () => [[], {}] },
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 1001 }, {}] },
@@ -379,7 +395,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 2001 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 10, quantity: 10 }], {}] },
@@ -413,7 +429,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 3001 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[/* vazio */], {}] },
@@ -448,7 +464,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 900 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 100, quantity: 10 }], {}] },
@@ -496,11 +512,11 @@ describe("checkoutController.create (unit)", () => {
     expect(res.status).toHaveBeenCalledWith(201);
 
     const payload = res.json.mock.calls[0][0];
-    expect(payload.total_sem_desconto).toBeCloseTo(100, 5);
-    expect(payload.desconto_total).toBeCloseTo(10, 5);
-    expect(payload.total).toBeCloseTo(90, 5);
+    expect(payload.data.total_sem_desconto).toBeCloseTo(100, 5);
+    expect(payload.data.desconto_total).toBeCloseTo(10, 5);
+    expect(payload.data.total).toBeCloseTo(90, 5);
 
-    expect(payload.cupom_aplicado).toMatchObject({
+    expect(payload.data.cupom_aplicado).toMatchObject({
       id: 50,
       codigo: "OFF10",
       tipo: "percentual",
@@ -515,7 +531,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 910 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 80, quantity: 10 }], {}] },
@@ -563,11 +579,11 @@ describe("checkoutController.create (unit)", () => {
     expect(res.status).toHaveBeenCalledWith(201);
 
     const payload = res.json.mock.calls[0][0];
-    expect(payload.total_sem_desconto).toBeCloseTo(80, 5);
-    expect(payload.desconto_total).toBeCloseTo(15, 5);
-    expect(payload.total).toBeCloseTo(65, 5);
+    expect(payload.data.total_sem_desconto).toBeCloseTo(80, 5);
+    expect(payload.data.desconto_total).toBeCloseTo(15, 5);
+    expect(payload.data.total).toBeCloseTo(65, 5);
 
-    expect(payload.cupom_aplicado).toMatchObject({
+    expect(payload.data.cupom_aplicado).toMatchObject({
       id: 51,
       codigo: "OFF15",
       tipo: "fixo",
@@ -582,7 +598,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 901 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 100, quantity: 10 }], {}] },
@@ -623,7 +639,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 920 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 100, quantity: 10 }], {}] },
@@ -670,7 +686,7 @@ describe("checkoutController.create (unit)", () => {
     const expiracaoPassada = "2000-01-01 00:00:00";
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 921 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 100, quantity: 10 }], {}] },
@@ -715,7 +731,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 922 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 100, quantity: 10 }], {}] },
@@ -760,7 +776,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 923 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 50, quantity: 10 }], {}] },
@@ -805,7 +821,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 930 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 100, quantity: 10 }], {}] },
@@ -849,7 +865,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.startsWith("update usuarios set"), reply: async () => [[], {}] },
         {
           match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'),
@@ -898,7 +914,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 950 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 10, quantity: 10 }], {}] },
@@ -938,7 +954,7 @@ describe("checkoutController.create (unit)", () => {
     const { create } = mockModuleOnce(mockPool, mockDisparar);
 
     conn.query.mockImplementation(
-      makeQueryRouter([
+      makeQueryRouter([...baseHandlers(),
         { match: (s) => s.includes("from carrinhos") && s.includes('status = "aberto"'), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("insert into pedidos"), reply: async () => [{ insertId: 960 }, {}] },
         { match: (s) => s.includes("from products") && s.includes("for update"), reply: async () => [[{ id: 1, price: 10, quantity: 10 }], {}] },

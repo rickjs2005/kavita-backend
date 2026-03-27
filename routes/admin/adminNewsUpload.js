@@ -3,6 +3,7 @@ const express = require("express");
 const fs = require("fs");
 const { validateFileMagicBytes } = require("../../utils/fileValidation");
 const mediaService = require("../../services/mediaService");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 const router = express.Router();
 
@@ -24,7 +25,7 @@ function safeUnlink(filePath) {
 // POST /api/admin/news/upload/cover
 router.post("/cover", upload.single("file"), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ ok: false, message: "Nenhum arquivo enviado." });
+    return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Nenhum arquivo enviado." });
   }
 
   const filePath = req.file.path;
@@ -35,6 +36,7 @@ router.post("/cover", upload.single("file"), async (req, res) => {
     safeUnlink(filePath);
     return res.status(400).json({
       ok: false,
+      code: ERROR_CODES.VALIDATION_ERROR,
       message: "Arquivo inválido. Apenas imagens PNG, JPEG, WEBP ou GIF são permitidas.",
     });
   }

@@ -9,7 +9,7 @@ describe("User Addresses Routes (integration)", () => {
   const authPath = require.resolve("../../middleware/authenticateToken");
   const appErrorPath = require.resolve("../../errors/AppError");
   const errorCodesPath = require.resolve("../../constants/ErrorCodes");
-  const routerPath = require.resolve("../../routes/userAddresses");
+  const routerPath = require.resolve("../../routes/auth/userAddresses");
 
   let app;
   let pool;
@@ -368,7 +368,7 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -412,7 +412,7 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Endereço não encontrado." });
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Endereço não encontrado." });
 
       expect(conn.rollback).toHaveBeenCalledTimes(1);
       expect(conn.commit).not.toHaveBeenCalled();
@@ -482,7 +482,7 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ code: "SERVER_ERROR", message: "Erro ao atualizar endereço." });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR", message: "Erro ao atualizar endereço." });
 
       expect(conn.rollback).toHaveBeenCalledTimes(1);
       expect(conn.release).toHaveBeenCalledTimes(1);
@@ -502,7 +502,7 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Endereço não encontrado." });
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Endereço não encontrado." });
       expect(pool.query).toHaveBeenCalledWith(
         "DELETE FROM enderecos_usuario WHERE id = ? AND usuario_id = ?",
         [10, 7]
@@ -534,7 +534,7 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ code: "SERVER_ERROR", message: "Erro ao remover endereço." });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR", message: "Erro ao remover endereço." });
     });
   });
 });

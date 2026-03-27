@@ -13,7 +13,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
   const poolPath = require.resolve("../../config/pool");
   const appErrorPath = require.resolve("../../errors/AppError");
   const errorCodesPath = require.resolve("../../constants/ErrorCodes");
-  const routerPath = require.resolve("../../routes/adminShippingZonesRoutes");
+  const routerPath = require.resolve("../../routes/admin/adminShippingZones");
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -158,7 +158,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({ ok: false,
         code: "SERVER_ERROR",
         message: "Erro ao listar zonas de frete.",
       });
@@ -175,7 +175,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({ ok: false,
         code: "VALIDATION_ERROR",
         message: "Informe um nome para a regra.",
       });
@@ -191,7 +191,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({ ok: false,
         code: "VALIDATION_ERROR",
         message: "Informe o estado (UF) com 2 letras.",
       });
@@ -213,7 +213,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({ ok: false,
         code: "VALIDATION_ERROR",
         message: "Informe um preço válido (ou marque frete grátis).",
       });
@@ -235,7 +235,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({ ok: false,
         code: "VALIDATION_ERROR",
         message: "Prazo deve ser um número >= 1 ou vazio.",
       });
@@ -334,7 +334,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({ ok: false,
         code: "SERVER_ERROR",
         message: "Erro ao criar zona de frete.",
       });
@@ -355,7 +355,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -377,7 +377,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ code: "NOT_FOUND", message: "Zona não encontrada." });
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Zona não encontrada." });
 
       expect(conn.beginTransaction).toHaveBeenCalledTimes(1);
       // aqui o código faz rollback antes de next(404)
@@ -454,7 +454,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ code: "SERVER_ERROR", message: "Erro ao atualizar zona." });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR", message: "Erro ao atualizar zona." });
 
       expect(conn.rollback).toHaveBeenCalledTimes(1);
       expect(conn.commit).not.toHaveBeenCalled();
@@ -469,7 +469,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
     });
 
     test("204 remove zona com sucesso", async () => {
@@ -494,7 +494,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ code: "SERVER_ERROR", message: "Erro ao excluir zona." });
+      expect(res.body).toMatchObject({ ok: false, code: "SERVER_ERROR", message: "Erro ao excluir zona." });
     });
   });
 });

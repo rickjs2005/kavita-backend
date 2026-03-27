@@ -18,7 +18,7 @@ const pool = require("../../config/pool");
 const authenticateToken = require("../../middleware/authenticateToken");
 
 // Importa o router real (arquivo alvo)
-const cartRouter = require("../../routes/cart");
+const cartRouter = require("../../routes/ecommerce/cart");
 
 describe("Cart routes (integração) — /api/cart", () => {
   let app;
