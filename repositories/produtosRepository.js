@@ -1,6 +1,16 @@
 "use strict";
 // repositories/produtosRepository.js
-// Camada de acesso a dados para produtos e imagens de produto.
+//
+// Escopo: domínio ADMIN de produtos.
+// Responsabilidades: CRUD completo (insert, update, delete), gerenciamento de
+//                    imagens (insertImages, deleteImages, setMainImage),
+//                    leitura para edição no painel.
+//
+// NÃO contém queries de busca pública nem cálculo de promoções.
+// Para listagem/busca pública, use: repositories/productRepository.js
+//
+// Consumidor: services/produtosAdminService.js
+// Pool/conn: recebidos como parâmetro para suporte a transações (BEGIN/COMMIT/ROLLBACK).
 
 const PRODUCTS_TABLE = "products";
 const PRODUCT_IMAGES_TABLE = "product_images";

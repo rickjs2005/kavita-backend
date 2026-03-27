@@ -1,5 +1,14 @@
 // repositories/productRepository.js
-// All SQL for the products public domain.
+//
+// Escopo: domínio PÚBLICO de produtos.
+// Responsabilidades: listagem paginada, busca avançada com filtros de promoção,
+//                    resolução de slug de categoria, busca de imagens para exibição.
+//
+// NÃO contém mutações (INSERT/UPDATE/DELETE).
+// Para CRUD admin, use: repositories/produtosRepository.js
+//
+// Consumidor: services/productService.js
+// Pool: importado internamente (sem suporte a transação — não é necessário aqui).
 "use strict";
 
 const pool = require("../config/pool");
