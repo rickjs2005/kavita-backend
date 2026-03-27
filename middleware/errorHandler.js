@@ -1,6 +1,7 @@
 // middleware/errorHandler.js
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const logger = require("../lib/logger");
 
 module.exports = (err, req, res, _next) => {
   // Pool esgotado: todas as conexões ocupadas e fila cheia.
@@ -28,23 +29,19 @@ module.exports = (err, req, res, _next) => {
     message = "Ocorreu um erro interno. Tente novamente mais tarde.";
   }
 
-  // Log interno (você vê no servidor)
   const logPayload = {
+    err,
     status,
     code,
-    message: err.message,
     url: req.originalUrl,
     method: req.method,
+    requestId: req.id,
   };
 
-  if (process.env.NODE_ENV !== "production") {
-    logPayload.stack = err.stack;
-  }
-
   if (status >= 500) {
-    console.error("Erro:", logPayload);
+    logger.error(logPayload, "request error 5xx");
   } else {
-    console.warn("Aviso:", logPayload);
+    logger.warn(logPayload, "request error 4xx");
   }
 
   const body = { ok: false, code, message };

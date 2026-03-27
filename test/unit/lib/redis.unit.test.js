@@ -14,7 +14,8 @@
 
 "use strict";
 
-const REDIS_PATH = require.resolve("../../../lib/redis");
+const REDIS_PATH  = require.resolve("../../../lib/redis");
+const LOGGER_PATH = require.resolve("../../../lib/logger");
 
 function loadRedis() {
   jest.resetModules();
@@ -60,12 +61,12 @@ describe("lib/redis — production Redis warnings", () => {
     jest.resetModules();
   });
 
-  test("emite console.warn em produção quando connect() falha", async () => {
+  test("emite logger.warn em produção quando connect() falha", async () => {
     jest.resetModules();
     process.env.NODE_ENV = "production";
 
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const infoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
+    const loggerMock = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    jest.doMock(LOGGER_PATH, () => loggerMock);
 
     const EventEmitter = require("events");
     jest.doMock("ioredis", () => {
@@ -83,20 +84,18 @@ describe("lib/redis — production Redis warnings", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[redis] Indisponível"),
-      expect.any(String)
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "redis unavailable in production — in-memory fallback active"
     );
-
-    warnSpy.mockRestore();
-    infoSpy.mockRestore();
   });
 
-  test("NÃO emite console.warn em desenvolvimento quando connect() falha", async () => {
+  test("NÃO emite logger.warn em desenvolvimento quando connect() falha", async () => {
     jest.resetModules();
     process.env.NODE_ENV = "development";
 
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const loggerMock = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    jest.doMock(LOGGER_PATH, () => loggerMock);
 
     const EventEmitter = require("events");
     jest.doMock("ioredis", () => {
@@ -112,20 +111,15 @@ describe("lib/redis — production Redis warnings", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const redisWarns = warnSpy.mock.calls.filter(
-      (args) => args[0] && String(args[0]).includes("[redis]")
-    );
-    expect(redisWarns).toHaveLength(0);
-
-    warnSpy.mockRestore();
+    expect(loggerMock.warn).not.toHaveBeenCalled();
   });
 
-  test("emite console.warn quando Redis desconecta após estar pronto", () => {
+  test("emite logger.warn quando Redis desconecta após estar pronto", () => {
     jest.resetModules();
     process.env.NODE_ENV = "production";
 
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const infoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
+    const loggerMock = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    jest.doMock(LOGGER_PATH, () => loggerMock);
 
     let capturedInstance;
     const EventEmitter = require("events");
@@ -145,21 +139,18 @@ describe("lib/redis — production Redis warnings", () => {
     // Simula desconexão
     capturedInstance.emit("error", new Error("Connection reset by peer"));
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[redis] Desconectado:"),
-      expect.stringContaining("Connection reset by peer"),
-      expect.stringContaining("fallback in-memory")
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "redis disconnected — in-memory fallback active"
     );
     expect(redis.ready).toBe(false);
-
-    warnSpy.mockRestore();
-    infoSpy.mockRestore();
   });
 
-  test("emite console.info quando conecta com sucesso", () => {
+  test("emite logger.info quando conecta com sucesso", () => {
     jest.resetModules();
 
-    const infoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
+    const loggerMock = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    jest.doMock(LOGGER_PATH, () => loggerMock);
 
     let capturedInstance;
     const EventEmitter = require("events");
@@ -173,19 +164,16 @@ describe("lib/redis — production Redis warnings", () => {
     const redis = require(REDIS_PATH);
     capturedInstance.emit("ready");
 
-    expect(infoSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[redis] Conectado.")
-    );
+    expect(loggerMock.info).toHaveBeenCalledWith("redis connected");
     expect(redis.ready).toBe(true);
-
-    infoSpy.mockRestore();
   });
 
   test("error event NÃO loga quando Redis nunca esteve conectado (wasReady=false)", () => {
     jest.resetModules();
     process.env.NODE_ENV = "production";
 
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const loggerMock = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    jest.doMock(LOGGER_PATH, () => loggerMock);
 
     let capturedInstance;
     const EventEmitter = require("events");
@@ -201,11 +189,6 @@ describe("lib/redis — production Redis warnings", () => {
     // Emite erro SEM ter emitido ready antes — wasReady=false
     capturedInstance.emit("error", new Error("ECONNREFUSED"));
 
-    const redisWarnCalls = warnSpy.mock.calls.filter(
-      (args) => args[0] && String(args[0]).includes("[redis] Desconectado")
-    );
-    expect(redisWarnCalls).toHaveLength(0);
-
-    warnSpy.mockRestore();
+    expect(loggerMock.warn).not.toHaveBeenCalled();
   });
 });

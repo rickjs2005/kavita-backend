@@ -110,16 +110,51 @@ if (process.env.NODE_ENV !== "production") {
  * Health Check
  * ============================ */
 app.get("/health", async (_req, res) => {
+  const checks = {};
+
+  // --- Database (critical) ---
+  const t0db = Date.now();
   try {
     await pool.query("SELECT 1");
-    return res.status(200).json({
-      status: "ok",
-      ts: new Date().toISOString(),
-      env: process.env.NODE_ENV,
-    });
+    checks.database = { status: "ok", latency_ms: Date.now() - t0db };
   } catch {
-    return res.status(503).json({ status: "error", detail: "database unreachable" });
+    checks.database = { status: "error", detail: "unreachable" };
   }
+
+  // --- Redis (optional — app has in-memory fallback) ---
+  if (redis.client) {
+    const t0r = Date.now();
+    try {
+      await redis.client.ping();
+      checks.redis = { status: "ok", latency_ms: Date.now() - t0r };
+    } catch {
+      checks.redis = { status: "error", detail: "unreachable" };
+    }
+  } else {
+    checks.redis = { status: "disabled" };
+  }
+
+  // --- Storage (optional — missing dir blocks uploads, not API) ---
+  try {
+    await fs.promises.access(UPLOADS_DIR, fs.constants.R_OK | fs.constants.W_OK);
+    checks.storage = { status: "ok", path: "/uploads" };
+  } catch {
+    checks.storage = { status: "error", path: "/uploads", detail: "not writable" };
+  }
+
+  const dbOk = checks.database.status === "ok";
+  const allOk = dbOk
+    && checks.redis.status !== "error"
+    && checks.storage.status === "ok";
+  const overall = !dbOk ? "error" : !allOk ? "degraded" : "ok";
+
+  return res.status(dbOk ? 200 : 503).json({
+    status: overall,
+    ts: new Date().toISOString(),
+    env: process.env.NODE_ENV,
+    uptime: Math.floor(process.uptime()),
+    checks,
+  });
 });
 
 /* ============================
