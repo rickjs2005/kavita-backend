@@ -53,15 +53,14 @@ function parseModelKey(modelKey) {
   if (!key) {
     throw new AppError("Modelo inválido", ERROR_CODES.VALIDATION_ERROR, 400, {
       field: "modelKey",
-      reason: "empty",
+      message: "campo obrigatório",
     });
   }
 
   if (!/^[a-z0-9_]{2,20}$/.test(key)) {
     throw new AppError("Modelo inválido", ERROR_CODES.VALIDATION_ERROR, 400, {
       field: "modelKey",
-      reason: "format",
-      example: "t25p",
+      message: "use a-z, 0-9, _ (2–20 chars) — ex: t25p",
     });
   }
 
@@ -74,20 +73,6 @@ async function ensureModelExists(modelKey) {
     throw new AppError("Modelo não encontrado.", ERROR_CODES.NOT_FOUND, 404, { modelKey });
   }
   return existing;
-}
-
-function sendError(res, err) {
-  const status = err?.status || err?.statusCode || 500;
-  const code = err?.code || "SERVER_ERROR";
-  const message = err?.message || "Erro inesperado.";
-  const details = err?.details ?? null;
-
-  return res.status(status).json({
-    status,
-    code,
-    message,
-    ...(details ? { details } : {}),
-  });
 }
 
 module.exports = {
@@ -103,5 +88,4 @@ module.exports = {
   normalizeBool,
   parseModelKey,
   ensureModelExists,
-  sendError,
 };

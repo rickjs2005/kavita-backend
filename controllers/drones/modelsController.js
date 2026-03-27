@@ -43,7 +43,7 @@ async function createModel(req, res, next) {
       await dronesService.createDroneModel({ key, label, sort_order, is_active });
     } catch (e) {
       if (e?.code === "DUPLICATE_MODEL_KEY" || e?.message === "DUPLICATE_MODEL_KEY") {
-        throw new AppError("Já existe um modelo com esse key.", "CONFLICT", 409, { field: "key", key });
+        throw new AppError("Já existe um modelo com esse key.", ERROR_CODES.CONFLICT, 409, { field: "key", key });
       }
       throw e;
     }
@@ -124,7 +124,7 @@ async function upsertModelInfo(req, res, next) {
     if (badJson) {
       throw new AppError(
         "Envie specs_items_json/features_items_json/benefits_items_json como ARRAY (JSON), não string.",
-        "VALIDATION_ERROR",
+        ERROR_CODES.VALIDATION_ERROR,
         400
       );
     }

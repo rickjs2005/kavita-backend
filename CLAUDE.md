@@ -317,7 +317,7 @@ formatDronesErrors(zodError) // schemas/dronesSchemas.js — mesmo formato agora
 // Ambos retornam: [{ field: "campo", message: "descrição do erro" }]
 ```
 
-Não use `{ field, reason }` — campo `reason` foi removido de todos os formatters.
+Não use `{ field, reason }` — campo `reason` foi removido de todos os formatters e das `details` manuais de `AppError`. Use sempre `{ field, message }` para descrever erros de campo.
 
 ### Resposta da API
 
@@ -325,10 +325,33 @@ Helper oficial: `lib/response.js` (exportado por `lib/index.js`).
 
 ```js
 const { response } = require("../lib");
-response.ok(res, data);
-response.created(res, data);
-response.paginated(res, { items, total, page, limit });
-response.badRequest(res, message, details);
+response.ok(res, data);                           // 200, sem meta
+response.ok(res, data, null, meta);              // 200, com meta (ex: provider info, took_ms)
+response.ok(res, data, "mensagem");              // 200, com message
+response.created(res, data);                     // 201
+response.noContent(res);                         // 204
+response.paginated(res, { items, total, page, limit }); // 200 + meta de paginação
+response.badRequest(res, message, details);      // 400 (preferir next(AppError) em controllers)
 ```
 
+**Quando usar `meta`:** endpoints que retornam dados + contexto da operação em paralelo — sync de providers externos (clima, cotações), endpoints de busca com parâmetros, operações em batch com resumo. O `meta` nunca substitui `data` — é contexto adicional sobre *como* o resultado foi obtido.
+
 **Regra:** Todo código novo obrigatoriamente usa `lib/response.js`. Módulos legados ainda usam `res.json(...)` direto — migrar progressivamente ao tocar o arquivo.
+
+## Migração de contrato de resposta — fila de próximos arquivos
+
+Arquivos modernos já migrados (Phase 1 — 2026-03):
+- `controllers/drones/` — todos usam `response.*` + `next(AppError)`
+- `controllers/news/adminClimaController.js` — migrado
+- `controllers/news/adminCotacoesController.js` — migrado
+
+Próximos a migrar (prioridade decrescente):
+
+| Arquivo | Problema | Impacto |
+|---------|----------|---------|
+| `controllers/authController.js` | `res.status(200).json(...)` direto em 1 handler | Baixo — módulo isolado |
+| `routes/admin/adminPedidos.js` | `res.json()` cru sem helper | Médio — módulo híbrido |
+| `routes/ecommerce/payment.js` | `res.json()` + `pool.query()` direto | Médio — dois problemas |
+| `routes/auth/authRoutes.js` | express-validator legado + res.json | Médio — legado de validação |
+
+Não migrar em lote — tocar apenas ao ter outra razão para abrir o arquivo.

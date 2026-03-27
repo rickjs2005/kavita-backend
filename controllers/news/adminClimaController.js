@@ -59,7 +59,7 @@ async function suggestClimaStations(req, res, next) {
     const limit = Math.min(25, Math.max(1, Number(req.query.limit) || 10));
 
     if (!uf || uf.length !== 2) {
-      return next(new AppError("UF inválida (use 2 letras)", "VALIDATION_ERROR", 400));
+      return next(new AppError("UF inválida (use 2 letras)", ERROR_CODES.VALIDATION_ERROR, 400));
     }
 
     if (!q || q.length < 2) {
@@ -73,19 +73,15 @@ async function suggestClimaStations(req, res, next) {
       limit,
     });
 
-    return res.status(200).json({
-      ok: true,
-      data,
-      meta: {
-        provider: "OPEN_METEO_GEOCODING",
-        uf,
-        q,
-        limit,
-      },
+    return response.ok(res, data, null, {
+      provider: "OPEN_METEO_GEOCODING",
+      uf,
+      q,
+      limit,
     });
   } catch (err) {
     console.error("[CLIMA][GEOCODING]", err);
-    return next(new AppError("Erro ao buscar coordenadas", "GEOCODING_ERROR", 500));
+    return next(new AppError("Erro ao buscar coordenadas", ERROR_CODES.GEOCODING_ERROR, 500));
   }
 }
 
@@ -97,7 +93,7 @@ async function createClima(req, res, next) {
     return response.created(res, row);
   } catch (error) {
     console.error("adminClimaController.createClima:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", "DUPLICATE", 409));
+    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", ERROR_CODES.CONFLICT, 409));
     return next(new AppError("Erro ao criar clima.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
@@ -107,10 +103,10 @@ async function createClima(req, res, next) {
 async function updateClima(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
+    if (!id) return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
 
     if (Object.keys(req.body).length === 0) {
-      return next(new AppError("Nenhum campo para atualizar.", "VALIDATION_ERROR", 400));
+      return next(new AppError("Nenhum campo para atualizar.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
 
     const result = await climaRepo.updateClima(id, req.body);
@@ -118,7 +114,7 @@ async function updateClima(req, res, next) {
     return response.ok(res, result);
   } catch (error) {
     console.error("adminClimaController.updateClima:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", "DUPLICATE", 409));
+    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", ERROR_CODES.CONFLICT, 409));
     return next(new AppError("Erro ao atualizar clima.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
@@ -126,7 +122,7 @@ async function updateClima(req, res, next) {
 async function deleteClima(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
+    if (!id) return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
     const result = await climaRepo.deleteClima(id);
     await logAdmin(req, "removeu", "news_clima", id);
     return response.ok(res, result);
@@ -268,10 +264,10 @@ async function fetchChuvaMmFromProvider(climaRow) {
 async function syncClima(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
+    if (!id) return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
 
     const row = await climaRepo.getClimaById(id);
-    if (!row) return next(new AppError("Registro de clima não encontrado.", "NOT_FOUND", 404));
+    if (!row) return next(new AppError("Registro de clima não encontrado.", ERROR_CODES.NOT_FOUND, 404));
 
     let providerData = null;
 
@@ -282,7 +278,7 @@ async function syncClima(req, res, next) {
       if (String(e?.code || "") === "COORDS_REQUIRED") {
         return next(new AppError(
           "Para sincronizar chuva com Open-Meteo, preencha station_lat e station_lon (ou mantenha city_name/uf válidos para geocoding).",
-          "VALIDATION_ERROR",
+          ERROR_CODES.VALIDATION_ERROR,
           400,
           e?.details || { field: ["station_lat", "station_lon"] }
         ));
@@ -290,32 +286,24 @@ async function syncClima(req, res, next) {
 
       // Geocode falhou => continua sem quebrar o painel
       if (String(e?.code || "") === "GEOCODE_NOT_FOUND") {
-        return res.status(200).json({
-          ok: true,
-          data: row,
-          meta: {
-            provider: {
-              ok: false,
-              code: "GEOCODE_NOT_FOUND",
-              message: "Geocoding não encontrou coordenadas para essa cidade/UF.",
-              details: e?.details || null,
-            },
+        return response.ok(res, row, null, {
+          provider: {
+            ok: false,
+            code: "GEOCODE_NOT_FOUND",
+            message: "Geocoding não encontrou coordenadas para essa cidade/UF.",
+            details: e?.details || null,
           },
         });
       }
 
       // erro do provedor => NÃO quebrar o painel
       console.error("syncClima.provider:", e?.details || e);
-      return res.status(200).json({
-        ok: true,
-        data: row,
-        meta: {
-          provider: {
-            ok: false,
-            code: String(e?.code || "PROVIDER_ERROR"),
-            message: "Falha ao consultar provedor de clima.",
-            details: e?.details || null,
-          },
+      return response.ok(res, row, null, {
+        provider: {
+          ok: false,
+          code: String(e?.code || "PROVIDER_ERROR"),
+          message: "Falha ao consultar provedor de clima.",
+          details: e?.details || null,
         },
       });
     }
@@ -334,11 +322,7 @@ async function syncClima(req, res, next) {
     const updated = await climaRepo.getClimaById(id);
 
     if (providerData?.meta) {
-      return res.status(200).json({
-        ok: true,
-        data: updated,
-        meta: { provider: { ok: true, ...providerData.meta } },
-      });
+      return response.ok(res, updated, null, { provider: { ok: true, ...providerData.meta } });
     }
     return response.ok(res, updated);
   } catch (error) {

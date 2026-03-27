@@ -158,7 +158,7 @@ async function createCotacao(req, res, next) {
     return response.created(res, row);
   } catch (error) {
     console.error("adminCotacoesController.createCotacao:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe uma cotação com esse slug.", "DUPLICATE", 409));
+    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe uma cotação com esse slug.", ERROR_CODES.CONFLICT, 409));
     return next(new AppError("Erro ao criar cotação.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
@@ -168,10 +168,10 @@ async function createCotacao(req, res, next) {
 async function updateCotacao(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
+    if (!id) return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
 
     if (Object.keys(req.body).length === 0) {
-      return next(new AppError("Nenhum campo para atualizar.", "VALIDATION_ERROR", 400));
+      return next(new AppError("Nenhum campo para atualizar.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
 
     const result = await cotacoesRepo.updateCotacao(id, req.body);
@@ -179,7 +179,7 @@ async function updateCotacao(req, res, next) {
     return response.ok(res, result);
   } catch (error) {
     console.error("adminCotacoesController.updateCotacao:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe uma cotação com esse slug.", "DUPLICATE", 409));
+    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe uma cotação com esse slug.", ERROR_CODES.CONFLICT, 409));
     return next(new AppError("Erro ao atualizar cotação.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
@@ -187,7 +187,7 @@ async function updateCotacao(req, res, next) {
 async function deleteCotacao(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
+    if (!id) return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
     const result = await cotacoesRepo.deleteCotacao(id);
     await logAdmin(req, "removeu", "news_cotacoes", id);
     return response.ok(res, result);
@@ -204,10 +204,10 @@ async function syncCotacao(req, res, next) {
   const startedAt = new Date();
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
+    if (!id) return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
 
     const row = await cotacoesRepo.getCotacaoById(id);
-    if (!row) return next(new AppError("Cotação não encontrada.", "NOT_FOUND", 404));
+    if (!row) return next(new AppError("Cotação não encontrada.", ERROR_CODES.NOT_FOUND, 404));
 
     const resolved = await resolveCotacaoProvider(row);
     const now = nowSql();
@@ -242,13 +242,9 @@ async function syncCotacao(req, res, next) {
       await logAdmin(req, "sincronizou", "news_cotacoes", id);
 
       const updated = await cotacoesRepo.getCotacaoById(id);
-      return res.status(200).json({
-        ok: true,
-        data: updated,
-        meta: {
-          provider: { ok: true, ...(d.meta ? d.meta : null) },
-          took_ms: Date.now() - startedAt.getTime(),
-        },
+      return response.ok(res, updated, null, {
+        provider: { ok: true, ...(d.meta ? d.meta : null) },
+        took_ms: Date.now() - startedAt.getTime(),
       });
     }
 
@@ -279,18 +275,14 @@ async function syncCotacao(req, res, next) {
     console.error("[COTACOES][SYNC] provider error:", resolved?.details || resolved);
 
     const updated = await cotacoesRepo.getCotacaoById(id);
-    return res.status(200).json({
-      ok: true,
-      data: updated || row,
-      meta: {
-        provider: {
-          ok: false,
-          code: resolved?.code || "PROVIDER_ERROR",
-          message: msg,
-          details: resolved?.details || null,
-        },
-        took_ms: Date.now() - startedAt.getTime(),
+    return response.ok(res, updated || row, null, {
+      provider: {
+        ok: false,
+        code: resolved?.code || "PROVIDER_ERROR",
+        message: msg,
+        details: resolved?.details || null,
       },
+      took_ms: Date.now() - startedAt.getTime(),
     });
   } catch (error) {
     console.error("adminCotacoesController.syncCotacao:", error);
@@ -399,11 +391,7 @@ async function syncCotacoesAll(req, res, next) {
 
     await logAdmin(req, "sincronizou", "news_cotacoes", null);
 
-    return res.status(200).json({
-      ok: true,
-      data: summary,
-      meta: { took_ms: Date.now() - startedAt.getTime() },
-    });
+    return response.ok(res, summary, null, { took_ms: Date.now() - startedAt.getTime() });
   } catch (error) {
     console.error("adminCotacoesController.syncCotacoesAll:", error);
     return next(new AppError("Erro ao sincronizar cotações (all).", ERROR_CODES.SERVER_ERROR, 500));
