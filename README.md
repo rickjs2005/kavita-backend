@@ -53,6 +53,8 @@ O projeto está em **migração arquitetural ativa**. Aproximadamente 30% dos m�
 | Migrations | Sequelize CLI (somente CLI — sem models ORM no código de aplicação) |
 | Documentação API | Swagger UI em `/docs` |
 
+> **Sobre Sequelize:** `sequelize` e `sequelize-cli` estão no projeto exclusivamente para gerenciar migrations via CLI (`npm run db:migrate`, `db:status`, `db:undo`). O código de aplicação **não usa models ORM** — todo acesso a dados é feito com `mysql2` raw pool (`config/pool.js`) através dos repositories em `repositories/`. Não há `Model.findAll()`, `Model.create()` ou qualquer instância Sequelize fora de `migrations/`. Se você está procurando models, eles não existem.
+
 ---
 
 ## Setup local
