@@ -197,7 +197,7 @@ kavita-backend/
 │   ├── redis.js               # Cliente Redis
 │   └── logger.js              # Logger Pino
 │
-├── teste/                     # Testes (Jest). Atenção: pasta em português por convenção do projeto.
+├── test/                      # Testes (Jest)
 │   ├── setup/                 # Configuração de ambiente de teste
 │   ├── integration/           # Testes de integração (banco real)
 │   ├── unit/                  # Testes unitários (dependências mockadas)
@@ -532,29 +532,27 @@ Antes de corrigir qualquer bug relacionado a imagem, mapeie esses três pontos. 
 
 ```bash
 npm test                    # todos os testes (unit + integration), sequencial
-npm run test:unit           # apenas teste/unit/
-npm run test:int            # apenas teste/integration/
+npm run test:unit           # apenas test/unit/
+npm run test:int            # apenas test/integration/
 npm run test:cov            # todos com relatório de cobertura
 
 # Arquivo único:
-npx cross-env NODE_ENV=test node ./node_modules/jest/bin/jest.js --runInBand teste/integration/adminDrones.int.test.js
+npx cross-env NODE_ENV=test node ./node_modules/jest/bin/jest.js --runInBand test/integration/adminDrones.int.test.js
 ```
 
 ### Estrutura
 
 ```
-teste/
+test/
 ├── setup/
 │   ├── env.setup.js        # define vars mínimas para NODE_ENV=test
 │   └── jest.setup.js       # hooks e config Jest
-├── integration/            # testes de integração (bank real de teste)
+├── integration/            # testes de integração (banco real de teste)
 ├── unit/                   # testes unitários (dependências mockadas)
 ├── mocks/
 │   └── pool.mock.js        # makeMockPool / makeMockConn reutilizáveis
 └── testUtils.js            # makeTestApp, helpers de setup
 ```
-
-> **Atenção:** a pasta de testes se chama `teste/` (português), não `test/`. Isso é uma convenção do projeto — não renomeie sem atualizar `jest.config` em `package.json`.
 
 ### Antes de rodar testes de integração pela primeira vez
 
@@ -566,7 +564,7 @@ Isso limpa e re-migra o banco `kavita_test`. Necessário somente na primeira vez
 
 ### Padrão de teste de integração
 
-Os testes de integração usam `jest.resetModules()` + mocks injetados para isolar dependências de banco e middleware. Ver `teste/testUtils.js` para os helpers `makeTestApp()` e `makeMockConn()`.
+Os testes de integração usam `jest.resetModules()` + mocks injetados para isolar dependências de banco e middleware. Ver `test/testUtils.js` para os helpers `makeTestApp()` e `makeMockConn()`.
 
 ---
 

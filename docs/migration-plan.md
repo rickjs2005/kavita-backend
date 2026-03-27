@@ -33,7 +33,7 @@ Um módulo é considerado **migrado** quando todos os itens abaixo são verific�
 | R5 | **Validação centralizada** — schema Zod em `schemas/` aplicado via `middleware/validate.js` | Schema existe, rota usa `validate(Schema)` antes do controller |
 | R6 | **AppError em todos os erros** — zero `res.status(4xx).json(...)` inline | `grep -n "res.status" routes/... controllers/...` retorna zero |
 | R7 | **Contrato de resposta** — `lib/response.js` em todos os caminhos de sucesso | `grep -n "res.json" controllers/...` retorna zero |
-| R8 | **Testes mínimos** — arquivo `teste/integration/{módulo}.int.test.js` com cobertura dos contratos de rota | Arquivo existe, `npm run test:int` passa |
+| R8 | **Testes mínimos** — arquivo `test/integration/{módulo}.int.test.js` com cobertura dos contratos de rota | Arquivo existe, `npm run test:int` passa |
 
 > **R1–R7 são não-negociáveis.** R8 é pré-requisito para abrir PR de migração, não pós.
 
@@ -57,10 +57,10 @@ Não há exceção para módulos "simples".
 3. Só então abrir PR
 ```
 
-**Template de teste:** usar `teste/integration/adminDrones.int.test.js` como referência.
+**Template de teste:** usar `test/integration/adminDrones.int.test.js` como referência.
 Padrões obrigatórios:
 - `jest.resetModules()` + `jest.doMock()` antes de cada `require` da rota
-- Pool mockado via `makeMockConn()` de `teste/testUtils`
+- Pool mockado via `makeMockConn()` de `test/testUtils`
 - AAA (Arrange → Act → Assert) em todos os casos
 - Sem snapshots
 - Cobrir: sucesso 200/201, erro 400 de validação, erro 404/409 de negócio, erro 500 inesperado

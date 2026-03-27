@@ -1,0 +1,840 @@
+/**
+ * test/integration/payment.int.test.js
+ *
+ * Rotas testadas: routes/ecommerce/payment.js
+ *
+ * Endpoints:
+ * - GET    /api/payment/methods                         (public)
+ * - ADMIN: /api/payment/admin/payment-methods
+ *   - GET    -> lista todos (ativos e inativos)
+ *   - POST   -> cria
+ *   - PUT    -> atualiza
+ *   - DELETE -> soft delete (is_active = 0)
+ * - POST /api/payment/webhook (3-layer security)
+ *
+ * Regras:
+ * - Sem MySQL real: mock de ../../config/pool (pool.getConnection + conn.query)
+ * - Sem rede externa: mock mercadopago SDK para /webhook
+ * - Auth/admin: mock de ../../middleware/authenticateToken e ../../middleware/verifyAdmin
+ * - AAA em todos os testes
+ */
+
+"use strict";
+
+const crypto = require("crypto");
+const request = require("supertest");
+const { makeTestApp, makeMockConn } = require("../testUtils");
+const { makeMockPool } = require("../mocks/pool.mock");
+const ERROR_CODES = require("../../constants/ErrorCodes");
+
+/** Helper: build a valid Mercado Pago x-signature header */
+function makeMPSignature({ secret, dataId = "", requestId = "", ts = "1234567890" }) {
+  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  const v1 = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+  return `ts=${ts},v1=${v1}`;
+}
+
+/** helpers */
+function normalizeSql(sql) {
+  return String(sql || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * makeQueryRouter(handlers)
+ * - handlers: Array<{ match: (sqlNorm, params) => boolean, reply: (sqlNorm, params) => any }>
+ */
+function makeQueryRouter(handlers) {
+  return async (sql, params) => {
+    const sqlNorm = normalizeSql(sql);
+    for (const h of handlers) {
+      if (h && typeof h.match === "function" && h.match(sqlNorm, params)) {
+        if (typeof h.reply !== "function") throw new Error("Handler.reply inválido");
+        return await h.reply(sqlNorm, params);
+      }
+    }
+    throw new Error(`Query não mockada: ${sqlNorm}`);
+  };
+}
+
+function setupModuleWithMocks({ asAdmin = true } = {}) {
+  jest.resetModules();
+
+  const poolPath = require.resolve("../../config/pool");
+  const authPath = require.resolve("../../middleware/authenticateToken");
+  const adminPath = require.resolve("../../middleware/verifyAdmin");
+
+  const mockPool = makeMockPool();
+
+  // ✅ pool mock (sem DB real)
+  jest.doMock(poolPath, () => mockPool);
+
+  // ✅ auth mock
+  jest.doMock(authPath, () => (req, res, next) => {
+    // Simula "logado"
+    req.user = asAdmin ? { id: 1, role: "admin" } : { id: 1, role: "user" };
+    next();
+  });
+
+  // ✅ verifyAdmin mock (gate)
+  jest.doMock(adminPath, () => (req, res, next) => {
+    if (!req.user) return res.status(401).json({ code: ERROR_CODES.UNAUTHORIZED, message: "Não autenticado." });
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ code: ERROR_CODES.FORBIDDEN, message: "Sem permissão." });
+    }
+    next();
+  });
+
+  // Importa o router real só depois dos mocks
+  const router = require("../../routes/ecommerce/payment");
+
+  return { router, mockPool };
+}
+
+/**
+ * Setup for webhook tests: uses REAL validateMPSignature middleware,
+ * mocks pool and mercadopago SDK.
+ */
+function setupWebhookWithMocks({ mpPaymentGet } = {}) {
+  jest.resetModules();
+
+  const poolPath = require.resolve("../../config/pool");
+  const mpPath = require.resolve("mercadopago");
+
+  const mockPool = makeMockPool();
+
+  jest.doMock(poolPath, () => mockPool);
+
+  jest.doMock(mpPath, () => ({
+    MercadoPagoConfig: jest.fn(),
+    Preference: jest.fn(),
+    Payment: jest.fn().mockImplementation(() => ({
+      get: mpPaymentGet || jest.fn(),
+    })),
+  }));
+
+  const router = require("../../routes/ecommerce/payment");
+  return { router, mockPool };
+}
+
+describe("Payment Routes (integration) - routes/ecommerce/payment.js", () => {
+  test("GET /api/payment/methods -> 200 lista somente métodos ativos", async () => {
+    // Arrange
+    const { router, mockPool } = setupModuleWithMocks();
+    const app = makeTestApp("/api/payment", router);
+
+    const conn = makeMockConn();
+    mockPool.getConnection.mockResolvedValue(conn);
+
+    conn.query.mockImplementation(
+      makeQueryRouter([
+        {
+          match: (sqlNorm) =>
+            sqlNorm.includes("from payment_methods") &&
+            sqlNorm.includes("where is_active = 1") &&
+            sqlNorm.includes("order by sort_order asc"),
+          reply: async () => [
+            [
+              { id: 1, code: "pix", label: "Pix", is_active: 1, sort_order: 10 },
+              { id: 2, code: "boleto", label: "Boleto", is_active: 1, sort_order: 20 },
+            ],
+          ],
+        },
+      ])
+    );
+
+    // Act
+    const res = await request(app).get("/api/payment/methods");
+
+    // Assert
+    expect(res.status).toBe(200);
+    expect(res.body.methods).toHaveLength(2);
+    expect(mockPool.getConnection).toHaveBeenCalledTimes(1);
+    expect(conn.release).toHaveBeenCalledTimes(1);
+  });
+
+  describe("ADMIN CRUD /api/payment/admin/payment-methods", () => {
+    test("GET 200 lista todos (ativos e inativos)", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) =>
+              sqlNorm.includes("select id, code, label") &&
+              sqlNorm.includes("from payment_methods") &&
+              !sqlNorm.includes("where is_active = 1") &&
+              sqlNorm.includes("order by sort_order asc"),
+            reply: async () => [
+              [
+                { id: 1, code: "pix", label: "Pix", is_active: 1, sort_order: 10 },
+                { id: 2, code: "boleto", label: "Boleto", is_active: 0, sort_order: 20 },
+              ],
+            ],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app).get("/api/payment/admin/payment-methods");
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body.methods).toHaveLength(2);
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("GET 403 quando user não é admin", async () => {
+      // Arrange
+      const { router } = setupModuleWithMocks({ asAdmin: false });
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app).get("/api/payment/admin/payment-methods");
+
+      // Assert
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    test("POST 400 se code/label ausentes", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/admin/payment-methods")
+        .send({ description: "x" });
+
+      // Assert
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false,
+        code: "VALIDATION_ERROR",
+        message: "code e label são obrigatórios.",
+      });
+      expect(mockPool.getConnection).not.toHaveBeenCalled();
+    });
+
+    test("POST 201 cria e retorna método criado (normaliza is_active/sort_order)", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.startsWith("insert into payment_methods"),
+            reply: async (_sqlNorm, params) => {
+              // [code, label, description, is_active, sort_order]
+              expect(params[0]).toBe("pix");
+              expect(params[1]).toBe("Pix");
+              expect(params[2]).toBe("Pagamento instantâneo");
+              expect(params[3]).toBe(1); // normalizado
+              expect(params[4]).toBe(12); // normalizado
+              return [{ insertId: 123 }];
+            },
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.includes("select id, code, label") &&
+              sqlNorm.includes("from payment_methods") &&
+              sqlNorm.includes("where id = ?"),
+            reply: async (_sqlNorm, params) => {
+              expect(params).toEqual([123]);
+              return [
+                [
+                  {
+                    id: 123,
+                    code: "pix",
+                    label: "Pix",
+                    description: "Pagamento instantâneo",
+                    is_active: 1,
+                    sort_order: 12,
+                    created_at: "2026-02-18 10:00:00",
+                    updated_at: null,
+                  },
+                ],
+              ];
+            },
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/admin/payment-methods")
+        .send({
+          code: "pix",
+          label: "Pix",
+          description: "Pagamento instantâneo",
+          is_active: true,
+          sort_order: 12,
+        });
+
+      // Assert
+      expect(res.status).toBe(201);
+      expect(res.body.method).toEqual({
+        id: 123,
+        code: "pix",
+        label: "Pix",
+        description: "Pagamento instantâneo",
+        is_active: 1,
+        sort_order: 12,
+        created_at: "2026-02-18 10:00:00",
+        updated_at: null,
+      });
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("POST 400 quando duplicate code (ER_DUP...)", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.startsWith("insert into payment_methods"),
+            reply: async () => {
+              const err = new Error("dup");
+              err.code = "ER_DUP_ENTRY";
+              throw err;
+            },
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/admin/payment-methods")
+        .send({ code: "pix", label: "Pix" });
+
+      // Assert
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Já existe um método com esse code.",
+      });
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("PUT 400 id inválido", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .put("/api/payment/admin/payment-methods/0")
+        .send({ label: "X" });
+
+      // Assert
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "id inválido." });
+      expect(mockPool.getConnection).not.toHaveBeenCalled();
+    });
+
+    test("PUT 400 se nenhum campo enviado", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .put("/api/payment/admin/payment-methods/10")
+        .send({});
+
+      // Assert
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Nenhum campo para atualizar.",
+      });
+      expect(mockPool.getConnection).not.toHaveBeenCalled();
+    });
+
+    test("PUT 404 se método não existe", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from payment_methods") && sqlNorm.includes("where id = ?"),
+            reply: async () => [[undefined]], // não existe
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .put("/api/payment/admin/payment-methods/10")
+        .send({ label: "Novo" });
+
+      // Assert
+      expect(res.status).toBe(404);
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Método não encontrado." });
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("PUT 200 atualiza label/description ('' -> null) e retorna atualizado", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      let sawUpdate = false;
+      let findCallCount = 0;
+
+      const fullRow = {
+        id: 10,
+        code: "pix",
+        label: "Pix atualizado",
+        description: null,
+        is_active: 1,
+        sort_order: 10,
+        created_at: "2026-02-10 10:00:00",
+        updated_at: "2026-02-18 10:00:00",
+      };
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            // findMethodById is called twice: 1st for existence check, 2nd by updateMethodById
+            match: (sqlNorm) => sqlNorm.includes("from payment_methods") && sqlNorm.includes("where id = ?"),
+            reply: async () => {
+              findCallCount++;
+              return [[findCallCount === 1 ? { id: 10 } : fullRow]];
+            },
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.startsWith("update payment_methods set") &&
+              sqlNorm.includes("updated_at = now()") &&
+              sqlNorm.includes("where id = ?"),
+            reply: async (_sqlNorm, params) => {
+              // params = [...values, id]
+              const last = params[params.length - 1];
+              expect(last).toBe(10);
+
+              // description enviada como "" vira null (tem que estar nos params)
+              expect(params).toContain(null);
+
+              sawUpdate = true;
+              return [{ affectedRows: 1 }];
+            },
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .put("/api/payment/admin/payment-methods/10")
+        .send({ label: "Pix atualizado", description: "" });
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body.method).toMatchObject({
+        id: 10,
+        code: "pix",
+        label: "Pix atualizado",
+        description: null,
+      });
+      expect(sawUpdate).toBe(true);
+      expect(conn.release).toHaveBeenCalledTimes(2);
+    });
+
+    test("DELETE 404 se método não existe", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from payment_methods") && sqlNorm.includes("where id = ?"),
+            reply: async () => [[undefined]],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app).delete("/api/payment/admin/payment-methods/999");
+
+      // Assert
+      expect(res.status).toBe(404);
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Método não encontrado." });
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("DELETE 200 soft delete desativa e retorna ok", async () => {
+      // Arrange
+      const { router, mockPool } = setupModuleWithMocks({ asAdmin: true });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      let sawSoftDelete = false;
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from payment_methods") && sqlNorm.includes("where id = ?"),
+            reply: async () => [[{ id: 10 }]],
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.startsWith("update payment_methods set is_active = 0") &&
+              sqlNorm.includes("where id = ?"),
+            reply: async (_sqlNorm, params) => {
+              expect(params).toEqual([10]);
+              sawSoftDelete = true;
+              return [{ affectedRows: 1 }];
+            },
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app).delete("/api/payment/admin/payment-methods/10");
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(sawSoftDelete).toBe(true);
+      expect(conn.release).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("POST /api/payment/webhook (3-layer hardening)", () => {
+    const SECRET = "wh-secret-test";
+
+    beforeEach(() => {
+      process.env.MP_WEBHOOK_SECRET = SECRET;
+    });
+
+    afterEach(() => {
+      delete process.env.MP_WEBHOOK_SECRET;
+    });
+
+    test("401 quando x-signature está ausente (Layer 1)", async () => {
+      // Arrange
+      const { router } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .send({ id: 1, type: "payment", data: { id: "999" } });
+
+      // Assert
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ ok: false });
+    });
+
+    test("401 quando assinatura HMAC é inválida (Layer 1)", async () => {
+      // Arrange
+      const { router } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", "ts=1234567890,v1=0000000000000000000000000000000000000000000000000000000000000000")
+        .send({ id: 1, type: "payment", data: { id: "999" } });
+
+      // Assert
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ ok: false });
+    });
+
+    test("200 quando tipo não é payment (ignora, idempotência)", async () => {
+      // Arrange
+      const body = { id: 999, type: "merchant_order", data: { id: "123" } };
+      const signature = makeMPSignature({ secret: SECRET, dataId: "123" });
+
+      const { router, mockPool } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from webhook_events") && sqlNorm.includes("for update"),
+            reply: async () => [[undefined]], // evento não existe
+          },
+          {
+            match: (sqlNorm) => sqlNorm.startsWith("insert into webhook_events"),
+            reply: async () => [{ insertId: 1 }],
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.startsWith("update webhook_events") && sqlNorm.includes("status = 'ignored'"),
+            reply: async () => [{ affectedRows: 1 }],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", signature)
+        .send(body);
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(conn.beginTransaction).toHaveBeenCalledTimes(1);
+      expect(conn.commit).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("200 idempotente quando evento já foi processado (processed_at != null)", async () => {
+      // Arrange
+      const body = { id: 777, type: "payment", data: { id: "555" } };
+      const signature = makeMPSignature({ secret: SECRET, dataId: "555" });
+
+      const { router, mockPool } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from webhook_events") && sqlNorm.includes("for update"),
+            reply: async () => [[{ id: 10, status: "pago", processed_at: "2026-01-01 00:00:00" }]],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", signature)
+        .send(body);
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true, idempotent: true });
+      expect(conn.commit).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("200 e atualiza pedido quando pagamento 'approved' (Layer 2 + Layer 3)", async () => {
+      // Arrange
+      const body = { id: 888, type: "payment", data: { id: "111222" } };
+      const signature = makeMPSignature({ secret: SECRET, dataId: "111222" });
+
+      const mpPaymentGet = jest.fn().mockResolvedValue({
+        status: "approved",
+        metadata: { pedidoId: 42 },
+      });
+
+      const { router, mockPool } = setupWebhookWithMocks({ mpPaymentGet });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      let sawPedidoUpdate = false;
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) => sqlNorm.includes("from webhook_events") && sqlNorm.includes("for update"),
+            reply: async () => [[undefined]], // novo evento
+          },
+          {
+            match: (sqlNorm) => sqlNorm.startsWith("insert into webhook_events"),
+            reply: async () => [{ insertId: 5 }],
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.startsWith("update pedidos") && sqlNorm.includes("status_pagamento"),
+            reply: async (_sqlNorm, params) => {
+              expect(params[0]).toBe("pago");
+              expect(params[1]).toBe("111222");
+              sawPedidoUpdate = true;
+              return [{ affectedRows: 1 }];
+            },
+          },
+          {
+            match: (sqlNorm) =>
+              sqlNorm.startsWith("update webhook_events") && sqlNorm.includes("processed_at"),
+            reply: async () => [{ affectedRows: 1 }],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", signature)
+        .send(body);
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(sawPedidoUpdate).toBe(true);
+      expect(mpPaymentGet).toHaveBeenCalledWith({ id: "111222" });
+      expect(conn.commit).toHaveBeenCalledTimes(1);
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("200 quando payload não tem id de notificação", async () => {
+      // Arrange
+      const body = { type: "payment", data: { id: "123" } }; // sem id de notificação
+      const signature = makeMPSignature({ secret: SECRET, dataId: "123" });
+
+      const { router } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", signature)
+        .send(body);
+
+      // Assert
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+    });
+
+    // ✅ FIX COVERAGE: fail-closed quando MP_WEBHOOK_SECRET não configurado
+    test("401 quando MP_WEBHOOK_SECRET não está configurado (fail-closed)", async () => {
+      // Arrange — sem o segredo configurado
+      const savedSecret = process.env.MP_WEBHOOK_SECRET;
+      delete process.env.MP_WEBHOOK_SECRET;
+
+      const { router } = setupWebhookWithMocks();
+      const app = makeTestApp("/api/payment", router);
+
+      const body = { id: 1, type: "payment", data: { id: "999" } };
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/webhook")
+        .set("x-signature", "ts=1234567890,v1=qualquer")
+        .send(body);
+
+      // Assert — deve rejeitar, não aceitar silenciosamente
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ ok: false });
+
+      // Restore
+      if (savedSecret !== undefined) process.env.MP_WEBHOOK_SECRET = savedSecret;
+    });
+  });
+
+  // ✅ FIX COVERAGE: /api/payment/start — autenticação + ownership
+  describe("POST /api/payment/start — autenticação e ownership", () => {
+    function setupStartWithAuth({ userId = 1, authenticated = true } = {}) {
+      jest.resetModules();
+
+      const poolPath = require.resolve("../../config/pool");
+      const authPath = require.resolve("../../middleware/authenticateToken");
+
+      const mockPool = makeMockPool();
+      jest.doMock(poolPath, () => mockPool);
+
+      jest.doMock(authPath, () => (req, res, next) => {
+        if (!authenticated) {
+          return res.status(401).json({ message: "Usuário não autenticado." });
+        }
+        req.user = { id: userId, role: "user" };
+        next();
+      });
+
+      const router = require("../../routes/ecommerce/payment");
+      return { router, mockPool };
+    }
+
+    test("401 quando não autenticado", async () => {
+      // Arrange
+      const { router } = setupStartWithAuth({ authenticated: false });
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/start")
+        .send({ pedidoId: 1 });
+
+      // Assert
+      expect(res.status).toBe(401);
+    });
+
+    test("404 quando pedido pertence a outro usuário (ownership check)", async () => {
+      // Arrange — usuário 1 tenta pagar pedido do usuário 2
+      const { router, mockPool } = setupStartWithAuth({ userId: 1 });
+      const app = makeTestApp("/api/payment", router);
+
+      const conn = makeMockConn();
+      mockPool.getConnection.mockResolvedValue(conn);
+
+      conn.query.mockImplementation(
+        makeQueryRouter([
+          {
+            match: (sqlNorm) =>
+              sqlNorm.includes("from pedidos") && sqlNorm.includes("where id = ?"),
+            reply: async () => [
+              [{ id: 10, forma_pagamento: "pix", usuario_id: 2 }], // dono é o usuário 2
+            ],
+          },
+        ])
+      );
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/start")
+        .send({ pedidoId: 10 });
+
+      // Assert
+      expect(res.status).toBe(404);
+      expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND", message: "Pedido não encontrado." });
+      expect(conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    test("400 pedidoId inválido (sem auth não chega aqui mas com auth chega)", async () => {
+      // Arrange
+      const { router } = setupStartWithAuth({ userId: 1 });
+      const app = makeTestApp("/api/payment", router);
+
+      // Act
+      const res = await request(app)
+        .post("/api/payment/start")
+        .send({ pedidoId: -1 });
+
+      // Assert
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "pedidoId é obrigatório." });
+    });
+  });
+});

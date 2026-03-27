@@ -9,14 +9,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev          # nodemon server.js (hot-reload)
 npm start            # node server.js (produção)
 
-# Testes (diretório: teste/, não test/)
+# Testes
 npm test             # todos os testes, sequencial
-npm run test:unit    # apenas teste/unit/
-npm run test:int     # apenas teste/integration/
+npm run test:unit    # apenas test/unit/
+npm run test:int     # apenas test/integration/
 npm run test:cov     # todos com cobertura
 
 # Rodar um único arquivo de teste
-npx cross-env NODE_ENV=test node ./node_modules/jest/bin/jest.js --runInBand teste/integration/adminDrones.int.test.js
+npx cross-env NODE_ENV=test node ./node_modules/jest/bin/jest.js --runInBand test/integration/adminDrones.int.test.js
 
 # Lint
 npm run lint
@@ -154,7 +154,7 @@ Todo arquivo **novo ou modificado** deve:
 
 ### Testes
 
-- Setup de ambiente: `teste/setup/env.setup.js` (define vars mínimas para NODE_ENV=test)
+- Setup de ambiente: `test/setup/env.setup.js` (define vars mínimas para NODE_ENV=test)
 - Testes de integração usam banco real — rodar `npm run db:test:reset` antes da primeira execução
 - Cobertura coletada de: `routes/**`, `controllers/**`, `services/**`, `server.js`
 

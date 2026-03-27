@@ -247,7 +247,7 @@ kavita-backend/
 ├── routes/          # Definição das rotas da API
 ├── scripts/         # Scripts utilitários (schema, banco de dados)
 ├── services/        # Camada de serviços (regras de negócio reutilizáveis)
-├── teste/           # Testes automatizados (unit/ e integration/)
+├── test/            # Testes automatizados (unit/ e integration/)
 ├── utils/           # Funções utilitárias genéricas
 ├── vendor/          # Dependências locais/vendorizadas
 ├── workers/         # Workers de processamento em background

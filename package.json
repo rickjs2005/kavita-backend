@@ -14,10 +14,10 @@
     "test:watch": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js --watch",
     "test:cov": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js --coverage",
     "test:ci": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js --ci --runInBand --coverage",
-    "test:int": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js teste/integration --runInBand",
-    "test:int:cov": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js teste/integration --coverage --runInBand",
-    "test:unit": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js teste/unit --runInBand",
-    "test:unit:cov": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js teste/unit --coverage --runInBand",
+    "test:int": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js test/integration --runInBand",
+    "test:int:cov": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js test/integration --coverage --runInBand",
+    "test:unit": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js test/unit --runInBand",
+    "test:unit:cov": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js test/unit --coverage --runInBand",
     "worker:abandoned-carts": "node jobs/abandonedCartsWorker.js",
     "db:migrate": "cross-env NODE_ENV=development sequelize-cli db:migrate",
     "db:status": "cross-env NODE_ENV=development sequelize-cli db:migrate:status",
@@ -78,14 +78,14 @@
       "**/integration/**/*.test.js"
     ],
     "setupFiles": [
-      "<rootDir>/teste/setup/env.setup.js"
+      "<rootDir>/test/setup/env.setup.js"
     ],
     "setupFilesAfterEnv": [
-      "<rootDir>/teste/setup/jest.setup.js"
+      "<rootDir>/test/setup/jest.setup.js"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/$1",
-      "^browserslist$": "<rootDir>/teste/mocks/browserslist.mock.js"
+      "^browserslist$": "<rootDir>/test/mocks/browserslist.mock.js"
     },
     "collectCoverageFrom": [
       "routes/**/*.js",
