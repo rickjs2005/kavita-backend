@@ -1,1422 +1,718 @@
+# Kavita Backend
 
-Documentação e contratos do backend Kavita
+API REST do projeto Kavita. Node.js + Express, MySQL, autenticação dupla por cookie HttpOnly, arquitetura em camadas em migração ativa.
 
-Resumo executivo
+---
 
-A análise do branch main do repositório kavita-backend mostra um backend Node.js/Express com roteamento centralizado sob o prefixo /api, CORS habilitado para credenciais (necessário para cookies) e Swagger UI servido em /docs com spec em /api-docs.json. 
+## Índice
 
-O mecanismo de autenticação implementado é JWT armazenado em cookie HttpOnly: para usuário (auth_token, com maxAge de 7 dias) e para admin (adminToken, com maxAge de 2 horas). 
+- [Visão geral](#visão-geral)
+- [Stack](#stack)
+- [Setup local](#setup-local)
+- [Variáveis de ambiente](#variáveis-de-ambiente)
+- [Estrutura de pastas](#estrutura-de-pastas)
+- [Arquitetura](#arquitetura)
+- [Estado atual: projeto em transição](#estado-atual-projeto-em-transição)
+- [Módulos modernos e legados](#módulos-modernos-e-legados)
+- [Convenções de nomenclatura](#convenções-de-nomenclatura)
+- [Contrato de resposta da API](#contrato-de-resposta-da-api)
+- [Tratamento de erros](#tratamento-de-erros)
+- [Autenticação](#autenticação)
+- [Uploads e mídia](#uploads-e-mídia)
+- [Testes](#testes)
+- [Migrations e banco de dados](#migrations-e-banco-de-dados)
+- [Como contribuir sem ampliar dívida técnica](#como-contribuir-sem-ampliar-dívida-técnica)
+- [O que é padrão canônico hoje](#o-que-é-padrão-canônico-hoje)
 
-Ao mesmo tempo, o repositório (no estado atual do branch) apresenta lacunas importantes: arquivos críticos referenciados pelo bootstrap (por exemplo, rate limiter adaptativo, error handler global, AppError/ErrorCodes e middleware de autenticação authenticateToken) não foram encontrados no tree publicado via GitHub Raw, o que indica que o servidor não sobe “as-is” sem completar/ajustar esses módulos. Isso impacta diretamente a “realidade” operacional de várias rotas (mesmo quando a rota está escrita, ela pode não montar por dependência ausente). 
-
-Além disso, há inconsistências entre código e schema SQL inicial disponível: por exemplo, o usuarios da migration 001 não possui senha/cpf, mas a rota /api/users/register tenta inserir esses campos. 
-
-A seguir, entrego: (1) um README.md completo (pt-BR) alinhado ao código, (2) um openapi.yaml com paths mapeados e cookie auth, (3) um contracts_table.md em tabela com exemplos, e (4) um CHANGELOG_PROPOSTO.md com melhorias e checklist (6–12h por tarefa).
-
-Estado atual do repositório e arquitetura de execução
-O ponto de entrada é server.js, que inicializa Express, configura CORS com credentials: true, expõe /uploads como estático, habilita cookie-parser e monta as rotas centralizadas em /api. 
-
-A documentação Swagger é gerada via swagger-jsdoc e servida em:
-
-/docs (Swagger UI)
-/api-docs.json (spec JSON) 
-O conjunto mínimo de variáveis de ambiente exigidas em runtime (via config/env.js) inclui: JWT_SECRET, EMAIL_USER, EMAIL_PASS, APP_URL, BACKEND_URL, DB_HOST, DB_USER, DB_PASSWORD, DB_NAME. 
-
-O .env.example publicado, porém, não lista vários desses campos obrigatórios (ex.: APP_URL, BACKEND_URL, EMAIL_*), o que precisa ser corrigido para evitar falhas de boot. 
-
-Há scripts de execução e testes no package.json (ex.: start, dev, test, test:cov) e licença declarada como ISC. 
-
-Observação crítica sobre integridade do tree no branch main
-O server.js referencia módulos essenciais (./middleware/adaptiveRateLimiter, ./middleware/errorHandler, ./errors/AppError, ./constants/ErrorCodes) que não foram recuperáveis no tree via GitHub Raw (indicador de ausência no branch publicado ou divergência de caminho/nomes). Isso, por si só, já impede a execução real sem ajustes. 
-
-O agregador routes/index.js também referencia um volume grande de “sub-rotas” (ex.: productById, publicCategorias, favorites, authRoutes, múltiplos módulos admin). Em vários casos, os arquivos correspondentes não foram encontrados no branch (exemplo: routes/productById.js). 
-
-Autenticação e sessão por cookie
-Usuário final
-O login do usuário é exposto em /api/login (POST). A rota delega para AuthController.login, que:
-
-valida credenciais contra a tabela usuarios
-assina JWT (authConfig.sign({ id }))
-grava o token em cookie HttpOnly chamado auth_token com:
-secure apenas em produção
-sameSite: strict em produção / lax fora
-maxAge: 7 dias
-path: "/" 
-A expiração do JWT, por padrão, é controlada por JWT_EXPIRATION (default 1h) via config/env.js. Isso cria um ponto de atenção: o cookie pode durar 7 dias, mas o JWT pode expirar em 1h, produzindo 401 até novo login, a menos que JWT_EXPIRATION seja alinhada ao maxAge do cookie. 
-
-O controller contém também logout() (limpa auth_token), mas não há, no branch publicado, um arquivo de rotas confirmado que exponha esse logout (o agregador aponta para authRoutes, porém o arquivo não foi recuperado). 
-
-Admin
-O login de admin é implementado em /api/admin/login (POST). Em caso de sucesso:
-
-emite JWT com payload contendo id, email, role, role_id e permissions
-define cookie HttpOnly adminToken com:
-maxAge: 2h
-sameSite: strict
-secure apenas em produção
-path: "/" 
-O middleware verifyAdmin valida o token buscando primeiro req.cookies.adminToken e, como fallback, Authorization: Bearer <token>. 
-
-O endpoint /api/admin/me é protegido por verifyAdmin. 
-
-O endpoint /api/admin/logout limpa o cookie adminToken. 
-
-Middleware de autenticação do usuário (lacuna)
-Diversas rotas de usuário (ex.: carrinho e checkout) fazem require("../middleware/authenticateToken"), mas esse arquivo não foi recuperado no branch atual; portanto, a lógica exata de leitura/validação do cookie auth_token não está disponível como fonte primária e precisa ser implementada/reintroduzida para que os contratos “protegidos” sejam executáveis. 
-
-mermaid
-Copiar
-flowchart LR
-  subgraph U[Usuário - cookie auth_token]
-    A[POST /api/login] -->|Set-Cookie: auth_token=JWT<br/>HttpOnly; Max-Age=7d| B[Client/Browser]
-    B -->|Cookie em requests (credentials)| C[Rotas protegidas<br/>(/api/cart, /api/checkout, ...)]
-    C --> D[authenticateToken<br/>(AUSENTE no branch)]
-    D --> E[req.user]
-  end
-
-  subgraph ADM[Admin - cookie adminToken]
-    F[POST /api/admin/login] -->|Set-Cookie: adminToken=JWT<br/>HttpOnly; Max-Age=2h| G[Client/Browser]
-    G -->|Cookie adminToken| H[/api/admin/me e demais rotas admin]
-    H --> I[verifyAdmin]
-    I --> J[req.admin + permissions]
-    I --> K[Fallback: Authorization Bearer]
-  end
-Rotas HTTP mapeadas e contratos disponíveis
-Como o roteamento é montado
-O servidor monta app.use("/api", apiRoutes), onde apiRoutes vem de routes/index.js. 
-
-Logo, todos os caminhos abaixo consideram prefixo /api quando a rota está dentro do router agregado.
-
-O agregador routes/index.js tenta montar muitos módulos via loadRoute() e também monta um conjunto grande de rotas admin protegidas com verifyAdmin. 
-
-Como parte desses arquivos não foi encontrada no branch, esta documentação separa:
-
-Rotas com definição de endpoint visível no repo (contrato recuperável)
-Rotas referenciadas no agregador, mas sem arquivo no branch (contrato indisponível no repo)
-Mapa de endpoints com contrato recuperável
-As rotas abaixo têm arquivo de rota com handlers visíveis no branch (mesmo que algumas dependências internas estejam ausentes, o “shape” do endpoint está definido no código do router).
-
-mermaid
-Copiar
-flowchart TB
-  root[/ /] --> docs[/docs (Swagger UI)]
-  root --> spec[/api-docs.json (OpenAPI JSON)]
-  root --> uploads[/uploads/* (static)]
-
-  api[/api] --> products[/products]
-  products --> products_list[GET /]
-  products --> products_search[GET /search]
-
-  api --> pub[/public]
-  pub --> pub_prod[/produtos]
-  pub_prod --> pub_search[GET /]
-  pub_prod --> pub_review_post[POST /avaliacoes]
-  pub_prod --> pub_review_list[GET /:id/avaliacoes]
-
-  api --> auth[/login]
-  auth --> login_post[POST /]
-
-  api --> users[/users]
-  users --> reg[POST /register]
-  users --> forgot[POST /forgot-password]
-  users --> reset[POST /reset-password]
-
-  api --> cart[/cart]
-  cart --> cart_get[GET /]
-  cart --> cart_post[POST /items]
-  cart --> cart_patch[PATCH /items]
-  cart --> cart_del_item[DELETE /items/:produtoId]
-  cart --> cart_del[DELETE /]
-
-  api --> checkout[/checkout]
-  checkout --> prev[POST /preview-cupom]
-  checkout --> checkout_post[POST /]
-
-  api --> admin[/admin]
-  admin --> admin_login[POST /login]
-  admin --> admin_me[GET /me]
-  admin --> admin_logout[POST /logout]
-Evidências no código (fontes primárias) para estas rotas:
-
-/api/products (GET / e GET /search) em routes/products.js. 
-/api/public/produtos (GET /, POST /avaliacoes, GET /:id/avaliacoes) em routes/publicProdutos.js. 
-/api/login (POST /) em routes/login.js + cookie auth_token em controllers/authController.js. 
-/api/users/register, /api/users/forgot-password, /api/users/reset-password em routes/users.js. 
-/api/cart e sub-rotas em routes/cart.js. 
-/api/checkout + /api/checkout/preview-cupom em routes/checkoutRoutes.js. 
-/api/admin/login, /api/admin/me, /api/admin/logout em routes/adminLogin.js. 
-Infra: /docs e /api-docs.json definidos em docs/swagger.js e montados no server.js. 
-Rotas referenciadas no agregador, mas sem contrato disponível no branch
-routes/index.js referencia um conjunto adicional de módulos (ex.: productById, publicCategorias, favorites, authRoutes, shippingRoutes, além de muitos módulos admin). 
-
-Como exemplo concreto, o arquivo routes/productById.js não foi encontrado no branch publicado, tornando impossível documentar seu contrato real sem implementação. 
-
-Arquivos gerados
-md
-Copiar
-<!-- README.md -->
-
-# Kavita Backend (API) — Documentação (pt-BR)
-
-> **Status do branch `main`**  
-> O roteador central (`routes/index.js`) referencia diversos módulos que não estão presentes no repositório publicado (e.g. `authRoutes`, várias rotas admin, etc.). Além disso, alguns middlewares essenciais citados pelo `server.js` não aparecem no branch.  
-> Esta documentação descreve o que está **explicitamente definido** no código e aponta o que está **faltando** para operação plena.
+---
 
 ## Visão geral
 
-O **Kavita Backend** é uma API REST para um e-commerce (produtos, checkout, carrinho e área admin). O servidor:
-- monta a API sob `/api`
-- serve Swagger UI em `/docs` e o JSON em `/api-docs.json`
-- suporta autenticação via **JWT em cookie HttpOnly** (usuário e admin)
-- usa MySQL via `mysql2/promise` (pool)
+Backend de uma plataforma de e-commerce e conteúdo (drones, produtos, serviços, notícias). Expõe uma API REST sob `/api`, servida com Express. Autenticação dupla: contexto admin e contexto de usuário final, ambos via cookie HttpOnly. Upload de mídia centralizado com suporte a disco local, S3 e GCS.
 
-## Requisitos
+O projeto está em **migração arquitetural ativa**. Aproximadamente 30% dos módulos seguem o padrão moderno completo (`repository → service → controller → rota magra + Zod`). Os demais são módulos legados com SQL inline na rota. Ambos convivem em produção. Leia a seção [Estado atual: projeto em transição](#estado-atual-projeto-em-transição) antes de mexer em qualquer arquivo.
 
-- Node.js (compatível com Express 4)
-- MySQL (schema via migrations em `migrations/`)
-- npm
+---
 
-## Instalação
+## Stack
+
+| Camada | Tecnologia |
+|---|---|
+| Runtime | Node.js (>=18) |
+| Framework | Express 4.x |
+| Banco de dados | MySQL 8 via `mysql2` raw pool |
+| Validação | Zod 4 |
+| Autenticação | JWT em cookie HttpOnly (`jsonwebtoken`) |
+| Upload | Multer 2 via `mediaService` centralizado |
+| Cache / Rate limit | Redis (`ioredis`) com fallback in-memory |
+| Segurança | Helmet 8, CORS com credentials, CSRF double-submit cookie |
+| Pagamentos | Mercado Pago SDK |
+| Email | Nodemailer |
+| Logging | Pino |
+| Testes | Jest + Supertest |
+| Migrations | Sequelize CLI (somente CLI — sem models ORM no código de aplicação) |
+| Documentação API | Swagger UI em `/docs` |
+
+---
+
+## Setup local
+
+### Pré-requisitos
+
+- Node.js >= 18
+- MySQL 8 rodando localmente
+- Redis (opcional — rate limiting degrada graciosamente sem ele)
+
+### 1. Instalar dependências
 
 ```bash
-git clone https://github.com/rickjs2005/kavita-backend.git
-cd kavita-backend
 npm install
-Variáveis de ambiente
-O backend valida variáveis obrigatórias no boot. Crie .env na raiz.
+```
 
-Obrigatórias (conforme config/env.js)
-JWT_SECRET
-EMAIL_USER
-EMAIL_PASS
-APP_URL
-BACKEND_URL
-DB_HOST
-DB_USER
-DB_PASSWORD
-DB_NAME
-Opcionais (recomendadas)
-JWT_EXPIRATION (default: 1h)
-DB_PORT (default: 3306)
-ALLOWED_ORIGINS (CSV; importante para cookies em frontend separado)
-PORT (default: 5000)
-NODE_ENV (development | production | test)
-DISABLE_NOTIFICATIONS=true (desliga worker de notificações)
-Observação: o .env.example do repositório está incompleto em relação às obrigatórias do config/env.js.
+### 2. Configurar variáveis de ambiente
 
-Banco de dados (migrations)
-Existe uma migration inicial em migrations/001_create_core_tables.sql.
+```bash
+cp .env.example .env
+# editar .env com os valores do ambiente local
+```
 
-bash
-Copiar
-# Exemplo (ajuste usuário/banco)
-mysql -u root -p kavita < migrations/001_create_core_tables.sql
-Atenção: certas rotas usam tabelas/colunas que não constam nessa migration inicial (ex.: usuarios.senha, usuarios.cpf, carrinhos, cupons, etc.). Veja o checklist de melhorias (ao final).
+### 3. Criar e migrar o banco de dados
 
-Como executar
-Desenvolvimento
-bash
-Copiar
-npm run dev
-# servidor em http://localhost:5000 (por padrão)
-# Swagger UI: http://localhost:5000/docs
-# Spec JSON:  http://localhost:5000/api-docs.json
-Produção
-bash
-Copiar
-npm start
-Autenticação por cookie (recomendado)
-Usuário — cookie auth_token
-Endpoint: POST /api/login
-Em sucesso, a resposta grava: Set-Cookie: auth_token=<JWT>; HttpOnly; Path=/; Max-Age=...
-Para requests autenticadas em browser, use fetch(..., { credentials: "include" })
-Em curl, use -c cookies.txt (salvar) e -b cookies.txt (reusar)
-Admin — cookie adminToken
-Endpoint: POST /api/admin/login
-Cookie: adminToken (JWT) com maxAge 2h
-Rota protegida exemplo: GET /api/admin/me
-Logout: POST /api/admin/logout (limpa cookie)
-Diagramas (Mermaid)
-Fluxo de autenticação
-mermaid
-Copiar
-flowchart LR
-  A[POST /api/login] -->|Set-Cookie auth_token| B[Client]
-  B -->|Cookie + credentials| C[Rotas protegidas]
-  C --> D[authenticateToken (precisa existir)]
-  D --> E[req.user]
+```bash
+# Crie o banco manualmente no MySQL antes de executar:
+# CREATE DATABASE kavita;
+# CREATE DATABASE kavita_test;
 
-  F[POST /api/admin/login] -->|Set-Cookie adminToken| G[Client]
-  G --> H[GET /api/admin/me]
-  H --> I[verifyAdmin]
-  I --> J[req.admin]
-Mapa de endpoints (alto nível)
-mermaid
-Copiar
-flowchart TB
-  api[/api] --> products[/products]
-  products --> p1[GET /]
-  products --> p2[GET /search]
+npm run db:migrate
+npm run db:test:reset   # reseta e migra o banco de teste
+```
 
-  api --> public[/public/produtos]
-  public --> pub1[GET /]
-  public --> pub2[POST /avaliacoes]
-  public --> pub3[GET /:id/avaliacoes]
+### 4. Rodar em desenvolvimento
 
-  api --> login[/login]
-  login --> l1[POST /]
+```bash
+npm run dev   # nodemon com hot-reload
+```
 
-  api --> users[/users]
-  users --> u1[POST /register]
-  users --> u2[POST /forgot-password]
-  users --> u3[POST /reset-password]
+O servidor sobe na porta `5000` por padrão (`PORT` pode ser sobrescrito via `.env`).
 
-  api --> cart[/cart]
-  cart --> c1[GET /]
-  cart --> c2[POST /items]
-  cart --> c3[PATCH /items]
-  cart --> c4[DELETE /items/:produtoId]
-  cart --> c5[DELETE /]
+Endpoints disponíveis após start:
+- `http://localhost:5000/api` — API principal
+- `http://localhost:5000/docs` — Swagger UI
+- `http://localhost:5000/health` — health check (DB + ambiente)
+- `http://localhost:5000/uploads/*` — arquivos estáticos
 
-  api --> checkout[/checkout]
-  checkout --> ch1[POST /preview-cupom]
-  checkout --> ch2[POST /]
+---
 
-  api --> admin[/admin]
-  admin --> a1[POST /login]
-  admin --> a2[GET /me]
-  admin --> a3[POST /logout]
-Exemplos de uso (curl)
-Listar produtos (público)
-bash
-Copiar
-curl "http://localhost:5000/api/products?page=1&limit=12&sort=id&order=desc"
-Busca avançada de produtos
-bash
-Copiar
-curl "http://localhost:5000/api/products/search?q=fertilizante&promo=true&sort=newest&page=1&limit=12"
-Busca pública simplificada por nome
-bash
-Copiar
-curl "http://localhost:5000/api/public/produtos?busca=fertilizante&limit=10"
-Login do usuário (salvando cookie)
-bash
-Copiar
-curl -i -c cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"email":"cliente@email.com","senha":"123456"}' \
-  "http://localhost:5000/api/login"
-Reusar cookie em rota protegida (ex.: carrinho)
-bash
-Copiar
-curl -b cookies.txt "http://localhost:5000/api/cart"
-Admin login + /me
-bash
-Copiar
-# login admin
-curl -i -c admin_cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@kavita.com","senha":"123456"}' \
-  "http://localhost:5000/api/admin/login"
+## Variáveis de ambiente
 
-# perfil admin
-curl -b admin_cookies.txt "http://localhost:5000/api/admin/me"
-Exemplos de uso (JavaScript fetch)
-Chamada pública
-js
-Copiar
-const res = await fetch("http://localhost:5000/api/products?page=1&limit=12");
-const data = await res.json();
-console.log(data);
-Login + chamadas autenticadas via cookie
-js
-Copiar
-// Login (cookie HttpOnly)
-await fetch("http://localhost:5000/api/login", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  credentials: "include",
-  body: JSON.stringify({ email: "cliente@email.com", senha: "123456" })
+O servidor **não sobe** se qualquer variável obrigatória estiver ausente. A validação ocorre em `config/env.js` no startup.
+
+### Obrigatórias
+
+```env
+JWT_SECRET=           # segredo de assinatura JWT (use string longa e aleatória)
+EMAIL_USER=           # usuário SMTP para envio de email
+EMAIL_PASS=           # senha SMTP
+APP_URL=              # URL base do frontend (ex: http://localhost:3000)
+BACKEND_URL=          # URL base do backend (ex: http://localhost:5000)
+DB_HOST=              # host do MySQL
+DB_USER=              # usuário do MySQL
+DB_PASSWORD=          # senha do MySQL
+DB_NAME=              # nome do banco de dados
+```
+
+### Opcionais com default
+
+```env
+PORT=5000                    # porta do servidor
+DB_PORT=3306                 # porta do MySQL
+JWT_EXPIRATION=7d            # expiração do JWT de usuário
+ALLOWED_ORIGINS=             # origens CORS adicionais (CSV, além de localhost)
+MEDIA_STORAGE_DRIVER=disk    # driver de storage: disk | s3 | gcs
+```
+
+### Opcionais de produção
+
+```env
+REDIS_URL=                   # Redis para rate limiting e cache de permissões
+MP_ACCESS_TOKEN=             # Mercado Pago access token
+MP_WEBHOOK_SECRET=           # segredo para validação de webhooks do Mercado Pago
+```
+
+> **Atenção:** o `JWT_EXPIRATION` deve estar alinhado com o `maxAge` do cookie de usuário (7 dias). Se não estiver, o cookie persiste mas o JWT expira, causando 401 até novo login.
+
+---
+
+## Estrutura de pastas
+
+```
+kavita-backend/
+│
+├── server.js                  # Ponto de entrada. Ordem de middlewares é deliberada — não reordenar.
+│
+├── routes/
+│   ├── index.js               # Agregador central. Todas as rotas são montadas aqui.
+│   ├── admin/                 # Rotas do painel admin (protegidas por verifyAdmin + validateCSRF)
+│   ├── public/                # Rotas públicas (sem autenticação)
+│   ├── auth/                  # Login, registro, perfil, endereços de usuário
+│   └── ecommerce/             # Carrinho, checkout, pedidos, pagamento, frete
+│
+├── controllers/               # Recebem req/res, delegam para service, retornam via lib/response.js
+│   └── drones/                # Sub-domínio drones (controladores separados por responsabilidade)
+│
+├── services/                  # Lógica de negócio. Não conhecem req/res.
+│   └── drones/                # Sub-domínio drones
+│
+├── repositories/              # Acesso a dados. Apenas queries MySQL2. Sem lógica de negócio.
+│
+├── middleware/
+│   ├── verifyAdmin.js         # Autenticação admin (cookie adminToken)
+│   ├── authenticateToken.js   # Autenticação de usuário (cookie auth_token)
+│   ├── csrfProtection.js      # CSRF double-submit cookie
+│   ├── validate.js            # Middleware de validação Zod (factory)
+│   ├── requirePermission.js   # RBAC granular
+│   ├── adaptiveRateLimiter.js # Rate limiting Redis-backed com fallback in-memory
+│   └── errorHandler.js        # Handler global de erros (último middleware em server.js)
+│
+├── schemas/                   # Schemas Zod para validação de entrada por domínio
+│
+├── config/
+│   ├── env.js                 # Validação de vars de ambiente no startup
+│   ├── pool.js                # MySQL2 connection pool
+│   ├── auth.js                # JWT sign/verify helpers
+│   ├── cors.js                # Configuração de CORS
+│   └── helmet.js              # Security headers (CSP, HSTS, etc.)
+│
+├── errors/
+│   └── AppError.js            # Classe de erro padronizada da aplicação
+│
+├── constants/
+│   └── ErrorCodes.js          # Códigos de erro canônicos (nunca use strings literais)
+│
+├── lib/
+│   ├── index.js               # Barrel export: { logger, redis, response }
+│   ├── response.js            # Helpers de resposta HTTP (ok, created, paginated, etc.)
+│   ├── redis.js               # Cliente Redis
+│   └── logger.js              # Logger Pino
+│
+├── teste/                     # Testes (Jest). Atenção: pasta em português por convenção do projeto.
+│   ├── setup/                 # Configuração de ambiente de teste
+│   ├── integration/           # Testes de integração (banco real)
+│   ├── unit/                  # Testes unitários (dependências mockadas)
+│   └── mocks/                 # Mocks reutilizáveis (pool, etc.)
+│
+├── migrations/                # Migrations Sequelize CLI
+├── docs/                      # Swagger spec
+└── scripts/                   # Utilitários de banco e schema
+```
+
+---
+
+## Arquitetura
+
+### Fluxo oficial (padrão moderno)
+
+```
+Request HTTP
+    ↓
+server.js (middlewares globais: CORS, Helmet, cookie-parser, rate limiter)
+    ↓
+routes/index.js (monta rotas + aplica verifyAdmin/validateCSRF conforme contexto)
+    ↓
+routes/admin/{domínio}.js ou routes/public/{domínio}.js
+  - aplica middleware de validação Zod: validate(schema)
+  - chama o controller
+    ↓
+controllers/{domínio}Controller.js
+  - extrai dados de req (body, params, query, files)
+  - chama o service
+  - retorna com response.ok() / response.created() / response.paginated()
+  - erros: next(new AppError(...))
+    ↓
+services/{domínio}Service.js
+  - regras de negócio
+  - orquestra repositories e outros serviços
+  - lança AppError para erros esperados
+    ↓
+repositories/{domínio}Repository.js
+  - queries MySQL2 raw pool
+  - sem lógica de negócio
+  - retorna dados brutos
+    ↓
+middleware/errorHandler.js (captura qualquer AppError ou erro não tratado)
+    ↓
+Response HTTP { ok: true/false, data?, code?, message?, meta? }
+```
+
+### Roteamento centralizado
+
+**Todas as rotas são montadas em `routes/index.js`.** Nunca adicione `app.use()` diretamente em `server.js` para novas rotas.
+
+O `loadRoute()` em `routes/index.js` envolve cada `require()` em try/catch:
+- Em produção: falha de carregamento de módulo lança erro e impede o servidor de subir.
+- Em desenvolvimento/CI: loga aviso e continua (permite subir parcialmente para debug).
+
+### Ordem de middlewares em server.js
+
+A ordem em `server.js` é deliberada e não deve ser alterada. O ponto crítico:
+
+```
+CORS /uploads (sem credentials)
+→ Headers customizados /uploads (Cache-Control, ACAO: *)
+→ CORS /api (com credentials)
+→ Helmet (global) ← define Cross-Origin-Resource-Policy: same-origin
+→ Middleware /uploads ← sobrescreve CORP para cross-origin (deve vir DEPOIS do Helmet)
+→ express.json / cookieParser
+→ express.static /uploads
+→ Rate limiter
+→ /api routes
+→ errorHandler (último)
+```
+
+O Helmet 8 define `Cross-Origin-Resource-Policy: same-origin` por padrão. O override para `cross-origin` em `/uploads` precisa vir depois, senão assets de mídia não carregam em clientes cross-origin.
+
+---
+
+## Estado atual: projeto em transição
+
+**Este projeto está em migração arquitetural ativa.** Dois padrões coexistem no código:
+
+**Padrão moderno** — arquitetura em camadas completa:
+- Rota magra (sem SQL, sem validação inline)
+- Schema Zod em `schemas/`
+- Controller que usa `lib/response.js` e `AppError`
+- Service com lógica de negócio
+- Repository com queries MySQL2
+
+**Padrão legado** — tudo na rota:
+- SQL direto no arquivo de rota
+- Validação com `if (!campo)`
+- `res.json()` cru sem helper
+- Sem service, sem repository separado
+
+**Regra operacional:** Ao tocar qualquer arquivo legado (bug fix, nova feature), migre-o para o padrão moderno. Nunca amplie o padrão legado. O padrão canônico a seguir está descrito em [O que é padrão canônico hoje](#o-que-é-padrão-canônico-hoje).
+
+---
+
+## Módulos modernos e legados
+
+### Modernos (padrão completo)
+
+| Domínio | Rota | Controller | Service | Repository |
+|---|---|---|---|---|
+| Auth admin | `routes/admin/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
+| Drones (admin) | `routes/admin/adminDrones.js` | `controllers/drones/` | `services/drones/` | `repositories/dronesRepository.js` |
+| Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
+| News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js` |
+| Site Hero | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
+| Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/produtosRepository.js` |
+| Cart | `routes/ecommerce/cart.js` | — | `services/cartService.js` | `repositories/cartRepository.js` |
+| Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
+| Pedidos | `routes/ecommerce/pedidos.js` | — | `services/orderService.js` | `repositories/orderRepository.js` |
+| Payment | `routes/ecommerce/payment.js` | — | `services/paymentService.js` | `repositories/paymentRepository.js` |
+| Shipping | `routes/ecommerce/shipping.js` | — | `services/shippingQuoteService.js` | — |
+| Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
+
+### Legados (migração pendente)
+
+Estes arquivos usam SQL inline na rota, validação manual e `res.json()` cru. **Não use estes arquivos como referência de implementação.**
+
+| Arquivo | Tamanho | Problema |
+|---|---|---|
+| `routes/admin/adminConfig.js` | ~647 linhas | SQL inline, sem Zod |
+| `routes/admin/adminCarts.js` | ~671 linhas | SQL + lógica inline |
+| `routes/admin/adminRoles.js` | ~472 linhas | SQL inline |
+| `routes/admin/adminComunicacao.js` | ~446 linhas | SQL inline |
+| `routes/admin/adminServicos.js` | ~405 linhas | SQL inline |
+| `routes/admin/adminMarketingPromocoes.js` | ~378 linhas | SQL inline |
+| `routes/admin/adminPedidos.js` | ~309 linhas | SQL inline |
+| `routes/admin/adminCupons.js` | ~308 linhas | SQL inline |
+| `routes/admin/adminShippingZones.js` | ~306 linhas | SQL inline |
+| `routes/admin/adminStats.js` | ~297 linhas | SQL inline |
+| `routes/public/publicServicos.js` | ~651 linhas | SQL inline |
+| `routes/public/publicProdutos.js` | ~324 linhas | SQL inline |
+| `routes/auth/userAddresses.js` | ~559 linhas | SQL inline |
+| `routes/auth/userProfile.js` | ~272 linhas | SQL inline |
+| `routes/auth/authRoutes.js` | ~103 linhas | pool direto |
+
+---
+
+## Convenções de nomenclatura
+
+| Camada | Padrão | Exemplos |
+|---|---|---|
+| Rotas admin | `admin{Domínio}.js` | `adminDrones.js`, `adminProdutos.js` |
+| Rotas públicas | `public{Domínio}.js` | `publicDrones.js`, `publicProdutos.js` |
+| Controllers | `{domínio}Controller.js` ou subdir `{domínio}/` | `checkoutController.js`, `drones/galleryController.js` |
+| Services | `{domínio}Service.js` ou subdir `{domínio}/` | `cartService.js`, `drones/pageService.js` |
+| Repositories | `{domínio}Repository.js` | `cartRepository.js`, `dronesRepository.js` |
+
+**Idioma:** nomes de negócio existentes usam português (`pedidos`, `produtos`, `servicos`). Novos módulos de infraestrutura podem usar inglês (`auth`, `media`, `cache`).
+
+**Middlewares de autenticação:**
+- `authenticateToken` — padrão para rotas de usuário. Sempre use este.
+- `verifyAdmin` — rotas admin.
+- `verifyUser` — **removido**. Era alias de `authenticateToken`.
+- `requireRole` — **removido**. Era código morto.
+
+---
+
+## Contrato de resposta da API
+
+Toda resposta da API segue este formato. Nunca use `res.json()` cru em código novo.
+
+### Sucesso
+
+```json
+{ "ok": true, "data": { ... } }
+{ "ok": true, "data": { ... }, "message": "Criado com sucesso." }
+{ "ok": true, "data": [...], "meta": { "total": 40, "page": 1, "limit": 10, "pages": 4 } }
+```
+
+HTTP 204 (no body) para DELETE e PATCH/PUT sem retorno relevante.
+
+### Erro
+
+```json
+{ "ok": false, "code": "NOT_FOUND", "message": "Produto não encontrado." }
+{ "ok": false, "code": "VALIDATION_ERROR", "message": "Dados inválidos.", "details": [{ "field": "price", "message": "Obrigatório." }] }
+```
+
+### Helpers em `lib/response.js`
+
+```js
+const { response } = require("../lib");
+
+response.ok(res, data);                             // 200
+response.created(res, data);                        // 201
+response.noContent(res);                            // 204
+response.paginated(res, { items, total, page, limit }); // 200 + meta
+response.badRequest(res, message, details);         // 400 (preferir AppError)
+```
+
+> **Aliases deprecated:** `sendSuccess`, `sendCreated`, `sendPaginated` ainda existem por compatibilidade. Não use em código novo.
+
+### Mapeamento HTTP → código de erro
+
+| HTTP | `ERROR_CODES` | Quando usar |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Schema Zod falhou ou parâmetro inválido |
+| 401 | `AUTH_ERROR` | Credenciais inválidas, token inválido |
+| 401 | `UNAUTHORIZED` | Sem token / sem autenticação |
+| 403 | `FORBIDDEN` | Autenticado mas sem permissão |
+| 404 | `NOT_FOUND` | Recurso não encontrado |
+| 409 | `CONFLICT` | Recurso já existe ou estado incompatível |
+| 429 | `RATE_LIMIT` | Rate limit excedido |
+| 500 | `SERVER_ERROR` | Erro interno não previsto |
+
+---
+
+## Tratamento de erros
+
+### AppError
+
+Use `AppError` para qualquer erro esperado. O `errorHandler` global processa tudo.
+
+```js
+const AppError = require("../errors/AppError");
+const { ERROR_CODES } = require("../constants/ErrorCodes");
+
+// Em controllers e services:
+throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+throw new AppError("Dados inválidos.", ERROR_CODES.VALIDATION_ERROR, 400, { fields });
+
+// Em rotas e controllers com next:
+return next(new AppError("Sem permissão.", ERROR_CODES.FORBIDDEN, 403));
+```
+
+**Assinatura:** `new AppError(message, code, status, details?)`
+
+Nunca use strings literais para o código (`"NOT_FOUND"` etc.) — sempre use as constantes de `constants/ErrorCodes.js`.
+
+### errorHandler global
+
+Montado como último middleware em `server.js`. Processa:
+- Instâncias de `AppError` → usa `status` e `code` da instância
+- Erros de pool MySQL (`POOL_ENQUEUELIMIT`) → 503
+- Qualquer outro erro → 500 com mensagem genérica em produção
+
+Erros 500+ nunca expõem stack trace em produção.
+
+---
+
+## Autenticação
+
+O sistema tem dois contextos de autenticação completamente independentes.
+
+| Contexto | Cookie | Validade JWT | Middleware |
+|---|---|---|---|
+| Admin | `adminToken` (HttpOnly) | 2h | `verifyAdmin` |
+| Usuário | `auth_token` (HttpOnly) | 7d (ver nota abaixo) | `authenticateToken` |
+
+### Fluxo admin
+
+1. `POST /api/admin/login` → valida credenciais → assina JWT → define cookie `adminToken`
+2. Rotas admin aplicam `verifyAdmin` + `validateCSRF`
+3. `verifyAdmin` valida JWT, busca admin no banco, verifica `tokenVersion` (suporte a revogação de sessão), carrega permissões granulares (cache Redis 60s)
+4. `req.admin` fica disponível: `{ id, email, nome, role, role_id, permissions }`
+5. `POST /api/admin/logout` → incrementa `tokenVersion` no banco (invalida todos os tokens ativos) → limpa cookie
+
+### Fluxo usuário
+
+1. `POST /api/login` → valida credenciais → assina JWT → define cookie `auth_token`
+2. Rotas protegidas de usuário aplicam `authenticateToken` + `validateCSRF`
+3. `authenticateToken` valida JWT, busca usuário no banco, verifica `tokenVersion`
+4. `req.user` fica disponível: `{ id, nome, email, role }`
+
+### CSRF
+
+Double-submit cookie:
+- Frontend obtém token em `GET /api/csrf-token`
+- Cookie `csrf_token` é definido (`httpOnly: false` — legível por JS)
+- Toda mutação (POST/PUT/PATCH/DELETE) deve enviar o token no header `x-csrf-token`
+- `validateCSRF` é no-op para GET/HEAD/OPTIONS
+
+### Nota sobre JWT_EXPIRATION
+
+O `.env` padrão define `JWT_EXPIRATION=7d` para usuários. Se você alterar para um valor menor sem ajustar o `maxAge` do cookie (também 7d em `routes/auth/login.js`), o cookie persiste mas o JWT expira — causando 401 intermitente. Mantenha os dois alinhados.
+
+---
+
+## Uploads e mídia
+
+Todo upload de arquivo passa obrigatoriamente por `services/mediaService.js`. Não use `fs.writeFile` direto nem multer sem `persistMedia`.
+
+### Fluxo padrão
+
+```js
+const mediaService = require("../services/mediaService");
+
+// 1. Multer como middleware na rota
+router.post("/", mediaService.upload.array("imagens", 5), controller.create);
+
+// 2. No controller/service, persistir após validação
+const saved = await mediaService.persistMedia(req.files, { folder: "produtos" });
+// saved = [{ path: "/uploads/produtos/arquivo.webp", key: "/abs/path/arquivo.webp" }]
+
+// 3. Armazenar saved[n].path no banco
+// 4. Em caso de erro antes de salvar no banco:
+await mediaService.enqueueOrphanCleanup(saved);
+
+// 5. Em DELETE:
+await mediaService.removeMedia(targets).catch(logger.error);
+```
+
+### Pastas em uso
+
+`products/`, `colaboradores/`, `services/`, `drones/`, `hero/`, `news/`, `logos/`
+
+### Storage drivers
+
+Configurado via `MEDIA_STORAGE_DRIVER`:
+- `disk` (padrão) — arquivos em `uploads/` local
+- `s3` — AWS S3
+- `gcs` — Google Cloud Storage
+
+### Paths
+
+| O que é | Formato |
+|---|---|
+| Salvo no banco | `/uploads/{folder}/{filename}` |
+| Arquivo físico (disk) | `{cwd}/uploads/{folder}/{filename}` |
+| URL pública | `{BACKEND_URL}/uploads/{folder}/{filename}` |
+
+Antes de corrigir qualquer bug relacionado a imagem, mapeie esses três pontos. A maioria dos bugs de imagem é desalinhamento entre eles.
+
+---
+
+## Testes
+
+```bash
+npm test                    # todos os testes (unit + integration), sequencial
+npm run test:unit           # apenas teste/unit/
+npm run test:int            # apenas teste/integration/
+npm run test:cov            # todos com relatório de cobertura
+
+# Arquivo único:
+npx cross-env NODE_ENV=test node ./node_modules/jest/bin/jest.js --runInBand teste/integration/adminDrones.int.test.js
+```
+
+### Estrutura
+
+```
+teste/
+├── setup/
+│   ├── env.setup.js        # define vars mínimas para NODE_ENV=test
+│   └── jest.setup.js       # hooks e config Jest
+├── integration/            # testes de integração (bank real de teste)
+├── unit/                   # testes unitários (dependências mockadas)
+├── mocks/
+│   └── pool.mock.js        # makeMockPool / makeMockConn reutilizáveis
+└── testUtils.js            # makeTestApp, helpers de setup
+```
+
+> **Atenção:** a pasta de testes se chama `teste/` (português), não `test/`. Isso é uma convenção do projeto — não renomeie sem atualizar `jest.config` em `package.json`.
+
+### Antes de rodar testes de integração pela primeira vez
+
+```bash
+npm run db:test:reset
+```
+
+Isso limpa e re-migra o banco `kavita_test`. Necessário somente na primeira vez ou após mudanças de schema.
+
+### Padrão de teste de integração
+
+Os testes de integração usam `jest.resetModules()` + mocks injetados para isolar dependências de banco e middleware. Ver `teste/testUtils.js` para os helpers `makeTestApp()` e `makeMockConn()`.
+
+---
+
+## Migrations e banco de dados
+
+```bash
+npm run db:migrate           # aplica migrations pendentes (ambiente development)
+npm run db:status            # mostra status de cada migration
+npm run db:undo              # reverte última migration
+npm run db:test:reset        # limpa + re-migra banco de teste
+npm run db:test:migrate      # aplica migrations pendentes no banco de teste
+```
+
+### Por que Sequelize está no projeto se não há models?
+
+O `sequelize` e `sequelize-cli` são dependências exclusivamente para gerenciar migrations via CLI. O código de aplicação (rotas, services, repositories) usa apenas `mysql2` raw pool (`config/pool.js`). Não há models Sequelize no código de aplicação e não deve haver — o projeto usa queries SQL diretas por design.
+
+O `.sequelizerc` na raiz configura os caminhos usados pelo CLI.
+
+---
+
+## Como contribuir sem ampliar dívida técnica
+
+### Regras para qualquer arquivo novo ou modificado
+
+1. **Respostas de sucesso** → sempre `lib/response.js`. Nunca `res.json({ ... })` cru.
+2. **Erros** → sempre `next(new AppError(message, ERROR_CODES.XXX, status))`. Nunca `res.status(4xx).json(...)` inline.
+3. **Validação de entrada** → schema Zod em `schemas/` + middleware `validate(schema)` na rota. Nunca `if (!campo)` inline.
+4. **Acesso a banco** → repository separado. Nunca `pool.query()` direto no arquivo de rota ou controller.
+5. **Códigos de erro** → constantes de `constants/ErrorCodes.js`. Nunca strings literais.
+
+### Ao tocar um módulo legado
+
+- Migre o arquivo inteiro para o padrão moderno na mesma PR se possível.
+- Se a migração for grande demais para a PR atual, abra uma issue com o arquivo e tamanho.
+- Nunca corrija um bug num módulo legado e saia sem ao menos criar um schema Zod para a rota afetada.
+
+### Referência de implementação
+
+Use `routes/admin/adminDrones.js` + `controllers/drones/` + `services/drones/` + `repositories/dronesRepository.js` como referência de como o padrão moderno deve ser implementado.
+
+**Não use** nenhum dos arquivos da tabela de módulos legados como referência.
+
+---
+
+## O que é padrão canônico hoje
+
+### Rota (magra)
+
+```js
+const express = require("express");
+const router = express.Router();
+const { validate } = require("../../middleware/validate");
+const { CriarProdutoSchema } = require("../../schemas/requests");
+const controller = require("../../controllers/produtosController");
+const mediaService = require("../../services/mediaService");
+
+router.get("/", controller.list);
+router.post("/", mediaService.upload.single("imagem"), validate(CriarProdutoSchema), controller.create);
+
+module.exports = router;
+```
+
+### Controller
+
+```js
+const AppError = require("../errors/AppError");
+const { ERROR_CODES } = require("../constants/ErrorCodes");
+const { response } = require("../lib");
+const service = require("../services/produtosService");
+
+exports.list = async (req, res, next) => {
+  try {
+    const data = await service.listar(req.query);
+    return response.ok(res, data);
+  } catch (err) {
+    return next(err instanceof AppError ? err : new AppError(err.message, ERROR_CODES.SERVER_ERROR, 500));
+  }
+};
+
+exports.create = async (req, res, next) => {
+  try {
+    const created = await service.criar(req.body, req.file);
+    return response.created(res, created);
+  } catch (err) {
+    return next(err instanceof AppError ? err : new AppError(err.message, ERROR_CODES.SERVER_ERROR, 500));
+  }
+};
+```
+
+### Service
+
+```js
+const AppError = require("../errors/AppError");
+const { ERROR_CODES } = require("../constants/ErrorCodes");
+const repository = require("../repositories/produtosRepository");
+
+async function listar(query) {
+  return repository.findAll(query);
+}
+
+async function criar(data, file) {
+  const existing = await repository.findByNome(data.nome);
+  if (existing) throw new AppError("Produto já existe.", ERROR_CODES.CONFLICT, 409);
+  return repository.create(data);
+}
+
+module.exports = { listar, criar };
+```
+
+### Repository
+
+```js
+const pool = require("../config/pool");
+
+async function findAll({ page = 1, limit = 20 } = {}) {
+  const offset = (page - 1) * limit;
+  const [rows] = await pool.query("SELECT * FROM produtos LIMIT ? OFFSET ?", [limit, offset]);
+  const [[{ total }]] = await pool.query("SELECT COUNT(*) AS total FROM produtos");
+  return { items: rows, total };
+}
+
+async function findByNome(nome) {
+  const [[row]] = await pool.query("SELECT id FROM produtos WHERE nome = ? LIMIT 1", [nome]);
+  return row ?? null;
+}
+
+async function create(data) {
+  const [result] = await pool.query("INSERT INTO produtos SET ?", [data]);
+  return { id: result.insertId, ...data };
+}
+
+module.exports = { findAll, findByNome, create };
+```
+
+### Schema Zod
+
+```js
+const { z } = require("zod");
+
+const CriarProdutoSchema = z.object({
+  nome: z.string().min(1),
+  preco: z.coerce.number().positive(),
+  categoria_id: z.coerce.number().int().positive(),
 });
 
-// Carrinho (usa o cookie automaticamente)
-const cart = await fetch("http://localhost:5000/api/cart", {
-  credentials: "include"
-}).then(r => r.json());
-
-console.log(cart);
-Testes
-Scripts disponíveis:
-
-npm test
-npm run test:watch
-npm run test:cov
-npm run test:ci
-Observação: o config/env.js exige variáveis além de JWT_SECRET; em ambiente de testes, garanta defaults no setup.
-
-Deploy (guia rápido)
-Defina NODE_ENV=production
-Configure ALLOWED_ORIGINS com o(s) domínio(s) do frontend
-Garanta HTTPS se for usar cookies cross-site (relevante para secure e sameSite)
-Rode npm ci && npm start com processo gerenciável (ex.: systemd/PM2) e reverse proxy
-Licença
-Licença declarada no package.json: ISC.
-
-yaml
-Copiar
-
-```yaml
-# openapi.yaml
-
-openapi: 3.0.3
-info:
-  title: Kavita Backend API
-  version: "1.0.0"
-  description: >
-    Especificação OpenAPI gerada a partir das rotas existentes no branch main do repositório.
-    Observação: há referências a módulos ausentes no tree publicado; esta spec cobre apenas contratos
-    cujos handlers estão visíveis nos arquivos de rotas recuperados.
-  license:
-    name: ISC
-
-servers:
-  - url: http://localhost:5000
-    description: Dev local
-
-tags:
-  - name: Infra
-  - name: Produtos
-  - name: Public
-  - name: Usuários
-  - name: Carrinho
-  - name: Checkout
-  - name: Admin
-
-components:
-  securitySchemes:
-    cookieAuth:
-      type: apiKey
-      in: cookie
-      name: auth_token
-      description: JWT do usuário em cookie HttpOnly (definido no login).
-    adminCookieAuth:
-      type: apiKey
-      in: cookie
-      name: adminToken
-      description: JWT do admin em cookie HttpOnly (definido no login admin).
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Authorization: Bearer <token> (fallback aceito por verifyAdmin).
-
-  schemas:
-    ErrorResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Erro interno no servidor.
-        code:
-          type: string
-          nullable: true
-          example: SERVER_ERROR
-      required: [message]
-
-    UserSafe:
-      type: object
-      properties:
-        id: { type: integer, example: 10 }
-        nome: { type: string, example: "João da Silva" }
-        email: { type: string, format: email, example: "joao@email.com" }
-      required: [id, nome, email]
-
-    LoginRequest:
-      type: object
-      required: [email]
-      properties:
-        email:
-          type: string
-          format: email
-          example: "cliente@email.com"
-        senha:
-          type: string
-          format: password
-          example: "123456"
-        password:
-          type: string
-          format: password
-          description: Alias aceito pela rota (será mapeado internamente para "senha").
-          example: "123456"
-
-    LoginResponse:
-      type: object
-      properties:
-        message: { type: string, example: "Login bem-sucedido!" }
-        user:
-          $ref: "#/components/schemas/UserSafe"
-      required: [message, user]
-
-    RegisterRequest:
-      type: object
-      required: [nome, email, senha, cpf]
-      properties:
-        nome: { type: string, example: "João da Silva" }
-        email: { type: string, format: email, example: "joao@email.com" }
-        senha: { type: string, format: password, example: "123456" }
-        cpf: { type: string, example: "111.111.111-11" }
-
-    RegisterResponse:
-      type: object
-      properties:
-        mensagem:
-          type: string
-          example: "Conta criada com sucesso! Faça login para continuar."
-
-    ForgotPasswordRequest:
-      type: object
-      required: [email]
-      properties:
-        email: { type: string, format: email, example: "usuario@email.com" }
-
-    ForgotPasswordResponse:
-      type: object
-      properties:
-        mensagem:
-          type: string
-          example: "Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha."
-
-    ResetPasswordRequest:
-      type: object
-      required: [token, novaSenha]
-      properties:
-        token: { type: string, example: "abc123" }
-        novaSenha: { type: string, format: password, example: "novaSenha#2026" }
-
-    ResetPasswordResponse:
-      type: object
-      properties:
-        mensagem:
-          type: string
-          example: "Senha redefinida com sucesso!"
-
-    Product:
-      type: object
-      properties:
-        id: { type: integer, example: 1 }
-        name: { type: string, example: "Produto X" }
-        description: { type: string, nullable: true }
-        price: { type: number, format: float, example: 19.9 }
-        quantity: { type: integer, example: 10 }
-        category_id: { type: integer, nullable: true, example: 3 }
-        image: { type: string, nullable: true }
-        images:
-          type: array
-          items: { type: string }
-      required: [id, name]
-
-    ProductsListResponse:
-      type: object
-      properties:
-        data:
-          type: array
-          items: { $ref: "#/components/schemas/Product" }
-        page: { type: integer, example: 1 }
-        limit: { type: integer, example: 12 }
-        total: { type: integer, example: 120 }
-        totalPages: { type: integer, example: 10 }
-        sort: { type: string, example: "id" }
-        order: { type: string, example: "desc" }
-      required: [data, page, limit, total, totalPages]
-
-    ProductSearchItem:
-      type: object
-      properties:
-        id: { type: integer, example: 1 }
-        name: { type: string }
-        description: { type: string, nullable: true }
-        category_id: { type: integer, nullable: true }
-        original_price: { type: number, format: float }
-        final_price: { type: number, format: float }
-        discount_percent: { type: number, format: float }
-        is_promo: { type: boolean }
-        created_at: { type: string, format: date-time }
-        sold_count: { type: integer }
-        quantity: { type: integer }
-        images:
-          type: array
-          items: { type: string }
-
-    ProductSearchResponse:
-      type: object
-      properties:
-        products:
-          type: array
-          items: { $ref: "#/components/schemas/ProductSearchItem" }
-        pagination:
-          type: object
-          properties:
-            page: { type: integer, example: 1 }
-            limit: { type: integer, example: 12 }
-            total: { type: integer, example: 200 }
-            totalPages: { type: integer, example: 17 }
-
-    PublicProductSummary:
-      type: object
-      properties:
-        id: { type: integer, example: 1 }
-        name: { type: string, example: "Fertilizante X" }
-        price: { type: number, format: float, example: 99.9 }
-        image: { type: string, nullable: true }
-        rating_avg: { type: number, format: float, example: 4.6 }
-        rating_count: { type: integer, example: 20 }
-        shipping_free: { type: boolean, example: true }
-        shipping_free_from_qty: { type: integer, nullable: true, example: 3 }
-
-    CreateProdutoAvaliacaoRequest:
-      type: object
-      required: [produto_id, nota]
-      properties:
-        produto_id: { type: integer, example: 123 }
-        nota: { type: integer, minimum: 1, maximum: 5, example: 5 }
-        comentario: { type: string, nullable: true, example: "Produto excelente!" }
-
-    CreateProdutoAvaliacaoResponse:
-      type: object
-      properties:
-        message: { type: string, example: "Avaliação registrada com sucesso." }
-
-    ProdutoAvaliacao:
-      type: object
-      properties:
-        nota: { type: integer, example: 5 }
-        comentario: { type: string, nullable: true }
-        created_at: { type: string, format: date-time }
-        usuario_nome: { type: string, nullable: true }
-
-    CartItem:
-      type: object
-      properties:
-        item_id: { type: integer, example: 321 }
-        produto_id: { type: integer, example: 105 }
-        nome: { type: string, example: "Ração Premium" }
-        image: { type: string, nullable: true }
-        valor_unitario: { type: number, example: 79.9 }
-        quantidade: { type: integer, example: 2 }
-        stock: { type: integer, example: 7 }
-
-    CartGetResponse:
-      type: object
-      properties:
-        carrinho_id: { type: integer, nullable: true, example: 12 }
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/CartItem" }
-
-    CartMutationResponse:
-      type: object
-      properties:
-        success: { type: boolean, example: true }
-        message: { type: string, example: "Produto adicionado ao carrinho" }
-        produto_id: { type: integer, example: 105 }
-        quantidade: { type: integer, example: 3 }
-        stock: { type: integer, example: 7 }
-
-    StockLimitError:
-      type: object
-      properties:
-        code: { type: string, example: "STOCK_LIMIT" }
-        message: { type: string, example: "Limite de estoque atingido." }
-        max: { type: integer, example: 7 }
-        current: { type: integer, nullable: true, example: 7 }
-        requested: { type: integer, example: 8 }
-
-    PreviewCupomRequest:
-      type: object
-      required: [codigo, total]
-      properties:
-        codigo: { type: string, example: "PROMO10" }
-        total: { type: number, format: float, example: 189.9 }
-
-    PreviewCupomResponse:
-      type: object
-      properties:
-        success: { type: boolean, example: true }
-        message: { type: string, example: "Cupom aplicado com sucesso." }
-        desconto: { type: number, example: 18.99 }
-        total_original: { type: number, example: 189.9 }
-        total_com_desconto: { type: number, example: 170.91 }
-        cupom:
-          type: object
-          properties:
-            id: { type: integer, example: 1 }
-            codigo: { type: string, example: "PROMO10" }
-            tipo: { type: string, example: "percentual" }
-            valor: { type: number, example: 10 }
-
-    CheckoutProduto:
-      type: object
-      required: [id, quantidade]
-      properties:
-        id: { type: integer, example: 1 }
-        quantidade: { type: integer, example: 2 }
-
-    Endereco:
-      type: object
-      properties:
-        cep: { type: string, example: "36940000" }
-        rua: { type: string, nullable: true, example: "Rua das Flores" }
-        endereco: { type: string, nullable: true, description: "Alias aceito para rua." }
-        logradouro: { type: string, nullable: true, description: "Alias aceito para rua." }
-        numero: { type: string, nullable: true, example: "288" }
-        sem_numero: { type: boolean, nullable: true, example: false }
-        bairro: { type: string, nullable: true, example: "Centro" }
-        cidade: { type: string, example: "Manhuaçu" }
-        estado: { type: string, example: "MG" }
-        complemento: { type: string, nullable: true }
-        ponto_referencia: { type: string, nullable: true }
-        observacoes_acesso: { type: string, nullable: true }
-        tipo_localidade:
-          type: string
-          enum: [URBANA, RURAL]
-          example: URBANA
-        comunidade: { type: string, nullable: true }
-
-    CheckoutBody:
-      type: object
-      required: [formaPagamento, produtos]
-      properties:
-        entrega_tipo:
-          type: string
-          enum: [ENTREGA, RETIRADA]
-          example: ENTREGA
-        formaPagamento:
-          type: string
-          example: "Cartão (Mercado Pago)"
-        endereco:
-          $ref: "#/components/schemas/Endereco"
-        produtos:
-          type: array
-          items: { $ref: "#/components/schemas/CheckoutProduto" }
-        total:
-          type: number
-          nullable: true
-        cupom_codigo:
-          type: string
-          nullable: true
-
-    CheckoutResponse:
-      type: object
-      properties:
-        success: { type: boolean, example: true }
-        message: { type: string, example: "Pedido criado com sucesso" }
-        pedido_id: { type: integer, example: 123 }
-        total: { type: number, example: 150.5 }
-        nota_fiscal_aviso:
-          type: string
-          example: "Nota fiscal será entregue junto com o produto."
-
-    AdminLoginRequest:
-      type: object
-      required: [email, senha]
-      properties:
-        email: { type: string, format: email, example: "admin@kavita.com" }
-        senha: { type: string, format: password, example: "123456" }
-
-    AdminLoginResponse:
-      type: object
-      properties:
-        message: { type: string, example: "Login realizado com sucesso." }
-        token:
-          type: string
-          description: "JWT também enviado em cookie HttpOnly adminToken (campo informativo)."
-        admin:
-          type: object
-          properties:
-            id: { type: integer, example: 1 }
-            email: { type: string, example: "admin@kavita.com" }
-            nome: { type: string, example: "Admin Master" }
-            role: { type: string, example: "master" }
-            role_id: { type: integer, nullable: true, example: 1 }
-            permissions:
-              type: array
-              items: { type: string }
-              example: ["admin.logs.view", "admin.config.edit"]
-
-    AdminMeResponse:
-      type: object
-      properties:
-        id: { type: integer, example: 1 }
-        nome: { type: string, example: "Admin Master" }
-        email: { type: string, example: "admin@kavita.com" }
-        role: { type: string, example: "master" }
-        role_id: { type: integer, nullable: true, example: 1 }
-        permissions:
-          type: array
-          items: { type: string }
-
-    AdminLogoutResponse:
-      type: object
-      properties:
-        message: { type: string, example: "Logout realizado com sucesso." }
-
-paths:
-  /api-docs.json:
-    get:
-      tags: [Infra]
-      summary: Retorna a especificação gerada pelo swagger-jsdoc (JSON)
-      responses:
-        "200":
-          description: OpenAPI JSON
-          content:
-            application/json: {}
-
-  /docs:
-    get:
-      tags: [Infra]
-      summary: Swagger UI (HTML)
-      responses:
-        "200":
-          description: Página HTML do Swagger UI
-
-  /api/products:
-    get:
-      tags: [Produtos]
-      summary: Lista produtos com paginação e filtro opcional por categoria e busca
-      parameters:
-        - in: query
-          name: category
-          schema: { type: string, example: "all" }
-          description: ID numérico ou slug/nome (usa tabela categories). Default "all".
-        - in: query
-          name: search
-          schema: { type: string, example: "fertilizante" }
-        - in: query
-          name: page
-          schema: { type: integer, default: 1, minimum: 1 }
-        - in: query
-          name: limit
-          schema: { type: integer, default: 12, minimum: 1, maximum: 100 }
-        - in: query
-          name: sort
-          schema:
-            type: string
-            enum: [id, name, price, quantity]
-            default: id
-        - in: query
-          name: order
-          schema:
-            type: string
-            enum: [asc, desc]
-            default: desc
-      responses:
-        "200":
-          description: Lista paginada
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ProductsListResponse" }
-        "404":
-          description: Categoria não encontrada
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/products/search:
-    get:
-      tags: [Produtos]
-      summary: Busca avançada com filtros por categoria, preço e promoções
-      parameters:
-        - in: query
-          name: q
-          schema: { type: string }
-        - in: query
-          name: categories
-          schema: { type: string, example: "1,2,3" }
-        - in: query
-          name: category_id
-          schema: { type: integer }
-        - in: query
-          name: category
-          schema: { type: integer }
-        - in: query
-          name: minPrice
-          schema: { type: number }
-        - in: query
-          name: maxPrice
-          schema: { type: number }
-        - in: query
-          name: promo
-          schema: { type: boolean, example: true }
-        - in: query
-          name: sort
-          schema:
-            type: string
-            enum: [newest, price_asc, price_desc, discount, best_sellers]
-            default: newest
-        - in: query
-          name: page
-          schema: { type: integer, default: 1, minimum: 1 }
-        - in: query
-          name: limit
-          schema: { type: integer, default: 12, minimum: 1, maximum: 60 }
-      responses:
-        "200":
-          description: Lista paginada
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ProductSearchResponse" }
-        "400":
-          description: Parâmetros inválidos
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/public/produtos:
-    get:
-      tags: [Public]
-      summary: Busca rápida por nome do produto
-      parameters:
-        - in: query
-          name: busca
-          required: true
-          schema: { type: string, example: "fertilizante" }
-        - in: query
-          name: limit
-          required: false
-          schema: { type: integer, default: 10, minimum: 1, maximum: 50 }
-      responses:
-        "200":
-          description: Lista (até limit)
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/PublicProductSummary" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/public/produtos/avaliacoes:
-    post:
-      tags: [Public]
-      summary: Avalia um produto (requer autenticação)
-      security:
-        - cookieAuth: []
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CreateProdutoAvaliacaoRequest" }
-      responses:
-        "201":
-          description: Avaliação criada
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/CreateProdutoAvaliacaoResponse" }
-        "400":
-          description: Validação
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "401":
-          description: Não autenticado
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/public/produtos/{id}/avaliacoes:
-    get:
-      tags: [Public]
-      summary: Lista avaliações de um produto
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: integer, example: 123 }
-      responses:
-        "200":
-          description: Lista de avaliações
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/ProdutoAvaliacao" }
-        "400":
-          description: ID inválido
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/login:
-    post:
-      tags: [Usuários]
-      summary: Login de usuário (define cookie auth_token)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/LoginRequest" }
-      responses:
-        "200":
-          description: Login OK
-          headers:
-            Set-Cookie:
-              schema:
-                type: string
-              description: auth_token=<jwt>; HttpOnly; Path=/; Max-Age=...
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/LoginResponse" }
-        "401":
-          description: Credenciais inválidas
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/users/register:
-    post:
-      tags: [Usuários]
-      summary: Cadastro de usuário (com CPF)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/RegisterRequest" }
-      responses:
-        "201":
-          description: Conta criada
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/RegisterResponse" }
-        "400":
-          description: Validação / duplicidade
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/users/forgot-password:
-    post:
-      tags: [Usuários]
-      summary: Solicita email de recuperação (resposta neutra)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ForgotPasswordRequest" }
-      responses:
-        "200":
-          description: Resposta neutra
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ForgotPasswordResponse" }
-        "400":
-          description: Validação
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/users/reset-password:
-    post:
-      tags: [Usuários]
-      summary: Redefine senha via token
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ResetPasswordRequest" }
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ResetPasswordResponse" }
-        "400":
-          description: Validação
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "401":
-          description: Token inválido/expirado
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/cart:
-    get:
-      tags: [Carrinho]
-      summary: Retorna carrinho aberto do usuário autenticado
-      security:
-        - cookieAuth: []
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Carrinho atual
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/CartGetResponse" }
-        "401":
-          description: Não autenticado
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-    delete:
-      tags: [Carrinho]
-      summary: Limpa o carrinho (remove itens e fecha status)
-      security:
-        - cookieAuth: []
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Carrinho limpo
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/CartMutationResponse" }
-        "401":
-          description: Não autenticado
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/cart/items:
-    post:
-      tags: [Carrinho]
-      summary: Adiciona produto ao carrinho (valida estoque)
-      security:
-        - cookieAuth: []
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [produto_id, quantidade]
-              properties:
-                produto_id: { type: integer, example: 105 }
-                quantidade: { type: integer, example: 1 }
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/CartMutationResponse" }
-        "409":
-          description: Limite de estoque
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/StockLimitError" }
-
-    patch:
-      tags: [Carrinho]
-      summary: Atualiza quantidade (<=0 remove)
-      security:
-        - cookieAuth: []
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [produto_id, quantidade]
-              properties:
-                produto_id: { type: integer, example: 105 }
-                quantidade: { type: integer, example: 3 }
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/CartMutationResponse" }
-        "409":
-          description: Limite de estoque
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/StockLimitError" }
-
-  /api/cart/items/{produtoId}:
-    delete:
-      tags: [Carrinho]
-      summary: Remove um item do carrinho
-      security:
-        - cookieAuth: []
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: produtoId
-          required: true
-          schema: { type: integer, example: 105 }
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success: { type: boolean, example: true }
-                  message: { type: string, example: "Item removido do carrinho." }
-
-  /api/checkout/preview-cupom:
-    post:
-      tags: [Checkout]
-      summary: Previsualiza e valida cupom
-      security:
-        - cookieAuth: []
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/PreviewCupomRequest" }
-      responses:
-        "200":
-          description: Cupom válido
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/PreviewCupomResponse" }
-        "400":
-          description: Cupom não aplicável / inválido
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/checkout:
-    post:
-      tags: [Checkout]
-      summary: Cria pedido (checkout)
-      security:
-        - cookieAuth: []
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CheckoutBody" }
-      responses:
-        "201":
-          description: Pedido criado
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/CheckoutResponse" }
-        "400":
-          description: Validação / estoque
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "401":
-          description: Não autenticado
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/admin/login:
-    post:
-      tags: [Admin]
-      summary: Login de administrador (define cookie adminToken)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/AdminLoginRequest" }
-      responses:
-        "200":
-          description: Login OK
-          headers:
-            Set-Cookie:
-              schema: { type: string }
-              description: adminToken=<jwt>; HttpOnly; Path=/; Max-Age=7200
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/AdminLoginResponse" }
-        "400":
-          description: Campos obrigatórios ausentes
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "404":
-          description: Admin não encontrado
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "401":
-          description: Senha incorreta
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/admin/me:
-    get:
-      tags: [Admin]
-      summary: Retorna o admin autenticado
-      security:
-        - adminCookieAuth: []
-        - bearerAuth: []
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/AdminMeResponse" }
-        "401":
-          description: Não autenticado
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/admin/logout:
-    post:
-      tags: [Admin]
-      summary: Logout do admin (limpa cookie adminToken)
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/AdminLogoutResponse" }
-md
-Copiar
-<!-- contracts_table.md -->
-
-# Contratos de API — Kavita Backend (branch main)
-
-> Base URL (dev): `http://localhost:5000`  
-> Prefixo da API: `/api`  
-> Cookies usados: `auth_token` (usuário) e `adminToken` (admin)
-
-## Endpoints com contrato recuperável no repositório
-
-| Método | Path | Auth | Query | Path params | Body (JSON) | Respostas (principais) | Exemplo (curl) |
-|---|---|---|---|---|---|---|---|
-| GET | `/api/products` | Não | `category,search,page,limit,sort,order` | – | – | 200, 404 (categoria), 500 | `curl "http://localhost:5000/api/products?page=1&limit=12"` |
-| GET | `/api/products/search` | Não | `q,categories,category_id,category,minPrice,maxPrice,promo,sort,page,limit` | – | – | 200, 400, 500 | `curl "http://localhost:5000/api/products/search?q=fertilizante&promo=true"` |
-| GET | `/api/public/produtos` | Não | `busca (obrig.), limit` | – | – | 200, 500 | `curl "http://localhost:5000/api/public/produtos?busca=fertilizante&limit=10"` |
-| POST | `/api/public/produtos/avaliacoes` | Sim (usuário) | – | – | `{produto_id,nota,comentario?}` | 201, 400, 401, 500 | `curl -b cookies.txt -H "Content-Type: application/json" -d '{"produto_id":1,"nota":5,"comentario":"Ótimo"}' http://localhost:5000/api/public/produtos/avaliacoes` |
-| GET | `/api/public/produtos/:id/avaliacoes` | Não | – | `id` | – | 200, 400, 500 | `curl "http://localhost:5000/api/public/produtos/1/avaliacoes"` |
-| POST | `/api/login` | Não | – | – | `{email,senha}` (`password` aceito como alias) | 200 (Set-Cookie), 401, 500 | `curl -i -c cookies.txt -H "Content-Type: application/json" -d '{"email":"x","senha":"y"}' http://localhost:5000/api/login` |
-| POST | `/api/users/register` | Não | – | – | `{nome,email,senha,cpf}` | 201, 400, 500 | `curl -H "Content-Type: application/json" -d '{"nome":"João","email":"a@b.com","senha":"123","cpf":"111.111.111-11"}' http://localhost:5000/api/users/register` |
-| POST | `/api/users/forgot-password` | Não | – | – | `{email}` | 200, 400, 500 | `curl -H "Content-Type: application/json" -d '{"email":"a@b.com"}' http://localhost:5000/api/users/forgot-password` |
-| POST | `/api/users/reset-password` | Não | – | – | `{token,novaSenha}` | 200, 400, 401, 500 | `curl -H "Content-Type: application/json" -d '{"token":"abc","novaSenha":"nova#2026"}' http://localhost:5000/api/users/reset-password` |
-| GET | `/api/cart` | Sim (usuário) | – | – | – | 200, 401, 500 | `curl -b cookies.txt http://localhost:5000/api/cart` |
-| POST | `/api/cart/items` | Sim (usuário) | – | – | `{produto_id,quantidade}` | 200, 400, 401, 404, 409, 500 | `curl -b cookies.txt -H "Content-Type: application/json" -d '{"produto_id":105,"quantidade":1}' http://localhost:5000/api/cart/items` |
-| PATCH | `/api/cart/items` | Sim (usuário) | – | – | `{produto_id,quantidade}` | 200, 400, 401, 404, 409, 500 | `curl -X PATCH -b cookies.txt -H "Content-Type: application/json" -d '{"produto_id":105,"quantidade":3}' http://localhost:5000/api/cart/items` |
-| DELETE | `/api/cart/items/:produtoId` | Sim (usuário) | – | `produtoId` | – | 200, 400, 401, 500 | `curl -X DELETE -b cookies.txt http://localhost:5000/api/cart/items/105` |
-| DELETE | `/api/cart` | Sim (usuário) | – | – | – | 200, 401, 500 | `curl -X DELETE -b cookies.txt http://localhost:5000/api/cart` |
-| POST | `/api/checkout/preview-cupom` | Sim (usuário) | – | – | `{codigo,total}` | 200, 400, 500 | `curl -b cookies.txt -H "Content-Type: application/json" -d '{"codigo":"PROMO10","total":189.9}' http://localhost:5000/api/checkout/preview-cupom` |
-| POST | `/api/checkout` | Sim (usuário) | – | – | `CheckoutBody` (entrega_tipo, formaPagamento, endereco?, produtos[], cupom_codigo?) | 201, 400, 401, 500 | `curl -b cookies.txt -H "Content-Type: application/json" -d '{"entrega_tipo":"ENTREGA","formaPagamento":"Pix","endereco":{"cep":"36940000","rua":"Rua X","bairro":"Centro","numero":"10","cidade":"Manhuaçu","estado":"MG"},"produtos":[{"id":1,"quantidade":2}]}' http://localhost:5000/api/checkout` |
-| POST | `/api/admin/login` | Não | – | – | `{email,senha}` | 200 (Set-Cookie adminToken), 400, 401, 404, 500 | `curl -i -c admin_cookies.txt -H "Content-Type: application/json" -d '{"email":"admin@kavita.com","senha":"123456"}' http://localhost:5000/api/admin/login` |
-| GET | `/api/admin/me` | Sim (admin) | – | – | – | 200, 401, 404, 500 | `curl -b admin_cookies.txt http://localhost:5000/api/admin/me` |
-| POST | `/api/admin/logout` | Não (efetivamente) | – | – | – | 200 | `curl -b admin_cookies.txt -X POST http://localhost:5000/api/admin/logout` |
-| GET | `/api-docs.json` | Não | – | – | – | 200 | `curl http://localhost:5000/api-docs.json` |
-| GET | `/docs` | Não | – | – | – | 200 | abrir no navegador |
-
-## Rotas referenciadas no agregador, mas sem contrato no branch
-
-O `routes/index.js` tenta montar diversos módulos adicionais (ex.: `/api/products/:id`, `/api/public/categorias`, `/api/favorites`, `/api/shipping`, múltiplas rotas admin). Sem os arquivos no repositório publicado, os contratos não podem ser descritos com precisão.
-md
-Copiar
-<!-- CHANGELOG_PROPOSTO.md -->
-
-# Changelog proposto — Alinhamento de documentação e contratos (6–12h por tarefa)
-
-## Objetivo
-Deixar o backend executável no branch main, padronizar contratos reais, consolidar autenticação por cookie e gerar/documentar OpenAPI consistente.
-
-## Tarefas sugeridas (cada uma estimada entre 6–12h)
-
-### Restaurar/implementar infraestrutura mínima de boot
-- [ ] Reintroduzir/implementar `middleware/adaptiveRateLimiter` e `middleware/errorHandler`
-- [ ] Reintroduzir/implementar `errors/AppError` e `constants/ErrorCodes`
-- [ ] Garantir que `server.js` suba sem exceptions em `NODE_ENV=development`
-Estimativa: 8–12h
-
-### Implementar middleware `authenticateToken` (usuário) e padronizar leitura de token
-- [ ] Criar `middleware/authenticateToken` lendo `req.cookies.auth_token` (principal) e `Authorization: Bearer` (fallback)
-- [ ] Injetar `req.user = { id }` a partir do JWT
-- [ ] Padronizar respostas 401 (mensagem + código)
-Estimativa: 6–10h
-
-### Alinhar expiração do JWT x duração do cookie
-- [ ] Decidir estratégia: cookie com duração = JWT ou implementar refresh token
-- [ ] Ajustar `JWT_EXPIRATION` default e documentação
-- [ ] Revisar `sameSite`/`secure` para cenários SPA + API em domínios diferentes
-Estimativa: 6–8h
-
-### Alinhar schema SQL (migrations) com o que as rotas usam
-- [ ] Atualizar `usuarios` para incluir `senha` e `cpf` (e constraints necessárias)
-- [ ] Criar migrations para `carrinhos`, `carrinho_itens`, `produto_avaliacoes`, `cupons`, `product_promotions`, `admins` e tabelas de roles/permissões
-- [ ] Rodar smoke-test local com rotas: login, register, cart, avaliações
-Estimativa: 10–12h
-
-### Higienizar o agregador de rotas e remover/implementar módulos ausentes
-- [ ] Para cada `loadRoute()` sem arquivo: remover referência **ou** adicionar arquivo com contrato real
-- [ ] Para `routes/payment.js` (arquivo vazio): implementar router ou remover montagem
-- [ ] Garantir consistência de nomes/paths e evitar “rotas fantasmas”
-Estimativa: 6–10h
-
-### Consolidar OpenAPI (cookie auth) e testes de integração mínimos
-- [ ] Atualizar `docs/swagger.js` para incluir `securitySchemes` por cookie (e manter bearer como compat)
-- [ ] Gerar spec estática `openapi.yaml` no repositório e comparar com `/api-docs.json`
-- [ ] Adicionar testes Supertest para: /api/login, /api/products, /api/cart, /api/admin/login
-Estimativa: 8–12h
-Melhorias propostas e checklist com estimativas (6–12h por tarefa)
-A lista abaixo deriva diretamente dos gargalos evidenciados no tree atual: dependências de boot ausentes no server.js, middleware de autenticação ausente referenciado por múltiplas rotas e inconsistência entre schema SQL inicial e colunas exigidas por rotas como users/register. 
-
-A recomendação é executar o plano em blocos fechados de 6–12 horas (cada tarefa entrega um “incremento verificável”):
-
-Restabelecer infraestrutura mínima de boot (rate limiter, handler de erros, AppError/ErrorCodes).
-Implementar authenticateToken para usuário e padronizar contrato de auth (cookie principal + bearer fallback onde fizer sentido).
-Decidir e alinhar política de expiração JWT x cookie (evitar cookie “vivo” com token “morto”).
-Harmonizar migrations com as tabelas/colunas realmente usadas em rotas (ex.: usuarios.senha/cpf, carrinho, cupons e promoções).
-Limpar o agregador de rotas: remover referências sem arquivo ou adicionar os módulos faltantes com contratos e testes.
-Consolidar OpenAPI cookie-first (e manter compatibilidade bearer no admin), com smoke tests de integração.
-Se essa sequência for seguida, o repositório sai do estado “documentação parcial + rotas não montáveis” para um estado “API executável + contratos verificáveis”, reduzindo risco de integração frontend/backend e tornando o Swagger /docs uma fonte de verdade consistente com o código. 
+function formatZodErrors(zodError) {
+  return zodError.errors.map((e) => ({ field: e.path.join("."), message: e.message }));
+}
+
+module.exports = { CriarProdutoSchema, formatZodErrors };
+```
