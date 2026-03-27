@@ -7,6 +7,7 @@ module.exports = (err, req, res, _next) => {
   // Retorna 503 para que load balancers e clientes possam tentar outro instância.
   if (err.code === "POOL_ENQUEUELIMIT") {
     return res.status(503).json({
+      ok: false,
       code: "SERVICE_UNAVAILABLE",
       message: "Servidor sobrecarregado. Tente novamente em alguns instantes.",
     });
@@ -46,5 +47,7 @@ module.exports = (err, req, res, _next) => {
     console.warn("Aviso:", logPayload);
   }
 
-  return res.status(status).json({ code, message });
+  const body = { ok: false, code, message };
+  if (err.details != null) body.details = err.details;
+  return res.status(status).json(body);
 };

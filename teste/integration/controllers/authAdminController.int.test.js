@@ -275,13 +275,13 @@ describe("authAdminController", () => {
       // Assert
       expect(res.status).toBe(200);
       expect(res.body.message).toBe("Login realizado com sucesso.");
-      expect(res.body.admin).toMatchObject({
+      expect(res.body.data.admin).toMatchObject({
         id: 1,
         email: "admin@kavita.com",
         nome: "Admin Master",
         role: "master",
       });
-      expect(res.body.admin.permissions).toEqual(["admin.logs.view"]);
+      expect(res.body.data.admin.permissions).toEqual(["admin.logs.view"]);
 
       // Cookie HttpOnly deve estar presente
       const cookies = res.headers["set-cookie"] ?? [];
@@ -314,9 +314,9 @@ describe("authAdminController", () => {
 
       // Assert
       expect(res.status).toBe(200);
-      expect(res.body.mfaRequired).toBe(true);
-      expect(typeof res.body.challengeId).toBe("string");
-      expect(res.body.challengeId).toHaveLength(64); // 32 bytes hex
+      expect(res.body.data.mfaRequired).toBe(true);
+      expect(typeof res.body.data.challengeId).toBe("string");
+      expect(res.body.data.challengeId).toHaveLength(64); // 32 bytes hex
     });
   });
 
@@ -379,8 +379,8 @@ describe("authAdminController", () => {
         .send({ email: "admin@kavita.com", senha: "correta" });
 
       expect(loginRes.status).toBe(200);
-      expect(loginRes.body.mfaRequired).toBe(true);
-      const { challengeId } = loginRes.body;
+      expect(loginRes.body.data.mfaRequired).toBe(true);
+      const { challengeId } = loginRes.body.data;
 
       // Arrange step 2: completar MFA
       const ADMIN_ROW_NO_MFA_FIELDS = {
@@ -406,7 +406,7 @@ describe("authAdminController", () => {
       // Assert
       expect(mfaRes.status).toBe(200);
       expect(mfaRes.body.message).toBe("Login realizado com sucesso.");
-      expect(mfaRes.body.admin).toMatchObject({ id: 1, email: "admin@kavita.com" });
+      expect(mfaRes.body.data.admin).toMatchObject({ id: 1, email: "admin@kavita.com" });
 
       const cookies = mfaRes.headers["set-cookie"] ?? [];
       expect(cookies.some((c) => c.startsWith("adminToken="))).toBe(true);
@@ -426,7 +426,7 @@ describe("authAdminController", () => {
       const loginRes = await request(app)
         .post(`${MOUNT}/login`)
         .send({ email: "admin@kavita.com", senha: "correta" });
-      const { challengeId } = loginRes.body;
+      const { challengeId } = loginRes.body.data;
 
       mockSpeakeasy.totp.verify.mockReturnValue(false); // código errado
 
@@ -450,7 +450,7 @@ describe("authAdminController", () => {
       const loginRes = await request(app)
         .post(`${MOUNT}/login`)
         .send({ email: "admin@kavita.com", senha: "correta" });
-      const { challengeId } = loginRes.body;
+      const { challengeId } = loginRes.body.data;
 
       // Avança o tempo além do TTL (5 minutos + 1ms)
       const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -520,14 +520,14 @@ describe("authAdminController", () => {
 
       // Assert
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({
+      expect(res.body.data).toMatchObject({
         id: 1,
         nome: "Admin Master",
         email: "admin@kavita.com",
         role: "master",
         role_id: 1,
       });
-      expect(res.body.permissions).toEqual(["admin.logs.view"]);
+      expect(res.body.data.permissions).toEqual(["admin.logs.view"]);
     });
   });
 

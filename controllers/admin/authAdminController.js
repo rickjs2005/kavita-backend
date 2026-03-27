@@ -7,6 +7,9 @@ const {
   syncFromRedis,
 } = require("../../security/accountLockout");
 const authAdminService = require("../../services/authAdminService");
+const { response } = require("../../lib");
+const AppError = require("../../errors/AppError");
+const ERROR_CODES = require("../../constants/ErrorCodes");
 
 // Load speakeasy once at module load (optional dependency for MFA)
 let speakeasy = null;
@@ -24,13 +27,13 @@ function getAdminCookieOptions() {
   };
 }
 
-async function login(req, res) {
+async function login(req, res, next) {
   const { email, senha } = req.body || {};
   const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
 
   if (!email || !senha) {
     rateLimit.fail();
-    return res.status(400).json({ message: "Email e senha são obrigatórios." });
+    return next(new AppError("Email e senha são obrigatórios.", ERROR_CODES.VALIDATION_ERROR, 400));
   }
 
   const emailNormalizado = String(email).trim().toLowerCase();
@@ -47,7 +50,7 @@ async function login(req, res) {
     if (!admin) {
       await incrementFailure(lockoutKey);
       rateLimit.fail();
-      return res.status(401).json({ message: "Credenciais inválidas." });
+      return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
     }
 
     const senhaCorreta = await authAdminService.verifyPassword(senha, admin.senha);
@@ -55,7 +58,7 @@ async function login(req, res) {
     if (!senhaCorreta) {
       await incrementFailure(lockoutKey);
       rateLimit.fail();
-      return res.status(401).json({ message: "Credenciais inválidas." });
+      return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
     }
 
     await resetFailures(lockoutKey);
@@ -67,7 +70,7 @@ async function login(req, res) {
         req.ip,
         admin.mfa_secret
       );
-      return res.status(200).json({ mfaRequired: true, challengeId });
+      return response.ok(res, { mfaRequired: true, challengeId });
     }
 
     const permissions = await authAdminService.getAdminPermissions(admin.id);
@@ -87,8 +90,7 @@ async function login(req, res) {
 
     res.cookie(COOKIE_NAME, token, getAdminCookieOptions());
 
-    return res.status(200).json({
-      message: "Login realizado com sucesso.",
+    return response.ok(res, {
       admin: {
         id: admin.id,
         email: admin.email,
@@ -97,16 +99,14 @@ async function login(req, res) {
         role_id: admin.role_id || null,
         permissions,
       },
-    });
+    }, "Login realizado com sucesso.");
   } catch (err) {
     if (err.locked) {
-      return res.status(429).json({ message: err.message });
+      return next(new AppError(err.message, ERROR_CODES.AUTH_ERROR, 429));
     }
     rateLimit.fail();
     console.error("❌ Erro no login do admin:", err);
-    return res
-      .status(500)
-      .json({ message: "Erro interno no servidor ao fazer login." });
+    return next(new AppError("Erro interno no servidor ao fazer login.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -114,32 +114,28 @@ async function loginMfa(req, res, next) {
   const { challengeId, code } = req.body || {};
 
   if (!challengeId || !code) {
-    return res
-      .status(400)
-      .json({ message: "challengeId e código são obrigatórios." });
+    return next(new AppError("challengeId e código são obrigatórios.", ERROR_CODES.VALIDATION_ERROR, 400));
   }
 
   const challenge = authAdminService.getMfaChallenge(challengeId);
 
   if (!challenge) {
-    return res.status(401).json({ message: "Sessão de verificação inválida." });
+    return next(new AppError("Sessão de verificação inválida.", ERROR_CODES.AUTH_ERROR, 401));
   }
 
   if (challenge.ip && challenge.ip !== req.ip) {
     authAdminService.deleteMfaChallenge(challengeId);
-    return res.status(401).json({ message: "Sessão de verificação inválida." });
+    return next(new AppError("Sessão de verificação inválida.", ERROR_CODES.AUTH_ERROR, 401));
   }
 
   if (Date.now() > challenge.expiresAt) {
     authAdminService.deleteMfaChallenge(challengeId);
-    return res
-      .status(401)
-      .json({ message: "Sessão de verificação expirada. Faça login novamente." });
+    return next(new AppError("Sessão de verificação expirada. Faça login novamente.", ERROR_CODES.AUTH_ERROR, 401));
   }
 
   if (!speakeasy) {
     console.error("❌ speakeasy não instalado — MFA não pode ser validado");
-    return res.status(500).json({ message: "Erro interno ao validar MFA." });
+    return next(new AppError("Erro interno ao validar MFA.", ERROR_CODES.SERVER_ERROR, 500));
   }
 
   const codeValid = speakeasy.totp.verify({
@@ -151,7 +147,7 @@ async function loginMfa(req, res, next) {
 
   if (!codeValid) {
     req.rateLimit?.fail?.();
-    return res.status(401).json({ message: "Credenciais inválidas." });
+    return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
   }
 
   authAdminService.deleteMfaChallenge(challengeId);
@@ -160,7 +156,7 @@ async function loginMfa(req, res, next) {
     const admin = await authAdminService.findAdminById(challenge.adminId);
 
     if (!admin) {
-      return res.status(401).json({ message: "Credenciais inválidas." });
+      return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
     }
 
     const permissions = await authAdminService.getAdminPermissions(admin.id);
@@ -178,8 +174,7 @@ async function loginMfa(req, res, next) {
 
     res.cookie(COOKIE_NAME, token, getAdminCookieOptions());
 
-    return res.status(200).json({
-      message: "Login realizado com sucesso.",
+    return response.ok(res, {
       admin: {
         id: admin.id,
         email: admin.email,
@@ -188,31 +183,29 @@ async function loginMfa(req, res, next) {
         role_id: admin.role_id || null,
         permissions,
       },
-    });
+    }, "Login realizado com sucesso.");
   } catch (err) {
     return next(err);
   }
 }
 
-async function getMe(req, res) {
+async function getMe(req, res, next) {
   try {
     const adminId = req.admin?.id;
 
     if (!adminId) {
-      return res
-        .status(401)
-        .json({ message: "Token inválido ou administrador não autenticado." });
+      return next(new AppError("Token inválido ou administrador não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
     }
 
     const admin = await authAdminService.findAdminById(adminId);
 
     if (!admin) {
-      return res.status(404).json({ message: "Admin não encontrado" });
+      return next(new AppError("Admin não encontrado", ERROR_CODES.NOT_FOUND, 404));
     }
 
     const permissions = await authAdminService.getAdminPermissions(admin.id);
 
-    return res.status(200).json({
+    return response.ok(res, {
       id: admin.id,
       nome: admin.nome,
       email: admin.email,
@@ -222,9 +215,7 @@ async function getMe(req, res) {
     });
   } catch (err) {
     console.error("❌ Erro ao carregar perfil do admin (/me):", err);
-    return res
-      .status(500)
-      .json({ message: "Erro interno ao carregar perfil do admin." });
+    return next(new AppError("Erro interno ao carregar perfil do admin.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -250,7 +241,7 @@ async function logout(req, res) {
     path: "/",
   });
 
-  return res.status(200).json({ message: "Logout realizado com sucesso." });
+  return response.ok(res, null, "Logout realizado com sucesso.");
 }
 
 module.exports = { login, loginMfa, getMe, logout };

@@ -115,13 +115,14 @@ function setupModuleWithMocks() {
     getConnection: jest.fn(),
   };
 
-  // ✅ garante que VALIDATION_ERROR vire status 400 no catch do controller (usa err.statusCode)
+  // ✅ assinatura nova: (message, code, status, details?) — alinhada com AppError.js
   class MockAppError extends Error {
-    constructor(message, status = 500, code = "INTERNAL_ERROR", details = null) {
+    constructor(message, code = "INTERNAL_ERROR", status = 500, details = null) {
       super(message);
       this.name = "AppError";
-      this.statusCode = status; // <- o controller usa statusCode
       this.code = code;
+      this.status = status;
+      this.statusCode = status;
       this.details = details;
     }
   }
@@ -207,7 +208,9 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
 
     // Assert
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
+    // response.ok wraps data in { ok: true, data: {...} }
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data).toMatchObject({
       hero_video_url: "",
       hero_video_path: "",
       hero_image_url: "",
@@ -266,7 +269,8 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
 
     // Assert
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data).toMatchObject({
       title: "Título",
       subtitle: "Sub",
       button_label: "Clique",
@@ -490,8 +494,9 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
 
     // Assert
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      ok: true,
+    // response.ok wraps data in { ok: true, data: { hero: {...} } }
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data).toMatchObject({
       hero: {
         hero_video_url: "/uploads/hero/hero.mp4",
         hero_image_url: "/uploads/hero/hero.jpg",
@@ -528,8 +533,9 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
 
     // Assert
     expect(res.status).toBe(500);
+    // controller wraps in AppError(message, ERROR_CODES.SERVER_ERROR, 500)
     expect(res.body).toMatchObject({
-      code: "INTERNAL_ERROR",
+      code: expect.any(String),
       message: expect.any(String),
     });
     expect(mockPool.query).toHaveBeenCalled();

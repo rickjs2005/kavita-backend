@@ -4,14 +4,15 @@ const dronesService = require("../../services/dronesService");
 const mediaService = require("../../services/mediaService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
-const { safeUnlink, classify, parseJsonField, sendError, MAX_VIDEO_BYTES, MAX_IMAGE_BYTES } = require("./helpers");
+const { safeUnlink, classify, parseJsonField, MAX_VIDEO_BYTES, MAX_IMAGE_BYTES } = require("./helpers");
+const { response } = require("../../lib");
 
-async function getPage(req, res) {
+async function getPage(req, res, next) {
   try {
     const row = await dronesService.getPageSettings();
-    if (!row) return res.json(null);
+    if (!row) return response.ok(res, null);
 
-    return res.json({
+    return response.ok(res, {
       ...row,
       specs_items_json: parseJsonField(row.specs_items_json),
       features_items_json: parseJsonField(row.features_items_json),
@@ -21,11 +22,11 @@ async function getPage(req, res) {
     });
   } catch (e) {
     console.error("[drones/admin] getPage error:", e);
-    return sendError(res, new AppError("Erro ao carregar config.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(new AppError("Erro ao carregar config.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function upsertPage(req, res) {
+async function upsertPage(req, res, next) {
   const heroVideo = req.files?.heroVideo?.[0] || null;
   const heroImageFallback = req.files?.heroImageFallback?.[0] || null;
 
@@ -101,16 +102,16 @@ async function upsertPage(req, res) {
     }
 
     const saved = await dronesService.upsertPageSettings(payload);
-    return res.json({ message: "Configuração salva.", page: saved });
+    return response.ok(res, { page: saved }, "Configuração salva.");
   } catch (e) {
     console.error("[drones/admin] upsertPage error:", e);
     if (heroVideo) safeUnlink(heroVideo);
     if (heroImageFallback) safeUnlink(heroImageFallback);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar config.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao salvar config.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function resetPageToDefault(req, res) {
+async function resetPageToDefault(req, res, next) {
   try {
     const payload = {
       hero_title: "Kavita Drones",
@@ -135,19 +136,19 @@ async function resetPageToDefault(req, res) {
     };
 
     await dronesService.upsertPageSettings(payload);
-    return res.json({ message: "Página resetada para padrão." });
+    return response.ok(res, null, "Página resetada para padrão.");
   } catch (e) {
     console.error("[drones/admin] resetPageToDefault error:", e);
-    return sendError(res, new AppError("Erro ao resetar.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(new AppError("Erro ao resetar.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function getLandingConfig(req, res) {
+async function getLandingConfig(req, res, next) {
   try {
     const row = await dronesService.getPageSettings();
-    if (!row) return res.json(null);
+    if (!row) return response.ok(res, null);
 
-    return res.json({
+    return response.ok(res, {
       hero_title: row.hero_title || null,
       hero_subtitle: row.hero_subtitle || null,
       hero_video_path: row.hero_video_path || null,
@@ -161,11 +162,11 @@ async function getLandingConfig(req, res) {
     });
   } catch (e) {
     console.error("[drones/admin] getLandingConfig error:", e);
-    return sendError(res, new AppError("Erro ao carregar Config Landing.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(new AppError("Erro ao carregar Config Landing.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function upsertLandingConfig(req, res) {
+async function upsertLandingConfig(req, res, next) {
   const heroVideo = req.files?.heroVideo?.[0] || null;
   const heroImageFallback = req.files?.heroImageFallback?.[0] || null;
 
@@ -228,12 +229,12 @@ async function upsertLandingConfig(req, res) {
     }
 
     const saved = await dronesService.upsertPageSettings(payload);
-    return res.json({ message: "Config Landing salva.", config: saved });
+    return response.ok(res, { config: saved }, "Config Landing salva.");
   } catch (e) {
     console.error("[drones/admin] upsertLandingConfig error:", e);
     if (heroVideo) safeUnlink(heroVideo);
     if (heroImageFallback) safeUnlink(heroImageFallback);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar Config Landing.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao salvar Config Landing.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 

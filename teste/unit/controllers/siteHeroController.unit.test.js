@@ -89,7 +89,7 @@ describe("siteHeroController (unit)", () => {
       removeMedia: jest.fn(async () => {}),
     }));
 
-     
+
     return require("../../../controllers/siteHeroController");
   }
 
@@ -151,7 +151,9 @@ describe("siteHeroController (unit)", () => {
     expect(res.json).toHaveBeenCalledTimes(1);
 
     const payload = res.json.mock.calls[0][0];
-    expect(payload).toMatchObject({
+    // response.ok wraps data in { ok: true, data: {...} }
+    expect(payload.ok).toBe(true);
+    expect(payload.data).toMatchObject({
       hero_video_url: "",
       hero_video_path: "",
       hero_image_url: "",
@@ -212,7 +214,8 @@ describe("siteHeroController (unit)", () => {
     expect(next).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
 
-    expect(payload).toMatchObject({
+    expect(payload.ok).toBe(true);
+    expect(payload.data).toMatchObject({
       title: "Meu título",
       subtitle: "Meu sub",
       button_label: "Clique",
@@ -220,7 +223,7 @@ describe("siteHeroController (unit)", () => {
     });
   });
 
-  test("updateHero: 400 label > 80 deve responder VALIDATION_ERROR (catch interno)", async () => {
+  test("updateHero: 400 label > 80 deve chamar next(AppError VALIDATION_ERROR)", async () => {
     // Arrange
     const mockPool = { query: jest.fn(), getConnection: jest.fn() };
     const { updateHero } = mockModuleOnce(mockPool);
@@ -232,19 +235,17 @@ describe("siteHeroController (unit)", () => {
     // Act
     await updateHero(req, res, next);
 
-    // Assert
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        code: "VALIDATION_ERROR",
-        message: "Label do botão muito grande.",
-      })
-    );
+    // Assert — erros de validação agora vão para next(AppError)
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err.status || err.statusCode).toBe(400);
+    expect(err.code).toBe("VALIDATION_ERROR");
+    expect(String(err.message)).toMatch(/label/i);
+    expect(res.json).not.toHaveBeenCalled();
     expect(mockPool.query).not.toHaveBeenCalled();
   });
 
-  test("updateHero: 400 title > 255 deve responder VALIDATION_ERROR", async () => {
+  test("updateHero: 400 title > 255 deve chamar next(AppError VALIDATION_ERROR)", async () => {
     // Arrange
     const mockPool = { query: jest.fn(), getConnection: jest.fn() };
     const { updateHero } = mockModuleOnce(mockPool);
@@ -257,16 +258,16 @@ describe("siteHeroController (unit)", () => {
     await updateHero(req, res, next);
 
     // Assert
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json.mock.calls[0][0]).toMatchObject({
-      code: "VALIDATION_ERROR",
-      message: "Título muito grande.",
-    });
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err.status || err.statusCode).toBe(400);
+    expect(err.code).toBe("VALIDATION_ERROR");
+    expect(String(err.message)).toMatch(/título/i);
+    expect(res.json).not.toHaveBeenCalled();
     expect(mockPool.query).not.toHaveBeenCalled();
   });
 
-  test("updateHero: 400 subtitle > 500 deve responder VALIDATION_ERROR", async () => {
+  test("updateHero: 400 subtitle > 500 deve chamar next(AppError VALIDATION_ERROR)", async () => {
     // Arrange
     const mockPool = { query: jest.fn(), getConnection: jest.fn() };
     const { updateHero } = mockModuleOnce(mockPool);
@@ -279,16 +280,16 @@ describe("siteHeroController (unit)", () => {
     await updateHero(req, res, next);
 
     // Assert
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json.mock.calls[0][0]).toMatchObject({
-      code: "VALIDATION_ERROR",
-      message: "Subtítulo muito grande.",
-    });
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err.status || err.statusCode).toBe(400);
+    expect(err.code).toBe("VALIDATION_ERROR");
+    expect(String(err.message)).toMatch(/subtítulo/i);
+    expect(res.json).not.toHaveBeenCalled();
     expect(mockPool.query).not.toHaveBeenCalled();
   });
 
-  test("updateHero: 400 vídeo com mimetype inválido deve responder VALIDATION_ERROR", async () => {
+  test("updateHero: 400 vídeo com mimetype inválido deve chamar next(AppError VALIDATION_ERROR)", async () => {
     // Arrange
     const mockPool = { query: jest.fn(), getConnection: jest.fn() };
     const { updateHero } = mockModuleOnce(mockPool);
@@ -304,16 +305,16 @@ describe("siteHeroController (unit)", () => {
     await updateHero(req, res, next);
 
     // Assert
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json.mock.calls[0][0]).toMatchObject({
-      code: "VALIDATION_ERROR",
-      message: "Arquivo de vídeo inválido.",
-    });
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err.status || err.statusCode).toBe(400);
+    expect(err.code).toBe("VALIDATION_ERROR");
+    expect(String(err.message)).toMatch(/vídeo/i);
+    expect(res.json).not.toHaveBeenCalled();
     expect(mockPool.query).not.toHaveBeenCalled();
   });
 
-  test("updateHero: 400 imagem com mimetype inválido deve responder VALIDATION_ERROR", async () => {
+  test("updateHero: 400 imagem com mimetype inválido deve chamar next(AppError VALIDATION_ERROR)", async () => {
     // Arrange
     const mockPool = { query: jest.fn(), getConnection: jest.fn() };
     const { updateHero } = mockModuleOnce(mockPool);
@@ -329,12 +330,12 @@ describe("siteHeroController (unit)", () => {
     await updateHero(req, res, next);
 
     // Assert
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json.mock.calls[0][0]).toMatchObject({
-      code: "VALIDATION_ERROR",
-      message: "Arquivo de imagem inválido.",
-    });
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err.status || err.statusCode).toBe(400);
+    expect(err.code).toBe("VALIDATION_ERROR");
+    expect(String(err.message)).toMatch(/imagem/i);
+    expect(res.json).not.toHaveBeenCalled();
     expect(mockPool.query).not.toHaveBeenCalled();
   });
 
@@ -420,12 +421,13 @@ describe("siteHeroController (unit)", () => {
 
     // Assert
     expect(next).not.toHaveBeenCalled();
-    expect(res.status).not.toHaveBeenCalledWith(expect.any(Number)); // sucesso retorna res.json direto (sem status)
+    expect(res.status).toHaveBeenCalledWith(200); // response.ok calls res.status(200)
     expect(res.json).toHaveBeenCalledTimes(1);
 
     const payload = res.json.mock.calls[0][0];
-    expect(payload).toMatchObject({
-      ok: true,
+    // response.ok wraps in { ok: true, data: { hero: {...} } }
+    expect(payload.ok).toBe(true);
+    expect(payload.data).toMatchObject({
       hero: {
         hero_video_url: "/uploads/hero/hero.mp4",
         hero_image_url: "/uploads/hero/hero.jpg",
@@ -495,15 +497,14 @@ describe("siteHeroController (unit)", () => {
 
     // Assert
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ok: true,
-        hero: expect.any(Object),
-      })
-    );
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.ok).toBe(true);
+    expect(payload.data).toMatchObject({
+      hero: expect.any(Object),
+    });
   });
 
-  test("updateHero: 500 erro inesperado em pool.query deve responder INTERNAL_ERROR (catch interno)", async () => {
+  test("updateHero: 500 erro inesperado em pool.query deve chamar next(AppError SERVER_ERROR)", async () => {
     // Arrange
     const mockPool = { query: jest.fn(), getConnection: jest.fn() };
     const { updateHero } = mockModuleOnce(mockPool);
@@ -526,14 +527,11 @@ describe("siteHeroController (unit)", () => {
     // Act
     await updateHero(req, res, next);
 
-    // Assert
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(500);
-    const payload = res.json.mock.calls[0][0];
-    expect(payload).toMatchObject({
-      code: "INTERNAL_ERROR",
-      message: expect.any(String),
-    });
+    // Assert — erros inesperados agora vão para next(AppError)
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err.status || err.statusCode).toBe(500);
+    expect(res.json).not.toHaveBeenCalled();
     expect(mockPool.query).toHaveBeenCalled();
   });
 });

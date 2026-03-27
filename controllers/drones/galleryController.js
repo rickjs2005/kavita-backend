@@ -4,13 +4,14 @@ const dronesService = require("../../services/dronesService");
 const mediaService = require("../../services/mediaService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
-const { classify, safeUnlink, parseModelKey, ensureModelExists, sendError } = require("./helpers");
+const { classify, safeUnlink, parseModelKey, ensureModelExists } = require("./helpers");
+const { response } = require("../../lib");
 
 // ========================
 // Model-scoped gallery
 // ========================
 
-async function listModelGallery(req, res) {
+async function listModelGallery(req, res, next) {
   try {
     const modelKey = parseModelKey(req.params.modelKey);
     await ensureModelExists(modelKey);
@@ -19,14 +20,14 @@ async function listModelGallery(req, res) {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
 
     const result = await dronesService.listGalleryAdmin({ page, limit, model_key: modelKey });
-    return res.json(result);
+    return response.ok(res, result);
   } catch (e) {
     console.error("[drones/admin] listModelGallery error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao listar galeria.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao listar galeria.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function createModelGalleryItem(req, res) {
+async function createModelGalleryItem(req, res, next) {
   const file = req.file || null;
 
   try {
@@ -66,15 +67,15 @@ async function createModelGalleryItem(req, res) {
       is_active,
     });
 
-    return res.status(201).json({ message: "Item criado.", id, media_type: info.media_type, media_path, model_key: modelKey });
+    return response.created(res, { id, media_type: info.media_type, media_path, model_key: modelKey }, "Item criado.");
   } catch (e) {
     console.error("[drones/admin] createModelGalleryItem error:", e);
     if (file) safeUnlink(file);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar item.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao criar item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function updateModelGalleryItem(req, res) {
+async function updateModelGalleryItem(req, res, next) {
   const file = req.file || null;
 
   try {
@@ -110,15 +111,15 @@ async function updateModelGalleryItem(req, res) {
 
     await dronesService.updateGalleryItem(itemId, patch);
 
-    return res.json({ message: "Item atualizado.", id: itemId });
+    return response.ok(res, { id: itemId }, "Item atualizado.");
   } catch (e) {
     console.error("[drones/admin] updateModelGalleryItem error:", e);
     if (file) safeUnlink(file);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao atualizar item.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao atualizar item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function deleteModelGalleryItem(req, res) {
+async function deleteModelGalleryItem(req, res, next) {
   try {
     const modelKey = parseModelKey(req.params.modelKey);
     const itemId = parseInt(req.params.itemId, 10);
@@ -130,10 +131,10 @@ async function deleteModelGalleryItem(req, res) {
     const affected = await dronesService.deleteGalleryItem(itemId);
     if (!affected) throw new AppError("Item não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
-    return res.json({ message: "Item removido.", id: itemId });
+    return response.ok(res, { id: itemId }, "Item removido.");
   } catch (e) {
     console.error("[drones/admin] deleteModelGalleryItem error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover item.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao remover item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -141,21 +142,21 @@ async function deleteModelGalleryItem(req, res) {
 // Global gallery
 // ========================
 
-async function listGallery(req, res) {
+async function listGallery(req, res, next) {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const model_key = req.query.model_key ? String(req.query.model_key).trim() : null;
 
     const result = await dronesService.listGalleryAdmin({ page, limit, model_key });
-    return res.json(result);
+    return response.ok(res, result);
   } catch (e) {
     console.error("[drones/admin] listGallery error:", e);
-    return sendError(res, new AppError("Erro ao listar galeria.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(new AppError("Erro ao listar galeria.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function createGalleryItem(req, res) {
+async function createGalleryItem(req, res, next) {
   const file = req.file || null;
 
   try {
@@ -192,15 +193,15 @@ async function createGalleryItem(req, res) {
       is_active,
     });
 
-    return res.status(201).json({ message: "Item criado.", id, media_type: info.media_type, media_path });
+    return response.created(res, { id, media_type: info.media_type, media_path }, "Item criado.");
   } catch (e) {
     console.error("[drones/admin] createGalleryItem error:", e);
     if (file) safeUnlink(file);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar item.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao criar item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function updateGalleryItem(req, res) {
+async function updateGalleryItem(req, res, next) {
   const file = req.file || null;
 
   try {
@@ -236,15 +237,15 @@ async function updateGalleryItem(req, res) {
     const affected = await dronesService.updateGalleryItem(itemId, patch);
     if (!affected) throw new AppError("Item não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
-    return res.json({ message: "Item atualizado.", id: itemId });
+    return response.ok(res, { id: itemId }, "Item atualizado.");
   } catch (e) {
     console.error("[drones/admin] updateGalleryItem error:", e);
     if (file) safeUnlink(file);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao atualizar item.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao atualizar item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function deleteGalleryItem(req, res) {
+async function deleteGalleryItem(req, res, next) {
   try {
     const itemId = parseInt(req.params.id, 10);
     if (!itemId) throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
@@ -252,10 +253,10 @@ async function deleteGalleryItem(req, res) {
     const affected = await dronesService.deleteGalleryItem(itemId);
     if (!affected) throw new AppError("Item não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
-    return res.json({ message: "Item removido.", id: itemId });
+    return response.ok(res, { id: itemId }, "Item removido.");
   } catch (e) {
     console.error("[drones/admin] deleteGalleryItem error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao remover item.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao remover item.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 

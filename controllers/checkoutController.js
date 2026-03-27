@@ -3,6 +3,7 @@
 const checkoutService = require("../services/checkoutService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const { response } = require("../lib");
 
 // ---------------------------------------------------------------------------
 // Input validation helpers
@@ -80,25 +81,21 @@ async function create(req, res, next) {
 
     // Idempotent response — order already exists for this product composition.
     if (result.idempotente) {
-      return res.status(200).json({
-        success: true,
-        message: "Pedido já registrado.",
+      return response.ok(res, {
         pedido_id: result.pedido_id,
         nota_fiscal_aviso: "Nota fiscal será entregue junto com o produto.",
         idempotente: true,
-      });
+      }, "Pedido já registrado.");
     }
 
-    return res.status(201).json({
-      success: true,
-      message: "Pedido criado com sucesso",
+    return response.created(res, {
       pedido_id: result.pedido_id,
       total: result.total,
       total_sem_desconto: result.total_sem_desconto,
       desconto_total: result.desconto_total,
       cupom_aplicado: result.cupom_aplicado,
       nota_fiscal_aviso: "Nota fiscal será entregue junto com o produto.",
-    });
+    }, "Pedido criado com sucesso");
   } catch (err) {
     console.error("[checkout] Erro geral no checkout:", err);
     return next(
@@ -140,14 +137,12 @@ async function previewCoupon(req, res, next) {
 
   try {
     const result = await checkoutService.previewCoupon({ codigo, produtos });
-    return res.status(200).json({
-      success: true,
-      message: "Cupom aplicado com sucesso.",
+    return response.ok(res, {
       desconto: result.desconto,
       total_original: result.total_original,
       total_com_desconto: result.total_com_desconto,
       cupom: result.cupom,
-    });
+    }, "Cupom aplicado com sucesso.");
   } catch (err) {
     console.error("[checkout] Erro em /preview-cupom:", err);
     return next(

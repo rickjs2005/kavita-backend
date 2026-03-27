@@ -3,10 +3,9 @@
 
 const climaRepo = require("../../repositories/climaRepository");
 const { logAdminAction } = require("../../services/adminLogs");
-const {
-  ok, created, fail,
-  toInt, nowSql,
-} = require("../../services/news/helpers");
+const { toInt, nowSql } = require("../../services/news/helpers");
+const { response } = require("../../lib");
+const AppError = require("../../errors/AppError");
 
 /**
  * Sugestão de coordenadas (compatibilidade):
@@ -38,13 +37,13 @@ async function logAdmin(req, acao, entidade, entidade_id = null) {
  * Handlers - Clima
  * ========================= */
 
-async function listClima(req, res) {
+async function listClima(req, res, next) {
   try {
     const rows = await climaRepo.listClima();
-    return ok(res, rows);
+    return response.ok(res, rows);
   } catch (error) {
     console.error("adminClimaController.listClima:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao listar clima.");
+    return next(new AppError("Erro ao listar clima.", "INTERNAL_ERROR", 500));
   }
 }
 
@@ -52,22 +51,18 @@ async function listClima(req, res) {
  * GET /api/admin/news/clima/stations?uf=MG&q=manhu&limit=10
  * Agora: sugestões via Open-Meteo Geocoding (mantém endpoint por compatibilidade).
  */
-async function suggestClimaStations(req, res) {
+async function suggestClimaStations(req, res, next) {
   try {
     const uf = String(req.query.uf || "").trim().toUpperCase();
     const q = String(req.query.q || "").trim();
     const limit = Math.min(25, Math.max(1, Number(req.query.limit) || 10));
 
     if (!uf || uf.length !== 2) {
-      return res.status(400).json({
-        ok: false,
-        code: "VALIDATION_ERROR",
-        message: "UF inválida (use 2 letras)",
-      });
+      return next(new AppError("UF inválida (use 2 letras)", "VALIDATION_ERROR", 400));
     }
 
     if (!q || q.length < 2) {
-      return res.json({ ok: true, data: [] });
+      return response.ok(res, []);
     }
 
     // 🔴 GARANTIA ABSOLUTA: chama SOMENTE o geocoding
@@ -77,7 +72,7 @@ async function suggestClimaStations(req, res) {
       limit,
     });
 
-    return res.json({
+    return res.status(200).json({
       ok: true,
       data,
       meta: {
@@ -89,58 +84,54 @@ async function suggestClimaStations(req, res) {
     });
   } catch (err) {
     console.error("[CLIMA][GEOCODING]", err);
-    return res.status(500).json({
-      ok: false,
-      code: "GEOCODING_ERROR",
-      message: "Erro ao buscar coordenadas",
-    });
+    return next(new AppError("Erro ao buscar coordenadas", "GEOCODING_ERROR", 500));
   }
 }
 
 // req.body is pre-validated and coerced by validate(createClimaBodySchema)
-async function createClima(req, res) {
+async function createClima(req, res, next) {
   try {
     const row = await climaRepo.createClima(req.body);
     await logAdmin(req, "criou", "news_clima", row?.id ?? null);
-    return created(res, row);
+    return response.created(res, row);
   } catch (error) {
     console.error("adminClimaController.createClima:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return fail(res, 409, "DUPLICATE", "Já existe um clima com esse slug.");
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao criar clima.");
+    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", "DUPLICATE", 409));
+    return next(new AppError("Erro ao criar clima.", "INTERNAL_ERROR", 500));
   }
 }
 
 // req.body is pre-validated and coerced by validate(updateClimaBodySchema)
 // Only keys present in req.body are patched (the repo checks hasOwnProperty).
-async function updateClima(req, res) {
+async function updateClima(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
+    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
 
     if (Object.keys(req.body).length === 0) {
-      return fail(res, 400, "VALIDATION_ERROR", "Nenhum campo para atualizar.");
+      return next(new AppError("Nenhum campo para atualizar.", "VALIDATION_ERROR", 400));
     }
 
     const result = await climaRepo.updateClima(id, req.body);
     await logAdmin(req, "editou", "news_clima", id);
-    return ok(res, result);
+    return response.ok(res, result);
   } catch (error) {
     console.error("adminClimaController.updateClima:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return fail(res, 409, "DUPLICATE", "Já existe um clima com esse slug.");
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao atualizar clima.");
+    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", "DUPLICATE", 409));
+    return next(new AppError("Erro ao atualizar clima.", "INTERNAL_ERROR", 500));
   }
 }
 
-async function deleteClima(req, res) {
+async function deleteClima(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
+    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
     const result = await climaRepo.deleteClima(id);
     await logAdmin(req, "removeu", "news_clima", id);
-    return ok(res, result);
+    return response.ok(res, result);
   } catch (error) {
     console.error("adminClimaController.deleteClima:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao remover clima.");
+    return next(new AppError("Erro ao remover clima.", "INTERNAL_ERROR", 500));
   }
 }
 
@@ -273,13 +264,13 @@ async function fetchChuvaMmFromProvider(climaRow) {
   };
 }
 
-async function syncClima(req, res) {
+async function syncClima(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
+    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
 
     const row = await climaRepo.getClimaById(id);
-    if (!row) return fail(res, 404, "NOT_FOUND", "Registro de clima não encontrado.");
+    if (!row) return next(new AppError("Registro de clima não encontrado.", "NOT_FOUND", 404));
 
     let providerData = null;
 
@@ -288,35 +279,42 @@ async function syncClima(req, res) {
     } catch (e) {
       // Agora: coordenadas ausentes => validação do cadastro
       if (String(e?.code || "") === "COORDS_REQUIRED") {
-        return fail(
-          res,
-          400,
-          "VALIDATION_ERROR",
+        return next(new AppError(
           "Para sincronizar chuva com Open-Meteo, preencha station_lat e station_lon (ou mantenha city_name/uf válidos para geocoding).",
+          "VALIDATION_ERROR",
+          400,
           e?.details || { field: ["station_lat", "station_lon"] }
-        );
+        ));
       }
 
       // Geocode falhou => continua sem quebrar o painel
       if (String(e?.code || "") === "GEOCODE_NOT_FOUND") {
-        return ok(res, row, {
-          provider: {
-            ok: false,
-            code: "GEOCODE_NOT_FOUND",
-            message: "Geocoding não encontrou coordenadas para essa cidade/UF.",
-            details: e?.details || null,
+        return res.status(200).json({
+          ok: true,
+          data: row,
+          meta: {
+            provider: {
+              ok: false,
+              code: "GEOCODE_NOT_FOUND",
+              message: "Geocoding não encontrou coordenadas para essa cidade/UF.",
+              details: e?.details || null,
+            },
           },
         });
       }
 
       // erro do provedor => NÃO quebrar o painel
       console.error("syncClima.provider:", e?.details || e);
-      return ok(res, row, {
-        provider: {
-          ok: false,
-          code: String(e?.code || "PROVIDER_ERROR"),
-          message: "Falha ao consultar provedor de clima.",
-          details: e?.details || null,
+      return res.status(200).json({
+        ok: true,
+        data: row,
+        meta: {
+          provider: {
+            ok: false,
+            code: String(e?.code || "PROVIDER_ERROR"),
+            message: "Falha ao consultar provedor de clima.",
+            details: e?.details || null,
+          },
         },
       });
     }
@@ -333,10 +331,18 @@ async function syncClima(req, res) {
     await logAdmin(req, "sincronizou", "news_clima", id);
 
     const updated = await climaRepo.getClimaById(id);
-    return ok(res, updated, providerData?.meta ? { provider: { ok: true, ...providerData.meta } } : undefined);
+
+    if (providerData?.meta) {
+      return res.status(200).json({
+        ok: true,
+        data: updated,
+        meta: { provider: { ok: true, ...providerData.meta } },
+      });
+    }
+    return response.ok(res, updated);
   } catch (error) {
     console.error("adminClimaController.syncClima:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao sincronizar clima.");
+    return next(new AppError("Erro ao sincronizar clima.", "INTERNAL_ERROR", 500));
   }
 }
 

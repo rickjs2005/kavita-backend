@@ -9,28 +9,28 @@ const {
   extractItems,
   parseModelKey,
   ensureModelExists,
-  sendError,
 } = require("./helpers");
+const { response } = require("../../lib");
 const {
   createModelBodySchema,
   mediaSelectionBodySchema,
   formatDronesErrors,
 } = require("../../schemas/dronesSchemas");
 
-async function listModels(req, res) {
+async function listModels(req, res, next) {
   try {
     const includeInactive = String(req.query.includeInactive || "0") === "1";
     const items = await dronesService.listDroneModels({ includeInactive });
-    return res.json({
+    return response.ok(res, {
       items: (Array.isArray(items) && items.length) ? items : DEFAULT_DRONE_MODELS,
     });
   } catch (e) {
     console.error("[drones/admin] listModels error:", e);
-    return sendError(res, new AppError("Erro ao listar modelos.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(new AppError("Erro ao listar modelos.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function createModel(req, res) {
+async function createModel(req, res, next) {
   try {
     const bodyResult = createModelBodySchema.safeParse(req.body || {});
     if (!bodyResult.success) {
@@ -48,14 +48,14 @@ async function createModel(req, res) {
       throw e;
     }
 
-    return res.status(201).json({ message: "Modelo criado.", key });
+    return response.created(res, { key }, "Modelo criado.");
   } catch (e) {
     console.error("[drones/admin] createModel error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao criar modelo.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao criar modelo.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function deleteModel(req, res) {
+async function deleteModel(req, res, next) {
   try {
     const modelKey = parseModelKey(req.params.modelKey);
     const hard = String(req.query.hard || "0") === "1";
@@ -64,18 +64,18 @@ async function deleteModel(req, res) {
 
     if (hard) {
       await dronesService.hardDeleteDroneModel(modelKey);
-      return res.json({ message: "Modelo removido definitivamente.", modelKey });
+      return response.ok(res, { modelKey }, "Modelo removido definitivamente.");
     }
 
     await dronesService.softDeleteDroneModel(modelKey);
-    return res.json({ message: "Modelo desativado.", modelKey });
+    return response.ok(res, { modelKey }, "Modelo desativado.");
   } catch (e) {
     console.error("[drones/admin] deleteModel error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao excluir modelo.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao excluir modelo.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function getModelAggregate(req, res) {
+async function getModelAggregate(req, res, next) {
   try {
     const modelKey = parseModelKey(req.params.modelKey);
     const modelRow = await ensureModelExists(modelKey);
@@ -87,18 +87,18 @@ async function getModelAggregate(req, res) {
     const galleryResult = await dronesService.listGalleryAdmin({ page: 1, limit: 1000, model_key: modelKey });
     const gallery = extractItems(galleryResult).filter((g) => String(g.model_key || "") === modelKey);
 
-    return res.json({
+    return response.ok(res, {
       model: { key: modelRow.key, label: modelRow.label },
       data: modelData,
       gallery,
     });
   } catch (e) {
     console.error("[drones/admin] getModelAggregate error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao carregar modelo.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao carregar modelo.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function upsertModelInfo(req, res) {
+async function upsertModelInfo(req, res, next) {
   try {
     const modelKey = parseModelKey(req.params.modelKey);
     await ensureModelExists(modelKey);
@@ -140,18 +140,17 @@ async function upsertModelInfo(req, res) {
 
     const saved = await dronesService.upsertPageSettings({ models_json });
 
-    return res.json({
-      message: "Modelo atualizado.",
+    return response.ok(res, {
       modelKey,
       models_json: parseJsonField(saved?.models_json) || models_json,
-    });
+    }, "Modelo atualizado.");
   } catch (e) {
     console.error("[drones/admin] upsertModelInfo error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar modelo.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao salvar modelo.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
-async function setModelMediaSelection(req, res) {
+async function setModelMediaSelection(req, res, next) {
   try {
     const modelKey = parseModelKey(req.params.modelKey);
     await ensureModelExists(modelKey);
@@ -177,10 +176,10 @@ async function setModelMediaSelection(req, res) {
 
     const updated = await dronesService.getDroneModelByKey(modelKey);
 
-    return res.json({ message: "Seleção salva.", modelKey, target: t, media_id: id, model: updated });
+    return response.ok(res, { modelKey, target: t, media_id: id, model: updated }, "Seleção salva.");
   } catch (e) {
     console.error("[drones/admin] setModelMediaSelection error:", e);
-    return sendError(res, e instanceof AppError ? e : new AppError("Erro ao salvar seleção.", ERROR_CODES.SERVER_ERROR, 500));
+    return next(e instanceof AppError ? e : new AppError("Erro ao salvar seleção.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 

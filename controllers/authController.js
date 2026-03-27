@@ -9,6 +9,7 @@ const userRepo = require("../repositories/userRepository");
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const { response } = require("../lib");
 
 function getAuthCookieOptions() {
   const isProduction = process.env.NODE_ENV === "production";
@@ -80,10 +81,7 @@ const AuthController = {
       // ✅ AQUI: usar a função alinhada ao token
       res.cookie("auth_token", token, getAuthCookieOptionsAlignedToToken(token));
 
-      return res.status(200).json({
-        message: "Login bem-sucedido!",
-        user: buildSafeUserResponse(user),
-      });
+      return response.ok(res, { user: buildSafeUserResponse(user) }, "Login bem-sucedido!");
     } catch (error) {
       if (error.locked) {
         return next(new AppError(error.message, ERROR_CODES.AUTH_ERROR, 429));
@@ -109,7 +107,7 @@ const AuthController = {
       const hashed = await bcrypt.hash(senha, 10);
       await userRepo.createUser({ nome, email, senha: hashed });
 
-      return res.status(201).json({ message: "Usuário cadastrado com sucesso!" });
+      return response.created(res, null, "Usuário cadastrado com sucesso!");
     } catch (error) {
       console.error("❌ Erro no registro do usuário:", error);
       return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
@@ -124,7 +122,7 @@ const AuthController = {
         await userRepo.incrementTokenVersion(userId);
       }
       res.clearCookie("auth_token", getAuthCookieOptions());
-      return res.status(200).json({ message: "Logout bem-sucedido!" });
+      return response.ok(res, null, "Logout bem-sucedido!");
     } catch (error) {
       console.error("❌ Erro no logout do usuário:", error);
       return next(new AppError("Erro no servidor ao fazer logout.", ERROR_CODES.SERVER_ERROR, 500));
@@ -144,9 +142,7 @@ const AuthController = {
       // segurança: resposta neutra
       if (!userRow) {
         req.rateLimit?.reset?.();
-        return res.status(200).json({
-          mensagem: "Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.",
-        });
+        return response.ok(res, null, "Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.");
       }
 
       const token = passwordResetTokens.generateToken();
@@ -190,7 +186,7 @@ const AuthController = {
 
       req.rateLimit?.reset?.();
 
-      return res.status(200).json({ mensagem: "Senha redefinida com sucesso!" });
+      return response.ok(res, null, "Senha redefinida com sucesso!");
     } catch (error) {
       req.rateLimit?.fail?.();
       console.error("❌ Erro no reset de senha:", error);

@@ -3,10 +3,9 @@
 
 const cotacoesRepo = require("../../repositories/cotacoesRepository");
 const { logAdminAction } = require("../../services/adminLogs");
-const {
-  ok, created, fail,
-  toInt, toBoolTiny, nowSql,
-} = require("../../services/news/helpers");
+const { toInt, toBoolTiny, nowSql } = require("../../services/news/helpers");
+const { response } = require("../../lib");
+const AppError = require("../../errors/AppError");
 
 let cotacoesProviders = null;
 try {
@@ -112,13 +111,13 @@ function calcVariationDay(priceNow, prevPrice) {
  * Handlers - Cotações (news_cotacoes)
  * ========================================================= */
 
-async function listCotacoes(req, res) {
+async function listCotacoes(req, res, next) {
   try {
     const rows = await cotacoesRepo.listCotacoes();
-    return ok(res, rows);
+    return response.ok(res, rows);
   } catch (error) {
     console.error("adminCotacoesController.listCotacoes:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao listar cotações.");
+    return next(new AppError("Erro ao listar cotações.", "INTERNAL_ERROR", 500));
   }
 }
 
@@ -129,7 +128,7 @@ async function listCotacoes(req, res) {
  * - presets (para auto-preencher no frontend)
  * - suggestions (distinct no banco: markets/sources/units/types)
  */
-async function getCotacoesMeta(req, res) {
+async function getCotacoesMeta(req, res, next) {
   try {
     const suggestions =
       typeof cotacoesRepo.cotacoesMeta === "function"
@@ -139,75 +138,75 @@ async function getCotacoesMeta(req, res) {
     const presets = cotacoesProviders && cotacoesProviders.PRESETS ? cotacoesProviders.PRESETS : {};
     const allowed_slugs = Object.keys(presets || {});
 
-    return ok(res, {
+    return response.ok(res, {
       allowed_slugs,
       presets,
       suggestions,
     });
   } catch (error) {
     console.error("adminCotacoesController.getCotacoesMeta:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao carregar meta de cotações.");
+    return next(new AppError("Erro ao carregar meta de cotações.", "INTERNAL_ERROR", 500));
   }
 }
 
 // req.body is pre-validated and coerced by validate(createCotacaoBodySchema)
-async function createCotacao(req, res) {
+async function createCotacao(req, res, next) {
   try {
     const row = await cotacoesRepo.createCotacao(req.body);
     await logAdmin(req, "criou", "news_cotacoes", row?.id ?? null);
-    return created(res, row);
+    return response.created(res, row);
   } catch (error) {
     console.error("adminCotacoesController.createCotacao:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return fail(res, 409, "DUPLICATE", "Já existe uma cotação com esse slug.");
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao criar cotação.");
+    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe uma cotação com esse slug.", "DUPLICATE", 409));
+    return next(new AppError("Erro ao criar cotação.", "INTERNAL_ERROR", 500));
   }
 }
 
 // req.body is pre-validated and coerced by validate(updateCotacaoBodySchema)
 // Only keys present in req.body are patched (the repo checks hasOwnProperty).
-async function updateCotacao(req, res) {
+async function updateCotacao(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
+    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
 
     if (Object.keys(req.body).length === 0) {
-      return fail(res, 400, "VALIDATION_ERROR", "Nenhum campo para atualizar.");
+      return next(new AppError("Nenhum campo para atualizar.", "VALIDATION_ERROR", 400));
     }
 
     const result = await cotacoesRepo.updateCotacao(id, req.body);
     await logAdmin(req, "editou", "news_cotacoes", id);
-    return ok(res, result);
+    return response.ok(res, result);
   } catch (error) {
     console.error("adminCotacoesController.updateCotacao:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return fail(res, 409, "DUPLICATE", "Já existe uma cotação com esse slug.");
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao atualizar cotação.");
+    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe uma cotação com esse slug.", "DUPLICATE", 409));
+    return next(new AppError("Erro ao atualizar cotação.", "INTERNAL_ERROR", 500));
   }
 }
 
-async function deleteCotacao(req, res) {
+async function deleteCotacao(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
+    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
     const result = await cotacoesRepo.deleteCotacao(id);
     await logAdmin(req, "removeu", "news_cotacoes", id);
-    return ok(res, result);
+    return response.ok(res, result);
   } catch (error) {
     console.error("adminCotacoesController.deleteCotacao:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao remover cotação.");
+    return next(new AppError("Erro ao remover cotação.", "INTERNAL_ERROR", 500));
   }
 }
 
 /**
  * POST /api/admin/news/cotacoes/:id/sync
  */
-async function syncCotacao(req, res) {
+async function syncCotacao(req, res, next) {
   const startedAt = new Date();
   try {
     const id = toInt(req.params.id, 0);
-    if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
+    if (!id) return next(new AppError("ID inválido.", "VALIDATION_ERROR", 400));
 
     const row = await cotacoesRepo.getCotacaoById(id);
-    if (!row) return fail(res, 404, "NOT_FOUND", "Cotação não encontrada.");
+    if (!row) return next(new AppError("Cotação não encontrada.", "NOT_FOUND", 404));
 
     const resolved = await resolveCotacaoProvider(row);
     const now = nowSql();
@@ -242,9 +241,13 @@ async function syncCotacao(req, res) {
       await logAdmin(req, "sincronizou", "news_cotacoes", id);
 
       const updated = await cotacoesRepo.getCotacaoById(id);
-      return ok(res, updated, {
-        provider: { ok: true, ...(d.meta ? d.meta : null) },
-        took_ms: Date.now() - startedAt.getTime(),
+      return res.status(200).json({
+        ok: true,
+        data: updated,
+        meta: {
+          provider: { ok: true, ...(d.meta ? d.meta : null) },
+          took_ms: Date.now() - startedAt.getTime(),
+        },
       });
     }
 
@@ -275,25 +278,29 @@ async function syncCotacao(req, res) {
     console.error("[COTACOES][SYNC] provider error:", resolved?.details || resolved);
 
     const updated = await cotacoesRepo.getCotacaoById(id);
-    return ok(res, updated || row, {
-      provider: {
-        ok: false,
-        code: resolved?.code || "PROVIDER_ERROR",
-        message: msg,
-        details: resolved?.details || null,
+    return res.status(200).json({
+      ok: true,
+      data: updated || row,
+      meta: {
+        provider: {
+          ok: false,
+          code: resolved?.code || "PROVIDER_ERROR",
+          message: msg,
+          details: resolved?.details || null,
+        },
+        took_ms: Date.now() - startedAt.getTime(),
       },
-      took_ms: Date.now() - startedAt.getTime(),
     });
   } catch (error) {
     console.error("adminCotacoesController.syncCotacao:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao sincronizar cotação.");
+    return next(new AppError("Erro ao sincronizar cotação.", "INTERNAL_ERROR", 500));
   }
 }
 
 /**
  * POST /api/admin/news/cotacoes/sync-all
  */
-async function syncCotacoesAll(req, res) {
+async function syncCotacoesAll(req, res, next) {
   const startedAt = new Date();
   try {
     const rows = await cotacoesRepo.listCotacoes();
@@ -391,10 +398,14 @@ async function syncCotacoesAll(req, res) {
 
     await logAdmin(req, "sincronizou", "news_cotacoes", null);
 
-    return ok(res, summary, { took_ms: Date.now() - startedAt.getTime() });
+    return res.status(200).json({
+      ok: true,
+      data: summary,
+      meta: { took_ms: Date.now() - startedAt.getTime() },
+    });
   } catch (error) {
     console.error("adminCotacoesController.syncCotacoesAll:", error);
-    return fail(res, 500, "INTERNAL_ERROR", "Erro ao sincronizar cotações (all).");
+    return next(new AppError("Erro ao sincronizar cotações (all).", "INTERNAL_ERROR", 500));
   }
 }
 

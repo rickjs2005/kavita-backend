@@ -2,6 +2,7 @@
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const { response } = require("../lib");
 const heroRepo = require("../repositories/heroRepository");
 const mediaService = require("../services/mediaService");
 
@@ -51,15 +52,15 @@ async function updateHeroRow(fields) {
 
 exports.getHero = async (req, res) => {
   const data = await getHeroBase();
-  return res.json(data);
+  return response.ok(res, data);
 };
 
 exports.getHeroPublic = async (req, res) => {
   const data = await getHeroBase();
-  return res.json(data);
+  return response.ok(res, data);
 };
 
-exports.updateHero = async (req, res) => {
+exports.updateHero = async (req, res, next) => {
   try {
     // compat: aceita os 2 nomes
     const heroVideo =
@@ -137,15 +138,9 @@ exports.updateHero = async (req, res) => {
     await updateHeroRow(patch);
 
     const updated = await getHeroBase();
-    return res.json({ ok: true, hero: updated });
+    return response.ok(res, { hero: updated });
   } catch (err) {
     console.error("[site-hero] updateHero error:", err);
-    const status = err?.statusCode || 500;
-    return res.status(status).json({
-      status,
-      code: err?.code || "INTERNAL_ERROR",
-      message: err?.message || "Erro ao atualizar Hero.",
-      details: err?.details || null,
-    });
+    return next(err instanceof AppError ? err : new AppError(err?.message || "Erro ao atualizar Hero.", ERROR_CODES.SERVER_ERROR, 500, err?.details || null));
   }
 };
