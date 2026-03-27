@@ -1,4 +1,19 @@
 // routes/payment.js
+// =============================================================================
+// ARQUIVO HÍBRIDO — modernização parcial, migração pendente
+// =============================================================================
+// A maioria das operações delega para paymentService/paymentWebhookService.
+// Ainda existem handlers com pool.query() direto e res.json() cru para
+// gerenciamento de métodos de pagamento administrativos.
+//
+// Padrão canônico atual:
+//   rota magra → controller → service → repository  (+  Zod em schemas/)
+//   Referência: routes/admin/adminDrones.js
+//
+// Ao modificar este arquivo:
+//   - use paymentService/paymentRepository — nunca pool.query() direto
+//   - use lib/response.js — nunca res.json() cru
+// =============================================================================
 "use strict";
 
 const express = require("express");

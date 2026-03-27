@@ -160,11 +160,15 @@ Todo arquivo **novo ou modificado** deve:
 
 ## Estado arquitetural dos módulos
 
-O projeto está em migração arquitetural ativa. Dois padrões coexistem. **Todo arquivo novo ou modificado deve seguir o padrão moderno.**
+O projeto está em migração arquitetural ativa. **Todo arquivo novo ou modificado deve seguir o padrão moderno.**
 
-### Módulos modernos — padrão completo
+> **Para desenvolvedores novos:** os arquivos marcados com `ARQUIVO LEGADO` no cabeçalho
+> **não representam o padrão do projeto**. Leia um módulo moderno primeiro.
+> Referências canônicas: `routes/admin/adminDrones.js`, `routes/admin/adminCarts.js`.
 
-Estes módulos seguem o padrão completo (repository → service → controller → rota magra, Zod, `lib/response.js`, AppError):
+### Módulos modernos — padrão oficial
+
+Rota magra → controller → service → repository, Zod em `schemas/`, `lib/response.js`, `AppError`.
 
 | Domínio | Rota | Controller | Service | Repository |
 |---------|------|-----------|---------|------------|
@@ -172,38 +176,85 @@ Estes módulos seguem o padrão completo (repository → service → controller 
 | Drones (admin) | `routes/admin/adminDrones.js` | `controllers/drones/` | `services/drones/` | `repositories/dronesRepository.js` |
 | Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
 | News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js` |
-| Site Hero | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
-| Cart | `routes/ecommerce/cart.js` | — | `services/cartService.js` | `repositories/cartRepository.js` |
+| News (público) | `routes/public/publicNews.js` | `controllers/newsPublicController.js` | — | `repositories/postsRepository.js` |
+| Site Hero (admin) | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
+| Site Hero (público) | `routes/public/publicSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
+| Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/produtosRepository.js` |
+| Produtos (público) | `routes/public/publicProducts.js` | — | `services/productService.js` | `repositories/productRepository.js` |
+| Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
+| Carts (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
+| Cart (usuário) | `routes/ecommerce/cart.js` | — | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
-| Pedidos | `routes/ecommerce/pedidos.js` | — | `services/orderService.js` | `repositories/orderRepository.js` |
-| Payment | `routes/ecommerce/payment.js` | — | `services/paymentService.js` | `repositories/paymentRepository.js` |
 | Shipping | `routes/ecommerce/shipping.js` | — | `services/shippingQuoteService.js` | — |
 | Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
 | Clima (news) | — | `controllers/news/adminClimaController.js` | — | `repositories/climaRepository.js` |
 | Cotações (news) | — | `controllers/news/adminCotacoesController.js` | — | `repositories/cotacoesRepository.js` |
 
-### Módulos legados — migração pendente
+### Módulo híbrido — modernização parcial
 
-Estes módulos ainda usam `pool.query()` direto na rota, validação inline (`if (!campo)`) e `res.json()` sem helper. **Não ampliar o padrão antigo ao tocar esses arquivos — usar o padrão moderno ao refatorar.**
+Usa service para a maioria das operações, mas ainda contém `pool.query()` direto em alguns handlers.
+Ao tocar esses arquivos: use sempre `service/repository`, nunca adicione novas queries diretas.
+
+| Arquivo | Problema residual |
+|---------|------------------|
+| `routes/ecommerce/payment.js` | 2 handlers com `pool.query()` direto para métodos de pagamento admin |
+| `routes/auth/authRoutes.js` | Usa `AuthController` mas validators do express-validator legado |
+| `routes/admin/adminPedidos.js` | Usa `orderService` mas `res.json()` cru sem `lib/response.js` |
+
+### Módulos legados — exceção temporária
+
+Todos têm o cabeçalho `ARQUIVO LEGADO` no próprio código. Usam `pool.query()` direto na rota,
+validação inline (`if (!campo)`) e `res.json()` sem helper.
+**Nunca ampliar o padrão antigo. Ao tocar: migrar para o padrão moderno.**
 
 | Arquivo | Linhas | Problema principal |
 |---------|--------|--------------------|
-| `routes/admin/adminProdutos.js` | 659 | SQL inline, sem repository, sem Zod |
-| `routes/admin/adminConfig.js` | 647 | SQL inline, sem repository, sem Zod |
-| `routes/admin/adminCarts.js` | 671 | SQL + lógica de negócio inline |
-| `routes/admin/adminRoles.js` | 472 | SQL inline |
-| `routes/admin/adminComunicacao.js` | 446 | SQL inline |
-| `routes/admin/adminServicos.js` | 405 | SQL inline |
-| `routes/admin/adminMarketingPromocoes.js` | 378 | SQL inline |
-| `routes/admin/adminPedidos.js` | 309 | SQL inline |
-| `routes/admin/adminCupons.js` | 308 | SQL inline |
-| `routes/admin/adminShippingZones.js` | 306 | SQL inline |
-| `routes/admin/adminStats.js` | 297 | SQL inline |
-| `routes/public/publicServicos.js` | 651 | SQL inline |
-| `routes/public/publicProdutos.js` | 324 | SQL inline |
-| `routes/auth/userAddresses.js` | 559 | SQL inline |
-| `routes/auth/userProfile.js` | 272 | SQL inline |
-| `routes/auth/authRoutes.js` | 103 | bcrypt/pool diretos |
+| `routes/admin/adminComunicacao.js` | 462 | SQL inline, sem repository |
+| `routes/admin/adminRoles.js` | 488 | SQL inline, sem repository |
+| `routes/admin/adminServicos.js` | 421 | SQL inline, sem repository |
+| `routes/admin/adminMarketingPromocoes.js` | 394 | SQL inline, sem repository |
+| `routes/admin/adminCupons.js` | 337 | SQL inline, sem repository |
+| `routes/admin/adminShippingZones.js` | 322 | SQL inline, sem repository |
+| `routes/admin/adminStats.js` | 313 | SQL inline, sem repository |
+| `routes/admin/adminRelatorios.js` | 282 | SQL inline, sem repository |
+| `routes/admin/adminColaboradores.js` | 281 | SQL inline, sem repository |
+| `routes/admin/adminAdmins.js` | 258 | SQL inline, sem repository |
+| `routes/admin/adminLogs.js` | 255 | SQL inline, sem repository |
+| `routes/admin/adminCategorias.js` | 301 | SQL inline, sem repository |
+| `routes/admin/adminPermissions.js` | 197 | SQL inline, sem repository |
+| `routes/admin/adminSolicitacoesServicos.js` | 166 | SQL inline, sem repository |
+| `routes/admin/adminConfigUpload.js` | 143 | pool/db direto, sem service |
+| `routes/admin/adminEspecialidades.js` | 82 | SQL inline, sem repository |
+| `routes/admin/adminUsers.js` | 183 | SQL inline, sem repository |
+| `routes/auth/userAddresses.js` | 575 | SQL inline, sem repository |
+| `routes/auth/userProfile.js` | 272 | SQL inline, sem repository |
+| `routes/auth/users.js` | — | SQL inline, sem repository |
+| `routes/ecommerce/pedidos.js` | 181 | SQL inline direto no route |
+| `routes/ecommerce/favorites.js` | 146 | SQL inline, sem repository |
+| `routes/public/publicServicos.js` | 421 | SQL inline, sem repository |
+| `routes/public/publicProdutos.js` | — | SQL inline (duplicata de publicProducts) |
+| `routes/public/publicAvaliacaoColaborador.js` | 144 | SQL inline, sem repository |
+| `routes/public/publicShopConfig.js` | 182 | pool direto, sem service |
+| `routes/public/publicCategorias.js` | — | SQL inline, sem repository |
+| `routes/public/publicProductById.js` | — | SQL inline, sem repository |
+| `routes/public/publicPromocoes.js` | — | SQL inline, sem repository |
+
+### Onde um desenvolvedor novo vai se confundir
+
+Estes são os arquivos onde a dualidade de padrão causa mais confusão:
+
+1. **`routes/ecommerce/payment.js`** — parece moderno (importa paymentService), mas ainda tem
+   `pool.query()` direto. Não use como referência de como misturar padrões.
+
+2. **`routes/admin/adminPedidos.js`** — tem o banner LEGADO e usa `orderService`, mas ainda usa
+   `res.json()` cru. Está no meio de uma migração. Não copie a estrutura das rotas.
+
+3. **`routes/public/publicProdutos.js`** vs **`routes/public/publicProducts.js`** — dois arquivos
+   para o mesmo domínio. `publicProducts.js` é o moderno. `publicProdutos.js` é legado e será removido.
+
+4. **`controllers/cartsController.js`**, **`controllers/configController.js`**, **`controllers/produtosController.js`** —
+   existem e são modernos, mas as rotas antigas (adminCarts, adminConfig, adminProdutos) no CLAUDE.md
+   antigo estavam listadas como legado. Elas já foram migradas — são referência válida.
 
 ### Regra de ouro para código novo ou modificado
 
