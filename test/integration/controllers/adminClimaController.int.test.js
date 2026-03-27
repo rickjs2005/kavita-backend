@@ -364,7 +364,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
+      expect(res.body).toMatchObject({ ok: false, code: "CONFLICT" });
     });
 
     test("500 quando climaRepo.createClima lança erro genérico", async () => {
@@ -491,7 +491,7 @@ describe("adminClimaController", () => {
 
       // Assert
       expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
+      expect(res.body).toMatchObject({ ok: false, code: "CONFLICT" });
     });
 
     test("500 quando climaRepo.updateClima lança erro genérico", async () => {

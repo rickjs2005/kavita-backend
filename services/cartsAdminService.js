@@ -2,10 +2,10 @@
 // services/cartsAdminService.js
 // Regras de negócio para carrinhos abandonados no painel admin.
 
-const pool = require("../config/pool");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/cartsRepository");
+const { logger } = require("../lib");
 
 const DEFAULT_ABANDON_THRESHOLD_HOURS =
   Number(process.env.ABANDON_CART_HOURS) || 24;
@@ -89,25 +89,20 @@ function buildMessageText({ usuario_nome, carrinho_id, itens, total_estimado }) 
 // ---------------------------------------------------------------------------
 
 async function listAbandonedCarts() {
-  const conn = await pool.getConnection();
-  try {
-    const rows = await repo.findAbandonedCarts(conn);
-    return rows.map((row) => ({
-      id: row.id,
-      carrinho_id: row.carrinho_id,
-      usuario_id: row.usuario_id,
-      usuario_nome: row.usuario_nome,
-      usuario_email: row.usuario_email,
-      usuario_telefone: row.usuario_telefone,
-      itens: parseItensValue(row.itens),
-      total_estimado: Number(row.total_estimado || 0),
-      criado_em: row.criado_em,
-      atualizado_em: row.atualizado_em,
-      recuperado: !!row.recuperado,
-    }));
-  } finally {
-    conn.release();
-  }
+  const rows = await repo.findAbandonedCarts();
+  return rows.map((row) => ({
+    id: row.id,
+    carrinho_id: row.carrinho_id,
+    usuario_id: row.usuario_id,
+    usuario_nome: row.usuario_nome,
+    usuario_email: row.usuario_email,
+    usuario_telefone: row.usuario_telefone,
+    itens: parseItensValue(row.itens),
+    total_estimado: Number(row.total_estimado || 0),
+    criado_em: row.criado_em,
+    atualizado_em: row.atualizado_em,
+    recuperado: !!row.recuperado,
+  }));
 }
 
 async function scanAbandonedCarts(horasParam) {
@@ -116,59 +111,53 @@ async function scanAbandonedCarts(horasParam) {
       ? Number(horasParam)
       : DEFAULT_ABANDON_THRESHOLD_HOURS;
 
-  const conn = await pool.getConnection();
+  const carts = await repo.findOpenCartsOlderThan(thresholdHours);
   let scanned = 0;
 
-  try {
-    const carts = await repo.findOpenCartsOlderThan(conn, thresholdHours);
+  for (const cart of carts) {
+    try {
+      const itensRows = await repo.findCartItems(cart.id);
+      if (!itensRows || itensRows.length === 0) continue;
 
-    for (const cart of carts) {
+      const itens = itensRows.map((row) => ({
+        produto_id: row.produto_id,
+        produto: row.produto,
+        quantidade: Number(row.quantidade || 0),
+        preco_unitario: row.preco_unitario === 0 || row.preco_unitario ? Number(row.preco_unitario) : 0,
+      }));
+
+      const totalEstimado = itens.reduce(
+        (acc, item) => acc + item.quantidade * item.preco_unitario,
+        0
+      );
+
+      const abandonedId = await repo.insertAbandonedCart({
+        cartId: cart.id,
+        usuarioId: cart.usuario_id,
+        itens,
+        totalEstimado,
+        createdAt: cart.created_at,
+      });
+
+      scanned += 1;
+
       try {
-        const itensRows = await repo.findCartItems(conn, cart.id);
-        if (!itensRows || itensRows.length === 0) continue;
-
-        const itens = itensRows.map((row) => ({
-          produto_id: row.produto_id,
-          produto: row.produto,
-          quantidade: Number(row.quantidade || 0),
-          preco_unitario: row.preco_unitario === 0 || row.preco_unitario ? Number(row.preco_unitario) : 0,
-        }));
-
-        const totalEstimado = itens.reduce(
-          (acc, item) => acc + item.quantidade * item.preco_unitario,
-          0
-        );
-
-        const abandonedId = await repo.insertAbandonedCart(conn, {
-          cartId: cart.id,
-          usuarioId: cart.usuario_id,
-          itens,
-          totalEstimado,
-          createdAt: cart.created_at,
-        });
-
-        scanned += 1;
-
-        try {
-          const now = new Date();
-          const notifications = [
-            [abandonedId, "whatsapp", new Date(now.getTime() + 1 * 60 * 60 * 1000), "pending"],
-            [abandonedId, "email",    new Date(now.getTime() + 4 * 60 * 60 * 1000), "pending"],
-            [abandonedId, "whatsapp", new Date(now.getTime() + 24 * 60 * 60 * 1000), "pending"],
-          ];
-          await repo.insertNotifications(conn, abandonedId, notifications);
-        } catch (errNotif) {
-          console.warn("[cartsAdminService] Erro ao agendar notificações para", abandonedId, errNotif);
-        }
-      } catch (errCart) {
-        console.warn("[cartsAdminService] Erro ao processar carrinho", cart.id, errCart);
+        const now = new Date();
+        const notifications = [
+          [abandonedId, "whatsapp", new Date(now.getTime() + 1 * 60 * 60 * 1000),  "pending"],
+          [abandonedId, "email",    new Date(now.getTime() + 4 * 60 * 60 * 1000),  "pending"],
+          [abandonedId, "whatsapp", new Date(now.getTime() + 24 * 60 * 60 * 1000), "pending"],
+        ];
+        await repo.insertNotifications(notifications);
+      } catch (errNotif) {
+        logger.warn({ err: errNotif, abandonedId }, "[cartsAdminService] Erro ao agendar notificações");
       }
+    } catch (errCart) {
+      logger.warn({ err: errCart, cartId: cart.id }, "[cartsAdminService] Erro ao processar carrinho");
     }
-
-    return scanned;
-  } finally {
-    conn.release();
   }
+
+  return scanned;
 }
 
 async function notifyAbandonedCart(id, tipo) {
@@ -176,66 +165,57 @@ async function notifyAbandonedCart(id, tipo) {
     throw new AppError("tipo deve ser 'whatsapp' ou 'email'.", ERROR_CODES.VALIDATION_ERROR, 400);
   }
 
-  const conn = await pool.getConnection();
-  try {
-    const row = await repo.findAbandonedCartWithUser(conn, id);
+  const row = await repo.findAbandonedCartWithUser(id);
 
-    if (!row) {
-      throw new AppError("Carrinho abandonado não encontrado.", ERROR_CODES.NOT_FOUND, 404);
-    }
-    if (row.recuperado) {
-      throw new AppError(
-        "Este carrinho já foi marcado como recuperado. Não é necessário enviar nova notificação.",
-        ERROR_CODES.VALIDATION_ERROR,
-        400
-      );
-    }
-
-    await repo.insertManualNotification(conn, row.id, tipo);
-
-    console.log(
-      `[Carrinho Abandonado] Notificação manual via ${tipo} registrada para usuário ${row.usuario_id} (${row.usuario_nome})`
-    );
-
-    return tipo;
-  } finally {
-    conn.release();
+  if (!row) {
+    throw new AppError("Carrinho abandonado não encontrado.", ERROR_CODES.NOT_FOUND, 404);
   }
+  if (row.recuperado) {
+    throw new AppError(
+      "Este carrinho já foi marcado como recuperado. Não é necessário enviar nova notificação.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
+
+  await repo.insertManualNotification(row.id, tipo);
+
+  logger.info(
+    { abandonedId: row.id, usuarioId: row.usuario_id, usuario_nome: row.usuario_nome, tipo },
+    "[Carrinho Abandonado] Notificação manual registrada"
+  );
+
+  return tipo;
 }
 
 async function getWhatsAppLink(id) {
-  const conn = await pool.getConnection();
-  try {
-    const row = await repo.findAbandonedCartForWhatsApp(conn, id);
+  const row = await repo.findAbandonedCartForWhatsApp(id);
 
-    if (!row) {
-      throw new AppError("Carrinho abandonado não encontrado.", ERROR_CODES.NOT_FOUND, 404);
-    }
-    if (row.recuperado) {
-      throw new AppError("Este carrinho já foi marcado como recuperado.", ERROR_CODES.VALIDATION_ERROR, 400);
-    }
-    if (!row.usuario_telefone) {
-      throw new AppError("Usuário não possui telefone cadastrado.", ERROR_CODES.VALIDATION_ERROR, 400);
-    }
-
-    const phone = normalizePhoneBR(row.usuario_telefone);
-    if (!phone) {
-      throw new AppError("Telefone do usuário inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
-    }
-
-    const itens = parseItensValue(row.itens);
-    const messageText = buildMessageText({
-      usuario_nome: row.usuario_nome,
-      carrinho_id: row.carrinho_id,
-      itens,
-      total_estimado: Number(row.total_estimado || 0),
-    });
-
-    const waLink = `https://wa.me/${encodeURIComponent(phone)}?text=${encodeURIComponent(messageText)}`;
-    return { wa_link: waLink, message_text: messageText };
-  } finally {
-    conn.release();
+  if (!row) {
+    throw new AppError("Carrinho abandonado não encontrado.", ERROR_CODES.NOT_FOUND, 404);
   }
+  if (row.recuperado) {
+    throw new AppError("Este carrinho já foi marcado como recuperado.", ERROR_CODES.VALIDATION_ERROR, 400);
+  }
+  if (!row.usuario_telefone) {
+    throw new AppError("Usuário não possui telefone cadastrado.", ERROR_CODES.VALIDATION_ERROR, 400);
+  }
+
+  const phone = normalizePhoneBR(row.usuario_telefone);
+  if (!phone) {
+    throw new AppError("Telefone do usuário inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+  }
+
+  const itens = parseItensValue(row.itens);
+  const messageText = buildMessageText({
+    usuario_nome: row.usuario_nome,
+    carrinho_id: row.carrinho_id,
+    itens,
+    total_estimado: Number(row.total_estimado || 0),
+  });
+
+  const waLink = `https://wa.me/${encodeURIComponent(phone)}?text=${encodeURIComponent(messageText)}`;
+  return { wa_link: waLink, message_text: messageText };
 }
 
 module.exports = {

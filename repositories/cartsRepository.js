@@ -1,9 +1,16 @@
 "use strict";
 // repositories/cartsRepository.js
 // Acesso a dados para carrinhos abandonados.
+//
+// Convenção de conexão:
+//   Todas as funções usam o pool interno (pool.query).
+//   Não há transações neste módulo — cada operação é auto-commitada.
+//   O service é responsável pela orquestração da lógica entre chamadas.
 
-async function findAbandonedCarts(conn) {
-  const [rows] = await conn.query(
+const pool = require("../config/pool");
+
+async function findAbandonedCarts() {
+  const [rows] = await pool.query(
     `
     SELECT
       ca.id,
@@ -25,8 +32,8 @@ async function findAbandonedCarts(conn) {
   return rows;
 }
 
-async function findOpenCartsOlderThan(conn, thresholdHours) {
-  const [rows] = await conn.query(
+async function findOpenCartsOlderThan(thresholdHours) {
+  const [rows] = await pool.query(
     `
     SELECT
       c.id,
@@ -45,8 +52,8 @@ async function findOpenCartsOlderThan(conn, thresholdHours) {
   return rows;
 }
 
-async function findCartItems(conn, cartId) {
-  const [rows] = await conn.query(
+async function findCartItems(cartId) {
+  const [rows] = await pool.query(
     `
     SELECT
       ci.produto_id,
@@ -62,8 +69,8 @@ async function findCartItems(conn, cartId) {
   return rows;
 }
 
-async function insertAbandonedCart(conn, { cartId, usuarioId, itens, totalEstimado, createdAt }) {
-  const [result] = await conn.query(
+async function insertAbandonedCart({ cartId, usuarioId, itens, totalEstimado, createdAt }) {
+  const [result] = await pool.query(
     `
     INSERT INTO carrinhos_abandonados (
       carrinho_id,
@@ -81,9 +88,13 @@ async function insertAbandonedCart(conn, { cartId, usuarioId, itens, totalEstima
   return result.insertId;
 }
 
-async function insertNotifications(conn, abandonedId, notifications) {
-  // notifications: array de [abandonedId, tipo, scheduledAt, status]
-  await conn.query(
+/**
+ * Insere notificações agendadas em lote.
+ * @param {Array<[number, string, Date, string]>} notifications
+ *   Cada tupla: [carrinho_abandonado_id, tipo, scheduled_at, status]
+ */
+async function insertNotifications(notifications) {
+  await pool.query(
     `
     INSERT IGNORE INTO carrinhos_abandonados_notifications (
       carrinho_abandonado_id,
@@ -97,8 +108,8 @@ async function insertNotifications(conn, abandonedId, notifications) {
   );
 }
 
-async function findAbandonedCartWithUser(conn, id) {
-  const [[row]] = await conn.query(
+async function findAbandonedCartWithUser(id) {
+  const [[row]] = await pool.query(
     `
     SELECT
       ca.id,
@@ -120,8 +131,8 @@ async function findAbandonedCartWithUser(conn, id) {
   return row || null;
 }
 
-async function findAbandonedCartForWhatsApp(conn, id) {
-  const [[row]] = await conn.query(
+async function findAbandonedCartForWhatsApp(id) {
+  const [[row]] = await pool.query(
     `
     SELECT
       ca.id,
@@ -141,8 +152,8 @@ async function findAbandonedCartForWhatsApp(conn, id) {
   return row || null;
 }
 
-async function insertManualNotification(conn, abandonedId, tipo) {
-  await conn.query(
+async function insertManualNotification(abandonedId, tipo) {
+  await pool.query(
     `
     INSERT INTO carrinhos_abandonados_notifications (
       carrinho_abandonado_id,

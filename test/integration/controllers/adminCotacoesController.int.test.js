@@ -329,7 +329,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
+      expect(res.body).toMatchObject({ ok: false, code: "CONFLICT" });
     });
 
     test("500 quando cotacoesRepo.createCotacao lança erro genérico", async () => {
@@ -419,7 +419,7 @@ describe("adminCotacoesController", () => {
 
       // Assert
       expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
+      expect(res.body).toMatchObject({ ok: false, code: "CONFLICT" });
     });
 
     test("500 quando cotacoesRepo.updateCotacao lança erro genérico", async () => {
