@@ -2,6 +2,8 @@
 // repositories/configRepository.js
 // Acesso a dados para shop_settings e categories (painel admin).
 
+const pool = require("../config/pool");
+
 const DEFAULT_VALUES = [
   "Kavita",       // store_name
   "kavita-agro",  // store_slug
@@ -21,7 +23,7 @@ const DEFAULT_VALUES = [
   null,           // footer_links
 ];
 
-async function ensureSettings(pool) {
+async function ensureSettings() {
   const [rows] = await pool.query("SELECT id FROM shop_settings LIMIT 1");
   if (rows && rows.length > 0) return rows[0].id;
 
@@ -59,23 +61,23 @@ async function ensureSettings(pool) {
   return result.insertId;
 }
 
-async function findSettingsById(pool, id) {
+async function findSettingsById(id) {
   const [rows] = await pool.query("SELECT * FROM shop_settings WHERE id = ? LIMIT 1", [id]);
   return rows[0] || null;
 }
 
-async function updateSettingsById(pool, id, data) {
+async function updateSettingsById(id, data) {
   await pool.query("UPDATE shop_settings SET ? WHERE id = ?", [data, id]);
 }
 
-async function findAllCategories(pool) {
+async function findAllCategories() {
   const [rows] = await pool.query(
     "SELECT id, nome, slug, ativo FROM categories ORDER BY nome ASC"
   );
   return rows;
 }
 
-async function insertCategory(pool, nome, slug, ativo) {
+async function insertCategory(nome, slug, ativo) {
   const [result] = await pool.query(
     "INSERT INTO categories (nome, slug, ativo) VALUES (?, ?, ?)",
     [nome.trim(), slug || null, ativo ? 1 : 0]
@@ -83,7 +85,7 @@ async function insertCategory(pool, nome, slug, ativo) {
   return result.insertId;
 }
 
-async function updateCategoryById(pool, id, nome, slug, ativo) {
+async function updateCategoryById(id, nome, slug, ativo) {
   const [result] = await pool.query(
     "UPDATE categories SET nome = ?, slug = ?, ativo = ? WHERE id = ?",
     [nome || null, slug || null, ativo ? 1 : 0, id]

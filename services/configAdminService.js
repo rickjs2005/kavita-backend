@@ -2,7 +2,6 @@
 // services/configAdminService.js
 // Regras de negócio para configurações da loja (shop_settings + categories).
 
-const pool = require("../config/pool");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/configRepository");
@@ -113,14 +112,14 @@ function normalizeFooterLinks(input, currentValue) {
 // ---------------------------------------------------------------------------
 
 async function getSettings() {
-  const id = await repo.ensureSettings(pool);
-  const row = await repo.findSettingsById(pool, id);
+  const id = await repo.ensureSettings();
+  const row = await repo.findSettingsById(id);
   return normalizeSettings(row);
 }
 
 async function updateSettings(body) {
-  const id = await repo.ensureSettings(pool);
-  const row = await repo.findSettingsById(pool, id);
+  const id = await repo.ensureSettings();
+  const row = await repo.findSettingsById(id);
   const current = row || {};
 
   const {
@@ -196,12 +195,12 @@ async function updateSettings(body) {
     facebook_pixel_id: facebook_pixel_id ?? current.facebook_pixel_id,
   };
 
-  await repo.updateSettingsById(pool, id, updateData);
+  await repo.updateSettingsById(id, updateData);
   return { success: true };
 }
 
 async function listCategories() {
-  const rows = await repo.findAllCategories(pool);
+  const rows = await repo.findAllCategories();
   return rows.map((c) => ({
     id: c.id,
     nome: c.nome,
@@ -211,17 +210,15 @@ async function listCategories() {
 }
 
 async function createCategory(body) {
+  // Validation is enforced upstream via Zod (createCategorySchema).
   const { nome, slug, ativo } = body;
-  if (!nome || !String(nome).trim()) {
-    throw new AppError("Nome da categoria é obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400);
-  }
-  const id = await repo.insertCategory(pool, nome, slug, ativo);
+  const id = await repo.insertCategory(nome, slug ?? null, ativo ?? true);
   return { id };
 }
 
 async function updateCategory(categoryId, body) {
   const { nome, slug, ativo } = body;
-  const affected = await repo.updateCategoryById(pool, categoryId, nome, slug, ativo);
+  const affected = await repo.updateCategoryById(categoryId, nome, slug, ativo);
   if (affected === 0) {
     throw new AppError("Categoria não encontrada.", ERROR_CODES.NOT_FOUND, 404);
   }
