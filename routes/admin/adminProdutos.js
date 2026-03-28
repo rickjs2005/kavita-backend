@@ -4,7 +4,11 @@ const router = express.Router();
 const verifyAdmin = require("../../middleware/verifyAdmin");
 const mediaService = require("../../services/mediaService");
 const { validate } = require("../../middleware/validate");
-const { CriarProdutoSchema, AtualizarProdutoSchema } = require("../../schemas/requests");
+const {
+  CriarProdutoSchema,
+  AtualizarProdutoSchema,
+  ProdutoIdParamSchema,
+} = require("../../schemas/requests");
 const ctrl = require("../../controllers/produtosController");
 
 const upload = mediaService.upload;
@@ -44,15 +48,22 @@ const upload = mediaService.upload;
 router.get("/", verifyAdmin, ctrl.list);
 
 // GET /api/admin/produtos/:id
-router.get("/:id", verifyAdmin, ctrl.getById);
+router.get("/:id", verifyAdmin, validate(ProdutoIdParamSchema, "params"), ctrl.getById);
 
 // POST /api/admin/produtos
 router.post("/", verifyAdmin, upload.array("images"), validate(CriarProdutoSchema), ctrl.create);
 
 // PUT /api/admin/produtos/:id
-router.put("/:id", verifyAdmin, upload.array("images"), validate(AtualizarProdutoSchema), ctrl.update);
+router.put(
+  "/:id",
+  verifyAdmin,
+  validate(ProdutoIdParamSchema, "params"),
+  upload.array("images"),
+  validate(AtualizarProdutoSchema),
+  ctrl.update
+);
 
 // DELETE /api/admin/produtos/:id
-router.delete("/:id", verifyAdmin, ctrl.remove);
+router.delete("/:id", verifyAdmin, validate(ProdutoIdParamSchema, "params"), ctrl.remove);
 
 module.exports = router;

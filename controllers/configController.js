@@ -43,12 +43,9 @@ exports.createCategory = async (req, res, next) => {
 };
 
 exports.updateCategory = async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) {
-    return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
-  }
+  // req.params.id é coercido para number pelo CategoryIdParamSchema.
   try {
-    await svc.updateCategory(id, req.body);
+    await svc.updateCategory(req.params.id, req.body);
     return response.ok(res, null, "Categoria atualizada.");
   } catch (err) {
     return next(err instanceof AppError ? err : new AppError("Erro ao atualizar categoria.", ERROR_CODES.SERVER_ERROR, 500));

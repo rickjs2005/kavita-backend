@@ -347,7 +347,7 @@ describe("AdminConfig routes (routes/admin/adminConfig.js)", () => {
       expect(res.body).toMatchObject({ ok: false, code: "NOT_FOUND" });
     });
 
-    test("400: id inválido (texto) retorna VALIDATION_ERROR", async () => {
+    test("400: id inválido (texto) retorna VALIDATION_ERROR com field id", async () => {
       const { app } = setup();
 
       const res = await request(app)
@@ -356,6 +356,19 @@ describe("AdminConfig routes (routes/admin/adminConfig.js)", () => {
 
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(res.body.details.fields[0]).toMatchObject({ field: "id", message: "ID inválido." });
+    });
+
+    test("400: id negativo retorna VALIDATION_ERROR", async () => {
+      const { app } = setup();
+
+      const res = await request(app)
+        .put("/api/admin/config/categories/-5")
+        .send({ nome: "X" });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(res.body.details.fields[0]).toMatchObject({ field: "id", message: "ID inválido." });
     });
 
     test("400: nome vazio no body retorna VALIDATION_ERROR", async () => {

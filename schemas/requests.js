@@ -79,11 +79,28 @@ const AtualizarProdutoSchema = ProdutoBaseSchema.extend({
 });
 
 // ---------------------------------------------------------------------------
+// Params compartilhado — /produtos/:id
+// ---------------------------------------------------------------------------
+
+/**
+ * Valida que o parâmetro de rota :id é um inteiro positivo.
+ * z.coerce converte a string do URL para number antes de validar,
+ * então o controller recebe req.params.id já como número.
+ */
+const ProdutoIdParamSchema = z.object({
+  id: z
+    .string({ required_error: "ID inválido." })
+    .regex(/^[1-9]\d*$/, "ID inválido.")
+    .transform(Number),
+});
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
 module.exports = {
   CriarProdutoSchema,
   AtualizarProdutoSchema,
+  ProdutoIdParamSchema,
   formatZodErrors,
 };

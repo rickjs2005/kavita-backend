@@ -80,7 +80,7 @@ const CreateCategorySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// PUT /api/admin/config/categories/:id
+// PUT /api/admin/config/categories/:id — body
 // ---------------------------------------------------------------------------
 
 const UpdateCategorySchema = z.object({
@@ -89,8 +89,20 @@ const UpdateCategorySchema = z.object({
   ativo: z.boolean().optional(),
 });
 
+// ---------------------------------------------------------------------------
+// Params compartilhado — /categories/:id
+// ---------------------------------------------------------------------------
+
+const CategoryIdParamSchema = z.object({
+  id: z
+    .string({ required_error: "ID inválido." })
+    .regex(/^[1-9]\d*$/, "ID inválido.")
+    .transform(Number),
+});
+
 module.exports = {
   UpdateSettingsSchema,
   CreateCategorySchema,
   UpdateCategorySchema,
+  CategoryIdParamSchema,
 };

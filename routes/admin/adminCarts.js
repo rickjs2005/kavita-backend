@@ -2,6 +2,12 @@
 const express = require("express");
 const router = express.Router();
 const verifyAdmin = require("../../middleware/verifyAdmin");
+const { validate } = require("../../middleware/validate");
+const {
+  CartIdParamSchema,
+  ScanBodySchema,
+  NotifyBodySchema,
+} = require("../../schemas/cartsSchemas");
 const ctrl = require("../../controllers/cartsController");
 
 /* ------------------------------------------------------------------ */
@@ -54,15 +60,26 @@ const ctrl = require("../../controllers/cartsController");
  */
 
 // POST /api/admin/carrinhos/scan
-router.post("/scan", verifyAdmin, ctrl.scan);
+router.post("/scan", verifyAdmin, validate(ScanBodySchema), ctrl.scan);
 
 // GET /api/admin/carrinhos
 router.get("/", verifyAdmin, ctrl.list);
 
 // POST /api/admin/carrinhos/:id/notificar
-router.post("/:id/notificar", verifyAdmin, ctrl.notify);
+router.post(
+  "/:id/notificar",
+  verifyAdmin,
+  validate(CartIdParamSchema, "params"),
+  validate(NotifyBodySchema),
+  ctrl.notify
+);
 
 // GET /api/admin/carrinhos/:id/whatsapp-link
-router.get("/:id/whatsapp-link", verifyAdmin, ctrl.whatsappLink);
+router.get(
+  "/:id/whatsapp-link",
+  verifyAdmin,
+  validate(CartIdParamSchema, "params"),
+  ctrl.whatsappLink
+);
 
 module.exports = router;

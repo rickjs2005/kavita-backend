@@ -140,6 +140,26 @@ describe("AdminCarts routes (routes/admin/adminCarts.js)", () => {
       expect(res.body).toMatchObject({ ok: true, data: { scanned: 0 } });
     });
 
+    test("400: horas=0 rejeitado pelo schema (mínimo é 1)", async () => {
+      const { app, poolMock } = setupModuleWithMocks();
+
+      const res = await request(app).post("/api/admin/carrinhos/scan").send({ horas: 0 });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(poolMock.query).not.toHaveBeenCalled();
+    });
+
+    test("400: horas=721 rejeitado pelo schema (máximo é 720)", async () => {
+      const { app, poolMock } = setupModuleWithMocks();
+
+      const res = await request(app).post("/api/admin/carrinhos/scan").send({ horas: 721 });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(poolMock.query).not.toHaveBeenCalled();
+    });
+
     test("500: erro na query retorna SERVER_ERROR", async () => {
       const { app, poolMock } = setupModuleWithMocks();
 
@@ -233,7 +253,18 @@ describe("AdminCarts routes (routes/admin/adminCarts.js)", () => {
       const res = await request(app).post("/api/admin/carrinhos/0/notificar").send({ tipo: "email" });
 
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(res.body.details.fields[0]).toMatchObject({ field: "id", message: "ID inválido." });
+      expect(poolMock.query).not.toHaveBeenCalled();
+    });
+
+    test("400: ID negativo rejeitado pelo schema", async () => {
+      const { app, poolMock } = setupModuleWithMocks();
+
+      const res = await request(app).post("/api/admin/carrinhos/-1/notificar").send({ tipo: "email" });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
       expect(poolMock.query).not.toHaveBeenCalled();
     });
 
@@ -331,7 +362,8 @@ describe("AdminCarts routes (routes/admin/adminCarts.js)", () => {
       const res = await request(app).get("/api/admin/carrinhos/0/whatsapp-link");
 
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(res.body.details.fields[0]).toMatchObject({ field: "id", message: "ID inválido." });
       expect(poolMock.query).not.toHaveBeenCalled();
     });
 

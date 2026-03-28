@@ -180,7 +180,8 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
       const res = await request(app).get("/api/admin/produtos/abc");
 
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(res.body.details.fields[0]).toMatchObject({ field: "id", message: "ID inválido." });
     });
 
     test("400: ID zero retorna VALIDATION_ERROR", async () => {
@@ -189,7 +190,8 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
       const res = await request(app).get("/api/admin/produtos/0");
 
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(res.body.details.fields[0]).toMatchObject({ field: "id", message: "ID inválido." });
     });
 
     test("404: produto não encontrado retorna NOT_FOUND", async () => {
@@ -374,7 +376,8 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
         .send(CREATE_BODY);
 
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(res.body.details.fields[0]).toMatchObject({ field: "id", message: "ID inválido." });
       expect(poolMock.getConnection).not.toHaveBeenCalled();
     });
 
@@ -455,7 +458,8 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
       const res = await request(app).delete("/api/admin/produtos/0");
 
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
+      expect(res.body.details.fields[0]).toMatchObject({ field: "id", message: "ID inválido." });
       expect(poolMock.getConnection).not.toHaveBeenCalled();
     });
 

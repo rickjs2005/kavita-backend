@@ -16,12 +16,9 @@ exports.list = async (req, res, next) => {
 };
 
 exports.getById = async (req, res, next) => {
+  // req.params.id é coercido para number pelo ProdutoIdParamSchema.
   try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
-    }
-    const produto = await svc.getProduct(id);
+    const produto = await svc.getProduct(req.params.id);
     return response.ok(res, produto);
   } catch (err) {
     return next(err instanceof AppError ? err : new AppError("Erro ao buscar produto.", ERROR_CODES.SERVER_ERROR, 500));
@@ -38,12 +35,9 @@ exports.create = async (req, res, next) => {
 };
 
 exports.update = async (req, res, next) => {
+  // req.params.id é coercido para number pelo ProdutoIdParamSchema.
   try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
-    }
-    await svc.updateProduct(id, req.body, req.files || []);
+    await svc.updateProduct(req.params.id, req.body, req.files || []);
     return response.ok(res, null, "Produto atualizado com sucesso.");
   } catch (err) {
     return next(err instanceof AppError ? err : new AppError("Erro ao atualizar produto.", ERROR_CODES.SERVER_ERROR, 500));
@@ -51,12 +45,9 @@ exports.update = async (req, res, next) => {
 };
 
 exports.remove = async (req, res, next) => {
+  // req.params.id é coercido para number pelo ProdutoIdParamSchema.
   try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
-    }
-    await svc.deleteProduct(id);
+    await svc.deleteProduct(req.params.id);
     return response.noContent(res);
   } catch (err) {
     return next(err instanceof AppError ? err : new AppError("Erro ao remover produto.", ERROR_CODES.SERVER_ERROR, 500));

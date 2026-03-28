@@ -7,6 +7,7 @@ const {
   UpdateSettingsSchema,
   CreateCategorySchema,
   UpdateCategorySchema,
+  CategoryIdParamSchema,
 } = require("../../schemas/configSchemas");
 const ctrl = require("../../controllers/configController");
 
@@ -26,6 +27,7 @@ router.post("/categories", verifyAdmin, validate(CreateCategorySchema), ctrl.cre
 router.put(
   "/categories/:id",
   verifyAdmin,
+  validate(CategoryIdParamSchema, "params"),
   validate(UpdateCategorySchema),
   ctrl.updateCategory
 );

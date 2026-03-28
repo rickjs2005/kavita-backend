@@ -161,10 +161,7 @@ async function scanAbandonedCarts(horasParam) {
 }
 
 async function notifyAbandonedCart(id, tipo) {
-  if (!["whatsapp", "email"].includes(tipo)) {
-    throw new AppError("tipo deve ser 'whatsapp' ou 'email'.", ERROR_CODES.VALIDATION_ERROR, 400);
-  }
-
+  // `tipo` já é validado pelo NotifyBodySchema na rota ("whatsapp"|"email").
   const row = await repo.findAbandonedCartWithUser(id);
 
   if (!row) {
