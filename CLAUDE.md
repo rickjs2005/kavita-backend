@@ -2,6 +2,85 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## Onboarding rápido para dev novo
+
+> Leia esta seção antes de qualquer outra coisa. Ela responde as 10 dúvidas que qualquer novo desenvolvedor terá nos primeiros dias.
+
+### Primeiros 30 minutos
+
+1. `cp .env.example .env` e preencha as vars obrigatórias (ver seção "Variáveis de ambiente obrigatórias" abaixo)
+2. `npm install`
+3. `npm run db:migrate` + `npm run db:test:reset`
+4. `npm run dev` — servidor sobe em `http://localhost:5000`
+5. `http://localhost:5000/docs` — Swagger com todos os endpoints documentados
+6. Leia `routes/index.js` — é o mapa de todas as rotas do sistema
+
+### Onde colocar código novo
+
+```
+Nova feature completa:
+  routes/{contexto}/               ← rota magra, só wiring
+  schemas/{domínio}Schemas.js      ← validação Zod
+  controllers/{domínio}Controller.js ← extrai dados de req, delega ao service
+  services/{domínio}Service.js     ← lógica de negócio
+  repositories/{domínio}Repository.js ← queries SQL
+
+Nova rota num módulo legado:
+  → migrar o arquivo inteiro para o padrão moderno na mesma PR
+  → nunca adicionar SQL inline em arquivo legado
+
+Bug num módulo legado (urgente):
+  → corrigir o bug primeiro
+  → criar schema Zod para a rota afetada na mesma PR
+  → abrir issue para migração completa do arquivo
+```
+
+### Regra sobre qual pasta de rota usar
+
+| Natureza | Pasta | Middleware aplicado pelo index.js |
+|---|---|---|
+| Entrada de sessão (login/logout/register) | `routes/auth/` | nenhum (sem CSRF) |
+| Operações do painel admin | `routes/admin/` | `verifyAdmin + validateCSRF` |
+| Operações do usuário logado | `routes/ecommerce/` ou `routes/auth/` | `authenticateToken + validateCSRF` |
+| Acesso público sem auth | `routes/public/` | nenhum |
+| Utilitários de infraestrutura | `routes/utils/` | nenhum |
+
+### Dúvidas frequentes
+
+**Q: `adminLogin.js` está em `routes/auth/`, não em `routes/admin/`. Por quê?**
+A: Login é ponto de entrada de sessão — sem `verifyAdmin`. Tudo em `routes/admin/` é protegido pelo middleware. Manter login em `auth/` deixa o contrato claro.
+
+**Q: Qual a diferença entre `productRepository.js` e `produtosRepository.js`?**
+A: Domínios diferentes. `productRepository.js` = leitura pública (listagem, busca, sem mutações). `produtosRepository.js` = CRUD admin completo (insert, update, delete, imagens). O cabeçalho de cada arquivo explica.
+
+**Q: Qual a diferença entre `cartRepository.js` e `cartsRepository.js`?**
+A: Contextos diferentes. `cartRepository.js` = carrinho ativo do usuário (ecommerce). `cartsRepository.js` = carrinhos abandonados para o painel admin. Não são duplicatas.
+
+**Q: `verifyAdmin` ou `authenticateToken`?**
+A: `verifyAdmin` para rotas do painel admin (cookie `adminToken`, 2h). `authenticateToken` para rotas de usuário final (cookie `auth_token`, 7d). São contextos de autenticação completamente independentes. `verifyUser` e `requireRole` foram removidos.
+
+**Q: `lib/response.js` ou `res.json()`?**
+A: Sempre `lib/response.js` em código novo: `response.ok(res, data)`, `response.created(res, data)`, `response.paginated(res, {...})`. `res.json()` direto só existe em módulos legados em migração.
+
+**Q: `AppError` ou `res.status(4xx).json()`?**
+A: Sempre `next(new AppError(message, ERROR_CODES.XXX, status))`. O `errorHandler` global em `server.js` processa tudo. Nunca `res.status(4xx).json()` inline em código novo.
+
+**Q: Sequelize está instalado. Devo usar models ORM?**
+A: Não. Sequelize existe só para migrations via CLI (`npm run db:migrate`). Todo acesso a dados usa `mysql2` raw pool via `repositories/`. Não há models Sequelize no código de aplicação.
+
+**Q: Qual o arquivo de referência para implementar um módulo novo?**
+A: `routes/admin/adminDrones.js` + `controllers/drones/` + `services/drones/` + `repositories/dronesRepository.js`. É o módulo mais completo e mais atual. Use como template.
+
+**Q: Encontrei um arquivo com SQL direto na rota. É o padrão?**
+A: Não. É legado em migração. O arquivo tem um banner `ARQUIVO LEGADO` no topo. Não copie esse padrão. Ao tocar o arquivo, migre-o para o padrão moderno.
+
+**Q: Dois arquivos para o mesmo domínio de produtos: `publicProdutos.js` e `publicProducts.js`. Qual usar?**
+A: `publicProducts.js` é o moderno. `publicProdutos.js` é legado (avaliações de produtos via SQL inline) e será removido. Nunca adicione endpoints em `publicProdutos.js`.
+
+---
+
 ## Commands
 
 ```bash
@@ -172,7 +251,7 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 
 | Domínio | Rota | Controller | Service | Repository |
 |---------|------|-----------|---------|------------|
-| Auth admin | `routes/admin/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
+| Auth admin | `routes/auth/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
 | Drones (admin) | `routes/admin/adminDrones.js` | `controllers/drones/` | `services/drones/` | `repositories/dronesRepository.js` |
 | Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
 | News (admin) | `routes/admin/adminNews.js` | `controllers/news/` (clima, cotações, posts) | — | `repositories/postsRepository.js`, `climaRepository.js`, `cotacoesRepository.js` |
@@ -229,12 +308,12 @@ validação inline (`if (!campo)`) e `res.json()` sem helper.
 | `routes/admin/adminUsers.js` | 183 | SQL inline, sem repository |
 | `routes/auth/userAddresses.js` | 575 | SQL inline, sem repository |
 | `routes/auth/userProfile.js` | 272 | SQL inline, sem repository |
-| `routes/auth/users.js` | — | SQL inline, sem repository |
+| `routes/auth/userAccount.js` | — | SQL inline, sem repository |
 | `routes/ecommerce/pedidos.js` | 181 | SQL inline direto no route |
 | `routes/ecommerce/favorites.js` | 146 | SQL inline, sem repository |
 | `routes/public/publicServicos.js` | 421 | SQL inline, sem repository |
-| `routes/public/publicProdutos.js` | — | SQL inline (duplicata de publicProducts) |
-| `routes/public/publicAvaliacaoColaborador.js` | 144 | SQL inline, sem repository |
+| `routes/public/publicProdutos.js` | — | SQL inline (legado de publicProducts) |
+| `routes/public/publicServicosAvaliacoes.js` | 144 | SQL inline, sem repository |
 | `routes/public/publicShopConfig.js` | 182 | pool direto, sem service |
 | `routes/public/publicCategorias.js` | — | SQL inline, sem repository |
 | `routes/public/publicProductById.js` | — | SQL inline, sem repository |
@@ -242,24 +321,29 @@ validação inline (`if (!campo)`) e `res.json()` sem helper.
 
 ### Onde um desenvolvedor novo vai se confundir
 
-Estes são os arquivos onde a dualidade de padrão causa mais confusão:
+Armadilhas ativas (não resolvidas por organização — exigem migração futura):
 
 1. **`routes/ecommerce/payment.js`** — parece moderno (importa paymentService), mas ainda tem
-   `pool.query()` direto. Não use como referência de como misturar padrões.
+   `pool.query()` direto em 2 handlers. Não use como referência de como misturar padrões.
 
 2. **`routes/admin/adminPedidos.js`** — tem o banner LEGADO e usa `orderService`, mas ainda usa
    `res.json()` cru. Está no meio de uma migração. Não copie a estrutura das rotas.
 
-3. **`routes/public/publicProdutos.js`** vs **`routes/public/publicProducts.js`** — dois arquivos
-   para o mesmo domínio. `publicProducts.js` é o moderno. `publicProdutos.js` é legado e será removido.
+3. **`routes/public/publicProdutos.js`** vs **`routes/public/publicProducts.js`** — dois arquivos.
+   `publicProducts.js` é o moderno. `publicProdutos.js` é legado e será removido. Nunca adicione
+   endpoints em `publicProdutos.js`.
 
-4. **`controllers/cartsController.js`**, **`controllers/configController.js`**, **`controllers/produtosController.js`** —
-   existem e são modernos, mas as rotas antigas (adminCarts, adminConfig, adminProdutos) no CLAUDE.md
-   antigo estavam listadas como legado. Elas já foram migradas — são referência válida.
-
-5. **`services/news/helpers.js`** — exporta utilitários de domínio (`toInt`, `nowSql`, `normalizeSlug`, etc.)
+4. **`services/news/helpers.js`** — exporta utilitários de domínio (`toInt`, `nowSql`, `normalizeSlug`, etc.)
    que são legítimos e reutilizados por vários controllers de news. **Não** exporta helpers de resposta
    HTTP — esses foram removidos. Para respostas, sempre usar `lib/response.js` + `AppError`.
+
+Armadilhas já resolvidas (registradas aqui para histórico):
+
+- `routes/admin/adminLogin.js` foi movido para `routes/auth/adminLogin.js` — login é auth, não operação admin
+- `routes/auth/users.js` foi renomeado para `routes/auth/userAccount.js` — desambiguar de `adminUsers.js`
+- `routes/public/publicAvaliacaoColaborador.js` → `routes/public/publicServicosAvaliacoes.js` — alinhado ao domínio
+- `routes/uploadsCheckRoutes.js` → `routes/utils/uploadsCheck.js` — segue convenção de subpastas
+- `controllers/cartsController.js`, `configController.js`, `produtosController.js` — são modernos e referência válida
 
 ### Regra de ouro para código novo ou modificado
 

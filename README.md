@@ -302,14 +302,16 @@ O Helmet 8 define `Cross-Origin-Resource-Policy: same-origin` por padrão. O ove
 
 | Domínio | Rota | Controller | Service | Repository |
 |---|---|---|---|---|
-| Auth admin | `routes/admin/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
+| Auth admin | `routes/auth/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
 | Drones (admin) | `routes/admin/adminDrones.js` | `controllers/drones/` | `services/drones/` | `repositories/dronesRepository.js` |
 | Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
 | News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js` |
 | Site Hero | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
 | Produtos (público) | `routes/public/publicProducts.js` | — | `services/productService.js` | `repositories/productRepository.js` |
 | Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/produtosRepository.js` |
-| Cart | `routes/ecommerce/cart.js` | — | `services/cartService.js` | `repositories/cartRepository.js` |
+| Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
+| Carrinhos (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
+| Cart (usuário) | `routes/ecommerce/cart.js` | — | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
 | Pedidos | `routes/ecommerce/pedidos.js` | — | `services/orderService.js` | `repositories/orderRepository.js` |
 | Payment | `routes/ecommerce/payment.js` | — | `services/paymentService.js` | `repositories/paymentRepository.js` |
@@ -322,8 +324,6 @@ Estes arquivos usam SQL inline na rota, validação manual e `res.json()` cru. *
 
 | Arquivo | Tamanho | Problema |
 |---|---|---|
-| `routes/admin/adminConfig.js` | ~647 linhas | SQL inline, sem Zod |
-| `routes/admin/adminCarts.js` | ~671 linhas | SQL + lógica inline |
 | `routes/admin/adminRoles.js` | ~472 linhas | SQL inline |
 | `routes/admin/adminComunicacao.js` | ~446 linhas | SQL inline |
 | `routes/admin/adminServicos.js` | ~405 linhas | SQL inline |

@@ -1,4 +1,13 @@
 "use strict";
+// repositories/cartRepository.js
+//
+// Escopo: domínio de CARRINHO DO USUÁRIO (ecommerce).
+// Responsabilidades: leitura do carrinho ativo com itens, queries de checkout.
+//
+// ⚠️  NÃO confundir com cartsRepository.js, que é o domínio de
+//     CARRINHOS ABANDONADOS para o painel admin.
+//
+// Consumidores: services/cartService.js, services/checkoutService.js
 
 const pool = require("../config/pool");
 
