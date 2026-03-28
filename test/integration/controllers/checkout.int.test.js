@@ -149,11 +149,21 @@ describe("POST /api/checkout (integration)", () => {
     conn.query.mockImplementation(
       makeQueryRouter([
         {
+          // Advisory lock — serializes concurrent checkouts
+          match: (s) => s.includes("get_lock("),
+          reply: async () => [[{ ok: 1 }]],
+        },
+        {
           match: (s) =>
             s.includes("select id") &&
             s.includes("from carrinhos") &&
             s.includes('status = "aberto"'),
           reply: async () => [[], {}],
+        },
+        {
+          // Deduplication: recent orders by product composition
+          match: (s) => s.includes("group_concat") && s.includes("pedidos_produtos"),
+          reply: async () => [[]],
         },
         {
           match: (s) => s.startsWith("insert into pedidos"),
@@ -164,6 +174,11 @@ describe("POST /api/checkout (integration)", () => {
             s.includes("select id, price, quantity from products") &&
             s.includes("for update"),
           reply: async () => [[{ id: 1, price: 10, quantity: 5 }], {}],
+        },
+        {
+          // Active promotions — returns empty (no promos)
+          match: (s) => s.includes("product_promotions") && s.includes("is_active = 1"),
+          reply: async () => [[]],
         },
         {
           match: (s) => s.startsWith("insert into pedidos_produtos"),
@@ -177,6 +192,11 @@ describe("POST /api/checkout (integration)", () => {
         {
           match: (s) => s.startsWith("update pedidos set total"),
           reply: async () => [[], {}],
+        },
+        {
+          // Shipping persistence inside transaction (step 7.1)
+          match: (s) => s.includes("update pedidos") && s.includes("shipping_price"),
+          reply: async () => [{ affectedRows: 1 }],
         },
       ])
     );
@@ -192,13 +212,16 @@ describe("POST /api/checkout (integration)", () => {
     });
 
     expect(resp.status).toBe(201);
+    // Response uses lib/response.js: { ok, message, data: {...} }
     expect(resp.body).toMatchObject({
-      success: true,
-      pedido_id: pedidoId,
-      total: 20,
-      total_sem_desconto: 20,
-      desconto_total: 0,
-      cupom_aplicado: null,
+      ok: true,
+      data: {
+        pedido_id: pedidoId,
+        total: 20,
+        total_sem_desconto: 20,
+        desconto_total: 0,
+        cupom_aplicado: null,
+      },
     });
 
     expect(conn.beginTransaction).toHaveBeenCalledTimes(1);
@@ -229,11 +252,21 @@ describe("POST /api/checkout (integration)", () => {
     conn.query.mockImplementation(
       makeQueryRouter([
         {
+          // Advisory lock
+          match: (s) => s.includes("get_lock("),
+          reply: async () => [[{ ok: 1 }]],
+        },
+        {
           match: (s) =>
             s.includes("select id") &&
             s.includes("from carrinhos") &&
             s.includes('status = "aberto"'),
           reply: async () => [[], {}],
+        },
+        {
+          // Deduplication: recent orders
+          match: (s) => s.includes("group_concat") && s.includes("pedidos_produtos"),
+          reply: async () => [[]],
         },
         {
           match: (s) => s.startsWith("insert into pedidos"),
@@ -243,7 +276,13 @@ describe("POST /api/checkout (integration)", () => {
           match: (s) =>
             s.includes("select id, price, quantity from products") &&
             s.includes("for update"),
+          // quantity: 1, but test orders 2 — triggers estoque insuficiente
           reply: async () => [[{ id: 9, price: 10, quantity: 1 }], {}],
+        },
+        {
+          // Active promotions
+          match: (s) => s.includes("product_promotions") && s.includes("is_active = 1"),
+          reply: async () => [[]],
         },
       ])
     );

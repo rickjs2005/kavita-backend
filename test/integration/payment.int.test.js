@@ -680,8 +680,9 @@ describe("Payment Routes (integration) - routes/ecommerce/payment.js", () => {
             match: (sqlNorm) =>
               sqlNorm.startsWith("update pedidos") && sqlNorm.includes("status_pagamento"),
             reply: async (_sqlNorm, params) => {
+              // params: [status, status, paymentId, pedidoId, status, paymentId]
               expect(params[0]).toBe("pago");
-              expect(params[1]).toBe("111222");
+              expect(params[2]).toBe("111222"); // pagamento_id = dataId
               sawPedidoUpdate = true;
               return [{ affectedRows: 1 }];
             },
@@ -761,6 +762,7 @@ describe("Payment Routes (integration) - routes/ecommerce/payment.js", () => {
 
       const poolPath = require.resolve("../../config/pool");
       const authPath = require.resolve("../../middleware/authenticateToken");
+      const csrfPath = require.resolve("../../middleware/csrfProtection");
 
       const mockPool = makeMockPool();
       jest.doMock(poolPath, () => mockPool);
@@ -772,6 +774,12 @@ describe("Payment Routes (integration) - routes/ecommerce/payment.js", () => {
         req.user = { id: userId, role: "user" };
         next();
       });
+
+      // Bypass CSRF for unit-level integration tests — not what's under test here
+      jest.doMock(csrfPath, () => ({
+        validateCSRF: (_req, _res, next) => next(),
+        generateCSRFToken: jest.fn(),
+      }));
 
       const router = require("../../routes/ecommerce/payment");
       return { router, mockPool };
