@@ -62,6 +62,39 @@ describe("createAdaptiveRateLimiter", () => {
     expect(n2).not.toHaveBeenCalled();
   });
 
+  test("resposta 429 segue contrato da API: { ok: false, code, message, retryAfter }", async () => {
+    const limiter = createAdaptiveRateLimiter({
+      keyGenerator: (req) => req.ip,
+      schedule: [0, 60_000],
+    });
+
+    // dispara um bloqueio
+    const { req: r1, res: res1, next: n1 } = makeReqRes();
+    await limiter(r1, res1, n1);
+    r1.rateLimit.fail();
+
+    // requisição bloqueada
+    const { req: r2, res: res2, next: n2 } = makeReqRes();
+    await limiter(r2, res2, n2);
+
+    expect(res2._status).toBe(429);
+    expect(n2).not.toHaveBeenCalled();
+
+    // contrato de payload
+    expect(res2._body).toMatchObject({
+      ok: false,
+      code: "RATE_LIMIT",
+      message: expect.any(String),
+      retryAfter: expect.any(Number),
+    });
+
+    // retryAfter deve ser positivo
+    expect(res2._body.retryAfter).toBeGreaterThan(0);
+
+    // header Retry-After deve estar presente e consistente
+    expect(res2._headers["Retry-After"]).toBe(String(res2._body.retryAfter));
+  });
+
   test("reset() limpa o estado de bloqueio", async () => {
     const limiter = createAdaptiveRateLimiter({
       keyGenerator: (req) => req.ip,

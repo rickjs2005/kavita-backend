@@ -56,6 +56,7 @@ function createAdaptiveRateLimiter({
       res.set("Retry-After", String(retryAfter));
 
       return res.status(429).json({
+        ok: false,
         code: ERROR_CODES.RATE_LIMIT,
         message: "Muitas tentativas. Tente novamente mais tarde.",
         retryAfter,
