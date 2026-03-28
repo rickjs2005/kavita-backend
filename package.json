@@ -92,6 +92,8 @@
       "controllers/**/*.js",
       "services/**/*.js",
       "repositories/**/*.js",
+      "middleware/**/*.js",
+      "schemas/**/*.js",
       "server.js"
     ]
   },

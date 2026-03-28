@@ -36,7 +36,7 @@ async function tableExists(tableName) {
 
 async function findPageSettings() {
   const [rows] = await pool.query(
-    `SELECT * FROM drone_page_settings ORDER BY id DESC LIMIT 1`
+    "SELECT * FROM drone_page_settings ORDER BY id DESC LIMIT 1"
   );
   return rows[0] ?? null;
 }

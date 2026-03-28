@@ -156,7 +156,7 @@ Todo arquivo **novo ou modificado** deve:
 
 - Setup de ambiente: `test/setup/env.setup.js` (define vars mínimas para NODE_ENV=test)
 - Testes de integração usam banco real — rodar `npm run db:test:reset` antes da primeira execução
-- Cobertura coletada de: `routes/**`, `controllers/**`, `services/**`, `server.js`
+- Cobertura coletada de: `routes/**`, `controllers/**`, `services/**`, `repositories/**`, `middleware/**`, `schemas/**`, `server.js`
 
 ## Estado arquitetural dos módulos
 
