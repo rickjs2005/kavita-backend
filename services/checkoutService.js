@@ -1,7 +1,7 @@
 "use strict";
 
 const pool = require("../config/pool");
-const { dispararEventoComunicacao } = require("./comunicacaoService");
+const checkoutNotificationService = require("./checkoutNotificationService");
 const checkoutRepo = require("../repositories/checkoutRepository");
 const cartRepo = require("../repositories/cartRepository");
 const orderRepo = require("../repositories/orderRepository");
@@ -285,7 +285,7 @@ async function create(userId, body) {
 
     /* 9.1) Communication event — non-blocking, runs after commit */
     try {
-      await dispararEventoComunicacao("pedido_criado", pedidoId);
+      await checkoutNotificationService.notifyOrderCreated(pedidoId);
     } catch (errCom) {
       console.error("[checkoutService] Erro ao disparar comunicação:", errCom);
     }

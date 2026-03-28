@@ -4,7 +4,7 @@
  * Testes UNIT do checkoutController.create
  * - Sem Express/Supertest
  * - Mocka pool.getConnection (transação) e pool.query (fora da transação)
- * - Mocka comunicacaoService
+ * - Mocka checkoutNotificationService
  * - NÃO depende da ordem das queries (mock por SQL), evitando flakiness
  * - Cobre branches de: validações, produto não encontrado, cupom (percentual/fixo/inativo/expirado/limite/mínimo),
  *   catch interno do cupom, falhas não bloqueantes (carrinho abandonado/ comunicação / fechar carrinho),
@@ -86,8 +86,8 @@ describe("checkoutController.create (unit)", () => {
 
     // Paths corretos a partir de test/unit/controllers
     jest.doMock("../../../config/pool", () => mockPool);
-    jest.doMock("../../../services/comunicacaoService", () => ({
-      dispararEventoComunicacao: mockDisparar,
+    jest.doMock("../../../services/checkoutNotificationService", () => ({
+      notifyOrderCreated: mockDisparar,
     }));
 
      
@@ -247,7 +247,7 @@ describe("checkoutController.create (unit)", () => {
     expect(conn.rollback).not.toHaveBeenCalled();
     expect(conn.release).toHaveBeenCalledTimes(1);
 
-    expect(mockDisparar).toHaveBeenCalledWith("pedido_criado", pedidoId);
+    expect(mockDisparar).toHaveBeenCalledWith(pedidoId);
 
     // fechar carrinho fora da transação
     expect(mockPool.query).toHaveBeenCalledTimes(1);

@@ -4,7 +4,7 @@
  * Integração HTTP via Supertest:
  * - Express app mínimo com makeTestApp
  * - Router isolado chamando controller real
- * - Mocks: pool + comunicacaoService
+ * - Mocks: pool + checkoutNotificationService
  * - Mock de conn.query por SQL (não por ordem)
  */
 
@@ -66,8 +66,8 @@ describe("POST /api/checkout (integration)", () => {
 
     // Paths corretos a partir de test/integration/controllers
     jest.doMock("../../../config/pool", () => mockPool);
-    jest.doMock("../../../services/comunicacaoService", () => ({
-      dispararEventoComunicacao: mockDisparar,
+    jest.doMock("../../../services/checkoutNotificationService", () => ({
+      notifyOrderCreated: mockDisparar,
     }));
 
      
@@ -229,7 +229,7 @@ describe("POST /api/checkout (integration)", () => {
     expect(conn.rollback).not.toHaveBeenCalled();
     expect(conn.release).toHaveBeenCalledTimes(1);
 
-    expect(mockDisparar).toHaveBeenCalledWith("pedido_criado", pedidoId);
+    expect(mockDisparar).toHaveBeenCalledWith(pedidoId);
 
     expect(mockPool.query).toHaveBeenCalledTimes(1);
     expect(String(mockPool.query.mock.calls[0][0])).toMatch(
