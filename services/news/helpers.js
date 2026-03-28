@@ -1,26 +1,6 @@
-// utils/newsHelpers.js
-// Helpers compartilhados pelos controllers do módulo news (clima, cotações, posts, público).
-// Importar aqui em vez de duplicar em cada controller.
-
-/* =========================
- * Respostas padronizadas
- * ========================= */
-
-function ok(res, data, meta) {
-  const payload = { ok: true, data };
-  if (meta !== undefined) payload.meta = meta;
-  return res.status(200).json(payload);
-}
-
-function created(res, data) {
-  return res.status(201).json({ ok: true, data });
-}
-
-function fail(res, status, code, message, details) {
-  const payload = { ok: false, code, message };
-  if (details) payload.details = details;
-  return res.status(status).json(payload);
-}
+// services/news/helpers.js
+// Utilitários de domínio compartilhados pelos controllers do módulo news.
+// Respostas HTTP: usar lib/response.js + AppError — não duplicar aqui.
 
 /* =========================
  * Conversores de tipo
@@ -104,9 +84,6 @@ function sanitizeLimitOffset(limit, offset, maxLimit = 100) {
 }
 
 module.exports = {
-  ok,
-  created,
-  fail,
   toInt,
   toFloat,
   toBoolTiny,

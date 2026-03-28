@@ -5,6 +5,7 @@ const adminNewsUploadRoutes = require("./adminNewsUpload");
 const { validate } = require("../../middleware/validate");
 const { createClimaBodySchema, updateClimaBodySchema } = require("../../schemas/climaSchemas");
 const { createCotacaoBodySchema, updateCotacaoBodySchema } = require("../../schemas/cotacoesSchemas");
+const { PostIdParamSchema, CreatePostSchema, UpdatePostSchema } = require("../../schemas/newsSchemas");
 
 router.use("/upload", adminNewsUploadRoutes);
 
@@ -25,17 +26,10 @@ router.delete("/cotacoes/:id", newsAdmin.deleteCotacao);
 router.post("/cotacoes/:id/sync", newsAdmin.syncCotacao);
 router.post("/cotacoes/sync-all", newsAdmin.syncCotacoesAll);
 
-// POSTS (somente se existirem MESMO — evita callback undefined)
-if (
-  typeof newsAdmin.listPosts === "function" &&
-  typeof newsAdmin.createPost === "function" &&
-  typeof newsAdmin.updatePost === "function" &&
-  typeof newsAdmin.deletePost === "function"
-) {
-  router.get("/posts", newsAdmin.listPosts);
-  router.post("/posts", newsAdmin.createPost);
-  router.put("/posts/:id", newsAdmin.updatePost);
-  router.delete("/posts/:id", newsAdmin.deletePost);
-}
+// POSTS
+router.get("/posts", newsAdmin.listPosts);
+router.post("/posts", validate(CreatePostSchema), newsAdmin.createPost);
+router.put("/posts/:id", validate(PostIdParamSchema, "params"), validate(UpdatePostSchema), newsAdmin.updatePost);
+router.delete("/posts/:id", validate(PostIdParamSchema, "params"), newsAdmin.deletePost);
 
 module.exports = router;

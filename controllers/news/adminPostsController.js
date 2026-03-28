@@ -5,25 +5,19 @@ const postsRepo = require("../../repositories/postsRepository");
 const { sanitizeText, sanitizeRichText } = require("../../utils/sanitize");
 const { logAdminAction } = require("../../services/adminLogs");
 const {
-  ok, created, fail,
-  toInt, isNonEmptyStr, isOptionalStr, isValidDateTimeLike,
-  normalizeSlug, isValidSlug, nowSql,
+  toInt, isValidDateTimeLike,
+  normalizeSlug, isValidSlug, nowSql, sanitizeLimitOffset,
 } = require("../../services/news/helpers");
+const { response } = require("../../lib");
+const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 
 function getAdminId(req) {
   return req.admin?.id || req.user?.id || req.adminId || req.userId || null;
 }
 
-/* helper local: extrai adminId do req e delega para o serviço centralizado */
 async function logAdmin(req, acao, entidade, entidade_id = null) {
   await logAdminAction({ adminId: getAdminId(req), acao, entidade, entidadeId: entidade_id });
-}
-
-function sanitizeLimitOffset(limit, offset) {
-  const lim = Math.min(Math.max(toInt(limit, 10), 1), 100);
-  const off = Math.max(toInt(offset, 0), 0);
-  return { lim, off };
 }
 
 function normalizeSearchToBooleanMode(search) {
@@ -86,7 +80,7 @@ async function ensureUniqueSlugAuto(baseSlug) {
 /* =========================
  * LIST
  * ========================= */
-async function listPosts(req, res) {
+async function listPosts(req, res, next) {
   try {
     const status = req.query.status ? String(req.query.status).trim() : null;
     const search = req.query.search ? String(req.query.search).trim() : null;
@@ -99,7 +93,11 @@ async function listPosts(req, res) {
       where.push("status = ?");
       params.push(status);
     } else if (status) {
-      return fail(res, 400, "VALIDATION_ERROR", "status inválido (draft|published|archived).", { field: "status" });
+      return next(new AppError(
+        "status inválido (draft|published|archived).",
+        ERROR_CODES.VALIDATION_ERROR, 400,
+        { fields: [{ field: "status", message: "status inválido (draft|published|archived)." }] }
+      ));
     }
 
     const booleanSearch = normalizeSearchToBooleanMode(search);
@@ -113,46 +111,46 @@ async function listPosts(req, res) {
     const total = await postsRepo.countPosts(whereSql, params);
     const rows = await postsRepo.listPosts(whereSql, params, limit, offset);
 
-    return ok(res, rows, { status, search, limit, offset, total });
+    return response.ok(res, rows, null, { status, search, limit, offset, total });
   } catch (error) {
     console.error("adminPostsController.listPosts:", error);
-    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao listar posts.");
+    return next(new AppError("Erro ao listar posts.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
 /* =========================
- * CREATE
+ * CREATE — body pre-validated by CreatePostSchema
  * ========================= */
-async function createPost(req, res) {
+async function createPost(req, res, next) {
   try {
     const body = req.body || {};
 
-    const rawTitle = isNonEmptyStr(body.title, 220) ? body.title.trim() : null;
-    if (!rawTitle) return fail(res, 400, "VALIDATION_ERROR", "title é obrigatório (máx 220).", { field: "title" });
-    const title = sanitizeText(rawTitle, 220);
+    // title and content min/max already validated by Zod
+    const title = sanitizeText(String(body.title).trim(), 220);
 
-    // content é NOT NULL no schema — sanitiza rich text para remover XSS
-    const rawContent = body.content !== undefined && body.content !== null ? String(body.content) : "";
+    // Zod ensures content.length >= 1, but whitespace-only is also invalid
+    const rawContent = String(body.content);
     if (!rawContent.trim()) {
-      return fail(res, 400, "VALIDATION_ERROR", "content é obrigatório.", { field: "content" });
+      return next(new AppError("content não pode ser apenas espaço.", ERROR_CODES.VALIDATION_ERROR, 400, {
+        fields: [{ field: "content", message: "content não pode ser apenas espaço." }],
+      }));
     }
     const content = sanitizeRichText(rawContent);
 
-    // slug opcional: se vier, respeita e valida; se não vier, gera a partir do title e garante unicidade
+    // slug: optional — if provided, validate and check uniqueness; if not, generate from title
     const userProvidedSlug = body.slug !== undefined && body.slug !== null && body.slug !== "";
     let slug = null;
 
     if (userProvidedSlug) {
       slug = normalizeSlug(body.slug);
-      if (!isValidSlug(slug)) return fail(res, 400, "VALIDATION_ERROR", "slug inválido.", { field: "slug" });
-      if (slug.length > 240) return fail(res, 400, "VALIDATION_ERROR", "slug inválido (máx 240).", { field: "slug" });
-
-      // Se o usuário digitou manualmente e já existe → 409 claro
+      if (!isValidSlug(slug)) {
+        return next(new AppError("slug inválido.", ERROR_CODES.VALIDATION_ERROR, 400, {
+          fields: [{ field: "slug", message: "slug inválido." }],
+        }));
+      }
+      // Slug fornecido manualmente e já existe → 409 explícito
       if (await slugExists(slug)) {
-        return fail(res, 409, "DUPLICATE", "Já existe um post com esse slug. Escolha outro slug.", {
-          field: "slug",
-          slug,
-        });
+        return next(new AppError("Já existe um post com esse slug. Escolha outro slug.", ERROR_CODES.CONFLICT, 409));
       }
     } else {
       const base = slugifyFromTitle(title);
@@ -160,26 +158,19 @@ async function createPost(req, res) {
         slug = await ensureUniqueSlugAuto(base);
         if (slug && slug.length > 240) slug = slug.slice(0, 240);
       } else {
-        // se título virar vazio após slugify (ex: só emoji), deixa null (unique permite múltiplos NULL)
+        // título vira slug vazio após slugify (ex: só emoji) — NULL (unique permite múltiplos NULL)
         slug = null;
       }
     }
 
-    // campos opcionais conforme schema
-    if (!isOptionalStr(body.excerpt, 500)) return fail(res, 400, "VALIDATION_ERROR", "excerpt inválido (máx 500).", { field: "excerpt" });
-    if (!isOptionalStr(body.cover_image_url, 500)) return fail(res, 400, "VALIDATION_ERROR", "cover_image_url inválido (máx 500).", { field: "cover_image_url" });
-    if (!isOptionalStr(body.category, 80)) return fail(res, 400, "VALIDATION_ERROR", "category inválido (máx 80).", { field: "category" });
-    if (!isOptionalStr(body.tags, 500)) return fail(res, 400, "VALIDATION_ERROR", "tags inválido (máx 500).", { field: "tags" });
-
-    const status = body.status ? String(body.status).trim() : "draft";
-    if (!["draft", "published", "archived"].includes(status)) {
-      return fail(res, 400, "VALIDATION_ERROR", "status inválido (draft|published|archived).", { field: "status" });
-    }
+    const status = String(body.status || "draft");
 
     let published_at = null;
     if (body.published_at !== undefined && body.published_at !== null && body.published_at !== "") {
       if (!isValidDateTimeLike(body.published_at)) {
-        return fail(res, 400, "VALIDATION_ERROR", "published_at inválido (YYYY-MM-DD HH:mm:ss).", { field: "published_at" });
+        return next(new AppError("published_at inválido (YYYY-MM-DD HH:mm:ss).", ERROR_CODES.VALIDATION_ERROR, 400, {
+          fields: [{ field: "published_at", message: "published_at inválido (YYYY-MM-DD HH:mm:ss)." }],
+        }));
       }
       published_at = String(body.published_at).replace("T", " ");
       if (/^\d{4}-\d{2}-\d{2}$/.test(published_at)) published_at = `${published_at} 00:00:00`;
@@ -201,23 +192,22 @@ async function createPost(req, res) {
     await logAdmin(req, "criou", "news_posts", id);
 
     const row = await postsRepo.findPostById(id);
-    return created(res, row || { id });
+    return response.created(res, row || { id });
   } catch (error) {
     console.error("adminPostsController.createPost:", error);
     if (String(error?.code || "").includes("ER_DUP_ENTRY")) {
-      return fail(res, 409, "DUPLICATE", "Já existe um post com esse slug.");
+      return next(new AppError("Já existe um post com esse slug.", ERROR_CODES.CONFLICT, 409));
     }
-    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao criar post.");
+    return next(new AppError("Erro ao criar post.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
 /* =========================
- * UPDATE
+ * UPDATE — params pre-validated by PostIdParamSchema, body by UpdatePostSchema
  * ========================= */
-async function updatePost(req, res) {
+async function updatePost(req, res, next) {
   try {
-    const id = toInt(req.params.id, 0);
-    if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
+    const id = req.params.id; // number, coerced by PostIdParamSchema
 
     const body = req.body || {};
 
@@ -225,9 +215,6 @@ async function updatePost(req, res) {
     const params = [];
 
     if (Object.prototype.hasOwnProperty.call(body, "title")) {
-      if (body.title !== null && body.title !== "" && !isNonEmptyStr(body.title, 220)) {
-        return fail(res, 400, "VALIDATION_ERROR", "title inválido (máx 220).", { field: "title" });
-      }
       sets.push("title = ?");
       params.push(body.title ? sanitizeText(String(body.title).trim(), 220) : null);
     }
@@ -238,60 +225,52 @@ async function updatePost(req, res) {
         params.push(null);
       } else {
         const slug = normalizeSlug(body.slug);
-        if (!isValidSlug(slug)) return fail(res, 400, "VALIDATION_ERROR", "slug inválido.", { field: "slug" });
-        if (slug.length > 240) return fail(res, 400, "VALIDATION_ERROR", "slug inválido (máx 240).", { field: "slug" });
-
-        // opcional: bloquear se já existir em outro post
-        if (await postsRepo.slugExistsExcept(slug, id)) {
-          return fail(res, 409, "DUPLICATE", "Já existe um post com esse slug. Escolha outro slug.", { field: "slug", slug });
+        if (!isValidSlug(slug)) {
+          return next(new AppError("slug inválido.", ERROR_CODES.VALIDATION_ERROR, 400, {
+            fields: [{ field: "slug", message: "slug inválido." }],
+          }));
         }
-
+        if (await postsRepo.slugExistsExcept(slug, id)) {
+          return next(new AppError("Já existe um post com esse slug. Escolha outro slug.", ERROR_CODES.CONFLICT, 409));
+        }
         sets.push("slug = ?");
         params.push(slug);
       }
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "excerpt")) {
-      if (!isOptionalStr(body.excerpt, 500)) return fail(res, 400, "VALIDATION_ERROR", "excerpt inválido (máx 500).", { field: "excerpt" });
       sets.push("excerpt = ?");
       params.push(body.excerpt ? sanitizeText(String(body.excerpt).trim(), 500) : null);
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "content")) {
-      const c = body.content !== undefined && body.content !== null ? String(body.content) : "";
-      if (!c.trim()) return fail(res, 400, "VALIDATION_ERROR", "content não pode ser vazio.", { field: "content" });
+      const c = String(body.content ?? "");
+      if (!c.trim()) {
+        return next(new AppError("content não pode ser vazio.", ERROR_CODES.VALIDATION_ERROR, 400, {
+          fields: [{ field: "content", message: "content não pode ser vazio." }],
+        }));
+      }
       sets.push("content = ?");
       params.push(sanitizeRichText(c));
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "cover_image_url")) {
-      if (!isOptionalStr(body.cover_image_url, 500)) {
-        return fail(res, 400, "VALIDATION_ERROR", "cover_image_url inválido (máx 500).", { field: "cover_image_url" });
-      }
       sets.push("cover_image_url = ?");
       params.push(body.cover_image_url ? String(body.cover_image_url).trim() : null);
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "category")) {
-      if (!isOptionalStr(body.category, 80)) return fail(res, 400, "VALIDATION_ERROR", "category inválido (máx 80).", { field: "category" });
       sets.push("category = ?");
       params.push(body.category ? sanitizeText(String(body.category).trim(), 80) : null);
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "tags")) {
-      if (!isOptionalStr(body.tags, 500)) return fail(res, 400, "VALIDATION_ERROR", "tags inválido (máx 500).", { field: "tags" });
       sets.push("tags = ?");
       params.push(body.tags ? sanitizeText(String(body.tags).trim(), 500) : null);
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "status")) {
-      const status = body.status === null || body.status === "" ? null : String(body.status).trim();
-      if (status !== null && !["draft", "published", "archived"].includes(status)) {
-        return fail(res, 400, "VALIDATION_ERROR", "status inválido (draft|published|archived).", { field: "status" });
-      }
-      if (status === null) {
-        return fail(res, 400, "VALIDATION_ERROR", "status não pode ser null.", { field: "status" });
-      }
+      const status = String(body.status).trim();
       sets.push("status = ?");
       params.push(status);
 
@@ -307,7 +286,9 @@ async function updatePost(req, res) {
         params.push(null);
       } else {
         if (!isValidDateTimeLike(body.published_at)) {
-          return fail(res, 400, "VALIDATION_ERROR", "published_at inválido (YYYY-MM-DD HH:mm:ss).", { field: "published_at" });
+          return next(new AppError("published_at inválido (YYYY-MM-DD HH:mm:ss).", ERROR_CODES.VALIDATION_ERROR, 400, {
+            fields: [{ field: "published_at", message: "published_at inválido (YYYY-MM-DD HH:mm:ss)." }],
+          }));
         }
         let dt = String(body.published_at).replace("T", " ");
         if (/^\d{4}-\d{2}-\d{2}$/.test(dt)) dt = `${dt} 00:00:00`;
@@ -317,45 +298,44 @@ async function updatePost(req, res) {
     }
 
     if (sets.length === 0) {
-      return fail(res, 400, "VALIDATION_ERROR", "Nenhum campo para atualizar.");
+      return next(new AppError("Nenhum campo para atualizar.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
 
     const affected = await postsRepo.updatePost(id, sets, params);
     if (!affected) {
-      return fail(res, 404, "NOT_FOUND", "Post não encontrado.");
+      return next(new AppError("Post não encontrado.", ERROR_CODES.NOT_FOUND, 404));
     }
 
     await logAdmin(req, "editou", "news_posts", id);
 
     const row = await postsRepo.findPostById(id);
-    return ok(res, row || { id });
+    return response.ok(res, row || { id });
   } catch (error) {
     console.error("adminPostsController.updatePost:", error);
     if (String(error?.code || "").includes("ER_DUP_ENTRY")) {
-      return fail(res, 409, "DUPLICATE", "Já existe um post com esse slug.");
+      return next(new AppError("Já existe um post com esse slug.", ERROR_CODES.CONFLICT, 409));
     }
-    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao atualizar post.");
+    return next(new AppError("Erro ao atualizar post.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
 /* =========================
- * DELETE
+ * DELETE — params pre-validated by PostIdParamSchema
  * ========================= */
-async function deletePost(req, res) {
+async function deletePost(req, res, next) {
   try {
-    const id = toInt(req.params.id, 0);
-    if (!id) return fail(res, 400, "VALIDATION_ERROR", "ID inválido.");
+    const id = req.params.id; // number, coerced by PostIdParamSchema
 
     const affected = await postsRepo.deletePost(id);
     if (!affected) {
-      return fail(res, 404, "NOT_FOUND", "Post não encontrado.");
+      return next(new AppError("Post não encontrado.", ERROR_CODES.NOT_FOUND, 404));
     }
 
     await logAdmin(req, "removeu", "news_posts", id);
-    return ok(res, { deleted: true, id });
+    return response.ok(res, { deleted: true, id });
   } catch (error) {
     console.error("adminPostsController.deletePost:", error);
-    return fail(res, 500, ERROR_CODES.SERVER_ERROR, "Erro ao remover post.");
+    return next(new AppError("Erro ao remover post.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 

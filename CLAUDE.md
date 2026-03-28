@@ -175,8 +175,8 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Auth admin | `routes/admin/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
 | Drones (admin) | `routes/admin/adminDrones.js` | `controllers/drones/` | `services/drones/` | `repositories/dronesRepository.js` |
 | Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
-| News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js` |
-| News (público) | `routes/public/publicNews.js` | `controllers/newsPublicController.js` | — | `repositories/postsRepository.js` |
+| News (admin) | `routes/admin/adminNews.js` | `controllers/news/` (clima, cotações, posts) | — | `repositories/postsRepository.js`, `climaRepository.js`, `cotacoesRepository.js` |
+| News (público) | `routes/public/publicNews.js` | `controllers/newsPublicController.js` | — | `repositories/postsRepository.js`, `climaRepository.js`, `cotacoesRepository.js` |
 | Site Hero (admin) | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
 | Site Hero (público) | `routes/public/publicSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
 | Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/produtosRepository.js` |
@@ -189,6 +189,7 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
 | Clima (news) | — | `controllers/news/adminClimaController.js` | — | `repositories/climaRepository.js` |
 | Cotações (news) | — | `controllers/news/adminCotacoesController.js` | — | `repositories/cotacoesRepository.js` |
+| Posts (news) | — | `controllers/news/adminPostsController.js` | — | `repositories/postsRepository.js` |
 
 ### Módulo híbrido — modernização parcial
 
@@ -255,6 +256,10 @@ Estes são os arquivos onde a dualidade de padrão causa mais confusão:
 4. **`controllers/cartsController.js`**, **`controllers/configController.js`**, **`controllers/produtosController.js`** —
    existem e são modernos, mas as rotas antigas (adminCarts, adminConfig, adminProdutos) no CLAUDE.md
    antigo estavam listadas como legado. Elas já foram migradas — são referência válida.
+
+5. **`services/news/helpers.js`** — exporta utilitários de domínio (`toInt`, `nowSql`, `normalizeSlug`, etc.)
+   que são legítimos e reutilizados por vários controllers de news. **Não** exporta helpers de resposta
+   HTTP — esses foram removidos. Para respostas, sempre usar `lib/response.js` + `AppError`.
 
 ### Regra de ouro para código novo ou modificado
 

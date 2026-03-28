@@ -76,11 +76,13 @@ function loadController({ mockPool } = {}) {
 }
 
 function buildRouter(controller) {
+  const { validate } = require("../../../middleware/validate");
+  const { PostIdParamSchema, CreatePostSchema, UpdatePostSchema } = require("../../../schemas/newsSchemas");
   const router = express.Router();
   router.get("/posts", asyncWrap(controller.listPosts));
-  router.post("/posts", asyncWrap(controller.createPost));
-  router.put("/posts/:id", asyncWrap(controller.updatePost));
-  router.delete("/posts/:id", asyncWrap(controller.deletePost));
+  router.post("/posts", validate(CreatePostSchema), asyncWrap(controller.createPost));
+  router.put("/posts/:id", validate(PostIdParamSchema, "params"), validate(UpdatePostSchema), asyncWrap(controller.updatePost));
+  router.delete("/posts/:id", validate(PostIdParamSchema, "params"), asyncWrap(controller.deletePost));
   return router;
 }
 
@@ -308,7 +310,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/title/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando content está vazio", async () => {
@@ -351,7 +353,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: expect.stringMatching(/status/) });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR" });
     });
 
     test("400 quando published_at tem formato inválido", async () => {
@@ -425,7 +427,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
+      expect(res.body).toMatchObject({ ok: false, code: "CONFLICT" });
     });
 
     test("409 quando pool.query lança ER_DUP_ENTRY na INSERT", async () => {
@@ -456,7 +458,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
+      expect(res.body).toMatchObject({ ok: false, code: "CONFLICT" });
     });
 
     test("500 quando pool.query lança erro genérico", async () => {
@@ -704,7 +706,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
+      expect(res.body).toMatchObject({ ok: false, code: "CONFLICT" });
     });
 
     test("409 quando pool.query lança ER_DUP_ENTRY", async () => {
@@ -735,7 +737,7 @@ describe("adminPostsController", () => {
 
       // Assert
       expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({ ok: false, code: "DUPLICATE" });
+      expect(res.body).toMatchObject({ ok: false, code: "CONFLICT" });
     });
 
     test("500 quando pool.query lança erro genérico", async () => {
