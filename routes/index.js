@@ -55,7 +55,7 @@ function loadRoute(path, moduleName) {
  * Sem autenticação. Prefixo /uploads para assets físicos.
  * ============================================================ */
 
-loadRoute("/uploads", "./uploadsCheckRoutes");
+loadRoute("/uploads", "./utils/uploadsCheck");
 
 /* ============================================================
  * ROTAS PÚBLICAS
@@ -68,7 +68,7 @@ loadRoute("/products", "./public/publicProducts");
 loadRoute("/products", "./public/publicProductById");
 loadRoute("/public/categorias", "./public/publicCategorias");
 loadRoute("/public/servicos", "./public/publicServicos");
-loadRoute("/public/servicos", "./public/publicAvaliacaoColaborador");
+loadRoute("/public/servicos", "./public/publicServicosAvaliacoes");
 loadRoute("/public/promocoes", "./public/publicPromocoes");
 loadRoute("/public/produtos", "./public/publicProdutos"); // avaliações de produtos
 
@@ -85,9 +85,9 @@ loadRoute("/public/drones", "./public/publicDrones");
  * Rotas de entrada de sessão — sem CSRF (o token ainda não existe).
  * ============================================================ */
 
-// Login de usuário e admin
+// Login de usuário e admin (pontos de entrada de sessão — sem CSRF)
 loadRoute("/login", "./auth/login");
-loadRoute("/admin", "./admin/adminLogin");
+loadRoute("/admin", "./auth/adminLogin");
 
 // Registro, forgot/reset password, logout, csrf-token (usuário)
 loadRoute("/", "./auth/authRoutes");
@@ -98,8 +98,8 @@ loadRoute("/", "./auth/authRoutes");
  * validateCSRF é aplicado aqui para proteger todas as mutações.
  * ============================================================ */
 
-// Cadastro básico (sem CSRF — não é mutação de sessão autenticada)
-loadRoute("/users", "./auth/users");
+// Cadastro básico e recuperação de senha (sem CSRF — não é mutação de sessão autenticada)
+loadRoute("/users", "./auth/userAccount");
 
 // Perfil e endereços (autenticados + CSRF)
 try {

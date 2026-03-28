@@ -1,12 +1,12 @@
-// routes/uploadsCheckRoutes.js
+// routes/utils/uploadsCheck.js
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
-const { validateFileMagicBytes } = require("../utils/fileValidation");
+const { validateFileMagicBytes } = require("../../utils/fileValidation");
 
 const router = express.Router();
 
-const UPLOADS_DIR = path.resolve(__dirname, "..", "uploads");
+const UPLOADS_DIR = path.resolve(__dirname, "../..", "uploads");
 
 /**
  * GET /api/uploads/check/*

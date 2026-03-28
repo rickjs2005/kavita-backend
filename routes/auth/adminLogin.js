@@ -1,4 +1,4 @@
-// routes/admin/adminLogin.js
+// routes/auth/adminLogin.js
 const express = require("express");
 const router = express.Router();
 const verifyAdmin = require("../../middleware/verifyAdmin");
