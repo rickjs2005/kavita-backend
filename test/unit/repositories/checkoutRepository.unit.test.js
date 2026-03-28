@@ -276,6 +276,61 @@ describe("checkoutRepository — updateOrderShipping", () => {
 // updateUserInfo — lógica condicional crítica
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// getActivePromotions
+// ---------------------------------------------------------------------------
+
+describe("checkoutRepository — getActivePromotions", () => {
+  test("retorna rows com product_id e final_price", async () => {
+    const conn = makeMockConn();
+    const rows = [{ product_id: 1, final_price: "89.90" }];
+    conn.query.mockResolvedValueOnce([rows]);
+
+    const result = await repo.getActivePromotions(conn, [1, 2]);
+
+    expect(result).toEqual(rows);
+  });
+
+  test("SQL contém calcFinalPrice com alias 'pp'", async () => {
+    const conn = makeMockConn();
+    conn.query.mockResolvedValueOnce([[]]);
+
+    await repo.getActivePromotions(conn, [1]);
+
+    const [sql] = conn.query.mock.calls[0];
+    // fórmula central — garante que o alias correto está no SQL emitido
+    expect(sql).toContain("pp.promo_price");
+    expect(sql).toContain("pp.discount_percent");
+    expect(sql).toContain("DECIMAL(10,2)");
+  });
+
+  test("SQL contém filtro de promoção ativa com alias 'pp'", async () => {
+    const conn = makeMockConn();
+    conn.query.mockResolvedValueOnce([[]]);
+
+    await repo.getActivePromotions(conn, [1]);
+
+    const [sql] = conn.query.mock.calls[0];
+    expect(sql).toContain("pp.is_active = 1");
+    expect(sql).toContain("pp.start_at");
+    expect(sql).toContain("pp.end_at");
+  });
+
+  test("passa ids como único parâmetro bind", async () => {
+    const conn = makeMockConn();
+    conn.query.mockResolvedValueOnce([[]]);
+
+    await repo.getActivePromotions(conn, [3, 7]);
+
+    const [, params] = conn.query.mock.calls[0];
+    expect(params).toEqual([[3, 7]]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateUserInfo — lógica condicional crítica
+// ---------------------------------------------------------------------------
+
 describe("checkoutRepository — updateUserInfo", () => {
   test("atualiza nome, telefone e cpf quando todos preenchidos", async () => {
     const conn = makeMockConn();

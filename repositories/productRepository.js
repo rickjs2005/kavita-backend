@@ -12,6 +12,7 @@
 "use strict";
 
 const pool = require("../config/pool");
+const promoSql = require("./shared/promoSql");
 
 // ---------------------------------------------------------------------------
 // Sort whitelists — defined here so SQL column aliases never leave the repo
@@ -33,46 +34,12 @@ const SEARCH_SORT_MAP = {
 };
 
 // ---------------------------------------------------------------------------
-// Promotion SQL fragments (shared by count and data queries in searchProducts)
+// Promotion SQL fragments — sourced from repositories/shared/promoSql.js
 // ---------------------------------------------------------------------------
 
-const PROMO_JOIN = `
-  LEFT JOIN (
-    SELECT d.*
-    FROM product_promotions d
-    JOIN (
-      SELECT product_id, MAX(id) AS max_id
-      FROM product_promotions
-      WHERE is_active = 1
-        AND (start_at IS NULL OR start_at <= NOW())
-        AND (end_at   IS NULL OR end_at   >= NOW())
-      GROUP BY product_id
-    ) x ON x.product_id = d.product_id AND x.max_id = d.id
-  ) promo ON promo.product_id = p.id
-`;
-
-const CALC_FINAL_PRICE = `
-  CAST(
-    CASE
-      WHEN promo.promo_price IS NOT NULL
-        THEN promo.promo_price
-      WHEN promo.discount_percent IS NOT NULL
-        THEN p.price - (p.price * (promo.discount_percent / 100))
-      ELSE p.price
-    END
-  AS DECIMAL(10,2))
-`;
-
-const CALC_DISCOUNT_PERCENT = `
-  CAST(
-    CASE
-      WHEN promo.discount_percent IS NOT NULL THEN promo.discount_percent
-      WHEN promo.promo_price IS NOT NULL AND p.price > 0
-        THEN ((p.price - promo.promo_price) / p.price) * 100
-      ELSE 0
-    END
-  AS DECIMAL(10,2))
-`;
+const PROMO_JOIN = promoSql.promoJoin();
+const CALC_FINAL_PRICE = promoSql.calcFinalPrice("promo");
+const CALC_DISCOUNT_PERCENT = promoSql.calcDiscountPercent("promo");
 
 // ---------------------------------------------------------------------------
 // Queries

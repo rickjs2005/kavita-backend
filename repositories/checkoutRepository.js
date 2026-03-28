@@ -1,6 +1,7 @@
 "use strict";
 
 const pool = require("../config/pool");
+const promoSql = require("./shared/promoSql");
 
 // ---------------------------------------------------------------------------
 // Transactional — MUST be called inside an open transaction on `conn`,
@@ -116,21 +117,11 @@ async function getActivePromotions(conn, ids) {
   const [rows] = await conn.query(
     `SELECT
        pp.product_id,
-       CAST(
-         CASE
-           WHEN pp.promo_price IS NOT NULL
-             THEN pp.promo_price
-           WHEN pp.discount_percent IS NOT NULL
-             THEN p.price - (p.price * (pp.discount_percent / 100))
-           ELSE p.price
-         END
-       AS DECIMAL(10,2)) AS final_price
+       ${promoSql.calcFinalPrice("pp")} AS final_price
      FROM product_promotions pp
      JOIN products p ON p.id = pp.product_id
      WHERE pp.product_id IN (?)
-       AND pp.is_active = 1
-       AND (pp.start_at IS NULL OR pp.start_at <= NOW())
-       AND (pp.end_at   IS NULL OR pp.end_at   >= NOW())`,
+       AND ${promoSql.activePromoWhere("pp")}`,
     [ids]
   );
   return rows;
