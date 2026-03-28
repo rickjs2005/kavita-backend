@@ -154,9 +154,7 @@ const AuthController = {
 
       req.rateLimit?.reset?.();
 
-      return res.status(200).json({
-        mensagem: "Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.",
-      });
+      return response.ok(res, null, "Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.");
     } catch (error) {
       req.rateLimit?.fail?.();
       console.error("❌ Erro no esqueceu-senha:", error);
