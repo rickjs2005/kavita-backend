@@ -1,6 +1,6 @@
 // middleware/authenticateToken.js
 const authConfig = require("../config/auth");
-const pool = require("../config/pool");
+const userRepository = require("../repositories/userRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 
@@ -20,21 +20,11 @@ module.exports = async function authenticateToken(req, _res, next) {
       return next(new AppError("Token inválido.", ERROR_CODES.AUTH_ERROR, 401));
     }
 
-    const [rows] = await pool.query(
-      `
-      SELECT id, nome, email, tokenVersion
-      FROM usuarios
-      WHERE id = ?
-      LIMIT 1
-      `,
-      [userId]
-    );
+    const user = await userRepository.findUserById(userId);
 
-    if (!rows.length) {
+    if (!user) {
       return next(new AppError("Usuário não encontrado.", ERROR_CODES.AUTH_ERROR, 401));
     }
-
-    const user = rows[0];
 
     // Validate tokenVersion to support logout revocation.
     // ✅ FIX: tratar null como 0 — sem esse fallback, usuários pré-migração com

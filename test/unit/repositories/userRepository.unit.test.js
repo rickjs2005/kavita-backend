@@ -38,6 +38,35 @@ beforeEach(() => {
 // Auth queries
 // ---------------------------------------------------------------------------
 
+describe("userRepository — findUserById", () => {
+  test("retorna campos de auth quando usuário encontrado", async () => {
+    const row = { id: 5, nome: "Rick", email: "rick@kavita.com", tokenVersion: 2 };
+    mockQuery([[row]]);
+
+    const result = await repo.findUserById(5);
+
+    expect(result).toEqual(row);
+    const [sql, params] = pool.query.mock.calls[0];
+    expect(sql).toContain("SELECT");
+    expect(sql).toContain("usuarios");
+    expect(sql).toContain("id = ?");
+    expect(params).toEqual([5]);
+  });
+
+  test("retorna null quando usuário não existe", async () => {
+    mockQuery([[]]);
+    const result = await repo.findUserById(999);
+    expect(result).toBeNull();
+  });
+
+  test("não inclui senha nos campos selecionados", async () => {
+    mockQuery([[{ id: 1 }]]);
+    await repo.findUserById(1);
+    const [sql] = pool.query.mock.calls[0];
+    expect(sql).not.toContain("senha");
+  });
+});
+
 describe("userRepository — findUserByEmail", () => {
   test("retorna campos de auth quando usuário encontrado", async () => {
     const row = { id: 1, nome: "Rick", email: "rick@kavita.com", senha: "hash", tokenVersion: 3 };

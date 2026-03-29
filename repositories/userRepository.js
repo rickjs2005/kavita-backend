@@ -9,6 +9,21 @@ const pool = require("../config/pool");
 // ---------------------------------------------------------------------------
 
 /**
+ * Finds a user by ID, returning fields needed for token validation.
+ * Used by authenticateToken middleware on every authenticated request.
+ *
+ * @param {number} userId
+ * @returns {{ id, nome, email, tokenVersion }|null}
+ */
+async function findUserById(userId) {
+  const [rows] = await pool.query(
+    "SELECT id, nome, email, tokenVersion FROM usuarios WHERE id = ? LIMIT 1",
+    [userId]
+  );
+  return rows[0] || null;
+}
+
+/**
  * Finds a user by email, returning fields needed for auth.
  *
  * @param {string} email
@@ -145,6 +160,7 @@ async function updateUserById(userId, sets, values) {
 
 module.exports = {
   // Auth
+  findUserById,
   findUserByEmail,
   emailExists,
   createUser,
