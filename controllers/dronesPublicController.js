@@ -1,100 +1,18 @@
 // controllers/dronesPublicController.js
-const fs = require("fs");
 const dronesService = require("../services/dronesService");
 const mediaService = require("../services/mediaService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { response } = require("../lib");
-
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
-const MAX_VIDEO_BYTES = 30 * 1024 * 1024; // 30MB
-const ALLOWED_IMAGE = new Set(["image/jpeg", "image/png", "image/webp"]);
-const ALLOWED_VIDEO = new Set(["video/mp4"]);
-
-const DEFAULT_DRONE_MODELS = [
-  { key: "t25p", label: "DJI Agras T25P" },
-  { key: "t70p", label: "DJI Agras T70P" },
-  { key: "t100", label: "DJI Agras T100" },
-];
-
-function safeUnlink(file) {
-  try {
-    if (file?.path) fs.unlinkSync(file.path);
-  } catch { }
-}
-
-function classifyMedia(file) {
-  const mime = String(file?.mimetype || "");
-  if (ALLOWED_IMAGE.has(mime)) return { media_type: "IMAGE", max: MAX_IMAGE_BYTES };
-  if (ALLOWED_VIDEO.has(mime)) return { media_type: "VIDEO", max: MAX_VIDEO_BYTES };
-  return null;
-}
-
-function parseJson(v) {
-  if (!v) return null;
-  try {
-    return typeof v === "string" ? JSON.parse(v) : v;
-  } catch {
-    return null;
-  }
-}
-
-
-function extractItems(result) {
-  return Array.isArray(result) ? result : Array.isArray(result?.items) ? result.items : [];
-}
-
-/**
- * ✅ Alinhado com o Admin:
- * valida apenas formato, NÃO lista fixa.
- */
-function parseModelKey(modelKey) {
-  const key = String(modelKey || "").trim().toLowerCase();
-
-  if (!key) {
-    throw new AppError("Modelo inválido", ERROR_CODES.VALIDATION_ERROR, 400, {
-      field: "modelKey",
-      reason: "empty",
-    });
-  }
-
-  // Mesmo padrão do admin: a-z, 0-9, _; 2-20 chars
-  if (!/^[a-z0-9_]{2,20}$/.test(key)) {
-    throw new AppError("Modelo inválido", ERROR_CODES.VALIDATION_ERROR, 400, {
-      field: "modelKey",
-      reason: "format",
-      example: "t25p",
-    });
-  }
-
-  return key;
-}
-
-/**
- * ✅ Public exige que o modelo exista (e esteja ativo, se o service filtrar).
- * Caso o service retorne modelos inativos também, você pode reforçar is_active aqui.
- */
-async function ensureModelExists(modelKey) {
-  const existing = await dronesService.getDroneModelByKey(modelKey);
-  if (!existing) {
-    throw new AppError("Modelo não encontrado.", ERROR_CODES.NOT_FOUND, 404, { modelKey });
-  }
-  // Se sua tabela tiver is_active e o service não filtrar:
-  // if (existing.is_active === 0 || existing.is_active === false) {
-  //   throw new AppError("Modelo indisponível.", ERROR_CODES.NOT_FOUND, 404, { modelKey });
-  // }
-  return existing;
-}
-
-async function safeListModelsFromDb() {
-  try {
-    const items = await dronesService.listDroneModels({ includeInactive: false });
-    if (Array.isArray(items) && items.length) return items;
-    return DEFAULT_DRONE_MODELS;
-  } catch (e) {
-    return DEFAULT_DRONE_MODELS;
-  }
-}
+const {
+  classify,
+  safeUnlink,
+  parseJsonField,
+  extractItems,
+  parseModelKey,
+  ensureModelExists,
+  DEFAULT_DRONE_MODELS,
+} = require("./drones/helpers");
 
 /**
  * =========================================================
@@ -111,13 +29,13 @@ async function getPage(req, res, next) {
       ...row,
 
       // LEGADO
-      specs_items_json: parseJson(row.specs_items_json),
-      features_items_json: parseJson(row.features_items_json),
-      benefits_items_json: parseJson(row.benefits_items_json),
-      sections_order_json: parseJson(row.sections_order_json),
+      specs_items_json: parseJsonField(row.specs_items_json),
+      features_items_json: parseJsonField(row.features_items_json),
+      benefits_items_json: parseJsonField(row.benefits_items_json),
+      sections_order_json: parseJsonField(row.sections_order_json),
 
       // NOVO
-      models_json: parseJson(row.models_json),
+      models_json: parseJsonField(row.models_json),
     });
   } catch (e) {
     console.error("[drones/public] getPage error:", e);
@@ -138,7 +56,7 @@ async function getRoot(req, res, next) {
     const landing = await dronesService.getPageSettings();
     if (!landing) return response.ok(res, null);
 
-    const models_json = parseJson(landing.models_json) || {};
+    const models_json = parseJsonField(landing.models_json) || {};
 
     let modelRow = null;
     let modelData = null;
@@ -169,7 +87,7 @@ async function getRoot(req, res, next) {
         cta_title: landing.cta_title || null,
         cta_message_template: landing.cta_message_template || null,
         cta_button_label: landing.cta_button_label || null,
-        sections_order_json: parseJson(landing.sections_order_json),
+        sections_order_json: parseJsonField(landing.sections_order_json),
       },
       model: modelRow ? { key: modelRow.key, label: modelRow.label } : null,
       model_data: modelData,
@@ -208,7 +126,7 @@ async function listModels(req, res, next) {
 
     // 2) Fallback legado (page_settings.models_json)
     const landing = await dronesService.getPageSettings();
-    const models_json = parseJson(landing?.models_json) || {};
+    const models_json = parseJsonField(landing?.models_json) || {};
 
     const withSelection = items.map((m) => {
       const key = String(m.key || "").trim().toLowerCase();
@@ -279,7 +197,7 @@ async function getModelAggregate(req, res, next) {
     const landing = await dronesService.getPageSettings();
     if (!landing) return response.ok(res, null);
 
-    const models_json = parseJson(landing.models_json) || {};
+    const models_json = parseJsonField(landing.models_json) || {};
     const modelData = models_json?.[modelKey] || null;
 
     const galleryResult = await dronesService.listGalleryPublic({ page: 1, limit: 1000, model_key: modelKey });
@@ -300,7 +218,7 @@ async function getModelAggregate(req, res, next) {
         cta_title: landing.cta_title || null,
         cta_message_template: landing.cta_message_template || null,
         cta_button_label: landing.cta_button_label || null,
-        sections_order_json: parseJson(landing.sections_order_json),
+        sections_order_json: parseJsonField(landing.sections_order_json),
       },
       model: { key: modelRow.key, label: modelRow.label },
       model_data: modelData,
@@ -396,7 +314,7 @@ async function createComment(req, res, next) {
     // Valida arquivos antes de persistir
     if (files.length) {
       for (const f of files) {
-        const info = classifyMedia(f);
+        const info = classify(f);
         if (!info) {
           files.forEach(safeUnlink);
           throw new AppError("Arquivo inválido. Aceito: jpg/png/webp/mp4.", ERROR_CODES.VALIDATION_ERROR, 400);
@@ -417,7 +335,7 @@ async function createComment(req, res, next) {
       for (let i = 0; i < len; i++) {
         const f = files[i];
         const s = saved[i];
-        const info = classifyMedia(f);
+        const info = classify(f);
         if (!info) continue;
         if (!s?.path) continue;
 
@@ -444,6 +362,20 @@ async function createComment(req, res, next) {
     console.error("[drones/public] createComment error:", e);
     files.forEach(safeUnlink);
     return next(e instanceof AppError ? e : new AppError("Erro ao enviar comentário.", ERROR_CODES.SERVER_ERROR, 500));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helper — not exported
+// ---------------------------------------------------------------------------
+
+async function safeListModelsFromDb() {
+  try {
+    const items = await dronesService.listDroneModels({ includeInactive: false });
+    if (Array.isArray(items) && items.length) return items;
+    return DEFAULT_DRONE_MODELS;
+  } catch (e) {
+    return DEFAULT_DRONE_MODELS;
   }
 }
 
