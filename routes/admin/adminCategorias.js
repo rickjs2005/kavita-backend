@@ -1,301 +1,53 @@
-// routes/adminCategorias.js
-// =============================================================================
-// ARQUIVO LEGADO — NÃO USE COMO REFERÊNCIA DE IMPLEMENTAÇÃO
-// =============================================================================
-// Este arquivo usa o padrão antigo: SQL inline na rota, validação manual
-// e res.json() direto, sem controller/service/repository separados.
-//
-// Padrão canônico atual:
-//   rota magra → controller → service → repository  (+  Zod em schemas/)
-//   Referência: routes/admin/adminDrones.js
-//
-// Ao modificar este arquivo:
-//   - prefira migrar para o padrão canônico na mesma PR
-//   - se a mudança for pontual, adicione ou atualize o teste correspondente
-//   - nunca amplie o padrão legado com novas rotas neste arquivo
-// =============================================================================
+// routes/admin/adminCategorias.js
+// ✅ Padrão moderno — rota magra.
+// verifyAdmin + validateCSRF são aplicados no mount em routes/index.js.
+"use strict";
+
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const verifyAdmin = require("../../middleware/verifyAdmin");
-const ERROR_CODES = require("../../constants/ErrorCodes");
-
-// helper simples para gerar slug a partir do nome
-function slugify(str = "") {
-  return String(str)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // tira acentos
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")    // tira caracteres estranhos
-    .replace(/\s+/g, "-")            // espaço -> -
-    .replace(/-+/g, "-");            // vários - -> um só
-}
+const { validate } = require("../../middleware/validate");
+const {
+  CategoryIdParamSchema,
+  CreateCategorySchema,
+  UpdateCategorySchema,
+  UpdateStatusSchema,
+} = require("../../schemas/categoriasSchemas");
+const ctrl = require("../../controllers/categoriasController");
 
 /**
  * @openapi
- * /api/admin/categorias:
- *   get:
- *     tags: [Admin, Categorias]
- *     summary: Lista todas as categorias cadastradas
- *     security:
- *       - BearerAuth: []
- *     responses:
- *       200:
- *         description: Lista de categorias retornada com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id: { type: integer }
- *                   name: { type: string }
- *                   slug: { type: string }
- *                   is_active: { type: boolean }
- *                   sort_order: { type: integer }
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
+ * tags:
+ *   - name: AdminCategorias
+ *     description: Gestão de categorias de produto no painel admin
  */
-router.get("/", verifyAdmin, async (_req, res) => {
-  try {
-    const [rows] = await pool.query(
-      "SELECT id, name, slug, is_active, sort_order FROM categories ORDER BY sort_order ASC, name ASC"
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("Erro ao buscar categorias:", err);
-    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao buscar categorias" });
-  }
-});
 
-/**
- * @openapi
- * /api/admin/categorias:
- *   post:
- *     tags: [Admin, Categorias]
- *     summary: Cria uma nova categoria
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [name]
- *             properties:
- *               name: { type: string }
- *               slug: { type: string, nullable: true }
- *               sort_order: { type: integer, nullable: true }
- *     responses:
- *       201:
- *         description: Categoria criada
- *       400:
- *         description: Dados inválidos
- *       401:
- *         description: Não autorizado
- *       500:
- *         description: Erro interno
- */
-router.post("/", verifyAdmin, async (req, res) => {
-  try {
-    const { name = "", slug = "", sort_order = 0 } = req.body;
+// GET /api/admin/categorias
+router.get("/", ctrl.list);
 
-    if (!name.trim()) {
-      return res.status(400).json({ ok: false, code: ERROR_CODES.VALIDATION_ERROR, message: "Nome é obrigatório." });
-    }
+// POST /api/admin/categorias
+router.post("/", validate(CreateCategorySchema), ctrl.create);
 
-    const finalSlug = slug.trim() ? slugify(slug) : slugify(name);
+// PUT /api/admin/categorias/:id
+router.put(
+  "/:id",
+  validate(CategoryIdParamSchema, "params"),
+  validate(UpdateCategorySchema),
+  ctrl.update
+);
 
-    const [result] = await pool.query(
-      "INSERT INTO categories (name, slug, is_active, sort_order) VALUES (?, ?, 1, ?)",
-      [name.trim(), finalSlug, sort_order || 0]
-    );
+// PATCH /api/admin/categorias/:id/status
+router.patch(
+  "/:id/status",
+  validate(CategoryIdParamSchema, "params"),
+  validate(UpdateStatusSchema),
+  ctrl.updateStatus
+);
 
-    res.status(201).json({
-      id: result.insertId,
-      name: name.trim(),
-      slug: finalSlug,
-      is_active: 1,
-      sort_order: sort_order || 0,
-    });
-  } catch (err) {
-    console.error("Erro ao criar categoria:", err);
-    if (err.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({ ok: false, code: ERROR_CODES.CONFLICT, message: "Já existe uma categoria com esse slug." });
-    }
-    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao criar categoria." });
-  }
-});
-
-/**
- * @openapi
- * /api/admin/categorias/{id}:
- *   put:
- *     tags: [Admin, Categorias]
- *     summary: Atualiza nome, slug ou ordem da categoria
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name: { type: string }
- *               slug: { type: string }
- *               sort_order: { type: integer }
- *     responses:
- *       200:
- *         description: Categoria atualizada
- *       404:
- *         description: Categoria não encontrada
- *       500:
- *         description: Erro interno
- */
-router.put("/:id", verifyAdmin, async (req, res) => {
-  const { id } = req.params;
-  const { name, slug, sort_order } = req.body;
-
-  try {
-    const [rows] = await pool.query(
-      "SELECT id, name, slug, sort_order, is_active FROM categories WHERE id = ?",
-      [id]
-    );
-    if (!rows.length) {
-      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Categoria não encontrada." });
-    }
-
-    const current = rows[0];
-
-    const newName = name !== undefined ? String(name).trim() : current.name;
-    const newSlug =
-      slug !== undefined && slug.trim()
-        ? slugify(slug)
-        : current.slug || slugify(newName);
-    const newOrder =
-      sort_order !== undefined && sort_order !== null
-        ? Number(sort_order) || 0
-        : current.sort_order;
-
-    await pool.query(
-      "UPDATE categories SET name = ?, slug = ?, sort_order = ? WHERE id = ?",
-      [newName, newSlug, newOrder, id]
-    );
-
-    res.json({
-      id: current.id,
-      name: newName,
-      slug: newSlug,
-      sort_order: newOrder,
-      is_active: current.is_active,
-    });
-  } catch (err) {
-    console.error("Erro ao atualizar categoria:", err);
-    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao atualizar categoria." });
-  }
-});
-
-/**
- * @openapi
- * /api/admin/categorias/{id}/status:
- *   patch:
- *     tags: [Admin, Categorias]
- *     summary: Ativa ou desativa uma categoria
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               is_active: { type: boolean }
- *     responses:
- *       200:
- *         description: Status atualizado
- *       404:
- *         description: Categoria não encontrada
- *       500:
- *         description: Erro interno
- */
-router.patch("/:id/status", verifyAdmin, async (req, res) => {
-  const { id } = req.params;
-  const { is_active } = req.body;
-
-  try {
-    const [result] = await pool.query(
-      "UPDATE categories SET is_active = ? WHERE id = ?",
-      [is_active ? 1 : 0, id]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Categoria não encontrada." });
-    }
-
-    res.json({ message: "Status atualizado com sucesso." });
-  } catch (err) {
-    console.error("Erro ao atualizar status da categoria:", err);
-    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao atualizar status." });
-  }
-});
-
-/**
- * @openapi
- * /api/admin/categorias/{id}:
- *   delete:
- *     tags: [Admin, Categorias]
- *     summary: Remove uma categoria
- *     description: Em muitos casos é melhor apenas desativar (is_active = 0) para não quebrar produtos antigos.
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Categoria removida
- *       404:
- *         description: Categoria não encontrada
- *       500:
- *         description: Erro interno
- */
-router.delete("/:id", verifyAdmin, async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    // se quiser proteger, pode checar se há produtos ainda nessa categoria antes de deletar
-    const [result] = await pool.query("DELETE FROM categories WHERE id = ?", [
-      id,
-    ]);
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ ok: false, code: ERROR_CODES.NOT_FOUND, message: "Categoria não encontrada." });
-    }
-
-    res.json({ message: "Categoria removida com sucesso." });
-  } catch (err) {
-    console.error("Erro ao remover categoria:", err);
-    res.status(500).json({ ok: false, code: ERROR_CODES.SERVER_ERROR, message: "Erro ao remover categoria." });
-  }
-});
+// DELETE /api/admin/categorias/:id
+router.delete(
+  "/:id",
+  validate(CategoryIdParamSchema, "params"),
+  ctrl.remove
+);
 
 module.exports = router;
