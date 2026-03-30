@@ -148,7 +148,8 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("produto_id é obrigatório e deve ser válido.");
+      expect(res.body.message).toBe("Dados inválidos.");
+      expect(res.body.details.fields[0].message).toBe("produto_id é obrigatório e deve ser válido.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -160,7 +161,8 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(res.body.message).toBe("Dados inválidos.");
+      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -169,7 +171,8 @@ describe("Cart routes (integração) — /api/cart", () => {
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: -1 });
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(res.body.message).toBe("Dados inválidos.");
+      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -178,7 +181,8 @@ describe("Cart routes (integração) — /api/cart", () => {
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: 10001 });
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(res.body.message).toBe("Dados inválidos.");
+      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -371,7 +375,8 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(res.body.message).toBe("Dados inválidos.");
+      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -440,7 +445,8 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(res.body.message).toBe("Dados inválidos.");
+      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -449,7 +455,8 @@ describe("Cart routes (integração) — /api/cart", () => {
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: -1 });
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(res.body.message).toBe("Dados inválidos.");
+      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -458,7 +465,8 @@ describe("Cart routes (integração) — /api/cart", () => {
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: 10001 });
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expect(res.body.message).toBe("Dados inválidos.");
+      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
   });
@@ -467,7 +475,8 @@ describe("Cart routes (integração) — /api/cart", () => {
     test("400: produtoId inválido", async () => {
       const res = await request(app).delete("/api/cart/items/0");
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("produtoId inválido.");
+      expect(res.body.message).toBe("Dados inválidos.");
+      expect(res.body.details.fields[0].message).toBe("produtoId inválido.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 

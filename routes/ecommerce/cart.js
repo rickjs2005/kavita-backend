@@ -6,7 +6,8 @@ const router = express.Router();
 const authenticateToken = require("../../middleware/authenticateToken");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
-const { validateQuantity } = require("../../middleware/cartValidation");
+const { validate } = require("../../middleware/validate");
+const { CartItemBodySchema, CartItemParamSchema } = require("../../schemas/cartSchemas");
 const cartService = require("../../services/cartService");
 
 router.use(authenticateToken);
@@ -117,11 +118,6 @@ router.use(authenticateToken);
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-const toInt = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.trunc(n) : NaN;
-};
 
 function sendStockLimit(res, err) {
   return res.status(409).json({
@@ -244,8 +240,8 @@ router.get("/", async (req, res, next) => {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post("/items", async (req, res, next) => {
-  const { produto_id, quantidade } = req.body || {};
+router.post("/items", validate(CartItemBodySchema), async (req, res, next) => {
+  const { produto_id, quantidade } = req.body;
   const userId = req.user?.id;
 
   if (!userId) {
@@ -253,21 +249,6 @@ router.post("/items", async (req, res, next) => {
       new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
     );
   }
-
-  const produtoIdNum = toInt(produto_id);
-
-  if (!Number.isFinite(produtoIdNum) || produtoIdNum <= 0) {
-    return next(
-      new AppError(
-        "produto_id é obrigatório e deve ser válido.",
-        ERROR_CODES.VALIDATION_ERROR,
-        400
-      )
-    );
-  }
-
-  const qtdErr = validateQuantity(quantidade);
-  if (qtdErr) return next(qtdErr);
 
   try {
     const result = await cartService.addItem(userId, { produto_id, quantidade });
@@ -353,8 +334,8 @@ router.post("/items", async (req, res, next) => {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.patch("/items", async (req, res, next) => {
-  const { produto_id, quantidade } = req.body || {};
+router.patch("/items", validate(CartItemBodySchema), async (req, res, next) => {
+  const { produto_id, quantidade } = req.body;
   const userId = req.user?.id;
 
   if (!userId) {
@@ -362,21 +343,6 @@ router.patch("/items", async (req, res, next) => {
       new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
     );
   }
-
-  const produtoIdNum = toInt(produto_id);
-
-  if (!Number.isFinite(produtoIdNum) || produtoIdNum <= 0) {
-    return next(
-      new AppError(
-        "produto_id é obrigatório e deve ser válido.",
-        ERROR_CODES.VALIDATION_ERROR,
-        400
-      )
-    );
-  }
-
-  const qtdErr = validateQuantity(quantidade);
-  if (qtdErr) return next(qtdErr);
 
   try {
     const result = await cartService.updateItem(userId, { produto_id, quantidade });
@@ -446,19 +412,13 @@ router.patch("/items", async (req, res, next) => {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.delete("/items/:produtoId", async (req, res, next) => {
+router.delete("/items/:produtoId", validate(CartItemParamSchema, "params"), async (req, res, next) => {
   const userId = req.user?.id;
-  const produtoId = toInt(req.params.produtoId);
+  const produtoId = req.params.produtoId;
 
   if (!userId) {
     return next(
       new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
-    );
-  }
-
-  if (!Number.isFinite(produtoId) || produtoId <= 0) {
-    return next(
-      new AppError("produtoId inválido.", ERROR_CODES.VALIDATION_ERROR, 400)
     );
   }
 
