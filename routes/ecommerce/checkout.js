@@ -360,6 +360,14 @@ async function recalcShippingMiddleware(req, _res, next) {
 }
 
 /* ------------------------------------------------------------------ */
+/*   Autenticação — todas as rotas abaixo exigem token válido         */
+/* ------------------------------------------------------------------ */
+
+// Aplicado uma vez no mount: qualquer nova rota adicionada aqui já nasce protegida.
+// Equivale ao padrão de cart.js (router.use(authenticateToken)).
+router.use(authenticateToken);
+
+/* ------------------------------------------------------------------ */
 /*                 Rota de pré-visualização de cupom                  */
 /* ------------------------------------------------------------------ */
 
@@ -401,7 +409,7 @@ async function recalcShippingMiddleware(req, _res, next) {
  *       400:
  *         description: Cupom inválido ou não aplicável
  */
-router.post("/preview-cupom", authenticateToken, validateCSRF, controller.previewCoupon);
+router.post("/preview-cupom", validateCSRF, controller.previewCoupon);
 
 /* ------------------------------------------------------------------ */
 /*                               Rota                                 */
@@ -409,14 +417,13 @@ router.post("/preview-cupom", authenticateToken, validateCSRF, controller.previe
 
 // POST /api/checkout
 // Ordem intencional:
-// - autentica
+// - autenticação: já aplicada via router.use(authenticateToken) acima
 // - valida CSRF (impede cross-site form submit criando pedido real)
 // - valida body (inclui regras URBANA/RURAL e RETIRADA)
 // - recalcula frete (ENTREGA) ou força pickup (RETIRADA) — injeta req.body.shipping_*
 // - chama controller (shipping_* persistido dentro da transação do controller)
 router.post(
   "/",
-  authenticateToken,
   validateCSRF,
   validate(checkoutBodySchema),
   recalcShippingMiddleware,
