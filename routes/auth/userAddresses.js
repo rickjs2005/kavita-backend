@@ -10,6 +10,8 @@
 const express = require("express");
 const router = express.Router();
 const authenticateToken = require("../../middleware/authenticateToken");
+const { validate } = require("../../middleware/validate");
+const { AddressBodySchema, AddressParamSchema } = require("../../schemas/userAddressSchemas");
 const ctrl = require("../../controllers/userAddressController");
 
 // Todas as rotas exigem usuário autenticado
@@ -19,12 +21,12 @@ router.use(authenticateToken);
 router.get("/", ctrl.list);
 
 // POST /api/users/addresses
-router.post("/", ctrl.create);
+router.post("/", validate(AddressBodySchema), ctrl.create);
 
 // PUT /api/users/addresses/:id
-router.put("/:id", ctrl.update);
+router.put("/:id", validate(AddressParamSchema, "params"), validate(AddressBodySchema), ctrl.update);
 
 // DELETE /api/users/addresses/:id
-router.delete("/:id", ctrl.remove);
+router.delete("/:id", validate(AddressParamSchema, "params"), ctrl.remove);
 
 module.exports = router;

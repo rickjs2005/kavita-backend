@@ -26,14 +26,15 @@ describe("User Addresses Routes (integration)", () => {
       AUTH_ERROR: "AUTH_ERROR",
     }));
 
-    // AppError compatível
+    // AppError compatível — 4º param (details) necessário para validate middleware
     jest.doMock(appErrorPath, () => {
       return class AppError extends Error {
-        constructor(message, code, status) {
+        constructor(message, code, status, details) {
           super(message);
           this.name = "AppError";
           this.code = code;
           this.status = status;
+          this.details = details;
         }
       };
     });
@@ -160,10 +161,11 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe("VALIDATION_ERROR");
-      expect(String(res.body.message)).toContain("cep é obrigatório");
-      expect(String(res.body.message)).toContain("cidade é obrigatória");
-      expect(String(res.body.message)).toContain("estado é obrigatório");
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "Dados inválidos." });
+      const fields = res.body.details.fields;
+      expect(fields).toContainEqual(expect.objectContaining({ message: expect.stringContaining("cep é obrigatório") }));
+      expect(fields).toContainEqual(expect.objectContaining({ message: expect.stringContaining("cidade é obrigatória") }));
+      expect(fields).toContainEqual(expect.objectContaining({ message: expect.stringContaining("estado é obrigatório") }));
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -181,10 +183,11 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe("VALIDATION_ERROR");
-      expect(String(res.body.message)).toContain("endereco (ou rua/logradouro) é obrigatório");
-      expect(String(res.body.message)).toContain("bairro é obrigatório");
-      expect(String(res.body.message)).toContain("numero é obrigatório");
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "Dados inválidos." });
+      const fields = res.body.details.fields;
+      expect(fields).toContainEqual(expect.objectContaining({ message: expect.stringContaining("endereco (ou rua/logradouro) é obrigatório") }));
+      expect(fields).toContainEqual(expect.objectContaining({ message: expect.stringContaining("bairro é obrigatório") }));
+      expect(fields).toContainEqual(expect.objectContaining({ message: expect.stringContaining("numero é obrigatório") }));
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -293,9 +296,10 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe("VALIDATION_ERROR");
-      expect(String(res.body.message)).toContain("comunidade é obrigatória");
-      expect(String(res.body.message)).toContain("observacoes_acesso");
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "Dados inválidos." });
+      const fields = res.body.details.fields;
+      expect(fields).toContainEqual(expect.objectContaining({ message: expect.stringContaining("comunidade é obrigatória") }));
+      expect(fields).toContainEqual(expect.objectContaining({ message: expect.stringContaining("observacoes_acesso") }));
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -369,7 +373,8 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "ID inválido." });
+      expect(res.body).toMatchObject({ ok: false, code: "VALIDATION_ERROR", message: "Dados inválidos." });
+      expect(res.body.details.fields[0].message).toBe("ID inválido.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
