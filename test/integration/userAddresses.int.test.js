@@ -99,9 +99,10 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0]).toMatchObject({
+      expect(res.body.ok).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).toMatchObject({
         id: 10,
         cep: "36900070",
         tipo_localidade: "URBANA",
@@ -214,7 +215,7 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(201);
-      expect(res.body).toEqual({ success: true });
+      expect(res.body).toMatchObject({ ok: true });
 
       expect(conn.beginTransaction).toHaveBeenCalledTimes(1);
       expect(conn.commit).toHaveBeenCalledTimes(1);
@@ -264,7 +265,7 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(201);
-      expect(res.body).toEqual({ success: true });
+      expect(res.body).toMatchObject({ ok: true });
 
       const insertCall = conn.query.mock.calls.find((c) => String(c[0]).includes("INSERT INTO enderecos_usuario"));
       const params = insertCall[1];
@@ -442,7 +443,7 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: true });
+      expect(res.body).toMatchObject({ ok: true });
 
       expect(conn.beginTransaction).toHaveBeenCalledTimes(1);
       expect(conn.commit).toHaveBeenCalledTimes(1);
@@ -518,7 +519,7 @@ describe("User Addresses Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: true });
+      expect(res.body).toMatchObject({ ok: true });
       expect(pool.query).toHaveBeenCalledWith(
         "DELETE FROM enderecos_usuario WHERE id = ? AND usuario_id = ?",
         [10, 7]

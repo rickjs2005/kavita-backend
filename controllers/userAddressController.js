@@ -4,17 +4,17 @@
 // Thin HTTP adapter for user address CRUD.
 // Delegates all logic to userAddressService.
 //
-// Response contract note — preserved from legacy for frontend compatibility:
-//   GET  /      → raw JSON array      (not { ok, data })
-//   POST /      → { success: true }   (201)
-//   PUT  /:id   → { success: true }   (200)
-//   DELETE /:id → { success: true }   (200)
+// Response contract (lib/response.js — padrão moderno):
+//   GET  /      → { ok: true, data: [...] }   (200)
+//   POST /      → { ok: true }                (201)
+//   PUT  /:id   → { ok: true }                (200)
+//   DELETE /:id → { ok: true }                (200)
 // Errors are propagated via next(AppError) and rendered by the global errorHandler.
-// Migration to lib/response.js requires a coordinated frontend release.
 
 const svc = require("../services/userAddressService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const { response } = require("../lib");
 
 // ---------------------------------------------------------------------------
 // GET /api/users/addresses
@@ -23,7 +23,7 @@ const ERROR_CODES = require("../constants/ErrorCodes");
 exports.list = async (req, res, next) => {
   try {
     const rows = await svc.list(req.user.id);
-    return res.json(rows);
+    return response.ok(res, rows);
   } catch (err) {
     return next(new AppError("Erro ao listar endereços.", ERROR_CODES.SERVER_ERROR, 500));
   }
@@ -36,7 +36,7 @@ exports.list = async (req, res, next) => {
 exports.create = async (req, res, next) => {
   try {
     await svc.create(req.user.id, req.body || {});
-    return res.status(201).json({ success: true });
+    return response.created(res);
   } catch (err) {
     return next(
       err instanceof AppError
@@ -53,7 +53,7 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   try {
     await svc.update(req.user.id, Number(req.params.id), req.body || {});
-    return res.json({ success: true });
+    return response.ok(res);
   } catch (err) {
     return next(
       err instanceof AppError
@@ -70,7 +70,7 @@ exports.update = async (req, res, next) => {
 exports.remove = async (req, res, next) => {
   try {
     await svc.remove(req.user.id, Number(req.params.id));
-    return res.json({ success: true });
+    return response.ok(res);
   } catch (err) {
     return next(
       err instanceof AppError
