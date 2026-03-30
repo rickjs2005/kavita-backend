@@ -29,7 +29,7 @@ describe("userProfile /admin/:id routes — auth via verifyAdmin (adminToken)", 
   const errorCodesPath = require.resolve("../../constants/ErrorCodes");
   const sanitizePath = require.resolve("../../utils/sanitize");
   const cpfPath = require.resolve("../../utils/cpf");
-  const routerPath = require.resolve("../../routes/auth/userProfile");
+  const routerPath = require.resolve("../../routes/auth/_legacy/userProfile");
 
   const MOUNT = "/api/users";
 

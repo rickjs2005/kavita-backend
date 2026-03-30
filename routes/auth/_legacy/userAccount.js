@@ -19,11 +19,11 @@
 // ===========================================================
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const pool = require("../../config/pool");
-const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
-const AuthController = require("../../controllers/authController");
-const { sanitizeCPF, isValidCPF } = require("../../utils/cpf"); // 👈 AQUI
-const { registerValidators, forgotPasswordValidators, resetPasswordValidators } = require("../../validators/authValidator");
+const pool = require("../../../config/pool");
+const createAdaptiveRateLimiter = require("../../../middleware/adaptiveRateLimiter");
+const AuthController = require("../../../controllers/authController");
+const { sanitizeCPF, isValidCPF } = require("../../../utils/cpf"); // 👈 AQUI
+const { registerValidators, forgotPasswordValidators, resetPasswordValidators } = require("../../../validators/authValidator");
 
 const router = express.Router();
 

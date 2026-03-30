@@ -16,8 +16,8 @@
 // =============================================================================
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const requirePermission = require("../../middleware/requirePermission");
+const pool = require("../../../config/pool");
+const requirePermission = require("../../../middleware/requirePermission");
 
 /**
  * @openapi

@@ -17,9 +17,9 @@
 // routes/adminComunicacao.js
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const verifyAdmin = require("../../middleware/verifyAdmin");
-const { sendTransactionalEmail } = require("../../services/mailService");
+const pool = require("../../../config/pool");
+const verifyAdmin = require("../../../middleware/verifyAdmin");
+const { sendTransactionalEmail } = require("../../../services/mailService");
 
 /**
  * Templates disponíveis para o painel admin.

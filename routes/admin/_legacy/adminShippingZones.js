@@ -17,9 +17,9 @@
 // routes/adminShippingZonesRoutes.js
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const AppError = require("../../errors/AppError");
-const ERROR_CODES = require("../../constants/ErrorCodes");
+const pool = require("../../../config/pool");
+const AppError = require("../../../errors/AppError");
+const ERROR_CODES = require("../../../constants/ErrorCodes");
 
 /**
  * @openapi

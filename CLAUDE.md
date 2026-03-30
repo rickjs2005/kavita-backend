@@ -21,14 +21,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 Nova feature completa:
-  routes/{contexto}/               ← rota magra, só wiring
+  routes/{contexto}/               ← rota magra, só wiring (NUNCA em _legacy/)
   schemas/{domínio}Schemas.js      ← validação Zod
   controllers/{domínio}Controller.js ← extrai dados de req, delega ao service
   services/{domínio}Service.js     ← lógica de negócio
   repositories/{domínio}Repository.js ← queries SQL
 
-Nova rota num módulo legado:
+Nova rota num módulo legado (está em routes/*/‌_legacy/):
   → migrar o arquivo inteiro para o padrão moderno na mesma PR
+  → mover o arquivo migrado de _legacy/ para routes/{contexto}/
   → nunca adicionar SQL inline em arquivo legado
 
 Bug num módulo legado (urgente):
@@ -241,8 +242,43 @@ Todo arquivo **novo ou modificado** deve:
 
 O projeto está em migração arquitetural ativa. **Todo arquivo novo ou modificado deve seguir o padrão moderno.**
 
-> **Para desenvolvedores novos:** os arquivos marcados com `ARQUIVO LEGADO` no cabeçalho
-> **não representam o padrão do projeto**. Leia um módulo moderno primeiro.
+### Convenção `_legacy/`
+
+Arquivos legados ficam em subpastas `_legacy/` dentro do diretório de rotas correspondente:
+
+```
+routes/
+  admin/
+    adminDrones.js          ← moderno (referência canônica)
+    adminCarts.js           ← moderno (referência canônica)
+    _legacy/
+      adminComunicacao.js   ← legado (SQL inline, sem repository)
+      adminServicos.js      ← legado
+      ...
+  public/
+    publicProducts.js       ← moderno
+    publicDrones.js         ← moderno
+    _legacy/
+      publicServicos.js     ← legado
+      ...
+  auth/
+    adminLogin.js           ← moderno
+    userAddresses.js        ← moderno
+    _legacy/
+      userProfile.js        ← legado
+      ...
+  ecommerce/
+    cart.js                 ← moderno
+    checkout.js             ← moderno
+    _legacy/
+      pedidos.js            ← legado
+      ...
+```
+
+**Regra:** ao terminar a migração de um arquivo legado, mover de `_legacy/` para `routes/{contexto}/` e atualizar `routes/index.js`.
+
+> **Para desenvolvedores novos:** arquivos em `_legacy/` **não representam o padrão do projeto**.
+> Leia um módulo moderno primeiro.
 > Referências canônicas: `routes/admin/adminDrones.js`, `routes/admin/adminCarts.js`.
 
 ### Módulos modernos — padrão oficial
@@ -279,45 +315,41 @@ Ao tocar esses arquivos: use sempre `service/repository`, nunca adicione novas q
 |---------|------------------|
 | `routes/ecommerce/payment.js` | 2 handlers com `pool.query()` direto para métodos de pagamento admin |
 | `routes/auth/authRoutes.js` | Usa `AuthController` mas validators do express-validator legado |
-| `routes/admin/adminPedidos.js` | Usa `orderService` mas `res.json()` cru sem `lib/response.js` |
+| `routes/admin/_legacy/adminPedidos.js` | Usa `orderService` mas `res.json()` cru sem `lib/response.js` |
 
 ### Módulos legados — exceção temporária
 
-Todos têm o cabeçalho `ARQUIVO LEGADO` no próprio código. Usam `pool.query()` direto na rota,
-validação inline (`if (!campo)`) e `res.json()` sem helper.
-**Nunca ampliar o padrão antigo. Ao tocar: migrar para o padrão moderno.**
+Todos têm o cabeçalho `ARQUIVO LEGADO` no próprio código e estão em subpastas `_legacy/`.
+Usam `pool.query()` direto na rota, validação inline (`if (!campo)`) e `res.json()` sem helper.
+**Nunca ampliar o padrão antigo. Ao migrar: mover de `_legacy/` para `routes/{contexto}/` e atualizar `routes/index.js`.**
 
 | Arquivo | Linhas | Problema principal |
 |---------|--------|--------------------|
-| `routes/admin/adminComunicacao.js` | 462 | SQL inline, sem repository |
-| `routes/admin/adminRoles.js` | 488 | SQL inline, sem repository |
-| `routes/admin/adminServicos.js` | 421 | SQL inline, sem repository |
-| `routes/admin/adminMarketingPromocoes.js` | 394 | SQL inline, sem repository |
-| `routes/admin/adminCupons.js` | 337 | SQL inline, sem repository |
-| `routes/admin/adminShippingZones.js` | 322 | SQL inline, sem repository |
-| `routes/admin/adminStats.js` | 313 | SQL inline, sem repository |
-| `routes/admin/adminRelatorios.js` | 282 | SQL inline, sem repository |
-| `routes/admin/adminColaboradores.js` | 281 | SQL inline, sem repository |
-| `routes/admin/adminAdmins.js` | 258 | SQL inline, sem repository |
-| `routes/admin/adminLogs.js` | 255 | SQL inline, sem repository |
-| `routes/admin/adminCategorias.js` | 301 | SQL inline, sem repository |
-| `routes/admin/adminPermissions.js` | 197 | SQL inline, sem repository |
-| `routes/admin/adminSolicitacoesServicos.js` | 166 | SQL inline, sem repository |
-| `routes/admin/adminConfigUpload.js` | 143 | pool/db direto, sem service |
-| `routes/admin/adminEspecialidades.js` | 82 | SQL inline, sem repository |
-| `routes/admin/adminUsers.js` | 183 | SQL inline, sem repository |
-| `routes/auth/userAddresses.js` | 575 | SQL inline, sem repository |
-| `routes/auth/userProfile.js` | 272 | SQL inline, sem repository |
-| `routes/auth/userAccount.js` | — | SQL inline, sem repository |
-| `routes/ecommerce/pedidos.js` | 181 | SQL inline direto no route |
-| `routes/ecommerce/favorites.js` | 146 | SQL inline, sem repository |
-| `routes/public/publicServicos.js` | 421 | SQL inline, sem repository |
-| `routes/public/publicProdutos.js` | — | SQL inline (legado de publicProducts) |
-| `routes/public/publicServicosAvaliacoes.js` | 144 | SQL inline, sem repository |
-| `routes/public/publicShopConfig.js` | 182 | pool direto, sem service |
-| `routes/public/publicCategorias.js` | — | SQL inline, sem repository |
-| `routes/public/publicProductById.js` | — | SQL inline, sem repository |
-| `routes/public/publicPromocoes.js` | — | SQL inline, sem repository |
+| `routes/admin/_legacy/adminComunicacao.js` | 462 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminServicos.js` | 421 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminMarketingPromocoes.js` | 394 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminCupons.js` | 337 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminShippingZones.js` | 322 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminStats.js` | 313 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminRelatorios.js` | 282 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminAdmins.js` | 258 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminLogs.js` | 255 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminPermissions.js` | 197 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminUsers.js` | 183 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminSolicitacoesServicos.js` | 166 | SQL inline, sem repository |
+| `routes/admin/_legacy/adminConfigUpload.js` | 143 | pool/db direto, sem service |
+| `routes/admin/_legacy/adminEspecialidades.js` | 82 | SQL inline, sem repository |
+| `routes/auth/_legacy/userProfile.js` | 272 | SQL inline, sem repository |
+| `routes/auth/_legacy/userAccount.js` | — | SQL inline, sem repository |
+| `routes/ecommerce/_legacy/pedidos.js` | 181 | SQL inline direto no route |
+| `routes/ecommerce/_legacy/favorites.js` | 146 | SQL inline, sem repository |
+| `routes/public/_legacy/publicServicos.js` | 421 | SQL inline, sem repository |
+| `routes/public/_legacy/publicProdutos.js` | — | SQL inline (legado de publicProducts) |
+| `routes/public/_legacy/publicServicosAvaliacoes.js` | 144 | SQL inline, sem repository |
+| `routes/public/_legacy/publicShopConfig.js` | 182 | pool direto, sem service |
+| `routes/public/_legacy/publicCategorias.js` | — | SQL inline, sem repository |
+| `routes/public/_legacy/publicProductById.js` | — | SQL inline, sem repository |
+| `routes/public/_legacy/publicPromocoes.js` | — | SQL inline, sem repository |
 
 ### Onde um desenvolvedor novo vai se confundir
 
@@ -326,11 +358,11 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
 1. **`routes/ecommerce/payment.js`** — parece moderno (importa paymentService), mas ainda tem
    `pool.query()` direto em 2 handlers. Não use como referência de como misturar padrões.
 
-2. **`routes/admin/adminPedidos.js`** — tem o banner LEGADO e usa `orderService`, mas ainda usa
+2. **`routes/admin/_legacy/adminPedidos.js`** — tem o banner LEGADO e usa `orderService`, mas ainda usa
    `res.json()` cru. Está no meio de uma migração. Não copie a estrutura das rotas.
 
-3. **`routes/public/publicProdutos.js`** vs **`routes/public/publicProducts.js`** — dois arquivos.
-   `publicProducts.js` é o moderno. `publicProdutos.js` é legado e será removido. Nunca adicione
+3. **`routes/public/_legacy/publicProdutos.js`** vs **`routes/public/publicProducts.js`** — dois arquivos.
+   `publicProducts.js` é o moderno. `publicProdutos.js` está em `_legacy/` e será removido. Nunca adicione
    endpoints em `publicProdutos.js`.
 
 4. **`services/news/helpers.js`** — exporta utilitários de domínio (`toInt`, `nowSql`, `normalizeSlug`, etc.)

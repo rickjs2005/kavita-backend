@@ -17,11 +17,11 @@
 // routes/userProfile.js
 const express = require("express");
 const router = express.Router();
-const userRepo = require("../../repositories/userRepository");
-const { sanitizeCPF, isValidCPF } = require("../../utils/cpf");
-const authenticateToken = require("../../middleware/authenticateToken");
-const verifyAdmin = require("../../middleware/verifyAdmin");
-const { sanitizeText } = require("../../utils/sanitize");
+const userRepo = require("../../../repositories/userRepository");
+const { sanitizeCPF, isValidCPF } = require("../../../utils/cpf");
+const authenticateToken = require("../../../middleware/authenticateToken");
+const verifyAdmin = require("../../../middleware/verifyAdmin");
+const { sanitizeText } = require("../../../utils/sanitize");
 
 // Campos permitidos para edição com limites de comprimento e sanitização
 const EDITABLE = new Set([

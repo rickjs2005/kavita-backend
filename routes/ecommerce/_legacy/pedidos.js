@@ -15,11 +15,11 @@
 // =============================================================================
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const authenticateToken = require("../../middleware/authenticateToken");
+const pool = require("../../../config/pool");
+const authenticateToken = require("../../../middleware/authenticateToken");
 
-const AppError = require("../../errors/AppError");
-const ERROR_CODES = require("../../constants/ErrorCodes");
+const AppError = require("../../../errors/AppError");
+const ERROR_CODES = require("../../../constants/ErrorCodes");
 
 /* ----------------------------- Swagger ----------------------------- */
 /**

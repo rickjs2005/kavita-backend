@@ -18,10 +18,10 @@
 const express = require("express");
 const router = express.Router();
 const fs = require("fs");
-const pool = require("../../config/pool");
-const verifyAdmin = require("../../middleware/verifyAdmin");
-const mediaService = require("../../services/mediaService");
-const { validateFileMagicBytes } = require("../../utils/fileValidation");
+const pool = require("../../../config/pool");
+const verifyAdmin = require("../../../middleware/verifyAdmin");
+const mediaService = require("../../../services/mediaService");
+const { validateFileMagicBytes } = require("../../../utils/fileValidation");
 
 /* ==============================
    Configuração e helpers

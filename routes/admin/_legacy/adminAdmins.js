@@ -17,11 +17,11 @@
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
-const pool = require("../../config/pool");
-const verifyAdmin = require("../../middleware/verifyAdmin");
-const requirePermission = require("../../middleware/requirePermission");
-const { logAdminAction } = require("../../services/adminLogs");
-const ERROR_CODES = require("../../constants/ErrorCodes");
+const pool = require("../../../config/pool");
+const verifyAdmin = require("../../../middleware/verifyAdmin");
+const requirePermission = require("../../../middleware/requirePermission");
+const { logAdminAction } = require("../../../services/adminLogs");
+const ERROR_CODES = require("../../../constants/ErrorCodes");
 
 /**
  * @openapi

@@ -65,15 +65,15 @@ loadRoute("/uploads", "./utils/uploadsCheck");
 
 // — Produtos e catálogo —
 loadRoute("/products", "./public/publicProducts");
-loadRoute("/products", "./public/publicProductById");
-loadRoute("/public/categorias", "./public/publicCategorias");
-loadRoute("/public/servicos", "./public/publicServicos");
-loadRoute("/public/servicos", "./public/publicServicosAvaliacoes");
-loadRoute("/public/promocoes", "./public/publicPromocoes");
-loadRoute("/public/produtos", "./public/publicProdutos"); // avaliações de produtos
+loadRoute("/products", "./public/_legacy/publicProductById");
+loadRoute("/public/categorias", "./public/_legacy/publicCategorias");
+loadRoute("/public/servicos", "./public/_legacy/publicServicos");
+loadRoute("/public/servicos", "./public/_legacy/publicServicosAvaliacoes");
+loadRoute("/public/promocoes", "./public/_legacy/publicPromocoes");
+loadRoute("/public/produtos", "./public/_legacy/publicProdutos"); // avaliações de produtos
 
 // — Configuração e visual —
-loadRoute("/config", "./public/publicShopConfig");
+loadRoute("/config", "./public/_legacy/publicShopConfig");
 loadRoute("/public/site-hero", "./public/publicSiteHero");
 
 // — Editorial: notícias e drones —
@@ -99,14 +99,14 @@ loadRoute("/", "./auth/authRoutes");
  * ============================================================ */
 
 // Cadastro básico e recuperação de senha (sem CSRF — não é mutação de sessão autenticada)
-loadRoute("/users", "./auth/userAccount");
+loadRoute("/users", "./auth/_legacy/userAccount");
 
 // Perfil e endereços (autenticados + CSRF)
 try {
-  const userProfileRoutes = require("./auth/userProfile");
+  const userProfileRoutes = require("./auth/_legacy/userProfile");
   router.use("/users", validateCSRF, userProfileRoutes);
 } catch (err) {
-  handleRouteLoadError("./auth/userProfile", err);
+  handleRouteLoadError("./auth/_legacy/userProfile", err);
 }
 try {
   const userAddressesRoutes = require("./auth/userAddresses");
@@ -132,10 +132,10 @@ try {
   handleRouteLoadError("./ecommerce/cart", err);
 }
 try {
-  const favoritesRoutes = require("./ecommerce/favorites");
+  const favoritesRoutes = require("./ecommerce/_legacy/favorites");
   router.use("/favorites", validateCSRF, favoritesRoutes);
 } catch (err) {
-  handleRouteLoadError("./ecommerce/favorites", err);
+  handleRouteLoadError("./ecommerce/_legacy/favorites", err);
 }
 try {
   const checkoutRoutes = require("./ecommerce/checkout");
@@ -147,10 +147,10 @@ try {
 loadRoute("/payment", "./ecommerce/payment");
 
 try {
-  const pedidosRoutes = require("./ecommerce/pedidos");
+  const pedidosRoutes = require("./ecommerce/_legacy/pedidos");
   router.use("/pedidos", validateCSRF, pedidosRoutes);
 } catch (err) {
-  handleRouteLoadError("./ecommerce/pedidos", err);
+  handleRouteLoadError("./ecommerce/_legacy/pedidos", err);
 }
 
 /* ============================================================
@@ -181,7 +181,7 @@ try {
   handleRouteLoadError("./admin/adminCategorias", err);
 }
 try {
-  const adminMarketingPromocoesRoutes = require("./admin/adminMarketingPromocoes");
+  const adminMarketingPromocoesRoutes = require("./admin/_legacy/adminMarketingPromocoes");
   router.use(
     "/admin/marketing/promocoes",
     verifyAdmin,
@@ -189,13 +189,13 @@ try {
     adminMarketingPromocoesRoutes
   );
 } catch (err) {
-  handleRouteLoadError("./admin/adminMarketingPromocoes", err);
+  handleRouteLoadError("./admin/_legacy/adminMarketingPromocoes", err);
 }
 try {
-  const adminCuponsRoutes = require("./admin/adminCupons");
+  const adminCuponsRoutes = require("./admin/_legacy/adminCupons");
   router.use("/admin/cupons", verifyAdmin, validateCSRF, adminCuponsRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminCupons", err);
+  handleRouteLoadError("./admin/_legacy/adminCupons", err);
 }
 
 // — Conteúdo editorial —
@@ -226,13 +226,13 @@ try {
   handleRouteLoadError("./admin/adminColaboradores", err);
 }
 try {
-  const adminServicosRoutes = require("./admin/adminServicos");
+  const adminServicosRoutes = require("./admin/_legacy/adminServicos");
   router.use("/admin/servicos", verifyAdmin, validateCSRF, adminServicosRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminServicos", err);
+  handleRouteLoadError("./admin/_legacy/adminServicos", err);
 }
 try {
-  const adminSolicitacoesServicosRoutes = require("./admin/adminSolicitacoesServicos");
+  const adminSolicitacoesServicosRoutes = require("./admin/_legacy/adminSolicitacoesServicos");
   router.use(
     "/admin/servicos/solicitacoes",
     verifyAdmin,
@@ -240,13 +240,13 @@ try {
     adminSolicitacoesServicosRoutes
   );
 } catch (err) {
-  handleRouteLoadError("./admin/adminSolicitacoesServicos", err);
+  handleRouteLoadError("./admin/_legacy/adminSolicitacoesServicos", err);
 }
 try {
-  const adminEspecialidadesRoutes = require("./admin/adminEspecialidades");
+  const adminEspecialidadesRoutes = require("./admin/_legacy/adminEspecialidades");
   router.use("/admin/especialidades", verifyAdmin, validateCSRF, adminEspecialidadesRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminEspecialidades", err);
+  handleRouteLoadError("./admin/_legacy/adminEspecialidades", err);
 }
 try {
   const adminDronesRoutes = require("./admin/adminDrones");
@@ -258,10 +258,10 @@ try {
 // — Operações de negócio —
 
 try {
-  const adminPedidosRoutes = require("./admin/adminPedidos");
+  const adminPedidosRoutes = require("./admin/_legacy/adminPedidos");
   router.use("/admin/pedidos", verifyAdmin, validateCSRF, requirePermission("pedidos.ver"), adminPedidosRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminPedidos", err);
+  handleRouteLoadError("./admin/_legacy/adminPedidos", err);
 }
 try {
   const adminCartsRoutes = require("./admin/adminCarts");
@@ -270,16 +270,16 @@ try {
   handleRouteLoadError("./admin/adminCarts", err);
 }
 try {
-  const adminStatsRoutes = require("./admin/adminStats");
+  const adminStatsRoutes = require("./admin/_legacy/adminStats");
   router.use("/admin/stats", verifyAdmin, validateCSRF, adminStatsRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminStats", err);
+  handleRouteLoadError("./admin/_legacy/adminStats", err);
 }
 try {
-  const adminRelatoriosRoutes = require("./admin/adminRelatorios");
+  const adminRelatoriosRoutes = require("./admin/_legacy/adminRelatorios");
   router.use("/admin/relatorios", verifyAdmin, validateCSRF, requirePermission("relatorios.ver"), adminRelatoriosRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminRelatorios", err);
+  handleRouteLoadError("./admin/_legacy/adminRelatorios", err);
 }
 
 // — Configuração da loja —
@@ -292,16 +292,16 @@ try {
 }
 // Upload de logo e assets de configuração (separado de adminConfig por usar multer)
 try {
-  const adminConfigUploadRoutes = require("./admin/adminConfigUpload");
+  const adminConfigUploadRoutes = require("./admin/_legacy/adminConfigUpload");
   router.use("/admin/shop-config/upload", verifyAdmin, validateCSRF, requirePermission("config.editar"), adminConfigUploadRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminConfigUpload", err);
+  handleRouteLoadError("./admin/_legacy/adminConfigUpload", err);
 }
 try {
-  const adminShippingZonesRoutes = require("./admin/adminShippingZones");
+  const adminShippingZonesRoutes = require("./admin/_legacy/adminShippingZones");
   router.use("/admin/shipping", verifyAdmin, validateCSRF, adminShippingZonesRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminShippingZones", err);
+  handleRouteLoadError("./admin/_legacy/adminShippingZones", err);
 }
 
 // — Sistema e segurança —
@@ -310,22 +310,22 @@ try {
 // aplicado dentro dos sub-roteadores quando necessário.
 
 try {
-  const adminComunicacaoRoutes = require("./admin/adminComunicacao");
+  const adminComunicacaoRoutes = require("./admin/_legacy/adminComunicacao");
   router.use("/admin/comunicacao", verifyAdmin, validateCSRF, adminComunicacaoRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminComunicacao", err);
+  handleRouteLoadError("./admin/_legacy/adminComunicacao", err);
 }
 try {
-  const adminUsersRoutes = require("./admin/adminUsers");
+  const adminUsersRoutes = require("./admin/_legacy/adminUsers");
   router.use("/admin/users", verifyAdmin, validateCSRF, requirePermission("usuarios.ver"), adminUsersRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminUsers", err);
+  handleRouteLoadError("./admin/_legacy/adminUsers", err);
 }
 try {
-  const adminAdminsRoutes = require("./admin/adminAdmins");
+  const adminAdminsRoutes = require("./admin/_legacy/adminAdmins");
   router.use("/admin/admins", verifyAdmin, validateCSRF, adminAdminsRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminAdmins", err);
+  handleRouteLoadError("./admin/_legacy/adminAdmins", err);
 }
 try {
   const adminRolesRoutes = require("./admin/adminRoles");
@@ -334,16 +334,16 @@ try {
   handleRouteLoadError("./admin/adminRoles", err);
 }
 try {
-  const adminPermissionsRoutes = require("./admin/adminPermissions");
+  const adminPermissionsRoutes = require("./admin/_legacy/adminPermissions");
   router.use("/admin/permissions", verifyAdmin, validateCSRF, adminPermissionsRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminPermissions", err);
+  handleRouteLoadError("./admin/_legacy/adminPermissions", err);
 }
 try {
-  const adminLogsRoutes = require("./admin/adminLogs");
+  const adminLogsRoutes = require("./admin/_legacy/adminLogs");
   router.use("/admin/logs", verifyAdmin, validateCSRF, adminLogsRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/adminLogs", err);
+  handleRouteLoadError("./admin/_legacy/adminLogs", err);
 }
 
 module.exports = router;

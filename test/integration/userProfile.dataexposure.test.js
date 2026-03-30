@@ -51,7 +51,7 @@ function loadApp() {
   const errCodesPath = require.resolve("../../constants/ErrorCodes");
   const sanitizePath = require.resolve("../../utils/sanitize");
   const cpfPath     = require.resolve("../../utils/cpf");
-  const routerPath  = require.resolve("../../routes/auth/userProfile");
+  const routerPath  = require.resolve("../../routes/auth/_legacy/userProfile");
 
   jest.doMock(errCodesPath, () => ({
     VALIDATION_ERROR: "VALIDATION_ERROR",

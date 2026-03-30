@@ -15,8 +15,8 @@
 // =============================================================================
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const { sanitizeText } = require("../../utils/sanitize");
+const pool = require("../../../config/pool");
+const { sanitizeText } = require("../../../utils/sanitize");
 
 /**
  * @openapi

@@ -31,8 +31,8 @@
 // routes/publicProdutos.js
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool"); // Conexão com o banco de dados
-const authenticateToken = require("../../middleware/authenticateToken");
+const pool = require("../../../config/pool"); // Conexão com o banco de dados
+const authenticateToken = require("../../../middleware/authenticateToken");
 
 // Campos padrão que queremos expor publicamente de products
 const PUBLIC_PRODUCT_FIELDS = `

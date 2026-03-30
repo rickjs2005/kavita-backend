@@ -15,9 +15,9 @@
 // =============================================================================
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const verifyAdmin = require("../../middleware/verifyAdmin");
-const ERROR_CODES = require("../../constants/ErrorCodes");
+const pool = require("../../../config/pool");
+const verifyAdmin = require("../../../middleware/verifyAdmin");
+const ERROR_CODES = require("../../../constants/ErrorCodes");
 
 /**
  * @openapi

@@ -19,11 +19,11 @@ const path = require("path");
 const fs = require("fs");
 const router = express.Router();
 
-const db = require("../../config/pool");
-const verifyAdmin = require("../../middleware/verifyAdmin");
-const mediaService = require("../../services/mediaService");
-const { validateFileMagicBytes } = require("../../utils/fileValidation");
-const ERROR_CODES = require("../../constants/ErrorCodes");
+const db = require("../../../config/pool");
+const verifyAdmin = require("../../../middleware/verifyAdmin");
+const mediaService = require("../../../services/mediaService");
+const { validateFileMagicBytes } = require("../../../utils/fileValidation");
+const ERROR_CODES = require("../../../constants/ErrorCodes");
 
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
 

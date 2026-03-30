@@ -17,9 +17,9 @@
 // routes/adminCupons.js — CRUD de cupons com Swagger
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const verifyAdmin = require("../../middleware/verifyAdmin");
-const ERROR_CODES = require("../../constants/ErrorCodes");
+const pool = require("../../../config/pool");
+const verifyAdmin = require("../../../middleware/verifyAdmin");
+const ERROR_CODES = require("../../../constants/ErrorCodes");
 
 const CUPONS_TABLE = "cupons";
 const IS_DEV = process.env.NODE_ENV !== "production";

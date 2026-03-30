@@ -16,8 +16,8 @@
 
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const verifyAdmin = require("../../middleware/verifyAdmin");
+const pool = require("../../../config/pool");
+const verifyAdmin = require("../../../middleware/verifyAdmin");
 
 /**
  * @openapi

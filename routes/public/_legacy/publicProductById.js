@@ -22,7 +22,7 @@
 // routes/productById.js
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
+const pool = require("../../../config/pool");
 
 async function getImages(productId) {
   const [imgs] = await pool.query(

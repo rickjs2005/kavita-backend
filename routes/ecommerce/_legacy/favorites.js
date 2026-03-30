@@ -16,8 +16,8 @@
 // =============================================================================
 const express = require("express");
 const router = express.Router();
-const pool = require("../../config/pool");
-const authenticateToken = require("../../middleware/authenticateToken");
+const pool = require("../../../config/pool");
+const authenticateToken = require("../../../middleware/authenticateToken");
 
 // Todas as rotas de favoritos exigem usuário autenticado
 router.use(authenticateToken);

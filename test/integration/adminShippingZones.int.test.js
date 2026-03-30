@@ -13,7 +13,7 @@ describe("Admin Shipping Zones Routes (integration)", () => {
   const poolPath = require.resolve("../../config/pool");
   const appErrorPath = require.resolve("../../errors/AppError");
   const errorCodesPath = require.resolve("../../constants/ErrorCodes");
-  const routerPath = require.resolve("../../routes/admin/adminShippingZones");
+  const routerPath = require.resolve("../../routes/admin/_legacy/adminShippingZones");
 
   beforeEach(() => {
     jest.clearAllMocks();
