@@ -1,4 +1,15 @@
-const pool = require("../config/pool");
+// services/adminLogs.js
+//
+// Serviço de auditoria admin.
+//
+// Política de falha deliberada: logAdminAction nunca propaga erro ao caller.
+// Razão: falha de log não deve cancelar a operação de negócio que a originou.
+// Callers (authAdminController, rolesAdminService, etc.) chamam sem await
+// — erros não seriam capturáveis de qualquer forma.
+// A falha é registrada via logger.error para garantir observabilidade em produção.
+
+const adminLogsRepo = require("../repositories/adminLogsRepository");
+const { logger } = require("../lib");
 
 /**
  * Registra um log de ação do admin.
@@ -13,12 +24,9 @@ async function logAdminAction({ adminId, acao, entidade, entidadeId = null } = {
   if (!adminId || !acao || !entidade) return;
 
   try {
-    await pool.query(
-      "INSERT INTO admin_logs (admin_id, acao, entidade, entidade_id) VALUES (?, ?, ?, ?)",
-      [adminId, acao, entidade, entidadeId]
-    );
+    await adminLogsRepo.insertLog({ adminId, acao, entidade, entidadeId });
   } catch (err) {
-    console.error("Erro ao registrar log de admin:", err.message);
+    logger.error({ adminId, acao, entidade, entidadeId, err }, "Falha ao registrar log de admin");
   }
 }
 
