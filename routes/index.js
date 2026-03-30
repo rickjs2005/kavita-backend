@@ -67,9 +67,8 @@ loadRoute("/uploads", "./utils/uploadsCheck");
 loadRoute("/products", "./public/publicProducts");
 loadRoute("/products", "./public/_legacy/publicProductById");
 loadRoute("/public/categorias", "./public/_legacy/publicCategorias");
-loadRoute("/public/servicos", "./public/_legacy/publicServicos");
-loadRoute("/public/servicos", "./public/_legacy/publicServicosAvaliacoes");
-loadRoute("/public/promocoes", "./public/_legacy/publicPromocoes");
+loadRoute("/public/servicos", "./public/publicServicos");
+loadRoute("/public/promocoes", "./public/publicPromocoes");
 loadRoute("/public/produtos", "./public/_legacy/publicProdutos"); // avaliações de produtos
 
 // — Configuração e visual —
