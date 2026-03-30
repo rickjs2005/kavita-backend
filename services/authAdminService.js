@@ -1,5 +1,6 @@
 // services/authAdminService.js
-const pool = require("../config/pool");
+const adminRepo = require("../repositories/adminRepository");
+const { logger } = require("../lib");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
@@ -33,28 +34,11 @@ if (process.env.NODE_ENV !== "test") {
 }
 
 // ---------------------------------------------------------------------------
-// Queries
+// Queries — delegadas a adminRepository
 // ---------------------------------------------------------------------------
 
 async function findAdminByEmail(email) {
-  const [rows] = await pool.query(
-    `SELECT
-       a.id,
-       a.nome,
-       a.email,
-       a.senha,
-       a.role,
-       a.ativo,
-       a.mfa_secret,
-       a.mfa_active,
-       a.tokenVersion,
-       r.id AS role_id
-     FROM admins a
-     LEFT JOIN admin_roles r ON r.slug = a.role
-     WHERE a.email = ?`,
-    [email]
-  );
-  return rows[0] ?? null;
+  return adminRepo.findAdminByEmail(email);
 }
 
 /**
@@ -62,21 +46,7 @@ async function findAdminByEmail(email) {
  * Usado tanto no middleware verifyAdmin quanto no controller de auth.
  */
 async function findAdminById(id) {
-  const [rows] = await pool.query(
-    `SELECT
-       a.id,
-       a.nome,
-       a.email,
-       a.role,
-       a.ativo,
-       a.tokenVersion,
-       r.id AS role_id
-     FROM admins a
-     LEFT JOIN admin_roles r ON r.slug = a.role
-     WHERE a.id = ?`,
-    [id]
-  );
-  return rows[0] ?? null;
+  return adminRepo.findAdminById(id);
 }
 
 /**
@@ -105,17 +75,7 @@ async function getAdminPermissions(adminId, tokenVersion) {
     }
   }
 
-  const [rows] = await pool.query(
-    `SELECT DISTINCT p.chave
-     FROM admins a
-     JOIN admin_roles r ON r.slug = a.role
-     JOIN admin_role_permissions rp ON rp.role_id = r.id
-     JOIN admin_permissions p ON p.id = rp.permission_id
-     WHERE a.id = ?`,
-    [adminId]
-  );
-
-  const permissions = rows.map((r) => r.chave);
+  const permissions = await adminRepo.findAdminPermissions(adminId);
 
   // Armazena no Redis (fire-and-forget — não derruba o request se falhar)
   if (redis.ready) {
@@ -152,24 +112,14 @@ function generateToken(payload) {
 
 async function updateLastLogin(adminId) {
   try {
-    await pool.query(
-      "UPDATE admins SET ultimo_login = NOW() WHERE id = ?",
-      [adminId]
-    );
+    await adminRepo.updateLastLogin(adminId);
   } catch (err) {
-    console.warn(
-      "⚠️ Não foi possível atualizar ultimo_login para admin:",
-      adminId,
-      err
-    );
+    logger.warn({ adminId, err }, "Não foi possível atualizar ultimo_login");
   }
 }
 
 async function incrementTokenVersion(adminId) {
-  await pool.query(
-    "UPDATE admins SET tokenVersion = COALESCE(tokenVersion, 0) + 1 WHERE id = ?",
-    [adminId]
-  );
+  return adminRepo.incrementTokenVersion(adminId);
 }
 
 // ---------------------------------------------------------------------------
