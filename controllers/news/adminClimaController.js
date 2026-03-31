@@ -1,5 +1,8 @@
 // controllers/news/adminClimaController.js
 // Admin controller do Kavita News - CLIMA (CRUD + logs em admin_logs via pool)
+//
+// Integração Open-Meteo (chuva mm): services/climaAdminService.js
+// Geocoding / sugestão de coordenadas: services/inmetStationsService.js
 
 const climaRepo = require("../../repositories/climaRepository");
 const { logAdminAction } = require("../../services/adminLogs");
@@ -7,6 +10,7 @@ const { toInt, nowSql } = require("../../services/news/helpers");
 const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
+const climaAdminService = require("../../services/climaAdminService");
 
 /**
  * Sugestão de coordenadas (compatibilidade):
@@ -25,18 +29,13 @@ function getAdminId(req) {
   return req.admin?.id || req.user?.id || req.adminId || req.userId || null;
 }
 
-/* helper local: extrai adminId do req e delega para o serviço centralizado */
 async function logAdmin(req, acao, entidade, entidade_id = null) {
   await logAdminAction({ adminId: getAdminId(req), acao, entidade, entidadeId: entidade_id });
 }
 
 /* =========================================================
- * ADMIN - CLIMA (news_clima)
+ * Handlers - Clima (news_clima)
  * ========================================================= */
-
-/* =========================
- * Handlers - Clima
- * ========================= */
 
 async function listClima(req, res, next) {
   try {
@@ -50,7 +49,7 @@ async function listClima(req, res, next) {
 
 /**
  * GET /api/admin/news/clima/stations?uf=MG&q=manhu&limit=10
- * Agora: sugestões via Open-Meteo Geocoding (mantém endpoint por compatibilidade).
+ * Sugestões via Open-Meteo Geocoding (mantém endpoint por compatibilidade).
  */
 async function suggestClimaStations(req, res, next) {
   try {
@@ -66,12 +65,7 @@ async function suggestClimaStations(req, res, next) {
       return response.ok(res, []);
     }
 
-    // 🔴 GARANTIA ABSOLUTA: chama SOMENTE o geocoding
-    const data = await inmetStationsService.suggestStations({
-      uf,
-      q,
-      limit,
-    });
+    const data = await inmetStationsService.suggestStations({ uf, q, limit });
 
     return response.ok(res, data, null, {
       provider: "OPEN_METEO_GEOCODING",
@@ -93,7 +87,8 @@ async function createClima(req, res, next) {
     return response.created(res, row);
   } catch (error) {
     console.error("adminClimaController.createClima:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", ERROR_CODES.CONFLICT, 409));
+    if (String(error?.code || "").includes("ER_DUP_ENTRY"))
+      return next(new AppError("Já existe um clima com esse slug.", ERROR_CODES.CONFLICT, 409));
     return next(new AppError("Erro ao criar clima.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
@@ -114,7 +109,8 @@ async function updateClima(req, res, next) {
     return response.ok(res, result);
   } catch (error) {
     console.error("adminClimaController.updateClima:", error);
-    if (String(error?.code || "").includes("ER_DUP_ENTRY")) return next(new AppError("Já existe um clima com esse slug.", ERROR_CODES.CONFLICT, 409));
+    if (String(error?.code || "").includes("ER_DUP_ENTRY"))
+      return next(new AppError("Já existe um clima com esse slug.", ERROR_CODES.CONFLICT, 409));
     return next(new AppError("Erro ao atualizar clima.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
@@ -132,135 +128,9 @@ async function deleteClima(req, res, next) {
   }
 }
 
-/* =========================================================
- * SYNC CLIMA (mm) - OPEN-METEO
- * ========================================================= */
-
-async function fetchChuvaMmFromProvider(climaRow) {
-  // ===== helpers =====
-  const pad2 = (n) => String(n).padStart(2, "0");
-  const toYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  const addDays = (d, days) => {
-    const x = new Date(d.getTime());
-    x.setDate(x.getDate() + days);
-    return x;
-  };
-
-  const fetchJson = async (url, timeoutMs = 15000) => {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => {
-      try {
-        ctrl.abort();
-      } catch { }
-    }, timeoutMs);
-
-    try {
-      const r = await fetch(url, {
-        method: "GET",
-        signal: ctrl.signal,
-        headers: {
-          accept: "application/json",
-          "user-agent": "kavita-news/1.0",
-        },
-      });
-
-      const data = await r.json().catch(() => null);
-      return { ok: r.ok, status: r.status, url, data };
-    } catch (e) {
-      return { ok: false, status: 0, url, data: { message: String(e?.message || e) } };
-    } finally {
-      clearTimeout(t);
-    }
-  };
-
-  const safeNum = (v) => {
-    if (v === null || v === undefined || v === "") return null;
-    const n = Number(String(v).replace(",", "."));
-    return Number.isFinite(n) ? n : null;
-  };
-
-  const sumArr = (arr) => {
-    if (!Array.isArray(arr) || !arr.length) return 0;
-    let total = 0;
-    for (const v of arr) total += safeNum(v) ?? 0;
-    return Number(total.toFixed(2));
-  };
-
-  // ===== 1) coordenadas (preferência: já salvas no DB) =====
-  let lat = safeNum(climaRow?.station_lat);
-  let lon = safeNum(climaRow?.station_lon);
-
-  // Se não tiver lat/lon, tenta geocoding pela cidade/UF
-  if (lat === null || lon === null) {
-    const city = String(climaRow?.city_name || "").trim();
-    const uf = String(climaRow?.uf || "").trim().toUpperCase();
-
-    if (!city || uf.length !== 2) {
-      const err = new Error("COORDS_REQUIRED");
-      err.code = "COORDS_REQUIRED";
-      err.details = { need: ["station_lat", "station_lon"], have: { city, uf } };
-      throw err;
-    }
-
-    const q = encodeURIComponent(`${city}, ${uf}`);
-    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${q}&count=1&language=pt&country_code=BR`;
-    const geo = await fetchJson(geoUrl);
-
-    const first = geo?.data?.results?.[0];
-    lat = safeNum(first?.latitude);
-    lon = safeNum(first?.longitude);
-
-    if (lat === null || lon === null) {
-      const err = new Error("GEOCODE_NOT_FOUND");
-      err.code = "GEOCODE_NOT_FOUND";
-      err.details = { city, uf, geoStatus: geo?.status, geoUrl, geoResponse: geo?.data };
-      throw err;
-    }
-  }
-
-  // ===== 2) chuva (mm) via Open-Meteo daily precipitation_sum =====
-  const now = new Date();
-  const end = toYMD(now);
-  const start7 = toYMD(addDays(now, -6)); // 7 dias (hoje + 6 anteriores)
-
-  const url =
-    "https://api.open-meteo.com/v1/forecast" +
-    `?latitude=${encodeURIComponent(lat)}` +
-    `&longitude=${encodeURIComponent(lon)}` +
-    "&daily=precipitation_sum" +
-    "&timezone=America%2FSao_Paulo" +
-    `&start_date=${encodeURIComponent(start7)}` +
-    `&end_date=${encodeURIComponent(end)}`;
-
-  const r = await fetchJson(url);
-
-  if (!r.ok) {
-    const err = new Error("PROVIDER_ERROR");
-    err.code = "PROVIDER_ERROR";
-    err.details = { provider: "OPEN_METEO", status: r.status, url: r.url, response: r.data };
-    throw err;
-  }
-
-  const daily = r?.data?.daily;
-  const arr = Array.isArray(daily?.precipitation_sum) ? daily.precipitation_sum : [];
-
-  const mm_24h = safeNum(arr?.[arr.length - 1]) ?? 0.0;
-  const mm_7d = sumArr(arr);
-
-  return {
-    mm_24h,
-    mm_7d,
-    source: "OPEN_METEO",
-    observedAt: now,
-    meta: {
-      provider: "OPEN_METEO",
-      coords: { lat, lon },
-      window: { start7, end },
-      url,
-    },
-  };
-}
-
+/**
+ * POST /api/admin/news/clima/:id/sync
+ */
 async function syncClima(req, res, next) {
   try {
     const id = toInt(req.params.id, 0);
@@ -272,9 +142,8 @@ async function syncClima(req, res, next) {
     let providerData = null;
 
     try {
-      providerData = await fetchChuvaMmFromProvider(row);
+      providerData = await climaAdminService.fetchRainData(row);
     } catch (e) {
-      // Agora: coordenadas ausentes => validação do cadastro
       if (String(e?.code || "") === "COORDS_REQUIRED") {
         return next(new AppError(
           "Para sincronizar chuva com Open-Meteo, preencha station_lat e station_lon (ou mantenha city_name/uf válidos para geocoding).",
@@ -284,7 +153,6 @@ async function syncClima(req, res, next) {
         ));
       }
 
-      // Geocode falhou => continua sem quebrar o painel
       if (String(e?.code || "") === "GEOCODE_NOT_FOUND") {
         return response.ok(res, row, null, {
           provider: {
@@ -296,7 +164,6 @@ async function syncClima(req, res, next) {
         });
       }
 
-      // erro do provedor => NÃO quebrar o painel
       console.error("syncClima.provider:", e?.details || e);
       return response.ok(res, row, null, {
         provider: {
