@@ -233,10 +233,12 @@ Os arquivos abaixo estão fora de `_legacy/` e têm arquitetura moderna (service
 
 | Arquivo | Endpoint | Formato atual | Delta do padrão |
 |---------|----------|---------------|-----------------|
-| `routes/ecommerce/cart.js` | `GET /api/cart` | `{ carrinho_id, items }` | sem `ok`, sem wrapper `data` |
-| `routes/ecommerce/cart.js` | `POST/PUT /api/cart/items`, `DELETE /api/cart[/items]` | `{ success: true, message, ... }` | `success` ≠ `ok` |
-| `routes/ecommerce/cart.js` | `409` (stock limit) | `{ code: "STOCK_LIMIT", message, max, current, requested }` | sem `ok: false` |
-| `routes/ecommerce/shipping.js` | `GET /api/shipping/quote` | `{ success: true, cep, price, prazo_dias, ... }` | `success` ≠ `ok` |
+| `controllers/cartController.js` | `GET /api/cart` | `{ carrinho_id, items }` | sem `ok`, sem wrapper `data` |
+| `controllers/cartController.js` | `POST/PUT /api/cart/items`, `DELETE /api/cart[/items]` | `{ success: true, message, ... }` | `success` ≠ `ok` |
+| `controllers/cartController.js` | `409` (stock limit) | `{ code: "STOCK_LIMIT", message, max, current, requested }` | sem `ok: false` |
+| `controllers/shippingController.js` | `GET /api/shipping/quote` | `{ success: true, cep, price, prazo_dias, ... }` | `success` ≠ `ok` |
+| `controllers/paymentController.js` | `GET /api/payment/methods` | `{ methods }` | sem `ok`, sem wrapper `data` |
+| `controllers/paymentController.js` | `GET,POST,PUT /api/admin/payment-methods[/:id]` | `{ methods }` / `{ method }` (201) | sem `ok`, sem wrapper `data` |
 | `routes/public/publicProducts.js` | `GET /api/products`, `/search` | `result` direto (bare) | sem `ok`, sem `data` |
 | `routes/public/publicProducts.js` | erros | `{ message }` | sem `ok: false`, sem `code` |
 | `routes/utils/uploadsCheck.js` | `GET /uploads/check/*` (util interno) | `{ ok: false, error: "..." }` | usa `error` em vez de `message` |
@@ -519,6 +521,60 @@ response.badRequest(res, message, details);      // 400 (preferir next(AppError)
 
 **Regra:** Todo código novo obrigatoriamente usa `lib/response.js`. Módulos legados ainda usam `res.json(...)` direto — migrar progressivamente ao tocar o arquivo.
 
+## Módulos de e-commerce — estrutura canônica
+
+Os quatro módulos de e-commerce (`cart`, `checkout`, `payment`, `shipping`) são a referência de como novos módulos de usuário final devem ser organizados. Esta seção consolida a convenção e documenta explicitamente os desvios conhecidos de cada módulo.
+
+### As 5 camadas obrigatórias
+
+| Camada | Arquivo | Responsabilidade | O que NÃO vai aqui |
+|--------|---------|-----------------|-------------------|
+| Route | `routes/ecommerce/{módulo}.js` | Wiring: imports, middleware chain, `router.METHOD()` | Nenhuma lógica — apenas conectar peças |
+| Controller | `controllers/{módulo}Controller.js` | Extrair `req`, guard de auth, delegar ao service, responder com `lib/response.js` | SQL, regra de negócio, chamadas HTTP externas |
+| Service | `services/{módulo}Service.js` | Regra de negócio, orquestração entre repositories | `req`/`res`, SQL direto |
+| Repository | `repositories/{módulo}Repository.js` | SQL e acesso ao pool | Lógica de negócio |
+| Middleware | `middleware/{concern}.js` | Concerns transversais: auth, CSRF, validação Zod, recalcShipping | Regra de negócio de domínio |
+
+### Mapa de arquivos dos 4 módulos
+
+| Módulo | Route | Controller | Service | Repository | Middleware dedicado |
+|--------|-------|-----------|---------|------------|-------------------|
+| Cart | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` | — |
+| Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` | `middleware/recalcShipping.js` |
+| Payment | `routes/ecommerce/payment.js` | `controllers/paymentController.js` | `services/paymentService.js`, `services/paymentWebhookService.js` | `repositories/paymentRepository.js` | `middleware/validateMPSignature.js` |
+| Shipping | `routes/ecommerce/shipping.js` | `controllers/shippingController.js` | `services/shippingQuoteService.js` | `repositories/shippingRepository.js` | — |
+
+### Desvios conhecidos — não copiar, não ampliar
+
+Estes desvios estão congelados por dependência de frontend. Cada um tem motivo documentado. Novos módulos não devem replicar nenhum deles.
+
+| Módulo | Desvio | Motivo do congelamento |
+|--------|--------|----------------------|
+| **Cart** | `res.json({ success: true })` em mutações | Frontend usa `success` — alinhar antes de migrar |
+| **Cart** | `GET /api/cart` retorna `{ carrinho_id, items }` sem `ok`/`data` | Mesmo motivo |
+| **Cart** | `409` retorna `{ code: "STOCK_LIMIT", ... }` sem `ok: false` | Mesmo motivo |
+| **Shipping** | `res.json({ success: true, ...quote })` | Frontend usa `success` — alinhar antes de migrar |
+| **Payment** | `res.json({ methods })` / `res.json({ method })` nos endpoints CRUD | Frontend (admin e checkout) usa esse shape — alinhar antes de migrar |
+| **Payment** | `pool.getConnection()` em `startPayment` e `handleWebhook` | `paymentService.startPayment(conn, ...)` exige conexão externa; dívida do service, não do controller |
+| **Checkout** | `isFormaPagamentoValida()` inline no controller | Guarda secundária deliberada — protege o controller se o middleware Zod for bypassado em testes |
+
+### Template para novo módulo de e-commerce
+
+```
+1. schemas/{domínio}Schemas.js     ← schemas Zod para toda mutation
+2. repositories/{domínio}Repository.js ← só SQL via pool
+3. services/{domínio}Service.js    ← só regra de negócio
+4. controllers/{domínio}Controller.js  ← extrai req, delega, responde com lib/response.js
+5. routes/ecommerce/{domínio}.js   ← só wiring, registro em routes/index.js
+6. middleware/{concern}.js         ← apenas se houver concern transversal real
+```
+
+Proibições absolutas para código novo:
+- SQL em controller ou route
+- `req`/`res` em service ou repository
+- `res.json()` cru — usar sempre `lib/response.js`
+- `{ success: true }` como chave — usar `{ ok: true }` via `response.ok()`
+
 ## Migração de contrato de resposta — fila de próximos arquivos
 
 Arquivos modernos já migrados (Phase 1 — 2026-03):
@@ -533,10 +589,10 @@ Próximos a migrar (prioridade decrescente):
 | `controllers/cartController.js` | `success: true` + `res.json()` bare | Alto — módulo de alto tráfego | Handlers já extraídos da rota; migrar resposta para `lib/response.js` e alinhar com frontend |
 | `routes/public/publicProducts.js` | bare result + erros sem `ok`/`code` | Alto — listagem pública de produtos | Verificar contrato com o frontend |
 | `controllers/shippingController.js` | `success: true` no quote | Médio — uma rota GET | Handler já extraído; migrar resposta para `lib/response.js` e alinhar com frontend |
-| `routes/ecommerce/payment.js` | `res.json()` + `pool.query()` direto | Médio — dois problemas simultâneos | Resolver SQL e contrato juntos |
+| `controllers/paymentController.js` | `res.json()` cru nos 4 endpoints CRUD + `pool.getConnection()` em `startPayment`/`handleWebhook` | Médio | Migrar CRUD para `lib/response.js` alinhando com frontend admin; `pool.getConnection()` resolve ao refatorar `paymentService` para não exigir `conn` externo |
 | `routes/auth/authRoutes.js` | express-validator legado + res.json | Médio — legado de validação | — |
 | `routes/admin/_legacy/adminPedidos.js` | `res.json()` cru sem helper | Baixo — já em `_legacy/` | — |
 | `controllers/authController.js` | `res.status(200).json(...)` em 1 handler | Baixo — módulo isolado | — |
 
 Não migrar em lote — tocar apenas ao ter outra razão para abrir o arquivo.
-Ao migrar `cart.js` ou `publicProducts.js`: coordenar com o frontend — a mudança de formato **quebra o cliente**.
+Ao migrar `cartController.js`, `shippingController.js`, payment CRUD ou `publicProducts.js`: coordenar com o frontend — a mudança de formato **quebra o cliente**.
