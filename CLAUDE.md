@@ -320,7 +320,7 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Cart (usuário) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
 | Pagamento | `routes/ecommerce/payment.js` | `controllers/paymentController.js` | `services/paymentService.js`, `services/paymentWebhookService.js` | — |
-| Shipping | `routes/ecommerce/shipping.js` | — | `services/shippingQuoteService.js` | — |
+| Shipping | `routes/ecommerce/shipping.js` | `controllers/shippingController.js` | `services/shippingQuoteService.js` | — |
 | Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
 | Clima (news) | — | `controllers/news/adminClimaController.js` | — | `repositories/climaRepository.js` |
 | Cotações (news) | — | `controllers/news/adminCotacoesController.js` | — | `repositories/cotacoesRepository.js` |
@@ -337,7 +337,7 @@ Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antig
 | `routes/auth/authRoutes.js` | Validators do express-validator legado em vez de Zod |
 | `routes/admin/_legacy/adminPedidos.js` | Usa `orderService` mas `res.json()` cru — no meio de migração |
 | `routes/ecommerce/cart.js` | Contrato `success: true` divergente — handlers já em `controllers/cartController.js`, pendente apenas migração de resposta para `lib/response.js` |
-| `routes/ecommerce/shipping.js` | `res.json({ success: true, ...quote })` em vez de `response.ok(res, quote)` |
+| `controllers/shippingController.js` | Contrato `success: true` divergente — pendente migração para `lib/response.js` alinhada com frontend |
 | `routes/public/publicProducts.js` | `res.json(result)` bare + erros `{ message }` sem `ok`/`code` |
 
 ### Módulos legados — exceção temporária
@@ -510,7 +510,7 @@ Próximos a migrar (prioridade decrescente):
 |---------|----------|---------|------------|
 | `controllers/cartController.js` | `success: true` + `res.json()` bare | Alto — módulo de alto tráfego | Handlers já extraídos da rota; migrar resposta para `lib/response.js` e alinhar com frontend |
 | `routes/public/publicProducts.js` | bare result + erros sem `ok`/`code` | Alto — listagem pública de produtos | Verificar contrato com o frontend |
-| `routes/ecommerce/shipping.js` | `success: true` no quote | Médio — uma rota GET | Simples de migrar |
+| `controllers/shippingController.js` | `success: true` no quote | Médio — uma rota GET | Handler já extraído; migrar resposta para `lib/response.js` e alinhar com frontend |
 | `routes/ecommerce/payment.js` | `res.json()` + `pool.query()` direto | Médio — dois problemas simultâneos | Resolver SQL e contrato juntos |
 | `routes/auth/authRoutes.js` | express-validator legado + res.json | Médio — legado de validação | — |
 | `routes/admin/_legacy/adminPedidos.js` | `res.json()` cru sem helper | Baixo — já em `_legacy/` | — |
