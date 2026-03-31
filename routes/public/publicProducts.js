@@ -1,14 +1,16 @@
 // routes/public/publicProducts.js
 //
-// Escopo: catálogo público de produtos — listagem e busca.
-// Prefixo montado: /api/products
+// Ponto único de montagem do namespace /api/products.
+// Prefixo montado: /api/products  (apenas aqui — não duplicar em routes/index.js)
 //
-// Endpoints:
+// Endpoints deste arquivo (padrão MODERNO):
 //   GET /api/products          — listagem paginada (categoria, busca, ordenação)
 //   GET /api/products/search   — busca avançada (promoções, faixa de preço, filtros)
 //
-// Padrão: MODERNO — delega para productService → productRepository
-// NÃO contém avaliações de produto. Para avaliações: routes/public/publicProdutos.js
+// Endpoints delegados ao legado (ver ao final deste arquivo):
+//   GET /api/products/:id      — detalhe por ID  →  ./_legacy/publicProductById.js
+//
+// NÃO contém avaliações de produto. Para avaliações: routes/public/_legacy/publicProdutos.js
 const express = require("express");
 const router = express.Router();
 const productService = require("../../services/productService");
@@ -126,5 +128,9 @@ router.get("/search", async (req, res) => {
     return res.status(500).json({ message: "Erro interno no servidor." });
   }
 });
+
+// Delega GET /:id ao módulo legado.
+// Rota paramétrica registrada após as literais (/ e /search) — sem risco de sombra.
+router.use(require("./_legacy/publicProductById"));
 
 module.exports = router;

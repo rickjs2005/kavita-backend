@@ -15,9 +15,11 @@
 // =============================================================================
 //
 // Escopo: detalhe de produto por ID.
-// Prefixo montado: /api/products  →  GET /api/products/:id
+// Endpoint final: GET /api/products/:id
 //
-// Montado no mesmo prefixo que publicProducts.js (que cobre GET / e GET /search).
+// NÃO montado diretamente em routes/index.js.
+// Delegado por routes/public/publicProducts.js via router.use().
+// Ponto único de montagem do namespace /products: publicProducts.js.
 // =============================================================================
 // routes/productById.js
 const express = require("express");
