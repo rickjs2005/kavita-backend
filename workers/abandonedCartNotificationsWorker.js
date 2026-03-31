@@ -1,13 +1,7 @@
 // workers/abandonedCartNotificationsWorker.js
 
 const pool = require("../config/pool");
-
-let nodemailer;
-try {
-  nodemailer = require("nodemailer");
-} catch (err) {
-  nodemailer = null;
-}
+const mailService = require("../services/mailService");
 
 /* ======================================================
  * ENV
@@ -17,13 +11,6 @@ const INTERVAL_SECONDS =
   Number(process.env.ABANDON_NOTIF_WORKER_INTERVAL_SECONDS) || 120;
 
 const PUBLIC_SITE_URL = (process.env.PUBLIC_SITE_URL || "").replace(/\/+$/, "");
-
-const SMTP_HOST = process.env.SMTP_HOST || "";
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-const SMTP_SECURE = String(process.env.SMTP_SECURE || "false") === "true";
-const SMTP_USER = process.env.SMTP_USER || "";
-const SMTP_PASS = process.env.SMTP_PASS || "";
-const SMTP_FROM = process.env.SMTP_FROM || "no-reply@kavita.com";
 
 /* ======================================================
  * Utils
@@ -133,16 +120,6 @@ async function processEmails() {
     return;
   }
 
-  if (!nodemailer) {
-    console.error("[Worker] nodemailer não instalado. Rode: npm i nodemailer");
-    return;
-  }
-
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-    console.error("[Worker] SMTP não configurado corretamente.");
-    return;
-  }
-
   const conn = await pool.getConnection();
 
   try {
@@ -175,13 +152,6 @@ async function processEmails() {
 
     if (!rows.length) return;
 
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_SECURE,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    });
-
     for (const r of rows) {
       try {
         // Se o carrinho já foi recuperado, cancela/fecha esta notificação
@@ -202,24 +172,19 @@ async function processEmails() {
         }
 
         const itens = parseItens(r.itens);
+        const emailData = {
+          nome: r.usuario_nome,
+          cartId: r.carrinho_id,
+          itens,
+          total: Number(r.total_estimado || 0),
+        };
 
-        await transporter.sendMail({
-          from: SMTP_FROM,
-          to: r.usuario_email,
-          subject: buildSubject(r.usuario_nome),
-          text: buildText({
-            nome: r.usuario_nome,
-            cartId: r.carrinho_id,
-            itens,
-            total: Number(r.total_estimado || 0),
-          }),
-          html: buildHtml({
-            nome: r.usuario_nome,
-            cartId: r.carrinho_id,
-            itens,
-            total: Number(r.total_estimado || 0),
-          }),
-        });
+        await mailService.sendTransactionalEmail(
+          r.usuario_email,
+          buildSubject(r.usuario_nome),
+          buildHtml(emailData),
+          buildText(emailData)
+        );
 
         await conn.query(
           `

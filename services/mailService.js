@@ -34,15 +34,21 @@ async function sendResetPasswordEmail(toEmail, token) {
 }
 
 /**
- * Envia e-mails transacionais do admin (confirmação, comprovante, envio…)
+ * Envia e-mails transacionais (confirmação, comprovante, envio, notificações…)
+ * @param {string} to
+ * @param {string} subject
+ * @param {string} html
+ * @param {string} [text] - fallback plaintext opcional (melhora score anti-spam)
  */
-async function sendTransactionalEmail(to, subject, html) {
-  await transporter.sendMail({
+async function sendTransactionalEmail(to, subject, html, text = null) {
+  const mailOptions = {
     from: `"Kavita" <${config.email.user}>`,
     to,
     subject,
     html,
-  });
+  };
+  if (text) mailOptions.text = text;
+  await transporter.sendMail(mailOptions);
 }
 
 module.exports = {
