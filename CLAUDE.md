@@ -65,6 +65,9 @@ A: `verifyAdmin` para rotas do painel admin (cookie `adminToken`, 2h). `authenti
 **Q: `lib/response.js` ou `res.json()`?**
 A: Sempre `lib/response.js` em código novo: `response.ok(res, data)`, `response.created(res, data)`, `response.paginated(res, {...})`. `res.json()` direto só existe em módulos legados em migração.
 
+**Q: Encontrei `{ success: true }` em algumas respostas em vez de `{ ok: true }`. Qual o padrão?**
+A: `{ ok: true }` é o contrato oficial. `{ success: true }` é um contrato divergente que ainda existe em `cart.js` e `shipping.js` — o frontend já depende desse formato, então **não altere sem alinhar com o frontend**. Código novo nunca usa `success` como chave — apenas `ok`. Ver seção "Contratos divergentes em módulos não-legados" abaixo.
+
 **Q: `AppError` ou `res.status(4xx).json()`?**
 A: Sempre `next(new AppError(message, ERROR_CODES.XXX, status))`. O `errorHandler` global em `server.js` processa tudo. Nunca `res.status(4xx).json()` inline em código novo.
 
@@ -224,6 +227,22 @@ Mapeamento de códigos de erro HTTP → `ERROR_CODES`:
 | 429 | `RATE_LIMIT` | Rate limit excedido |
 | 500 | `SERVER_ERROR` | Erro interno não previsto |
 
+**Contratos divergentes em módulos não-legados**
+
+Os arquivos abaixo estão fora de `_legacy/` e têm arquitetura moderna (service/repository), mas *ainda não* usam `lib/response.js`. O frontend conhece exatamente esses formatos — **não altere a forma da resposta sem alinhar com o frontend**.
+
+| Arquivo | Endpoint | Formato atual | Delta do padrão |
+|---------|----------|---------------|-----------------|
+| `routes/ecommerce/cart.js` | `GET /api/cart` | `{ carrinho_id, items }` | sem `ok`, sem wrapper `data` |
+| `routes/ecommerce/cart.js` | `POST/PUT /api/cart/items`, `DELETE /api/cart[/items]` | `{ success: true, message, ... }` | `success` ≠ `ok` |
+| `routes/ecommerce/cart.js` | `409` (stock limit) | `{ code: "STOCK_LIMIT", message, max, current, requested }` | sem `ok: false` |
+| `routes/ecommerce/shipping.js` | `GET /api/shipping/quote` | `{ success: true, cep, price, prazo_dias, ... }` | `success` ≠ `ok` |
+| `routes/public/publicProducts.js` | `GET /api/products`, `/search` | `result` direto (bare) | sem `ok`, sem `data` |
+| `routes/public/publicProducts.js` | erros | `{ message }` | sem `ok: false`, sem `code` |
+| `routes/utils/uploadsCheck.js` | `GET /uploads/check/*` (util interno) | `{ ok: false, error: "..." }` | usa `error` em vez de `message` |
+
+> **Regra prática:** ao chamar um desses endpoints em testes de integração, não asserte `ok: true` — asserte o campo real (`success`, `carrinho_id`, etc.). Ao *migrar* o endpoint, lembrar de atualizar o frontend antes ou em conjunto.
+
 **Regra de negação:**
 
 Todo arquivo **novo ou modificado** deve:
@@ -308,14 +327,17 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 
 ### Módulo híbrido — modernização parcial
 
-Usa service para a maioria das operações, mas ainda contém `pool.query()` direto em alguns handlers.
-Ao tocar esses arquivos: use sempre `service/repository`, nunca adicione novas queries diretas.
+Arquivos fora de `_legacy/` com problemas arquiteturais ou de contrato residuais.
+Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antigo.
 
 | Arquivo | Problema residual |
 |---------|------------------|
-| `routes/ecommerce/payment.js` | 2 handlers com `pool.query()` direto para métodos de pagamento admin |
-| `routes/auth/authRoutes.js` | Usa `AuthController` mas validators do express-validator legado |
-| `routes/admin/_legacy/adminPedidos.js` | Usa `orderService` mas `res.json()` cru sem `lib/response.js` |
+| `routes/ecommerce/payment.js` | 2 handlers com `pool.query()` direto + `res.json()` cru (contrato e SQL) |
+| `routes/auth/authRoutes.js` | Validators do express-validator legado em vez de Zod |
+| `routes/admin/_legacy/adminPedidos.js` | Usa `orderService` mas `res.json()` cru — no meio de migração |
+| `routes/ecommerce/cart.js` | `res.json()` cru + `success: true` em vez de `lib/response.js` + `ok: true` |
+| `routes/ecommerce/shipping.js` | `res.json({ success: true, ...quote })` em vez de `response.ok(res, quote)` |
+| `routes/public/publicProducts.js` | `res.json(result)` bare + erros `{ message }` sem `ok`/`code` |
 
 ### Módulos legados — exceção temporária
 
@@ -368,6 +390,15 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
 4. **`services/news/helpers.js`** — exporta utilitários de domínio (`toInt`, `nowSql`, `normalizeSlug`, etc.)
    que são legítimos e reutilizados por vários controllers de news. **Não** exporta helpers de resposta
    HTTP — esses foram removidos. Para respostas, sempre usar `lib/response.js` + `AppError`.
+
+5. **`routes/ecommerce/cart.js` e `routes/ecommerce/shipping.js`** — parecem modernos (usam service/repository,
+   sem SQL inline), mas retornam `{ success: true }` em vez de `{ ok: true }`. O frontend depende dessa forma.
+   Ao escrever testes para essas rotas, não asserte `ok: true` — asserte `success: true`. Não copie esse
+   padrão em código novo.
+
+6. **`routes/public/publicProducts.js`** — retorna o objeto bruto do service sem wrapper (`ok`, `data`),
+   e erros sem `code`. É um módulo moderno em estrutura (usa `productService`) mas legado em contrato.
+   Tratado como "híbrido", não como referência de código novo.
 
 Armadilhas já resolvidas (registradas aqui para histórico):
 
@@ -468,11 +499,15 @@ Arquivos modernos já migrados (Phase 1 — 2026-03):
 
 Próximos a migrar (prioridade decrescente):
 
-| Arquivo | Problema | Impacto |
-|---------|----------|---------|
-| `controllers/authController.js` | `res.status(200).json(...)` direto em 1 handler | Baixo — módulo isolado |
-| `routes/admin/adminPedidos.js` | `res.json()` cru sem helper | Médio — módulo híbrido |
-| `routes/ecommerce/payment.js` | `res.json()` + `pool.query()` direto | Médio — dois problemas |
-| `routes/auth/authRoutes.js` | express-validator legado + res.json | Médio — legado de validação |
+| Arquivo | Problema | Impacto | Observação |
+|---------|----------|---------|------------|
+| `routes/ecommerce/cart.js` | `success: true` + `res.json()` bare | Alto — módulo de alto tráfego | Alinhar formato com frontend antes |
+| `routes/public/publicProducts.js` | bare result + erros sem `ok`/`code` | Alto — listagem pública de produtos | Verificar contrato com o frontend |
+| `routes/ecommerce/shipping.js` | `success: true` no quote | Médio — uma rota GET | Simples de migrar |
+| `routes/ecommerce/payment.js` | `res.json()` + `pool.query()` direto | Médio — dois problemas simultâneos | Resolver SQL e contrato juntos |
+| `routes/auth/authRoutes.js` | express-validator legado + res.json | Médio — legado de validação | — |
+| `routes/admin/_legacy/adminPedidos.js` | `res.json()` cru sem helper | Baixo — já em `_legacy/` | — |
+| `controllers/authController.js` | `res.status(200).json(...)` em 1 handler | Baixo — módulo isolado | — |
 
 Não migrar em lote — tocar apenas ao ter outra razão para abrir o arquivo.
+Ao migrar `cart.js` ou `publicProducts.js`: coordenar com o frontend — a mudança de formato **quebra o cliente**.
