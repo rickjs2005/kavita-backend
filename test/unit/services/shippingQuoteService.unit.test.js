@@ -419,5 +419,160 @@ describe("services/shippingQuoteService", () => {
                 code: ERROR_CODES.VALIDATION_ERROR,
             });
         });
+
+        // ── Lacunas adicionadas ─────────────────────────────────────────────
+
+        test("qualifiesProductFree: shipping_free_from_qty=0 => ALWAYS (caso defensivo)", async () => {
+            // Cobre o branch: fromQty <= 0 => sempre grátis
+            // Seria quebrado se alguém mudasse `fromQty <= 0` para `fromQty < 0`.
+            mockFetchOk({ uf: "MG", localidade: "Belo Horizonte" });
+            mockPoolScenario({
+                products: [
+                    { id: 1, shipping_free: 1, shipping_free_from_qty: 0, shipping_prazo_dias: null },
+                ],
+                zones: [
+                    { id: 10, name: "BH", state: "MG", all_cities: 0, is_free: 0, price: 15, prazo_dias: 2 },
+                ],
+                zoneCitiesMatches: [{ zoneId: 10, cityLower: "belo horizonte" }],
+            });
+
+            const res = await shippingQuoteService.getQuote({
+                cep: "30140071",
+                items: [{ id: 1, quantidade: 1 }],
+            });
+
+            expect(res.ruleApplied).toBe("PRODUCT_FREE");
+            expect(res.freeItems[0].reason).toBe("ALWAYS");
+        });
+
+        test("qualifiesProductFree: qty < shipping_free_from_qty => NÃO é grátis, aplica preço da zona", async () => {
+            // Cobre o branch: quantidade < fromQty => { ok: false }
+            // Regressão crítica: mudança de >= para > quebraria este teste.
+            mockFetchOk({ uf: "MG", localidade: "Belo Horizonte" });
+            mockPoolScenario({
+                products: [
+                    { id: 1, shipping_free: 1, shipping_free_from_qty: 5, shipping_prazo_dias: null },
+                ],
+                zones: [
+                    { id: 10, name: "BH", state: "MG", all_cities: 0, is_free: 0, price: 18, prazo_dias: 3 },
+                ],
+                zoneCitiesMatches: [{ zoneId: 10, cityLower: "belo horizonte" }],
+            });
+
+            const res = await shippingQuoteService.getQuote({
+                cep: "30140071",
+                items: [{ id: 1, quantidade: 4 }], // 4 < 5 => não qualifica
+            });
+
+            expect(res.ruleApplied).toBe("ZONE");
+            expect(res.price).toBe(18);
+            expect(res.freeItems).toHaveLength(0);
+        });
+
+        test("PRODUCT_FREE + CEP_RANGE base: zone deve ser null no resultado", async () => {
+            // Verifica que, quando a base é faixa de CEP (sem zona), o campo
+            // zone permanece null mesmo quando o produto oferece frete grátis.
+            mockFetchOk({ uf: "MG", localidade: "CidadeSemZona" });
+            mockPoolScenario({
+                products: [
+                    { id: 1, shipping_free: 1, shipping_free_from_qty: null, shipping_prazo_dias: null },
+                ],
+                zones: [],  // sem zona → fallback para faixa de CEP
+                rates: [
+                    { id: 5, faixa_cep_inicio: "00000000", faixa_cep_fim: "99999999", preco: 30, prazo_dias: 5 },
+                ],
+            });
+
+            const res = await shippingQuoteService.getQuote({
+                cep: "30140071",
+                items: [{ id: 1, quantidade: 1 }],
+            });
+
+            expect(res.ruleApplied).toBe("PRODUCT_FREE");
+            expect(res.price).toBe(0);
+            expect(res.zone).toBeNull();  // CEP_RANGE não tem zona
+        });
+
+        test("mergePrazo: basePrazo > productMaxPrazo => basePrazo vence", async () => {
+            // Os testes anteriores só verificam productMax > base.
+            // Este cobre o outro branch do Math.max.
+            mockFetchOk({ uf: "MG", localidade: "CidadeX" });
+            mockPoolScenario({
+                products: [
+                    { id: 1, shipping_free: 0, shipping_free_from_qty: null, shipping_prazo_dias: 1 },
+                ],
+                zones: [],
+                rates: [
+                    { id: 1, faixa_cep_inicio: "00000000", faixa_cep_fim: "99999999", preco: 20, prazo_dias: 10 },
+                ],
+            });
+
+            const res = await shippingQuoteService.getQuote({
+                cep: "30140071",
+                items: [{ id: 1, quantidade: 1 }],
+            });
+
+            // productMaxPrazo=1 < basePrazo=10 → deve usar 10
+            expect(res.prazo_dias).toBe(10);
+        });
+
+        test("mergePrazo: ambos null => prazo_dias null no resultado", async () => {
+            // Se nem a zona/faixa nem os produtos têm prazo configurado,
+            // o resultado deve ser null (não 0, não undefined).
+            mockFetchOk({ uf: "MG", localidade: "CidadeX" });
+            mockPoolScenario({
+                products: [
+                    { id: 1, shipping_free: 0, shipping_free_from_qty: null, shipping_prazo_dias: null },
+                ],
+                zones: [],
+                rates: [
+                    { id: 1, faixa_cep_inicio: "00000000", faixa_cep_fim: "99999999", preco: 20, prazo_dias: null },
+                ],
+            });
+
+            const res = await shippingQuoteService.getQuote({
+                cep: "30140071",
+                items: [{ id: 1, quantidade: 1 }],
+            });
+
+            expect(res.prazo_dias).toBeNull();
+        });
+
+        test("zona cidade-específica vence all_cities quando ambas estão presentes", async () => {
+            // Garante que a busca por cidade (all_cities=0) é feita antes de
+            // cair no fallback all_cities=1.
+            // A query retorna all_cities ASC (0 primeiro) para que a lógica
+            // interna consiga priorizar cidade; se a ordem mudar, este teste falha.
+            mockFetchOk({ uf: "SP", localidade: "São Paulo" });
+            mockPoolScenario({
+                products: [
+                    { id: 1, shipping_free: 0, shipping_free_from_qty: null, shipping_prazo_dias: null },
+                ],
+                zones: [
+                    // all_cities=0 primeiro (ASC) — zona específica de SP capital
+                    { id: 20, name: "SP-Capital", state: "SP", all_cities: 0, is_free: 0, price: 8, prazo_dias: 1 },
+                    // all_cities=1 — zona de todo o estado SP
+                    { id: 21, name: "SP-Geral",   state: "SP", all_cities: 1, is_free: 0, price: 25, prazo_dias: 7 },
+                ],
+                zoneCitiesMatches: [{ zoneId: 20, cityLower: "são paulo" }],
+            });
+
+            const res = await shippingQuoteService.getQuote({
+                cep: "01001000",
+                items: [{ id: 1, quantidade: 1 }],
+            });
+
+            expect(res.ruleApplied).toBe("ZONE");
+            expect(res.price).toBe(8);      // cidade específica (8), não all_cities (25)
+            expect(res.zone).toMatchObject({ id: 20, name: "SP-Capital" });
+        });
+
+        test("normalizeItems: aceita alias 'quantity' para quantidade", async () => {
+            // Cobre o terceiro alias: it.quantity (além de it.quantidade e it.qty)
+            const out = shippingQuoteService.normalizeItems([
+                { id: 7, quantity: 3 },
+            ]);
+            expect(out).toEqual([{ id: 7, quantidade: 3 }]);
+        });
     });
 });
