@@ -436,6 +436,28 @@ Qualquer arquivo **novo** ou **tocado** durante uma tarefa deve obrigatoriamente
 
 ## Convenções (Phase 9 — fixadas em 2025-03)
 
+### Quando usar controller dedicado
+
+**Regra:** arquivos de rota são wiring puro. A lógica vai para `controllers/`.
+
+**Controller obrigatório quando qualquer uma dessas condições for verdadeira:**
+- O arquivo define **2 ou mais handlers de rota**
+- O handler tem **mais de 15 linhas efetivas** (excluindo JSDoc/Swagger)
+- O handler contém lógica de negócio, validação adicional ou montagem de resposta
+
+**Inline permitido apenas nos dois casos abaixo:**
+1. `routes/utils/` — utilitários de infraestrutura pura, sem domain service (ex: `uploadsCheck.js`)
+2. Arquivo exclusivo de upload com **único handler multer**, sem lógica de negócio além do pipe de arquivo
+
+**Fora desses dois casos, inline é proibido em código novo ou modificado.**
+
+Arquivos modernos que ainda violam a regra (pendentes de extração — não tocar sem extrair):
+
+| Arquivo | Violação | Controller a criar |
+|---|---|---|
+| `routes/public/publicProducts.js` | 2 handlers inline (~12 linhas cada) | `controllers/publicProductsController.js` — ao migrar contrato de resposta |
+| `routes/admin/adminNewsUpload.js` | 1 handler inline de ~31 linhas com lógica de negócio | `controllers/news/adminNewsUploadController.js` |
+
 ### Nomenclatura de arquivos
 
 | Camada | Padrão | Exemplos |

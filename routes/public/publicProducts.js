@@ -11,6 +11,11 @@
 //   GET /api/products/:id      — detalhe por ID  →  ./_legacy/publicProductById.js
 //
 // NÃO contém avaliações de produto. Para avaliações: routes/public/_legacy/publicProdutos.js
+//
+// ⚠️  EXCEÇÃO TEMPORÁRIA À CONVENÇÃO DE CONTROLLER
+// Este arquivo tem 2 handlers inline, violando a regra "2+ handlers → controller obrigatório".
+// Pendente extração para controllers/publicProductsController.js — fazer junto com a
+// migração de contrato de resposta (hoje retorna bare result sem ok/data).
 const express = require("express");
 const router = express.Router();
 const productService = require("../../services/productService");

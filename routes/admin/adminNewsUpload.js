@@ -1,4 +1,9 @@
-// routes/adminNewsUploadRoutes.js
+// routes/admin/adminNewsUpload.js
+//
+// ⚠️  EXCEÇÃO TEMPORÁRIA À CONVENÇÃO DE CONTROLLER
+// Este arquivo tem 1 handler inline de ~31 linhas com lógica de negócio (validação de
+// magic bytes, persistência via mediaService, montagem de resposta).
+// Pendente extração para controllers/news/adminNewsUploadController.js.
 const express = require("express");
 const fs = require("fs");
 const { validateFileMagicBytes } = require("../../utils/fileValidation");
