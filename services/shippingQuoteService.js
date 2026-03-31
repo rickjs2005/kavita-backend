@@ -1,7 +1,7 @@
 // services/shippingQuoteService.js
-const pool = require("../config/pool");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const shippingRepository = require("../repositories/shippingRepository");
 
 /* ------------------------------------------------------------------ */
 /*                               Helpers                              */
@@ -183,18 +183,7 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
   // ------------------------------------------------------------
   const uniqueIds = Array.from(new Set(items.map((i) => i.id)));
 
-  // Mudança cuidadosa: adicionamos shipping_prazo_dias no SELECT.
-  // Se a coluna existir (como esperado pelo seu admin), ok.
-  // Se não existir, o MySQL vai erro 1054. Nesse caso, você deve garantir a coluna
-  // (o ideal é já existir, pois seu admin já expõe esse campo).
-  const [products] = await pool.query(
-    `
-      SELECT id, shipping_free, shipping_free_from_qty, shipping_prazo_dias
-      FROM products
-      WHERE id IN (?)
-    `,
-    [uniqueIds]
-  );
+  const products = await shippingRepository.getProductsForQuote(uniqueIds);
 
   const byId = new Map((products || []).map((p) => [Number(p.id), p]));
   const missing = uniqueIds.filter((id) => !byId.has(Number(id)));
@@ -250,15 +239,7 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
   // ------------------------------------------------------------
   // 2.1) Tenta aplicar zona ativa (UF + cidade)
   // ------------------------------------------------------------
-  const [zones] = await pool.query(
-    `
-      SELECT z.id, z.name, z.state, z.all_cities, z.is_free, z.price, z.prazo_dias
-      FROM shipping_zones z
-      WHERE z.is_active = 1 AND z.state = ?
-      ORDER BY z.all_cities ASC, z.id DESC
-    `,
-    [place.state]
-  );
+  const zones = await shippingRepository.getZonesByState(place.state);
 
   if (zones && zones.length) {
     const cityLower = normCity(place.city);
@@ -267,12 +248,9 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
     for (const z of zones) {
       if (Number(z.all_cities) === 1) continue;
 
-      const [rowsCity] = await pool.query(
-        "SELECT 1 FROM shipping_zone_cities WHERE zone_id=? AND LOWER(city)=? LIMIT 1",
-        [z.id, cityLower]
-      );
+      const matched = await shippingRepository.getCityMatch(z.id, cityLower);
 
-      if (rowsCity && rowsCity.length) {
+      if (matched) {
         baseQuote = {
           source: "ZONE",
           cep,
@@ -315,23 +293,12 @@ async function getQuote({ cep: rawCep, items: rawItems }) {
   // 3) FAIXA DE CEP (fallback)
   // ------------------------------------------------------------
   if (!baseQuote) {
-    const [rows] = await pool.query(
-      `
-        SELECT id, faixa_cep_inicio, faixa_cep_fim, preco, prazo_dias
-        FROM shipping_rates
-        WHERE ativo = 1
-          AND ? BETWEEN faixa_cep_inicio AND faixa_cep_fim
-        ORDER BY id DESC
-        LIMIT 1
-      `,
-      [cep]
-    );
+    const rate = await shippingRepository.getRateByCep(cep);
 
-    if (!rows || rows.length === 0) {
+    if (!rate) {
       throw new AppError("CEP sem cobertura de entrega.", ERROR_CODES.NOT_FOUND, 404);
     }
 
-    const rate = rows[0];
     baseQuote = {
       source: "CEP_RANGE",
       cep,
