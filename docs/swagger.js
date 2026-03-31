@@ -128,9 +128,13 @@ const options = {
       },
     },
   },
-  // Aponte para arquivos com comentários JSDoc @openapi
+  // Fontes de anotações @openapi / @swagger:
+  //   docs/swagger/  — blocos extraídos de rotas de alto volume (cart, checkout, payment, shipping)
+  //   routes/**      — blocos menores que ainda vivem co-localizados com a rota
+  //   server.js      — definições globais pontuais
   apis: [
     "./server.js",
+    "./docs/swagger/**/*.js",
     "./routes/**/*.js",
   ],
 };
