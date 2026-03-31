@@ -319,6 +319,7 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Carts (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
 | Cart (usuário) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
+| Pagamento | `routes/ecommerce/payment.js` | `controllers/paymentController.js` | `services/paymentService.js`, `services/paymentWebhookService.js` | — |
 | Shipping | `routes/ecommerce/shipping.js` | — | `services/shippingQuoteService.js` | — |
 | Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
 | Clima (news) | — | `controllers/news/adminClimaController.js` | — | `repositories/climaRepository.js` |
@@ -332,7 +333,7 @@ Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antig
 
 | Arquivo | Problema residual |
 |---------|------------------|
-| `routes/ecommerce/payment.js` | 2 handlers com `pool.query()` direto + `res.json()` cru (contrato e SQL) |
+| `controllers/paymentController.js` | `pool.getConnection()` em `startPayment` e `handleWebhook` — dívida do `paymentService` que recebe `conn` como parâmetro; resolver ao refatorar o service |
 | `routes/auth/authRoutes.js` | Validators do express-validator legado em vez de Zod |
 | `routes/admin/_legacy/adminPedidos.js` | Usa `orderService` mas `res.json()` cru — no meio de migração |
 | `routes/ecommerce/cart.js` | Contrato `success: true` divergente — handlers já em `controllers/cartController.js`, pendente apenas migração de resposta para `lib/response.js` |
