@@ -1,6 +1,6 @@
 // services/comunicacaoService.js
-const pool = require("../config/pool");
 const { sendTransactionalEmail } = require("./mailService");
+const comunicacaoRepository = require("../repositories/comunicacaoRepository");
 
 /* ------------------------------------------------------------------ */
 /*                               Helpers                              */
@@ -8,60 +8,13 @@ const { sendTransactionalEmail } = require("./mailService");
 
 // 🔧 busca os dados principais do pedido + cliente
 async function carregarPedidoBasico(pedidoId) {
-  const [[pedido]] = await pool.query(
-    `
-    SELECT
-      p.id,
-      p.usuario_id,
-      p.total,
-      p.status_pagamento,
-      p.status_entrega,
-      p.forma_pagamento,
-      p.data_pedido,
-      u.nome   AS usuario_nome,
-      u.email  AS usuario_email,
-      u.telefone AS usuario_telefone
-    FROM pedidos p
-    JOIN usuarios u ON u.id = p.usuario_id
-    WHERE p.id = ?
-  `,
-    [pedidoId]
-  );
-
-  return pedido || null;
+  return comunicacaoRepository.getPedidoBasico(pedidoId);
 }
 
-// 🔧 tabela de log (aquela comunicacoes_enviadas que combinamos)
-async function logComunicacao({
-  usuarioId,
-  pedidoId,
-  canal,
-  tipoTemplate,
-  destino,
-  assunto,
-  mensagem,
-  statusEnvio,
-  erro,
-}) {
+// 🔧 tabela de log (comunicacoes_enviadas)
+async function logComunicacao(params) {
   try {
-    await pool.query(
-      `
-      INSERT INTO comunicacoes_enviadas
-        (usuario_id, pedido_id, canal, tipo_template, destino, assunto, mensagem, status_envio, erro)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-      [
-        usuarioId || null,
-        pedidoId || null,
-        canal,
-        tipoTemplate,
-        destino,
-        assunto || null,
-        mensagem,
-        statusEnvio,
-        erro || null,
-      ]
-    );
+    await comunicacaoRepository.insertLogComunicacao(params);
   } catch (err) {
     console.error("[comunicacao] Erro ao logar comunicação:", err);
   }
