@@ -1,14 +1,21 @@
 "use strict";
 
+// routes/ecommerce/cart.js
+//
+// Rota magra: middleware + wiring de handlers.
+// Lógica de negócio: services/cartService.js
+// Handlers:         controllers/cartController.js
+//
+// Contrato de resposta atual: { success: true, ... } — divergente do padrão { ok: true }.
+// NÃO alterar sem alinhar com o frontend. Ver CLAUDE.md § "Contratos divergentes".
+
 const express = require("express");
 const router = express.Router();
 
 const authenticateToken = require("../../middleware/authenticateToken");
-const AppError = require("../../errors/AppError");
-const ERROR_CODES = require("../../constants/ErrorCodes");
 const { validate } = require("../../middleware/validate");
 const { CartItemBodySchema, CartItemParamSchema } = require("../../schemas/cartSchemas");
-const cartService = require("../../services/cartService");
+const ctrl = require("../../controllers/cartController");
 
 router.use(authenticateToken);
 
@@ -116,20 +123,6 @@ router.use(authenticateToken);
  */
 
 // ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-function sendStockLimit(res, err) {
-  return res.status(409).json({
-    code: "STOCK_LIMIT",
-    message: err.message,
-    max: err.meta?.max ?? null,
-    current: err.meta?.current ?? null,
-    requested: err.meta?.requested ?? null,
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
 
@@ -161,24 +154,7 @@ function sendStockLimit(res, err) {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get("/", async (req, res, next) => {
-  const userId = req.user?.id;
-  if (!userId) {
-    return next(
-      new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
-    );
-  }
-
-  try {
-    const result = await cartService.getCart(userId);
-    return res.json(result);
-  } catch (e) {
-    console.error("GET /api/cart erro:", e);
-    return next(
-      new AppError("Erro ao carregar carrinho.", ERROR_CODES.SERVER_ERROR, 500)
-    );
-  }
-});
+router.get("/", ctrl.getCart);
 
 /**
  * @swagger
@@ -240,39 +216,7 @@ router.get("/", async (req, res, next) => {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post("/items", validate(CartItemBodySchema), async (req, res, next) => {
-  const { produto_id, quantidade } = req.body;
-  const userId = req.user?.id;
-
-  if (!userId) {
-    return next(
-      new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
-    );
-  }
-
-  try {
-    const result = await cartService.addItem(userId, { produto_id, quantidade });
-    return res.status(200).json({
-      success: true,
-      message: "Produto adicionado ao carrinho",
-      produto_id: result.produto_id,
-      quantidade: result.quantidade,
-      stock: result.stock,
-    });
-  } catch (e) {
-    if (e instanceof AppError && e.code === "STOCK_LIMIT") return sendStockLimit(res, e);
-    console.error("POST /api/cart/items erro:", e);
-    return next(
-      e instanceof AppError
-        ? e
-        : new AppError(
-            "Erro ao adicionar item ao carrinho.",
-            ERROR_CODES.SERVER_ERROR,
-            500
-          )
-    );
-  }
-});
+router.post("/items", validate(CartItemBodySchema), ctrl.addItem);
 
 /**
  * @swagger
@@ -334,39 +278,7 @@ router.post("/items", validate(CartItemBodySchema), async (req, res, next) => {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.patch("/items", validate(CartItemBodySchema), async (req, res, next) => {
-  const { produto_id, quantidade } = req.body;
-  const userId = req.user?.id;
-
-  if (!userId) {
-    return next(
-      new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
-    );
-  }
-
-  try {
-    const result = await cartService.updateItem(userId, { produto_id, quantidade });
-    return res.status(200).json({
-      success: true,
-      message: result.emptyCart ? "Carrinho já vazio." : "Quantidade atualizada.",
-      produto_id: result.produto_id,
-      quantidade: result.quantidade,
-      stock: result.stock,
-    });
-  } catch (e) {
-    if (e instanceof AppError && e.code === "STOCK_LIMIT") return sendStockLimit(res, e);
-    console.error("PATCH /api/cart/items erro:", e);
-    return next(
-      e instanceof AppError
-        ? e
-        : new AppError(
-            "Erro ao atualizar item do carrinho.",
-            ERROR_CODES.SERVER_ERROR,
-            500
-          )
-    );
-  }
-});
+router.patch("/items", validate(CartItemBodySchema), ctrl.updateItem);
 
 /**
  * @swagger
@@ -412,35 +324,7 @@ router.patch("/items", validate(CartItemBodySchema), async (req, res, next) => {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.delete("/items/:produtoId", validate(CartItemParamSchema, "params"), async (req, res, next) => {
-  const userId = req.user?.id;
-  const produtoId = req.params.produtoId;
-
-  if (!userId) {
-    return next(
-      new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
-    );
-  }
-
-  try {
-    const result = await cartService.removeItem(userId, produtoId);
-    return res.json({
-      success: true,
-      message: result.removed ? "Item removido do carrinho." : "Carrinho já vazio.",
-    });
-  } catch (e) {
-    console.error("DELETE /api/cart/items/:produtoId erro:", e);
-    return next(
-      e instanceof AppError
-        ? e
-        : new AppError(
-            "Erro ao remover item do carrinho.",
-            ERROR_CODES.SERVER_ERROR,
-            500
-          )
-    );
-  }
-});
+router.delete("/items/:produtoId", validate(CartItemParamSchema, "params"), ctrl.removeItem);
 
 /**
  * @swagger
@@ -473,29 +357,6 @@ router.delete("/items/:produtoId", validate(CartItemParamSchema, "params"), asyn
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.delete("/", async (req, res, next) => {
-  const userId = req.user?.id;
-
-  if (!userId) {
-    return next(
-      new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401)
-    );
-  }
-
-  try {
-    const result = await cartService.clearCart(userId);
-    return res.json({
-      success: true,
-      message: result.cleared ? "Carrinho limpo." : "Carrinho já estava vazio.",
-    });
-  } catch (e) {
-    console.error("DELETE /api/cart erro:", e);
-    return next(
-      e instanceof AppError
-        ? e
-        : new AppError("Erro ao limpar carrinho.", ERROR_CODES.SERVER_ERROR, 500)
-    );
-  }
-});
+router.delete("/", ctrl.clearCart);
 
 module.exports = router;

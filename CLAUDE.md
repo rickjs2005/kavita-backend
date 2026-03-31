@@ -317,7 +317,7 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Produtos (público) | `routes/public/publicProducts.js` | — | `services/productService.js` | `repositories/productRepository.js` |
 | Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
 | Carts (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
-| Cart (usuário) | `routes/ecommerce/cart.js` | — | `services/cartService.js` | `repositories/cartRepository.js` |
+| Cart (usuário) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
 | Shipping | `routes/ecommerce/shipping.js` | — | `services/shippingQuoteService.js` | — |
 | Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
@@ -335,7 +335,7 @@ Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antig
 | `routes/ecommerce/payment.js` | 2 handlers com `pool.query()` direto + `res.json()` cru (contrato e SQL) |
 | `routes/auth/authRoutes.js` | Validators do express-validator legado em vez de Zod |
 | `routes/admin/_legacy/adminPedidos.js` | Usa `orderService` mas `res.json()` cru — no meio de migração |
-| `routes/ecommerce/cart.js` | `res.json()` cru + `success: true` em vez de `lib/response.js` + `ok: true` |
+| `routes/ecommerce/cart.js` | Contrato `success: true` divergente — handlers já em `controllers/cartController.js`, pendente apenas migração de resposta para `lib/response.js` |
 | `routes/ecommerce/shipping.js` | `res.json({ success: true, ...quote })` em vez de `response.ok(res, quote)` |
 | `routes/public/publicProducts.js` | `res.json(result)` bare + erros `{ message }` sem `ok`/`code` |
 
@@ -507,7 +507,7 @@ Próximos a migrar (prioridade decrescente):
 
 | Arquivo | Problema | Impacto | Observação |
 |---------|----------|---------|------------|
-| `routes/ecommerce/cart.js` | `success: true` + `res.json()` bare | Alto — módulo de alto tráfego | Alinhar formato com frontend antes |
+| `controllers/cartController.js` | `success: true` + `res.json()` bare | Alto — módulo de alto tráfego | Handlers já extraídos da rota; migrar resposta para `lib/response.js` e alinhar com frontend |
 | `routes/public/publicProducts.js` | bare result + erros sem `ok`/`code` | Alto — listagem pública de produtos | Verificar contrato com o frontend |
 | `routes/ecommerce/shipping.js` | `success: true` no quote | Médio — uma rota GET | Simples de migrar |
 | `routes/ecommerce/payment.js` | `res.json()` + `pool.query()` direto | Médio — dois problemas simultâneos | Resolver SQL e contrato juntos |
