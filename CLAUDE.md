@@ -66,7 +66,7 @@ A: `verifyAdmin` para rotas do painel admin (cookie `adminToken`, 2h). `authenti
 A: Sempre `lib/response.js` em código novo: `response.ok(res, data)`, `response.created(res, data)`, `response.paginated(res, {...})`. `res.json()` direto só existe em módulos legados em migração.
 
 **Q: Encontrei `{ success: true }` em algumas respostas em vez de `{ ok: true }`. Qual o padrão?**
-A: `{ ok: true }` é o contrato oficial. `{ success: true }` é um contrato divergente que ainda existe em `cart.js` e `shipping.js` — o frontend já depende desse formato, então **não altere sem alinhar com o frontend**. Código novo nunca usa `success` como chave — apenas `ok`. Ver seção "Contratos divergentes em módulos não-legados" abaixo.
+A: `{ ok: true }` é o contrato oficial. `{ success: true }` é um contrato divergente congelado por dependência de frontend — não altere sem alinhar com o frontend. Código novo nunca usa `success` como chave, apenas `ok`. Para o inventário completo dos 3 formatos ativos e o plano de convergência, ver § **Contratos de resposta — mapa completo** abaixo.
 
 **Q: `AppError` ou `res.status(4xx).json()`?**
 A: Sempre `next(new AppError(message, ERROR_CODES.XXX, status))`. O `errorHandler` global em `server.js` processa tudo. Nunca `res.status(4xx).json()` inline em código novo.
@@ -229,22 +229,7 @@ Mapeamento de códigos de erro HTTP → `ERROR_CODES`:
 
 **Contratos divergentes em módulos não-legados**
 
-Os arquivos abaixo estão fora de `_legacy/` e têm arquitetura moderna (service/repository), mas *ainda não* usam `lib/response.js`. O frontend conhece exatamente esses formatos — **não altere a forma da resposta sem alinhar com o frontend**.
-
-| Arquivo | Endpoint | Formato atual | Delta do padrão |
-|---------|----------|---------------|-----------------|
-| `controllers/cartController.js` | `GET /api/cart` | `{ carrinho_id, items }` | sem `ok`, sem wrapper `data` |
-| `controllers/cartController.js` | `POST/PUT /api/cart/items`, `DELETE /api/cart[/items]` | `{ success: true, message, ... }` | `success` ≠ `ok` |
-| `controllers/cartController.js` | `409` (stock limit) | `{ code: "STOCK_LIMIT", message, max, current, requested }` | sem `ok: false` |
-| `controllers/shippingController.js` | `GET /api/shipping/quote` | `{ success: true, cep, price, prazo_dias, ... }` | `success` ≠ `ok` |
-| `controllers/paymentController.js` | `GET /api/payment/methods` | `{ methods }` | sem `ok`, sem wrapper `data` |
-| `controllers/paymentController.js` | `GET,POST,PUT /api/admin/payment-methods[/:id]` | `{ methods }` / `{ method }` (201) | sem `ok`, sem wrapper `data` |
-| `controllers/publicProductsController.js` | `GET /api/products` | `{ data: Product[], page, limit, total, totalPages, sort, order }` | sem `ok`, paginação no topo |
-| `controllers/publicProductsController.js` | `GET /api/products/search` | `{ products: Product[], pagination: { page, limit, total, totalPages } }` | sem `ok`, shape diferente de listProducts |
-| `controllers/publicProductsController.js` | erros | `{ message }` | sem `ok: false`, sem `code` |
-| `routes/utils/uploadsCheck.js` | `GET /uploads/check/*` (util interno) | `{ ok: false, error: "..." }` | usa `error` em vez de `message` |
-
-> **Regra prática:** ao chamar um desses endpoints em testes de integração, não asserte `ok: true` — asserte o campo real (`success`, `carrinho_id`, etc.). Ao *migrar* o endpoint, lembrar de atualizar o frontend antes ou em conjunto.
+Existem 3 formatos de resposta em produção simultânea — resultado de migração incremental, não de intenção de design. Ver § **Contratos de resposta — mapa completo** para o inventário completo, o mapa por arquivo e o plano de convergência.
 
 **Regra de negação:**
 
@@ -568,22 +553,86 @@ Proibições absolutas para código novo:
 - `res.json()` cru — usar sempre `lib/response.js`
 - `{ success: true }` como chave — usar `{ ok: true }` via `response.ok()`
 
-## Migração de contrato de resposta — fila de próximos arquivos
+## Contratos de resposta — mapa completo
 
-Arquivos modernos já migrados (Phase 1 — 2026-03):
-- `controllers/drones/` — todos usam `response.*` + `next(AppError)`
-- `controllers/news/adminClimaController.js` — migrado
-- `controllers/news/adminCotacoesController.js` — migrado
+Esta seção é a referência canônica sobre formatos de resposta. As menções em outras partes do documento apontam para aqui.
 
-Próximos a migrar (prioridade decrescente):
+### Os três formatos em produção
 
-| Arquivo | Problema | Impacto | Observação |
-|---------|----------|---------|------------|
-| `controllers/cartController.js` | `success: true` + `res.json()` bare | Alto — módulo de alto tráfego | Handlers já extraídos da rota; migrar resposta para `lib/response.js` e alinhar com frontend |
-| `controllers/publicProductsController.js` | shapes divergentes (`data[]` em listProducts, `products[]`+`pagination` em search) + erros sem `ok`/`code` | Alto — listagem pública de produtos | Requer coordenação frontend: shapes diferentes nos dois endpoints. Ver header do controller para pré-condições |
-| `controllers/shippingController.js` | `success: true` no quote | Médio — uma rota GET | Handler já extraído; migrar resposta para `lib/response.js` e alinhar com frontend |
-| `controllers/paymentController.js` | `res.json()` cru nos 4 endpoints CRUD de métodos de pagamento | Médio | Migrar para `lib/response.js` alinhando com frontend admin |
-| `controllers/authController.js` | `res.status(200).json(...)` em 1 handler | Baixo — módulo isolado | — |
+O projeto tem **3 formatos de resposta simultaneamente ativos**. Isso é resultado de migração incremental — não é intenção de design. O objetivo de longo prazo é convergir tudo para o Formato A.
 
-Não migrar em lote — tocar apenas ao ter outra razão para abrir o arquivo.
-Ao migrar `cartController.js`, `shippingController.js`, payment CRUD ou `publicProducts.js`: coordenar com o frontend — a mudança de formato **quebra o cliente**.
+| # | Formato de sucesso | Formato de erro | Status |
+|---|---|---|---|
+| **A — oficial** | `{ ok: true, data?, message?, meta? }` | `{ ok: false, code, message, details? }` | Use sempre em código novo |
+| **B — congelado** | `{ success: true, ... }` | A (via AppError) | Frontend depende — não altere sem alinhar |
+| **C — congelado** | Bare object (`{ carrinho_id }`, `{ methods }`, etc.) | variável | Frontend depende — não altere sem alinhar |
+
+### Mapa por arquivo
+
+| Arquivo | Endpoints | Formato sucesso | Formato erro | Bloqueador de migração |
+|---------|-----------|----------------|--------------|----------------------|
+| `controllers/cartController.js` | `GET /api/cart` | C: `{ carrinho_id, items }` | — | Frontend cart |
+| `controllers/cartController.js` | `POST/PUT/DELETE /api/cart*` | B: `{ success: true, message, ... }` | C: `{ code: "STOCK_LIMIT", ... }` no 409 | Frontend cart |
+| `controllers/shippingController.js` | `GET /api/shipping/quote` | B: `{ success: true, cep, price, ... }` | A | Frontend checkout |
+| `controllers/paymentController.js` | `GET /api/payment/methods` e CRUD admin | C: `{ methods }` / `{ method }` | A | Frontend admin e checkout |
+| `controllers/publicProductsController.js` | `GET /api/products` | C: `{ data[], page, limit, ... }` | `{ message }` sem `ok`/`code` | Frontend público |
+| `controllers/publicProductsController.js` | `GET /api/products/search` | C: `{ products[], pagination }` ¹ | `{ message }` sem `ok`/`code` | Frontend público |
+| `controllers/authController.js` | 1 handler | res.json híbrido | A | Baixo — pode migrar isolado |
+| `routes/utils/uploadsCheck.js` | `GET /uploads/check/*` | — | `{ ok: false, error }` ² | Utilitário interno |
+| Todos os outros modernos | — | A | A | — já no padrão |
+
+¹ Shape diferente de `listProducts` no mesmo controller — atenção em testes.
+² Usa `error` em vez de `message` — único caso; utilitário interno sem cliente externo.
+
+### Regra para código novo
+
+```
+Novo handler?
+  sucesso → response.ok(res, data)           // nunca res.json()
+  erro    → next(new AppError(...))          // nunca res.status(4xx).json()
+
+Tocando arquivo com formato B ou C?
+  → preserve o formato exato (não "atualize" sem coordenar com o frontend)
+  → o header do controller documenta o shape congelado
+```
+
+### Como asserts de teste diferem por módulo
+
+```js
+// Formato A — módulos modernos (adminOrdersController, drones, news, ...)
+expect(res.body.ok).toBe(true);
+expect(res.body.data).toBeDefined();
+
+// Formato B — cart (mutações) e shipping
+expect(res.body.success).toBe(true);
+
+// Formato C — cart (GET), payment methods
+expect(res.body.carrinho_id).toBeDefined();   // GET /api/cart
+expect(res.body.methods).toBeDefined();        // GET /api/payment/methods
+
+// Erro congelado — cart 409
+expect(res.status).toBe(409);
+expect(res.body.code).toBe("STOCK_LIMIT");
+expect(res.body.max).toBeDefined();
+```
+
+### Plano de convergência
+
+Migração incremental, não em lote. Tocar apenas ao ter outra razão para abrir o arquivo — e nesse caso, avaliar se a migração de formato cabe na mesma PR.
+
+| Arquivo | Pré-condição obrigatória | Prioridade |
+|---------|--------------------------|-----------|
+| `controllers/cartController.js` | Alinhamento frontend: `success → ok`, `carrinho_id → data` | Alta |
+| `controllers/publicProductsController.js` | Unificar shapes dos 2 endpoints + alinhamento frontend | Alta |
+| `controllers/shippingController.js` | Alinhamento frontend checkout | Média |
+| `controllers/paymentController.js` | Alinhamento frontend admin e checkout | Média |
+| `controllers/authController.js` | Nenhuma — pode migrar isolado | Baixa |
+
+Ao migrar qualquer um dos 4 primeiros: a mudança de formato **quebra o cliente** — coordenar frontend antes de mergar.
+
+### Histórico de arquivos já migrados para Formato A
+
+- `controllers/drones/` — 2026-03
+- `controllers/news/adminClimaController.js` — 2026-03
+- `controllers/news/adminCotacoesController.js` — 2026-03
+- `controllers/adminOrdersController.js` — 2026-04 (contrato mudou de bare array para `{ ok, data }` — requer atualização no admin frontend para os GETs)
