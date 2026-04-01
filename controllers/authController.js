@@ -103,17 +103,29 @@ const login = async (req, res, next) => {
 };
 
 const register = async (req, res, next) => {
-  const { nome, email, senha } = req.body;
+  // cpf is already sanitized (digits-only) by registerSchema preprocess
+  const { nome, email, senha, cpf } = req.body;
 
   try {
-    if (await userRepo.emailExists(email)) {
-      return next(new AppError("Este email já está cadastrado.", ERROR_CODES.VALIDATION_ERROR, 400));
+    const existing = await userRepo.findUserByEmailOrCpf(email, cpf);
+
+    if (existing.length > 0) {
+      const jaEmail = existing.some((u) => u.email === email);
+      const jaCpf = existing.some((u) => u.cpf === cpf);
+
+      if (jaEmail && jaCpf) {
+        return next(new AppError("E-mail e CPF já cadastrados.", ERROR_CODES.CONFLICT, 409));
+      }
+      if (jaEmail) {
+        return next(new AppError("Este e-mail já está cadastrado.", ERROR_CODES.CONFLICT, 409));
+      }
+      return next(new AppError("Este CPF já está cadastrado.", ERROR_CODES.CONFLICT, 409));
     }
 
     const hashed = await bcrypt.hash(senha, 10);
-    await userRepo.createUser({ nome, email, senha: hashed });
+    await userRepo.createUser({ nome, email, senha: hashed, cpf });
 
-    return response.created(res, null, "Usuário cadastrado com sucesso!");
+    return response.created(res, null, "Conta criada com sucesso! Faça login para continuar.");
   } catch (error) {
     console.error("❌ Erro no registro do usuário:", error);
     return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));

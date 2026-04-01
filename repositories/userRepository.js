@@ -52,14 +52,31 @@ async function emailExists(email) {
 }
 
 /**
- * Creates a new user. Password must already be hashed.
+ * Returns users matching a given email OR CPF (sanitized, digits-only).
+ * Used during registration to detect duplicates in a single query.
  *
- * @param {{ nome: string, email: string, senha: string }} data
+ * @param {string} email
+ * @param {string} cpf  Sanitized digits-only CPF
+ * @returns {{ id: number, email: string, cpf: string }[]}
  */
-async function createUser({ nome, email, senha }) {
+async function findUserByEmailOrCpf(email, cpf) {
+  const [rows] = await pool.query(
+    "SELECT id, email, cpf FROM usuarios WHERE email = ? OR cpf = ?",
+    [email, cpf]
+  );
+  return rows;
+}
+
+/**
+ * Creates a new user. Password must already be hashed.
+ * cpf is optional — pass sanitized digits-only string when available.
+ *
+ * @param {{ nome: string, email: string, senha: string, cpf?: string|null }} data
+ */
+async function createUser({ nome, email, senha, cpf = null }) {
   await pool.query(
-    "INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?)",
-    [nome, email, senha]
+    "INSERT INTO usuarios (nome, email, senha, cpf) VALUES (?, ?, ?, ?)",
+    [nome, email, senha, cpf]
   );
 }
 
@@ -163,6 +180,7 @@ module.exports = {
   findUserById,
   findUserByEmail,
   emailExists,
+  findUserByEmailOrCpf,
   createUser,
   incrementTokenVersion,
   updatePassword,

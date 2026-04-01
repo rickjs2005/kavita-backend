@@ -342,7 +342,6 @@ Nunca adicionar novas rotas em arquivos `_legacy/`. Roadmap detalhado: `docs/mig
 | `routes/public/_legacy/publicCategorias.js` | 73 | alta | Q2 2026 |
 | `routes/admin/_legacy/adminServicos.js` | 421 | alta | Q2 2026 |
 | `routes/admin/_legacy/adminShippingZones.js` | 322 | alta | Q2 2026 |
-| `routes/auth/_legacy/userAccount.js` | 195 | média | Q3 2026 |
 | `routes/auth/_legacy/userProfile.js` | 288 | média | Q3 2026 |
 | `routes/ecommerce/_legacy/pedidos.js` | 181 | média | Q3 2026 |
 | `routes/ecommerce/_legacy/favorites.js` | 146 | média | Q3 2026 |
@@ -391,7 +390,7 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
 Armadilhas já resolvidas (registradas aqui para histórico):
 
 - `routes/admin/adminLogin.js` foi movido para `routes/auth/adminLogin.js` — login é auth, não operação admin
-- `routes/auth/users.js` foi renomeado para `routes/auth/userAccount.js` — desambiguar de `adminUsers.js`
+- `routes/auth/users.js` → `routes/auth/userAccount.js` → `routes/auth/userRegister.js` — migrado para padrão moderno em 2026-04 (Zod, controller, sem express-validator)
 - `routes/public/publicAvaliacaoColaborador.js` → `routes/public/publicServicosAvaliacoes.js` — alinhado ao domínio (arquivo já deletado em 2026-04, endpoints absorvidos por `publicServicos.js` moderno)
 - `routes/uploadsCheckRoutes.js` → `routes/utils/uploadsCheck.js` — segue convenção de subpastas
 - `controllers/cartsController.js`, `configController.js`, `produtosController.js` — são modernos e referência válida
@@ -512,7 +511,6 @@ Regra: ao abrir qualquer desses arquivos por outra razão, converter o export na
 | Local | Sistema | Quando usar |
 |-------|---------|-------------|
 | `schemas/` | **Zod** | Todos os módulos novos e refatorados — padrão único |
-| `validators/authValidator.js` | express-validator | **Depreciado.** Mantido apenas por `routes/auth/_legacy/userAccount.js`. Remover ao migrar esse arquivo. Não importar em código novo |
 | Inline `if (!campo)...` em rota | — | **Proibido** em código novo |
 
 Use `middleware/validate.js` para aplicar schemas Zod como middleware de rota.

@@ -99,7 +99,7 @@ loadRoute("/", "./auth/authRoutes");
  * ============================================================ */
 
 // Cadastro básico e recuperação de senha (sem CSRF — não é mutação de sessão autenticada)
-loadRoute("/users", "./auth/_legacy/userAccount");
+loadRoute("/users", "./auth/userRegister");
 
 // Perfil e endereços (autenticados + CSRF)
 try {

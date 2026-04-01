@@ -1,13 +1,12 @@
 // schemas/authSchemas.js
-// Zod schemas for auth routes: login, forgot-password, reset-password.
-// Applied via validate(schema) in routes/auth/login.js and routes/auth/authRoutes.js.
-//
-// registerSchema is absent: register lives in routes/auth/_legacy/userAccount.js
-// (depreciado). Adicionar registerSchema aqui ao migrar esse arquivo.
+// Zod schemas for auth routes: login, register, forgot-password, reset-password.
+// Applied via validate(schema) in routes/auth/login.js, routes/auth/userRegister.js,
+// and routes/auth/authRoutes.js.
 
 "use strict";
 
 const { z } = require("zod");
+const { sanitizeCPF, isValidCPF } = require("../utils/cpf");
 
 // ---------------------------------------------------------------------------
 // Shared primitive
@@ -23,6 +22,20 @@ const emailField = (maxLen = 254) =>
       .email("Email inválido.")
       .max(maxLen, "Email muito longo.")
   );
+
+// ---------------------------------------------------------------------------
+// POST /api/users/register
+// ---------------------------------------------------------------------------
+
+const registerSchema = z.object({
+  nome: z.string().trim().min(1, "Nome é obrigatório."),
+  email: emailField(),
+  senha: z.string().trim().min(6, "Senha deve ter no mínimo 6 caracteres."),
+  cpf: z.preprocess(
+    (v) => (typeof v === "string" ? sanitizeCPF(v) : v),
+    z.string().refine(isValidCPF, "CPF inválido.")
+  ),
+});
 
 // ---------------------------------------------------------------------------
 // POST /api/login
@@ -57,4 +70,4 @@ const resetPasswordSchema = z.object({
     .max(128, "Nova senha deve ter entre 8 e 128 caracteres."),
 });
 
-module.exports = { loginSchema, forgotPasswordSchema, resetPasswordSchema };
+module.exports = { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema };

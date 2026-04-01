@@ -4,7 +4,7 @@ const dronesService = require("../../services/dronesService");
 const mediaService = require("../../services/mediaService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
-const { classify, safeUnlink, parseModelKey, ensureModelExists } = require("./helpers");
+const { classify, safeUnlink, parseModelKey, ensureModelExists } = require("./dronesFormatters");
 const { response } = require("../../lib");
 
 // ========================

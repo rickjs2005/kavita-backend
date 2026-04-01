@@ -9,7 +9,7 @@ const {
   extractItems,
   parseModelKey,
   ensureModelExists,
-} = require("./helpers");
+} = require("./dronesFormatters");
 const { response } = require("../../lib");
 const {
   createModelBodySchema,

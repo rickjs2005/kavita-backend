@@ -4,7 +4,7 @@ const dronesService = require("../../services/dronesService");
 const mediaService = require("../../services/mediaService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
-const { safeUnlink, classify, parseJsonField, MAX_VIDEO_BYTES, MAX_IMAGE_BYTES } = require("./helpers");
+const { safeUnlink, classify, parseJsonField, MAX_VIDEO_BYTES, MAX_IMAGE_BYTES } = require("./dronesFormatters");
 const { response } = require("../../lib");
 
 async function getPage(req, res, next) {
