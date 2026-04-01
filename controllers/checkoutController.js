@@ -1,30 +1,10 @@
 "use strict";
 
 const checkoutService = require("../services/checkoutService");
+const { normalizeFormaPagamento } = require("../services/paymentService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { response } = require("../lib");
-
-// ---------------------------------------------------------------------------
-// Input validation helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Secondary guard — rejects any forma_pagamento that is not recognised.
- * The primary validation happens in validateCheckoutBody (route middleware).
- * This guard ensures that even if someone bypasses the router middleware, the
- * controller never creates an order without a valid payment method.
- */
-function isFormaPagamentoValida(value) {
-  const s = String(value || "").trim().toLowerCase();
-  if (!s) return false;
-  if (s === "pix") return true;
-  if (s === "boleto") return true;
-  if (s === "mercadopago") return true;
-  if (s.includes("cart") && s.includes("mercado")) return true;
-  if (s === "prazo") return true;
-  return false;
-}
 
 // ---------------------------------------------------------------------------
 // Controller
@@ -55,8 +35,9 @@ async function create(req, res, next) {
 
   const { formaPagamento, produtos } = req.body || {};
 
-  // Secondary payment method guard (see isFormaPagamentoValida docstring).
-  if (!isFormaPagamentoValida(formaPagamento)) {
+  // Secondary payment method guard — primary validation is the Zod schema in the route.
+  // normalizeFormaPagamento returns "" for any unrecognised value.
+  if (!normalizeFormaPagamento(formaPagamento)) {
     return next(
       new AppError(
         "Forma de pagamento inválida. Use: Pix, Boleto, Cartão (Mercado Pago) ou Prazo.",
