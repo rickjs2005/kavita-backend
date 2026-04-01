@@ -346,35 +346,35 @@ Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antig
 
 Todos têm o cabeçalho `ARQUIVO LEGADO` no próprio código e estão em subpastas `_legacy/`.
 Usam `pool.query()` direto na rota, validação inline (`if (!campo)`) e `res.json()` sem helper.
-**Nunca ampliar o padrão antigo. Ao migrar: mover de `_legacy/` para `routes/{contexto}/` e atualizar `routes/index.js`.**
 
-| Arquivo | Linhas | Problema principal |
-|---------|--------|--------------------|
-| `routes/admin/_legacy/adminComunicacao.js` | 462 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminServicos.js` | 421 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminMarketingPromocoes.js` | 394 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminCupons.js` | 337 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminShippingZones.js` | 322 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminStats.js` | 313 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminRelatorios.js` | 282 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminAdmins.js` | 258 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminLogs.js` | 255 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminPermissions.js` | 197 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminUsers.js` | 183 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminSolicitacoesServicos.js` | 166 | SQL inline, sem repository |
-| `routes/admin/_legacy/adminConfigUpload.js` | 143 | pool/db direto, sem service |
-| `routes/admin/_legacy/adminEspecialidades.js` | 82 | SQL inline, sem repository |
-| `routes/auth/_legacy/userProfile.js` | 272 | SQL inline, sem repository |
-| `routes/auth/_legacy/userAccount.js` | — | SQL inline, sem repository |
-| `routes/ecommerce/_legacy/pedidos.js` | 181 | SQL inline direto no route |
-| `routes/ecommerce/_legacy/favorites.js` | 146 | SQL inline, sem repository |
-| `routes/public/_legacy/publicServicos.js` | 421 | SQL inline, sem repository |
-| `routes/public/_legacy/publicProdutos.js` | — | SQL inline (legado de publicProducts) |
-| `routes/public/_legacy/publicServicosAvaliacoes.js` | 144 | SQL inline, sem repository |
-| `routes/public/_legacy/publicShopConfig.js` | 182 | pool direto, sem service |
-| `routes/public/_legacy/publicCategorias.js` | — | SQL inline, sem repository |
-| `routes/public/_legacy/publicProductById.js` | — | SQL inline, sem repository |
-| `routes/public/_legacy/publicPromocoes.js` | — | SQL inline, sem repository |
+**Regra de toque:** ao modificar qualquer arquivo `_legacy/`, migrar o arquivo completo na mesma PR,
+ou documentar na PR description por que não foi feito e abrir issue de acompanhamento.
+Nunca adicionar novas rotas em arquivos `_legacy/`. Roadmap detalhado: `docs/migration-tracker.md`.
+
+| Arquivo | Linhas | Prioridade | Janela |
+|---------|--------|-----------|--------|
+| `routes/public/_legacy/publicProductById.js` | 83 | alta | Q2 2026 |
+| `routes/public/_legacy/publicCategorias.js` | 73 | alta | Q2 2026 |
+| `routes/admin/_legacy/adminServicos.js` | 421 | alta | Q2 2026 |
+| `routes/admin/_legacy/adminShippingZones.js` | 322 | alta | Q2 2026 |
+| `routes/auth/_legacy/userAccount.js` | 195 | média | Q3 2026 |
+| `routes/auth/_legacy/userProfile.js` | 288 | média | Q3 2026 |
+| `routes/ecommerce/_legacy/pedidos.js` | 181 | média | Q3 2026 |
+| `routes/ecommerce/_legacy/favorites.js` | 146 | média | Q3 2026 |
+| `routes/admin/_legacy/adminUsers.js` | 183 | média | Q3 2026 |
+| `routes/admin/_legacy/adminAdmins.js` | 258 | média | Q3 2026 |
+| `routes/admin/_legacy/adminComunicacao.js` | 462 | média | Q3 2026 |
+| `routes/admin/_legacy/adminSolicitacoesServicos.js` | 166 | média | Q3 2026 |
+| `routes/admin/_legacy/adminStats.js` | 313 | média | Q3 2026 |
+| `routes/admin/_legacy/adminRelatorios.js` | 282 | média | Q3 2026 |
+| `routes/admin/_legacy/adminEspecialidades.js` | 82 | baixa | Q4 2026 |
+| `routes/admin/_legacy/adminConfigUpload.js` | 143 | baixa | Q4 2026 |
+| `routes/admin/_legacy/adminPermissions.js` | 197 | baixa | Q4 2026 |
+| `routes/admin/_legacy/adminLogs.js` | 255 | baixa | Q4 2026 |
+| `routes/admin/_legacy/adminCupons.js` | 337 | baixa | Q4 2026 |
+| `routes/admin/_legacy/adminMarketingPromocoes.js` | 394 | baixa | Q4 2026 |
+| `routes/public/_legacy/publicShopConfig.js` | 182 | baixa | Q4 2026 |
+| `routes/public/_legacy/publicProdutos.js` | 354 | baixa | Q4 2026 |
 
 ### Onde um desenvolvedor novo vai se confundir
 
@@ -407,7 +407,7 @@ Armadilhas já resolvidas (registradas aqui para histórico):
 
 - `routes/admin/adminLogin.js` foi movido para `routes/auth/adminLogin.js` — login é auth, não operação admin
 - `routes/auth/users.js` foi renomeado para `routes/auth/userAccount.js` — desambiguar de `adminUsers.js`
-- `routes/public/publicAvaliacaoColaborador.js` → `routes/public/publicServicosAvaliacoes.js` — alinhado ao domínio
+- `routes/public/publicAvaliacaoColaborador.js` → `routes/public/publicServicosAvaliacoes.js` — alinhado ao domínio (arquivo já deletado em 2026-04, endpoints absorvidos por `publicServicos.js` moderno)
 - `routes/uploadsCheckRoutes.js` → `routes/utils/uploadsCheck.js` — segue convenção de subpastas
 - `controllers/cartsController.js`, `configController.js`, `produtosController.js` — são modernos e referência válida
 - `services/notificationService.js` foi **deletado** — era stub que não enviava nada. Canal real de notificação: `workers/abandonedCartNotificationsWorker.js` → `services/mailService.sendTransactionalEmail()`. WhatsApp ainda não implementado (sem provedor definido).

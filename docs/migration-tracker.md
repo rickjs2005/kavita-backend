@@ -1,77 +1,155 @@
 # Migration Tracker — kavita-backend
 
-> **Como usar:** atualizar `status atual` e colunas `precisa X?` à medida que o trabalho avança.
-> Colunas `precisa X?`: ✅ = já OK (existe e correto) · ❌ = precisa criar/completar · ⚑ = existe mas incompleto.
+> **Última atualização:** 2026-04-01
 >
-> **Status:** `legado` → `parcial` → `moderno` → `migrado`
-> Um módulo é `migrado` somente quando todos os 8 critérios (R1–R8) de `docs/migration-plan.md` estão satisfeitos.
+> **Como usar:**
+> - Ao abrir uma PR que toca um arquivo `_legacy/`: migrar o arquivo completo, OU documentar
+>   na PR description por que a migração completa não foi feita e abrir issue de acompanhamento.
+> - Colunas `precisa X?`: ✅ = existe e correto · ❌ = precisa criar · ⚑ = existe mas incompleto
+> - **Status:** `legado` → `parcial` → `moderno` → `migrado`
+>   - `migrado` = todos os critérios satisfeitos (R1–R8 em `docs/migration-plan.md`)
+
+---
+
+## Regra de toque
+
+> **Ao tocar qualquer arquivo em `_legacy/`, na mesma PR:**
+> 1. Migrar o arquivo completo para o padrão moderno, **ou**
+> 2. Documentar explicitamente na PR description por que a migração completa não foi feita
+>    + abrir issue de acompanhamento com o arquivo e os bloqueadores.
 >
-> _Última atualização: 2026-03-27_
+> Correção de bug sem migração é aceita **apenas** para incidentes de produção urgentes.
+> Nunca adicionar novas rotas em arquivos `_legacy/`.
 
 ---
 
-## Módulos legados em migração
+## Arquivos _legacy/ ativos — roadmap
 
-### ⚠ Prioridade Alta — críticos
+### 🔴 Alta prioridade — Q2 2026 (abril–junho)
 
-| Módulo | Tipo | Status | Prioridade | Risco | Testes int. | Repository | Service | Controller | Validação Zod | Response padrão | Observações |
-|--------|------|--------|------------|-------|-------------|-----------|---------|-----------|---------------|-----------------|-------------|
-| `adminRoles.js` | admin | **legado** | alta | alto | ❌ | ❌ `rolesRepository` | ❌ `rolesService` | ❌ | ❌ | ❌ | RBAC — bug silencioso = permissão errada. Transação: DELETE perms antigas + INSERT novas deve ser atômica. `adminLogs` deve continuar sendo chamado. Não tem nenhuma camada extraída ainda. |
-| `adminServicos.js` | admin | **legado** | alta | alto | ❌ | ❌ `servicosRepository` | ❌ `servicosAdminService` | ❌ | ❌ | ❌ | Migrar antes de `publicServicos` para estabelecer o repository compartilhado. Upload com magic bytes + `keepImages` JSON + cleanup transacional de arquivos. `enqueueOrphanCleanup` obrigatório em rollback. |
-| `publicServicos.js` | public | **legado** | alta | médio | ❌ | ❌ `servicosRepository` | ❌ `servicosPublicService` | ❌ | ❌ | ❌ | **Bloqueado** até `adminServicos` criar `servicosRepository`. Rating transacional (INSERT avaliação + UPDATE média incremental) — fórmula deve ser replicada exatamente. `normalizeImages()` lida com 3 formatos legados. 8 rotas. |
+| Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
+|---------|--------|-----------|-------------|-------------|
+| `routes/public/_legacy/publicProductById.js` | 83 | nenhum | absorver em `publicProductsController.js` | backend |
+| `routes/public/_legacy/publicCategorias.js` | 73 | nenhum | `categoriasRepository`, `categoriasPublicController` | backend |
+| `routes/admin/_legacy/adminServicos.js` | 421 | nenhum¹ | `servicosAdminController`, `servicosAdminService`, `servicosRepository` (admin) | backend |
+| `routes/admin/_legacy/adminShippingZones.js` | 322 | nenhum | `shippingZonesRepository`, `shippingZonesService`, `shippingZonesController` | backend |
 
----
+¹ `servicosRepository.js` existe para o lado público — reutilizar ou estender para admin.
 
-### ⚑ Prioridade Média — importantes
-
-| Módulo | Tipo | Status | Prioridade | Risco | Testes int. | Repository | Service | Controller | Validação Zod | Response padrão | Observações |
-|--------|------|--------|------------|-------|-------------|-----------|---------|-----------|---------------|-----------------|-------------|
-| `adminPedidos.js` | admin | **parcial** | média | médio | ❌ | ✅ `orderRepository` | ✅ `orderService` | ❌ | ❌ | ❌ | Trabalho menor: mover validação de `ALLOWED_PAYMENT_STATUSES` para o service, Zod schema, substituir `res.json()`. Não duplicar a lógica de disparo de comunicação que vive no `orderService`. |
-| `userAddresses.js` | auth | **parcial** | média | médio | ✅ | ✅ `addressRepository` | ❌ `addressService` | ❌ | ❌ | ❌ | Normalização URBANA/RURAL com múltiplos aliases de campos deve migrar para service. Zod schema deve aceitar todos os aliases (`endereco\|rua\|logradouro`). Não alterar valores literais "RURAL" e "S/N" no banco. |
-| `adminShippingZones.js` | admin | **legado** | média | médio | ✅ | ❌ `shippingZonesRepository` | ❌ `shippingZonesService` | ❌ | ❌ | ❌ | Já usa AppError (mais avançado que outros legados). Repository deve receber `conn` como parâmetro para cobrir a transação zonas + cidades. Não alterar estrutura do objeto de resposta — usado pelo checkout. |
-| `adminComunicacao.js` | admin | **parcial** | média | médio | ⚑ unit | ❌ | ⚑ `comunicacaoService` existe | ❌ | ❌ | ❌ | `comunicacaoService.js` existe e tem unit test, mas a rota ainda tem SQL inline e templates hardcoded. Templates HTML de email e texto WhatsApp devem ser preservados exatamente. `logComunicacao` grava no banco independente do envio. |
-| `adminStats.js` | admin | **legado** | média | baixo | ❌ | ❌ `statsRepository` | ❌ | ❌ | N/A | ❌ | Read-only — risco zero de corrupção. Complexidade está no SQL de agregação (ticket médio, séries temporais com preenchimento de dias sem venda). Sem Zod (só query params — usar schema de query params do Zod). |
+**Por que alta:** `publicProductById` é o único arquivo legado ainda incluso por uma rota moderna.
+`adminServicos` e `adminShippingZones` afetam fluxos críticos (serviços e frete de checkout).
 
 ---
 
-### ▽ Prioridade Baixa — CRUD simples
+### 🟡 Média prioridade — Q3 2026 (julho–setembro)
 
-| Módulo | Tipo | Status | Prioridade | Risco | Testes int. | Repository | Service | Controller | Validação Zod | Response padrão | Observações |
-|--------|------|--------|------------|-------|-------------|-----------|---------|-----------|---------------|-----------------|-------------|
-| `userProfile.js` | auth | **parcial** | baixa | baixo | ⚑ admin | ✅ `userRepository` | ❌ | ❌ | ❌ | ❌ | `userProfileAdmin.int.test.js` cobre só endpoints admin. CPF pode ser `""` para limpar (deve gravar NULL) — Zod schema precisa aceitar `string \| ""`. Lógica de CPF → `userService`. |
-| `adminMarketingPromocoes.js` | admin | **legado** | baixa | baixo | ❌ | ❌ `promocoesRepository` | ❌ `promocoesService` | ❌ | ❌ | ❌ | Cálculo de `final_price` (promo_price ou discount_percent) deve ir para service. Regra de uma-promo-por-produto: mover para verificação prévia no repository (AppError 409). Pode reutilizar `produtosRepository` para leitura de preço base. |
-| `adminCupons.js` | admin | **legado** | baixa | baixo | ❌ | ❌ `cuponsRepository` | ❌ `cuponsService` | ❌ | ❌ | ❌ | CRUD de tabela única. `ER_DUP_ENTRY` → trocar por SELECT prévio + AppError 409 CONFLICT. Normalização de tipos (percentual/valor) → Zod enum. |
-| `publicProdutos.js` | public | **legado** | baixa | baixo | ❌ | ⚑ `productRepository` (parcial) | ❌ | ❌ | ❌ | ❌ | **Bloqueado:** confirmar com frontend se `GET /api/public/produtos?busca=` tem uso real antes de iniciar. `productRepository` cobre listagem mas não `produto_avaliacoes`. Sistema de avaliação segue mesmo padrão de `publicServicos`. |
+#### Auth / usuário
+
+| Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
+|---------|--------|-----------|-------------|-------------|
+| `routes/auth/_legacy/userAccount.js` | 195 | `validators/authValidator.js`² | `registerSchema` em `schemas/authSchemas.js`, migrar para authController | backend |
+| `routes/auth/_legacy/userProfile.js` | 288 | nenhum | `userProfileService`, controller de perfil | backend |
+
+² `validators/authValidator.js` ainda exporta `registerValidators` para este arquivo.
+Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `authValidator.js` e a pasta `validators/`.
+
+#### Ecommerce
+
+| Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
+|---------|--------|-----------|-------------|-------------|
+| `routes/ecommerce/_legacy/pedidos.js` | 181 | nenhum | `pedidosRepository` (user-side), `pedidosController` (usuário) | backend |
+| `routes/ecommerce/_legacy/favorites.js` | 146 | nenhum | `favoritesRepository`, `favoritesController` | backend |
+
+#### Admin — operações com usuários/admins
+
+| Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
+|---------|--------|-----------|-------------|-------------|
+| `routes/admin/_legacy/adminUsers.js` | 183 | nenhum | `adminUsersController`, `adminUsersService` | backend |
+| `routes/admin/_legacy/adminAdmins.js` | 258 | nenhum | `adminAdminsController` | backend |
+| `routes/admin/_legacy/adminComunicacao.js` | 462 | nenhum³ | `adminComunicacaoController` | backend |
+| `routes/admin/_legacy/adminSolicitacoesServicos.js` | 166 | `adminServicos` (shared domain) | `solicitacoesController` | backend |
+
+³ `comunicacaoService.js` existe com unit test. A rota ainda tem SQL inline e templates hardcoded.
+Templates HTML/WhatsApp devem ser preservados exatamente.
+
+#### Admin — analytics
+
+| Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
+|---------|--------|-----------|-------------|-------------|
+| `routes/admin/_legacy/adminStats.js` | 313 | nenhum | `statsRepository`, `statsController` | backend |
+| `routes/admin/_legacy/adminRelatorios.js` | 282 | nenhum | `relatoriosRepository`, `relatoriosController` | backend |
 
 ---
 
-## Módulos modernos — referência
+### 🟢 Baixa prioridade — Q4 2026 (outubro–dezembro)
 
-> Estes módulos satisfazem todos os critérios R1–R8. Usar como exemplo ao migrar.
+| Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
+|---------|--------|-----------|-------------|-------------|
+| `routes/admin/_legacy/adminEspecialidades.js` | 82 | `adminServicos` (shared domain) | `especialidadesRepository`, `especialidadesController` | backend |
+| `routes/admin/_legacy/adminConfigUpload.js` | 143 | nenhum | `configUploadController` | backend |
+| `routes/admin/_legacy/adminPermissions.js` | 197 | nenhum | `permissionsController` | backend |
+| `routes/admin/_legacy/adminLogs.js` | 255 | nenhum | `logsRepository`, `logsController` | backend |
+| `routes/admin/_legacy/adminCupons.js` | 337 | nenhum | `cuponsRepository`, `cuponsService`, `cuponsController` | backend |
+| `routes/admin/_legacy/adminMarketingPromocoes.js` | 394 | nenhum⁴ | `promocoesRepository` (admin-side), `promocoesAdminController` | backend |
+| `routes/public/_legacy/publicShopConfig.js` | 182 | nenhum | `shopConfigController` | backend |
+| `routes/public/_legacy/publicProdutos.js` | 354 | frontend⁵ | `productReviewsController` | backend + frontend |
 
-| Módulo | Tipo | Status | Testes int. | Repository | Service | Controller | Validação Zod | Response padrão | Referência para |
-|--------|------|--------|-------------|-----------|---------|-----------|---------------|-----------------|-----------------|
-| `adminDrones.js` + `publicDrones.js` | admin + public | **migrado** | ✅ | ✅ `dronesRepository` | ✅ `services/drones/` | ✅ `controllers/drones/` | ✅ `dronesSchemas.js` | ✅ | padrão completo com upload |
-| `adminProdutos.js` | admin | **migrado** | — | ✅ `produtosRepository` | ✅ `produtosAdminService` | ✅ `produtosController` | ✅ `requests.js` | ✅ | padrão completo com Zod + multipart |
-| `checkout.js` | ecommerce | **migrado** | ✅ | ✅ `checkoutRepository` | ✅ `checkoutService` | ✅ `checkoutController` | ✅ `checkoutSchemas.js` | ✅ | padrão completo com transações |
-| `cart.js` | ecommerce | **migrado** | ✅ | ✅ `cartRepository` | ✅ `cartService` | — | — | ✅ | padrão service + repository |
-| `adminCarts.js` | admin | **moderno** | ✅ | — | — | ✅ `cartsController` | — | ✅ | rota magra com controller |
-| `adminConfig.js` | admin | **moderno** | — | ✅ `configRepository` | ✅ `configAdminService` | ✅ `configController` | — | ✅ | rota magra |
-| `login.js` (user auth) | auth | **migrado** | — | ✅ `userRepository` | — | ✅ `authController` | ✅ | ✅ | auth com cookie HttpOnly |
-| `adminLogin.js` | admin | **migrado** | — | — | ✅ `authAdminService` | ✅ `authAdminController` | — | ✅ | auth admin com tokenVersion |
-| `adminNews.js` | admin | **moderno** | — | ✅ `postsRepository` | — | ✅ `controllers/news/` | — | ✅ | controller em subdiretório |
-| `adminSiteHero.js` | admin | **moderno** | — | ✅ `heroRepository` | — | ✅ `siteHeroController` | — | ✅ | — |
+⁴ `promocoesService.js` existe para o lado público. Avaliar reuso para admin.
+⁵ Confirmar com frontend se `GET /api/public/produtos` e `produto_avaliacoes` têm uso real antes de iniciar.
 
 ---
 
-## Resumo numérico
+## Arquivos mortos — ação imediata: deletar
 
-| Status | Qtd | % |
-|--------|-----|---|
-| migrado | 5 | 24% |
-| moderno | 5 | 24% |
-| parcial | 3 | 14% |
-| legado | 8 | 38% |
-| **Total** | **21** | — |
+| Arquivo | Situação |
+|---------|----------|
+| `routes/public/_legacy/publicServicos.js` | **Deletado** (2026-04-01) — modern `publicServicos.js` montado em index.js |
+| `routes/public/_legacy/publicPromocoes.js` | **Deletado** (2026-04-01) — modern `publicPromocoes.js` montado em index.js |
+| `routes/public/_legacy/publicServicosAvaliacoes.js` | **Deletado** (2026-04-01) — endpoints cobertos por `publicServicos.js` moderno |
 
-> **Meta:** zerar a coluna `legado`. Módulos `parcial` são os de menor esforço — começar por eles.
+---
+
+## Resumo por janela
+
+| Janela | Arquivos | Linhas totais | Estimativa |
+|--------|----------|---------------|------------|
+| Q2 2026 (alta) | 4 | 899 | 2–3 semanas |
+| Q3 2026 (média) | 11 | 2.576 | 5–7 semanas |
+| Q4 2026 (baixa) | 8 | 2.344 | 4–6 semanas |
+| **Total** | **22** | **5.819** | — |
+
+---
+
+## Histórico — módulos concluídos
+
+| Módulo | Tipo | Concluído em | Observações |
+|--------|------|-------------|-------------|
+| `adminDrones.js` + `publicDrones.js` | admin + public | 2025 | Referência canônica com upload |
+| `adminProdutos.js` | admin | 2025 | Referência com Zod + multipart |
+| `checkout.js` | ecommerce | 2025 | Referência com transações |
+| `cart.js` → `cartController.js` | ecommerce | 2025 | Handlers extraídos |
+| `adminCarts.js` | admin | 2025 | Rota magra com controller |
+| `adminConfig.js` | admin | 2025 | Rota magra |
+| `login.js` (user) | auth | 2025 | Auth com cookie HttpOnly |
+| `adminLogin.js` | admin | 2025 | Auth admin com tokenVersion |
+| `adminNews.js` | admin | 2025 | Controller em subdiretório |
+| `adminSiteHero.js` | admin | 2025 | Rota magra |
+| `adminRoles.js` | admin | 2025 | Moderno, sem SQL inline |
+| `adminPedidos.js` | admin | 2026-04-01 | Controller + schemas + lib/response.js |
+| `publicServicos.js` | public | 2026-03 | servicosRepository + servicosService + controller |
+| `publicPromocoes.js` | public | 2026-03 | promocoesService + controller |
+| `publicProducts.js` → controller | public | 2026-04-01 | Handlers extraídos para publicProductsController |
+| `authRoutes.js` + `login.js` | auth | 2026-04-01 | Migrado de express-validator para Zod |
+| `adminCategorias.js` | admin | 2026 | Moderno |
+| `adminColaboradores.js` | admin | 2026 | Moderno |
+
+---
+
+## Bloqueadores conhecidos para remoção completa de validators/
+
+Para deletar `validators/authValidator.js` e a pasta `validators/`:
+
+1. Migrar `routes/auth/_legacy/userAccount.js` (usa `registerValidators`)
+2. Criar `registerSchema` em `schemas/authSchemas.js`
+
+Após isso: nenhum módulo importa mais `authValidator.js` → deletar arquivo e pasta.
