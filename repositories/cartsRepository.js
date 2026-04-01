@@ -1,11 +1,19 @@
 "use strict";
 // repositories/cartsRepository.js
-// Acesso a dados para carrinhos abandonados.
+//
+// Escopo: domínio ADMIN de carrinhos — carrinhos ABANDONADOS e recuperação.
+// Responsabilidades: scan de carrinhos abertos sem registro, listagem de
+//                    abandonados, inserção de notificações (email/whatsapp),
+//                    consulta para geração de link WhatsApp.
+//
+// ⚠️  NÃO confundir com cartRepository.js, que é o domínio do USUÁRIO:
+//     carrinho ativo (aberto), leitura com itens, queries de checkout.
+//
+// Consumidor: services/cartsAdminService.js
 //
 // Convenção de conexão:
-//   Todas as funções usam o pool interno (pool.query).
-//   Não há transações neste módulo — cada operação é auto-commitada.
-//   O service é responsável pela orquestração da lógica entre chamadas.
+//   Todas as funções usam o pool interno (pool.query) — sem suporte a transação.
+//   Não há BEGIN/COMMIT aqui; a orquestração entre chamadas é do service.
 
 const pool = require("../config/pool");
 

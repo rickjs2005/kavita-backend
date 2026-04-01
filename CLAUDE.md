@@ -452,6 +452,19 @@ Arquivos modernos que ainda violam a regra (pendentes de extração — não toc
 Domínios usam **português** para nomes de negócio existentes (pedidos, produtos, servicos).
 Novos módulos de infraestrutura podem usar inglês (auth, media, cache).
 
+**Pares de repositórios com domínio compartilhado**
+
+Alguns domínios têm dois arquivos de repository com nomes similares — um por contexto (público vs. admin, usuário vs. painel). O critério de separação é sempre o contexto de uso, não o domínio de negócio. Cada arquivo documenta no próprio header o par e o motivo da separação.
+
+| Par | Arquivo | Contexto | Critério |
+|-----|---------|----------|---------|
+| Produtos | `productRepository.js` | Público/ecommerce | Leitura + busca, sem mutações |
+| Produtos | `produtosRepository.js` | Admin | CRUD completo + imagens |
+| Carrinho | `cartRepository.js` | Usuário logado | Carrinho ativo (aberto), checkout |
+| Carrinho | `cartsRepository.js` | Admin/painel | Carrinhos abandonados, notificações |
+
+Regra para novos pares: se um domínio precisar de um segundo repository, nomear o arquivo de admin com sufixo descritivo ou prefixo de contexto (ex: `pedidosAdminRepository.js`) e documentar o par no header de ambos os arquivos.
+
 ### Estilo de export em controllers
 
 **Padrão oficial: `module.exports = { fn1, fn2, ... }` no final do arquivo.**
