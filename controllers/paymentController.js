@@ -12,7 +12,7 @@ const { handleWebhookEvent } = require("../services/paymentWebhookService");
 // PUBLIC
 // ---------------------------------------------------------------------------
 
-exports.listMethods = async (_req, res, next) => {
+const listMethods = async (_req, res, next) => {
   try {
     const methods = await paymentService.listActiveMethods();
     return res.json({ methods });
@@ -29,7 +29,7 @@ exports.listMethods = async (_req, res, next) => {
 // ADMIN — CRUD de métodos de pagamento
 // ---------------------------------------------------------------------------
 
-exports.adminListMethods = async (_req, res, next) => {
+const adminListMethods = async (_req, res, next) => {
   try {
     const methods = await paymentService.listAllMethods();
     return res.json({ methods });
@@ -46,7 +46,7 @@ exports.adminListMethods = async (_req, res, next) => {
   }
 };
 
-exports.adminCreateMethod = async (req, res, next) => {
+const adminCreateMethod = async (req, res, next) => {
   try {
     const created = await paymentService.addMethod(req.body || {});
     return res.status(201).json({ method: created });
@@ -59,7 +59,7 @@ exports.adminCreateMethod = async (req, res, next) => {
   }
 };
 
-exports.adminUpdateMethod = async (req, res, next) => {
+const adminUpdateMethod = async (req, res, next) => {
   const id = Number(req.params.id);
   try {
     const updated = await paymentService.editMethod(id, req.body || {});
@@ -73,7 +73,7 @@ exports.adminUpdateMethod = async (req, res, next) => {
   }
 };
 
-exports.adminDeleteMethod = async (req, res, next) => {
+const adminDeleteMethod = async (req, res, next) => {
   const id = Number(req.params.id);
   try {
     await paymentService.disableMethod(id);
@@ -95,7 +95,7 @@ exports.adminDeleteMethod = async (req, res, next) => {
 // MERCADO PAGO — start payment
 // ---------------------------------------------------------------------------
 
-exports.startPayment = async (req, res, next) => {
+const startPayment = async (req, res, next) => {
   const { pedidoId } = req.body || {};
   const pedidoIdNum = Number(pedidoId);
 
@@ -134,7 +134,7 @@ exports.startPayment = async (req, res, next) => {
 // MERCADO PAGO — webhook
 // ---------------------------------------------------------------------------
 
-exports.handleWebhook = async (req, res) => {
+const handleWebhook = async (req, res) => {
   const signatureHeader = req.get("x-signature");
 
   try {
@@ -163,4 +163,14 @@ exports.handleWebhook = async (req, res) => {
     const status = process.env.NODE_ENV === "development" ? 500 : 200;
     return res.status(status).json({ ok: status === 200 });
   }
+};
+
+module.exports = {
+  listMethods,
+  adminListMethods,
+  adminCreateMethod,
+  adminUpdateMethod,
+  adminDeleteMethod,
+  startPayment,
+  handleWebhook,
 };

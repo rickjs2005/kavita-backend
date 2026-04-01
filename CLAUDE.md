@@ -452,6 +452,41 @@ Arquivos modernos que ainda violam a regra (pendentes de extração — não toc
 Domínios usam **português** para nomes de negócio existentes (pedidos, produtos, servicos).
 Novos módulos de infraestrutura podem usar inglês (auth, media, cache).
 
+### Estilo de export em controllers
+
+**Padrão oficial: `module.exports = { fn1, fn2, ... }` no final do arquivo.**
+
+```js
+// CORRETO — padrão oficial
+const listOrders = async (req, res, next) => { ... };
+const getOrderById = async (req, res, next) => { ... };
+module.exports = { listOrders, getOrderById };
+
+// PROIBIDO em código novo ou modificado
+exports.listOrders = async (req, res, next) => { ... };
+```
+
+Motivo: `module.exports = { }` torna o conjunto de exports explícito e visível no final do arquivo, facilita leitura e é o estilo usado em 100% dos controllers criados recentemente (drones, news, adminOrders, checkout, publicProducts, authAdmin).
+
+**Controllers já no padrão oficial:** todos em `controllers/drones/`, `controllers/news/`, `controllers/admin/`, e ainda `adminOrdersController`, `checkoutController`, `publicProductsController`, `dronesPublicController`, `cartController`, `paymentController`, `shippingController`, `cartsController`.
+
+**Controllers ainda usando `exports.fn` — migrar ao tocar:**
+
+| Arquivo | Handlers |
+|---------|---------|
+| `controllers/siteHeroController.js` | getHero, updateHero |
+| `controllers/produtosController.js` | vários |
+| `controllers/configController.js` | vários |
+| `controllers/categoriasController.js` | vários |
+| `controllers/rolesController.js` | vários |
+| `controllers/colaboradoresController.js` | vários |
+| `controllers/userAddressController.js` | vários |
+| `controllers/newsPublicController.js` | vários |
+| `controllers/servicosPublicController.js` | vários |
+| `controllers/promocoesPublicController.js` | vários |
+
+Regra: ao abrir qualquer desses arquivos por outra razão, converter o export na mesma PR — é uma mudança mecânica de 1–2 minutos sem risco funcional.
+
 ### Middleware de autenticação
 
 - **`authenticateToken`** — padrão para rotas de usuário. **Sempre use este**.

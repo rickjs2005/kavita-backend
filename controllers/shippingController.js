@@ -66,7 +66,7 @@ function parseItems(raw) {
 // Handler
 // ---------------------------------------------------------------------------
 
-exports.getShippingQuote = async (req, res, next) => {
+const getShippingQuote = async (req, res, next) => {
   try {
     const cep = parseCep(req.query.cep);
     const items = parseItems(req.query.items);
@@ -86,3 +86,5 @@ exports.getShippingQuote = async (req, res, next) => {
     );
   }
 };
+
+module.exports = { getShippingQuote };

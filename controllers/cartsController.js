@@ -6,7 +6,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const svc = require("../services/cartsAdminService");
 
-exports.scan = async (req, res, next) => {
+const scan = async (req, res, next) => {
   try {
     // req.body.horas é coercido para number|undefined pelo ScanBodySchema.
     // req.query.horas (string) é aceito como fallback pelo service.
@@ -18,7 +18,7 @@ exports.scan = async (req, res, next) => {
   }
 };
 
-exports.list = async (req, res, next) => {
+const list = async (req, res, next) => {
   try {
     const carrinhos = await svc.listAbandonedCarts();
     return response.ok(res, { carrinhos });
@@ -27,7 +27,7 @@ exports.list = async (req, res, next) => {
   }
 };
 
-exports.notify = async (req, res, next) => {
+const notify = async (req, res, next) => {
   // req.params.id é coercido para number pelo CartIdParamSchema.
   // req.body.tipo é validado pelo NotifyBodySchema ("whatsapp"|"email").
   try {
@@ -42,7 +42,7 @@ exports.notify = async (req, res, next) => {
   }
 };
 
-exports.whatsappLink = async (req, res, next) => {
+const whatsappLink = async (req, res, next) => {
   // req.params.id é coercido para number pelo CartIdParamSchema.
   try {
     const result = await svc.getWhatsAppLink(req.params.id);
@@ -51,3 +51,5 @@ exports.whatsappLink = async (req, res, next) => {
     return next(err instanceof AppError ? err : new AppError("Erro ao gerar link de WhatsApp.", ERROR_CODES.SERVER_ERROR, 500));
   }
 };
+
+module.exports = { scan, list, notify, whatsappLink };

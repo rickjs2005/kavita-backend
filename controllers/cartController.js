@@ -28,7 +28,7 @@ function sendStockLimit(res, err) {
 // Handlers
 // ---------------------------------------------------------------------------
 
-exports.getCart = async (req, res, next) => {
+const getCart = async (req, res, next) => {
   const userId = req.user.id;
 
   try {
@@ -40,7 +40,7 @@ exports.getCart = async (req, res, next) => {
   }
 };
 
-exports.addItem = async (req, res, next) => {
+const addItem = async (req, res, next) => {
   const { produto_id, quantidade } = req.body;
   const userId = req.user.id;
 
@@ -64,7 +64,7 @@ exports.addItem = async (req, res, next) => {
   }
 };
 
-exports.updateItem = async (req, res, next) => {
+const updateItem = async (req, res, next) => {
   const { produto_id, quantidade } = req.body;
   const userId = req.user.id;
 
@@ -88,7 +88,7 @@ exports.updateItem = async (req, res, next) => {
   }
 };
 
-exports.removeItem = async (req, res, next) => {
+const removeItem = async (req, res, next) => {
   const userId = req.user.id;
   const produtoId = req.params.produtoId;
 
@@ -108,7 +108,7 @@ exports.removeItem = async (req, res, next) => {
   }
 };
 
-exports.clearCart = async (req, res, next) => {
+const clearCart = async (req, res, next) => {
   const userId = req.user.id;
 
   try {
@@ -126,3 +126,5 @@ exports.clearCart = async (req, res, next) => {
     );
   }
 };
+
+module.exports = { getCart, addItem, updateItem, removeItem, clearCart };
