@@ -2,8 +2,8 @@
 // Zod schemas for auth routes: login, forgot-password, reset-password.
 // Applied via validate(schema) in routes/auth/login.js and routes/auth/authRoutes.js.
 //
-// Register validation is still in validators/authValidator.js (registerValidators)
-// while routes/auth/_legacy/userAccount.js remains unmigrated.
+// registerSchema is absent: register lives in routes/auth/_legacy/userAccount.js
+// (depreciado). Adicionar registerSchema aqui ao migrar esse arquivo.
 
 "use strict";
 

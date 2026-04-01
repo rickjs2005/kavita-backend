@@ -479,8 +479,8 @@ Novos módulos de infraestrutura podem usar inglês (auth, media, cache).
 
 | Local | Sistema | Quando usar |
 |-------|---------|-------------|
-| `schemas/` | **Zod** | Todos os módulos novos e refatorados |
-| `validators/authValidator.js` | express-validator | Rotas de auth **apenas** (legado, não estender) |
+| `schemas/` | **Zod** | Todos os módulos novos e refatorados — padrão único |
+| `validators/authValidator.js` | express-validator | **Depreciado.** Mantido apenas por `routes/auth/_legacy/userAccount.js`. Remover ao migrar esse arquivo. Não importar em código novo |
 | Inline `if (!campo)...` em rota | — | **Proibido** em código novo |
 
 Use `middleware/validate.js` para aplicar schemas Zod como middleware de rota.
