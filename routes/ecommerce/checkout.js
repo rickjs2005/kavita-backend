@@ -10,37 +10,10 @@ const express = require("express");
 const router = express.Router();
 const controller = require("../../controllers/checkoutController");
 const authenticateToken = require("../../middleware/authenticateToken");
-const AppError = require("../../errors/AppError");
-const ERROR_CODES = require("../../constants/ErrorCodes");
 const recalcShipping = require("../../middleware/recalcShipping");
 const { validateCSRF } = require("../../middleware/csrfProtection");
 const { validate } = require("../../middleware/validate");
 const { checkoutBodySchema } = require("../../schemas/checkoutSchemas");
-
-/* ------------------------------------------------------------------ */
-/*                 Resolve o handler do controller                     */
-/* ------------------------------------------------------------------ */
-
-let checkoutHandler;
-
-if (typeof controller === "function") {
-  checkoutHandler = controller;
-} else if (controller && typeof controller.create === "function") {
-  checkoutHandler = controller.create;
-} else {
-  checkoutHandler = (_req, _res, next) => {
-    console.error(
-      "[checkoutRoutes] checkoutController não configurado corretamente. Esperado função ou { create }."
-    );
-    return next(
-      new AppError(
-        "Checkout não está configurado corretamente no servidor.",
-        ERROR_CODES.SERVER_ERROR,
-        500
-      )
-    );
-  };
-}
 
 /* ------------------------------------------------------------------ */
 /*   Autenticação — todas as rotas abaixo exigem token válido         */
@@ -63,7 +36,7 @@ router.post(
   validateCSRF,
   validate(checkoutBodySchema),
   recalcShipping,
-  checkoutHandler
+  controller.create
 );
 
 module.exports = router;
