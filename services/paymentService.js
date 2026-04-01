@@ -111,14 +111,13 @@ function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
 /**
  * Inicia o fluxo de pagamento MP para um pedido existente.
  *
- * @param {import("mysql2").PoolConnection} conn  Conexão já adquirida pelo caller
  * @param {number} pedidoId
  * @param {number} userId  ID do usuário autenticado (ownership check)
  * @returns {{ preferenceId: string, init_point: string, sandbox_init_point: string }}
  * @throws {AppError}
  */
-async function startPayment(conn, pedidoId, userId) {
-  const pedido = await repo.getPedidoById(conn, pedidoId);
+async function startPayment(pedidoId, userId) {
+  const pedido = await repo.getPedidoById(pedidoId);
 
   // Ownership check antes de existência para não vazar informação
   if (pedido && pedido.usuario_id !== userId) {
@@ -155,7 +154,7 @@ async function startPayment(conn, pedidoId, userId) {
     );
   }
 
-  const total = await repo.getTotalPedido(conn, pedidoId);
+  const total = await repo.getTotalPedido(pedidoId);
   if (total <= 0) {
     throw new AppError(
       "Não foi possível iniciar o pagamento: valor final do pedido inválido.",
@@ -173,7 +172,7 @@ async function startPayment(conn, pedidoId, userId) {
 
   const pref = await preference.create({ body });
 
-  await repo.setPedidoStatusPendente(conn, pedidoId);
+  await repo.setPedidoStatusPendente(pedidoId);
 
   return {
     preferenceId: pref.id,

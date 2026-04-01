@@ -2,15 +2,7 @@
 // controllers/paymentController.js
 //
 // Handlers de pagamento: Mercado Pago + CRUD de métodos de pagamento.
-//
-// Nota arquitetural — pool.getConnection() nos handlers startPayment e handleWebhook:
-//   paymentService.startPayment(conn, ...) e handleWebhookEvent({conn, ...}) foram
-//   projetados para receber uma conexão já aberta (permite transação compartilhada).
-//   Enquanto essa assinatura não mudar no service, o controller precisa orquestrar
-//   o ciclo de vida da conexão. Isso é uma dívida técnica conhecida do paymentService,
-//   não do controller.
 
-const pool = require("../config/pool");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const paymentService = require("../services/paymentService");
@@ -111,11 +103,8 @@ exports.startPayment = async (req, res, next) => {
     return next(new AppError("pedidoId é obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400));
   }
 
-  // pool.getConnection() aqui porque paymentService.startPayment(conn, ...) requer
-  // uma conexão já aberta. Ver nota arquitetural no topo do arquivo.
-  const conn = await pool.getConnection();
   try {
-    const result = await paymentService.startPayment(conn, pedidoIdNum, req.user.id);
+    const result = await paymentService.startPayment(pedidoIdNum, req.user.id);
     return res.json(result);
   } catch (err) {
     if (!(err instanceof AppError)) {
@@ -138,8 +127,6 @@ exports.startPayment = async (req, res, next) => {
             500
           )
     );
-  } finally {
-    conn.release();
   }
 };
 
@@ -160,35 +147,17 @@ exports.handleWebhook = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    // pool.getConnection() aqui porque handleWebhookEvent({conn, ...}) precisa de
-    // transação explícita para garantir idempotência. Ver nota arquitetural no topo.
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
+    const outcome = await handleWebhookEvent({
+      eventId,
+      type,
+      dataId: data?.id,
+      payload,
+      signatureHeader,
+    });
 
-      const outcome = await handleWebhookEvent({
-        conn,
-        eventId,
-        type,
-        dataId: data?.id,
-        payload,
-        signatureHeader,
-      });
-
-      await conn.commit();
-      return res
-        .status(200)
-        .json({ ok: true, ...(outcome === "idempotent" ? { idempotent: true } : {}) });
-    } catch (dbErr) {
-      try {
-        await conn.rollback();
-      } catch (rollbackErr) {
-        console.error("[payment/webhook] rollback falhou:", rollbackErr);
-      }
-      throw dbErr;
-    } finally {
-      conn.release();
-    }
+    return res
+      .status(200)
+      .json({ ok: true, ...(outcome === "idempotent" ? { idempotent: true } : {}) });
   } catch (err) {
     console.error("[payment/webhook] erro:", err, err?.stack);
     const status = process.env.NODE_ENV === "development" ? 500 : 200;

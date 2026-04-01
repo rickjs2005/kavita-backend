@@ -3,6 +3,7 @@
 
 const { Payment } = require("mercadopago");
 const { getMPClient } = require("../config/mercadopago");
+const pool = require("../config/pool");
 const repo = require("../repositories/paymentRepository");
 const orderRepo = require("../repositories/orderRepository");
 
@@ -30,11 +31,9 @@ function mapMPStatusToDomain(mpStatus) {
 
 /**
  * Processa um evento de webhook do Mercado Pago com idempotência garantida.
- *
- * Assume que `conn` já tem uma transação iniciada pelo caller.
+ * Gerencia a transação internamente — o caller não precisa conhecer o pool.
  *
  * @param {object} opts
- * @param {import("mysql2").PoolConnection} opts.conn
  * @param {string}  opts.eventId        Identificador único do evento (req.body.id)
  * @param {string}  opts.type           Tipo do evento (req.body.type)
  * @param {string|number} opts.dataId   ID do pagamento no MP (req.body.data.id)
@@ -44,68 +43,84 @@ function mapMPStatusToDomain(mpStatus) {
  * @returns {Promise<"processed"|"idempotent"|"ignored">}
  */
 async function handleWebhookEvent({
-  conn,
   eventId,
   type,
   dataId,
   payload,
   signatureHeader,
 }) {
-  // Layer 3: idempotência — UNIQUE(event_id) + FOR UPDATE previne race conditions
-  const existingEvent = await repo.findWebhookEventForUpdate(conn, eventId);
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
 
-  let dbEventId = existingEvent?.id;
+    // Layer 3: idempotência — UNIQUE(event_id) + FOR UPDATE previne race conditions
+    const existingEvent = await repo.findWebhookEventForUpdate(conn, eventId);
 
-  if (!existingEvent) {
-    dbEventId = await repo.insertWebhookEvent(conn, {
-      eventId,
-      signature: signatureHeader,
-      type,
-      payload,
-    });
-  } else if (existingEvent.processed_at) {
-    // Evento já processado — resposta idempotente
-    return "idempotent";
-  } else {
-    dbEventId = existingEvent.id;
-    await repo.markWebhookEventReceived(conn, dbEventId, {
-      signature: signatureHeader,
-      type,
-      payload,
-    });
+    let dbEventId = existingEvent?.id;
+
+    if (!existingEvent) {
+      dbEventId = await repo.insertWebhookEvent(conn, {
+        eventId,
+        signature: signatureHeader,
+        type,
+        payload,
+      });
+    } else if (existingEvent.processed_at) {
+      // Evento já processado — resposta idempotente
+      await conn.commit();
+      return "idempotent";
+    } else {
+      dbEventId = existingEvent.id;
+      await repo.markWebhookEventReceived(conn, dbEventId, {
+        signature: signatureHeader,
+        type,
+        payload,
+      });
+    }
+
+    // Ignora eventos que não são de pagamento ou não têm ID de pagamento
+    if (type !== "payment" || !dataId) {
+      await repo.markWebhookEventIgnored(conn, dbEventId);
+      await conn.commit();
+      return "ignored";
+    }
+
+    // Layer 2: consulta o status REAL do pagamento na API do MP
+    const paymentClient = new Payment(getMPClient());
+    const payment = await paymentClient.get({ id: dataId });
+
+    const pedidoId = payment.metadata?.pedidoId;
+
+    if (!pedidoId) {
+      console.warn("[payment/webhook] pagamento sem metadata.pedidoId", dataId);
+      await repo.markWebhookEventIgnored(conn, dbEventId);
+      await conn.commit();
+      return "ignored";
+    }
+
+    const novoStatus = mapMPStatusToDomain(payment.status);
+
+    // Restaura estoque ANTES de atualizar status para que a guarda de idempotência
+    // funcione corretamente em duplicatas com event_id diferente.
+    if (novoStatus === "falhou") {
+      await orderRepo.restoreStockOnFailure(conn, pedidoId);
+    }
+
+    await repo.updatePedidoPayment(conn, pedidoId, novoStatus, dataId);
+    await repo.markWebhookEventProcessed(conn, dbEventId, novoStatus);
+
+    await conn.commit();
+    return "processed";
+  } catch (err) {
+    try {
+      await conn.rollback();
+    } catch (rollbackErr) {
+      console.error("[payment/webhook] rollback falhou:", rollbackErr);
+    }
+    throw err;
+  } finally {
+    conn.release();
   }
-
-  // Ignora eventos que não são de pagamento ou não têm ID de pagamento
-  if (type !== "payment" || !dataId) {
-    await repo.markWebhookEventIgnored(conn, dbEventId);
-    return "ignored";
-  }
-
-  // Layer 2: consulta o status REAL do pagamento na API do MP
-  const paymentClient = new Payment(getMPClient());
-  const payment = await paymentClient.get({ id: dataId });
-
-  const pedidoId = payment.metadata?.pedidoId;
-
-  if (!pedidoId) {
-    console.warn("[payment/webhook] pagamento sem metadata.pedidoId", dataId);
-    await repo.markWebhookEventIgnored(conn, dbEventId);
-    return "ignored";
-  }
-
-  const novoStatus = mapMPStatusToDomain(payment.status);
-
-  // Restaura estoque ANTES de atualizar status para que a guarda de idempotência
-  // funcione corretamente em duplicatas com event_id diferente.
-  // Stock operations are owned by orderRepository.
-  if (novoStatus === "falhou") {
-    await orderRepo.restoreStockOnFailure(conn, pedidoId);
-  }
-
-  await repo.updatePedidoPayment(conn, pedidoId, novoStatus, dataId);
-  await repo.markWebhookEventProcessed(conn, dbEventId, novoStatus);
-
-  return "processed";
 }
 
 module.exports = { mapMPStatusToDomain, handleWebhookEvent };

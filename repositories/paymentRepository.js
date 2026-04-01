@@ -112,12 +112,8 @@ async function softDeleteMethod(id) {
 
 /* ---- Pedidos -------------------------------------------------------------- */
 
-/**
- * Retorna o total final do pedido (base + frete, sem recalcular itens).
- * @param {import("mysql2").PoolConnection} conn
- */
-async function getTotalPedido(conn, pedidoId) {
-  const [[row]] = await conn.query(
+async function getTotalPedido(pedidoId) {
+  const [[row]] = await pool.query(
     `SELECT (total + COALESCE(shipping_price, 0)) AS total_final
        FROM pedidos
       WHERE id = ?`,
@@ -126,11 +122,8 @@ async function getTotalPedido(conn, pedidoId) {
   return Number((row?.total_final || 0).toFixed(2));
 }
 
-/**
- * @param {import("mysql2").PoolConnection} conn
- */
-async function getPedidoById(conn, pedidoId) {
-  const [[row]] = await conn.query(
+async function getPedidoById(pedidoId) {
+  const [[row]] = await pool.query(
     `SELECT id, forma_pagamento, usuario_id, status_pagamento
        FROM pedidos
       WHERE id = ?`,
@@ -139,11 +132,8 @@ async function getPedidoById(conn, pedidoId) {
   return row || null;
 }
 
-/**
- * @param {import("mysql2").PoolConnection} conn
- */
-async function setPedidoStatusPendente(conn, pedidoId) {
-  await conn.query(
+async function setPedidoStatusPendente(pedidoId) {
+  await pool.query(
     `UPDATE pedidos
         SET status_pagamento = 'pendente', status = 'pendente'
       WHERE id = ?`,
