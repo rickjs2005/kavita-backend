@@ -11,32 +11,12 @@
 //   GET /api/products/:id      — detalhe por ID  →  ./_legacy/publicProductById.js
 //
 // NÃO contém avaliações de produto. Para avaliações: routes/public/_legacy/publicProdutos.js
-//
-// ⚠️  EXCEÇÃO TEMPORÁRIA À CONVENÇÃO DE CONTROLLER
-// Este arquivo tem 2 handlers inline, violando a regra "2+ handlers → controller obrigatório".
-// Pendente extração para controllers/publicProductsController.js — fazer junto com a
-// migração de contrato de resposta (hoje retorna bare result sem ok/data).
+
 const express = require("express");
 const router = express.Router();
-const productService = require("../../services/productService");
-const AppError = require("../../errors/AppError");
+const controller = require("../../controllers/publicProductsController");
 
-/**
- * GET /api/products
- * Query: category, search, page, limit, sort, order
- */
-router.get("/", async (req, res) => {
-  try {
-    const result = await productService.listProducts(req.query);
-    return res.json(result);
-  } catch (err) {
-    if (err instanceof AppError) {
-      return res.status(err.status).json({ message: err.message });
-    }
-    console.error("[GET /api/products] Erro:", err);
-    return res.status(500).json({ message: "Erro interno no servidor." });
-  }
-});
+router.get("/", controller.listProducts);
 
 /**
  * @openapi
@@ -121,18 +101,7 @@ router.get("/", async (req, res) => {
  *       500:
  *         description: Erro interno
  */
-router.get("/search", async (req, res) => {
-  try {
-    const result = await productService.searchProducts(req.query);
-    return res.json(result);
-  } catch (err) {
-    if (err instanceof AppError) {
-      return res.status(err.status).json({ message: err.message });
-    }
-    console.error("[GET /api/products/search] Erro:", err);
-    return res.status(500).json({ message: "Erro interno no servidor." });
-  }
-});
+router.get("/search", controller.searchProducts);
 
 // Delega GET /:id ao módulo legado.
 // Rota paramétrica registrada após as literais (/ e /search) — sem risco de sombra.

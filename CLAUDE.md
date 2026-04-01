@@ -452,7 +452,6 @@ Arquivos modernos que ainda violam a regra (pendentes de extração — não toc
 
 | Arquivo | Violação | Controller a criar |
 |---|---|---|
-| `routes/public/publicProducts.js` | 2 handlers inline (~12 linhas cada) | `controllers/publicProductsController.js` — ao migrar contrato de resposta |
 | `routes/admin/adminNewsUpload.js` | 1 handler inline de ~31 linhas com lógica de negócio | `controllers/news/adminNewsUploadController.js` |
 
 ### Nomenclatura de arquivos
