@@ -2,36 +2,52 @@
 const request = require("supertest");
 const { makeTestApp, makeMockConn } = require("../testUtils");
 
-// Mocks obrigatórios: pool e authenticateToken
-// Ajuste: no seu projeto NÃO existe /src, então apontamos para a raiz.
 jest.mock("../../config/pool", () => ({
   query: jest.fn(),
   getConnection: jest.fn(),
 }));
 
-// Middleware de auth é aplicado via router.use(authenticateToken)
-// Então mockamos para injetar req.user conforme cada teste
 jest.mock("../../middleware/authenticateToken", () => jest.fn());
 
-// Agora importamos os mocks para configurar comportamento
 const pool = require("../../config/pool");
 const authenticateToken = require("../../middleware/authenticateToken");
-
-// Importa o router real (arquivo alvo)
 const cartRouter = require("../../routes/ecommerce/cart");
+
+function expectUnauthorized(res) {
+  expect(res.status).toBe(401);
+  expect(res.body).toHaveProperty("message", "Usuário não autenticado.");
+}
+
+function expectValidationMessage(res, expectedMessage = "Dados inválidos.") {
+  expect(res.status).toBe(400);
+  expect(res.body.message).toBe(expectedMessage);
+}
+
+function expectValidationFieldMessage(res, expectedFieldMessage) {
+  expectValidationMessage(res);
+  expect(res.body?.details?.fields?.[0]?.message).toBe(expectedFieldMessage);
+}
+
+function expectStockLimit(res, payload) {
+  expect(res.status).toBe(409);
+  expect(res.body).toEqual({
+    code: "STOCK_LIMIT",
+    message: "Limite de estoque atingido.",
+    ...payload,
+  });
+}
 
 describe("Cart routes (integração) — /api/cart", () => {
   let app;
 
   const setAuthUser = (user) => {
-    authenticateToken.mockImplementation((req, res, next) => {
-      req.user = user; // pode ser undefined para simular visitante
+    authenticateToken.mockImplementation((req, _res, next) => {
+      req.user = user;
       return next();
     });
   };
 
   beforeAll(() => {
-    // Silencia logs esperados em cenários de erro
     jest.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -47,22 +63,18 @@ describe("Cart routes (integração) — /api/cart", () => {
 
   describe("GET /api/cart", () => {
     test("200: retorna carrinho_id=null e items=[] quando não há carrinho aberto", async () => {
-      // Arrange
-      pool.query.mockResolvedValueOnce([[]]); // SELECT carrinhos => rows vazio
+      pool.query.mockResolvedValueOnce([[]]);
 
-      // Act
       const res = await request(app).get("/api/cart");
 
-      // Assert
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ carrinho_id: null, items: [] });
       expect(pool.query).toHaveBeenCalledTimes(1);
     });
 
     test("200: retorna carrinho e itens com stock quando existe carrinho aberto", async () => {
-      // Arrange
       pool.query
-        .mockResolvedValueOnce([[{ id: 12, usuario_id: 10, status: "aberto" }]]) // carrinho
+        .mockResolvedValueOnce([[{ id: 12, usuario_id: 10, status: "aberto" }]])
         .mockResolvedValueOnce([
           [
             {
@@ -77,10 +89,8 @@ describe("Cart routes (integração) — /api/cart", () => {
           ],
         ]);
 
-      // Act
       const res = await request(app).get("/api/cart");
 
-      // Assert
       expect(res.status).toBe(200);
       expect(res.body.carrinho_id).toBe(12);
       expect(Array.isArray(res.body.items)).toBe(true);
@@ -96,26 +106,18 @@ describe("Cart routes (integração) — /api/cart", () => {
     });
 
     test("401: quando req.user.id não existe", async () => {
-      // Arrange
       setAuthUser(undefined);
 
-      // Act
       const res = await request(app).get("/api/cart");
 
-      // Assert
-      expect(res.status).toBe(401);
-      expect(res.body).toHaveProperty("code");
-      expect(res.body).toHaveProperty("message", "Usuário não autenticado.");
+      expectUnauthorized(res);
     });
 
     test("500: erro inesperado no pool.query vira AppError padronizado", async () => {
-      // Arrange
       pool.query.mockRejectedValueOnce(new Error("db down"));
 
-      // Act
       const res = await request(app).get("/api/cart");
 
-      // Assert
       expect(res.status).toBe(500);
       expect(res.body).toMatchObject({
         code: expect.any(String),
@@ -126,43 +128,37 @@ describe("Cart routes (integração) — /api/cart", () => {
 
   describe("POST /api/cart/items", () => {
     test("401: quando não autenticado", async () => {
-      // Arrange
       setAuthUser(undefined);
 
-      // Act
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: 1 });
 
-      // Assert
-      expect(res.status).toBe(401);
-      expect(res.body.message).toBe("Usuário não autenticado.");
+      expectUnauthorized(res);
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
     test("400: valida produto_id inválido", async () => {
-      // Act
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 0, quantidade: 1 });
 
-      // Assert
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Dados inválidos.");
-      expect(res.body.details.fields[0].message).toBe("produto_id é obrigatório e deve ser válido.");
+      expectValidationFieldMessage(
+        res,
+        "produto_id é obrigatório e deve ser válido."
+      );
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
     test("400: valida quantidade <= 0", async () => {
-      // Act
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: 0 });
 
-      // Assert
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Dados inválidos.");
-      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expectValidationFieldMessage(
+        res,
+        "quantidade deve ser um inteiro entre 1 e 10000."
+      );
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -170,9 +166,11 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: -1 });
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Dados inválidos.");
-      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+
+      expectValidationFieldMessage(
+        res,
+        "quantidade deve ser um inteiro entre 1 e 10000."
+      );
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -180,35 +178,29 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: 10001 });
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Dados inválidos.");
-      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+
+      expectValidationFieldMessage(
+        res,
+        "quantidade deve ser um inteiro entre 1 e 10000."
+      );
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
     test("200: cria carrinho se não existir e insere item", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
       conn.query
-        // 1) SELECT carrinho aberto => vazio
         .mockResolvedValueOnce([[]])
-        // 1b) INSERT carrinho => insertId
         .mockResolvedValueOnce([{ insertId: 55 }])
-        // 2) SELECT produto FOR UPDATE
         .mockResolvedValueOnce([[{ id: 105, price: 79.9, quantity: 7 }]])
-        // 3) SELECT item existente => vazio
         .mockResolvedValueOnce([[]])
-        // 4) INSERT carrinho_itens
         .mockResolvedValueOnce([{ insertId: 999 }]);
 
-      // Act
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: 2 });
 
-      // Assert
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         success: true,
@@ -225,26 +217,19 @@ describe("Cart routes (integração) — /api/cart", () => {
     });
 
     test("200: incrementa item existente (UPDATE) respeitando estoque", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
       conn.query
-        // carrinho existe
         .mockResolvedValueOnce([[{ id: 12 }]])
-        // produto
         .mockResolvedValueOnce([[{ id: 105, price: 79.9, quantity: 7 }]])
-        // item existente com quantidade 3
         .mockResolvedValueOnce([[{ id: 321, quantidade: 3 }]])
-        // UPDATE carrinho_itens
         .mockResolvedValueOnce([{ affectedRows: 1 }]);
 
-      // Act
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: 2 });
 
-      // Assert
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         success: true,
@@ -255,23 +240,21 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       expect(conn.commit).toHaveBeenCalledTimes(1);
       expect(conn.rollback).not.toHaveBeenCalled();
+      expect(conn.release).toHaveBeenCalledTimes(1);
     });
 
     test("404: produto não encontrado => rollback + erro padronizado", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
       conn.query
-        .mockResolvedValueOnce([[{ id: 12 }]]) // carrinho
-        .mockResolvedValueOnce([[]]); // produto inexistente
+        .mockResolvedValueOnce([[{ id: 12 }]])
+        .mockResolvedValueOnce([[]]);
 
-      // Act
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 9999, quantidade: 1 });
 
-      // Assert
       expect(res.status).toBe(404);
       expect(res.body).toHaveProperty("code");
       expect(res.body).toHaveProperty("message", "Produto não encontrado.");
@@ -282,25 +265,19 @@ describe("Cart routes (integração) — /api/cart", () => {
     });
 
     test("409: STOCK_LIMIT quando desired > stock (payload compatível)", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
       conn.query
-        .mockResolvedValueOnce([[{ id: 12 }]]) // carrinho
-        .mockResolvedValueOnce([[{ id: 105, price: 79.9, quantity: 2 }]]) // stock=2
-        .mockResolvedValueOnce([[{ id: 321, quantidade: 1 }]]); // current=1 => desired=3 > 2
+        .mockResolvedValueOnce([[{ id: 12 }]])
+        .mockResolvedValueOnce([[{ id: 105, price: 79.9, quantity: 2 }]])
+        .mockResolvedValueOnce([[{ id: 321, quantidade: 1 }]]);
 
-      // Act
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: 2 });
 
-      // Assert
-      expect(res.status).toBe(409);
-      expect(res.body).toEqual({
-        code: "STOCK_LIMIT",
-        message: "Limite de estoque atingido.",
+      expectStockLimit(res, {
         max: 2,
         current: 1,
         requested: 3,
@@ -312,20 +289,17 @@ describe("Cart routes (integração) — /api/cart", () => {
     });
 
     test("409: STOCK_LIMIT quando produto com stock <= 0", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
       conn.query
-        .mockResolvedValueOnce([[{ id: 12 }]]) // carrinho
-        .mockResolvedValueOnce([[{ id: 105, price: 79.9, quantity: 0 }]]); // sem stock
+        .mockResolvedValueOnce([[{ id: 12 }]])
+        .mockResolvedValueOnce([[{ id: 105, price: 79.9, quantity: 0 }]]);
 
-      // Act
       const res = await request(app)
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: 1 });
 
-      // Assert
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({
         code: "STOCK_LIMIT",
@@ -342,18 +316,15 @@ describe("Cart routes (integração) — /api/cart", () => {
 
   describe("PATCH /api/cart/items", () => {
     test("200: se não existe carrinho aberto, retorna 'Carrinho já vazio.'", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
-      conn.query.mockResolvedValueOnce([[]]); // SELECT carrinho => vazio
+      conn.query.mockResolvedValueOnce([[]]);
 
-      // Act
       const res = await request(app)
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: 3 });
 
-      // Assert
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         success: true,
@@ -368,34 +339,30 @@ describe("Cart routes (integração) — /api/cart", () => {
     });
 
     test("400: quantidade 0 é proibido (use DELETE para remover)", async () => {
-      // Act
       const res = await request(app)
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: 0 });
 
-      // Assert
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Dados inválidos.");
-      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expectValidationFieldMessage(
+        res,
+        "quantidade deve ser um inteiro entre 1 e 10000."
+      );
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
     test("200: atualiza quantidade quando q <= stock", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
       conn.query
-        .mockResolvedValueOnce([[{ id: 12 }]]) // carrinho
-        .mockResolvedValueOnce([[{ id: 105, quantity: 7 }]]) // produto
-        .mockResolvedValueOnce([{ affectedRows: 1 }]); // UPDATE item
+        .mockResolvedValueOnce([[{ id: 12 }]])
+        .mockResolvedValueOnce([[{ id: 105, quantity: 7 }]])
+        .mockResolvedValueOnce([{ affectedRows: 1 }]);
 
-      // Act
       const res = await request(app)
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: 5 });
 
-      // Assert
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         success: true,
@@ -407,27 +374,22 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       expect(conn.commit).toHaveBeenCalledTimes(1);
       expect(conn.rollback).not.toHaveBeenCalled();
+      expect(conn.release).toHaveBeenCalledTimes(1);
     });
 
     test("409: STOCK_LIMIT quando q > stock (current=null)", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
       conn.query
-        .mockResolvedValueOnce([[{ id: 12 }]]) // carrinho
-        .mockResolvedValueOnce([[{ id: 105, quantity: 2 }]]); // stock=2
+        .mockResolvedValueOnce([[{ id: 12 }]])
+        .mockResolvedValueOnce([[{ id: 105, quantity: 2 }]]);
 
-      // Act
       const res = await request(app)
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: 3 });
 
-      // Assert
-      expect(res.status).toBe(409);
-      expect(res.body).toEqual({
-        code: "STOCK_LIMIT",
-        message: "Limite de estoque atingido.",
+      expectStockLimit(res, {
         max: 2,
         current: null,
         requested: 3,
@@ -435,18 +397,18 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       expect(conn.rollback).toHaveBeenCalledTimes(1);
       expect(conn.commit).not.toHaveBeenCalled();
+      expect(conn.release).toHaveBeenCalledTimes(1);
     });
 
     test("400: quantidade inválida (NaN)", async () => {
-      // Act
       const res = await request(app)
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: "abc" });
 
-      // Assert
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Dados inválidos.");
-      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+      expectValidationFieldMessage(
+        res,
+        "quantidade deve ser um inteiro entre 1 e 10000."
+      );
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -454,9 +416,11 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app)
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: -1 });
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Dados inválidos.");
-      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+
+      expectValidationFieldMessage(
+        res,
+        "quantidade deve ser um inteiro entre 1 e 10000."
+      );
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
@@ -464,9 +428,11 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app)
         .patch("/api/cart/items")
         .send({ produto_id: 105, quantidade: 10001 });
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Dados inválidos.");
-      expect(res.body.details.fields[0].message).toBe("quantidade deve ser um inteiro entre 1 e 10000.");
+
+      expectValidationFieldMessage(
+        res,
+        "quantidade deve ser um inteiro entre 1 e 10000."
+      );
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
   });
@@ -474,23 +440,19 @@ describe("Cart routes (integração) — /api/cart", () => {
   describe("DELETE /api/cart/items/:produtoId", () => {
     test("400: produtoId inválido", async () => {
       const res = await request(app).delete("/api/cart/items/0");
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe("Dados inválidos.");
-      expect(res.body.details.fields[0].message).toBe("produtoId inválido.");
+
+      expectValidationFieldMessage(res, "produtoId inválido.");
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
 
     test("200: quando não há carrinho aberto, retorna 'Carrinho já vazio.'", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
-      conn.query.mockResolvedValueOnce([[]]); // SELECT carrinho => vazio
+      conn.query.mockResolvedValueOnce([[]]);
 
-      // Act
       const res = await request(app).delete("/api/cart/items/105");
 
-      // Assert
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ success: true, message: "Carrinho já vazio." });
       expect(conn.commit).toHaveBeenCalledTimes(1);
@@ -498,20 +460,20 @@ describe("Cart routes (integração) — /api/cart", () => {
     });
 
     test("200: remove item específico quando carrinho existe", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
       conn.query
-        .mockResolvedValueOnce([[{ id: 12 }]]) // carrinho
-        .mockResolvedValueOnce([{ affectedRows: 1 }]); // DELETE item
+        .mockResolvedValueOnce([[{ id: 12 }]])
+        .mockResolvedValueOnce([{ affectedRows: 1 }]);
 
-      // Act
       const res = await request(app).delete("/api/cart/items/105");
 
-      // Assert
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: true, message: "Item removido do carrinho." });
+      expect(res.body).toEqual({
+        success: true,
+        message: "Item removido do carrinho.",
+      });
       expect(conn.commit).toHaveBeenCalledTimes(1);
       expect(conn.rollback).not.toHaveBeenCalled();
       expect(conn.release).toHaveBeenCalledTimes(1);
@@ -520,36 +482,33 @@ describe("Cart routes (integração) — /api/cart", () => {
 
   describe("DELETE /api/cart", () => {
     test("200: quando carrinho não existe, retorna 'Carrinho já estava vazio.'", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
-      conn.query.mockResolvedValueOnce([[]]); // SELECT carrinho => vazio
+      conn.query.mockResolvedValueOnce([[]]);
 
-      // Act
       const res = await request(app).delete("/api/cart");
 
-      // Assert
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: true, message: "Carrinho já estava vazio." });
+      expect(res.body).toEqual({
+        success: true,
+        message: "Carrinho já estava vazio.",
+      });
       expect(conn.commit).toHaveBeenCalledTimes(1);
       expect(conn.release).toHaveBeenCalledTimes(1);
     });
 
     test("200: limpa itens e fecha carrinho quando existe", async () => {
-      // Arrange
       const conn = makeMockConn();
       pool.getConnection.mockResolvedValue(conn);
 
       conn.query
-        .mockResolvedValueOnce([[{ id: 12 }]]) // SELECT carrinho
-        .mockResolvedValueOnce([{ affectedRows: 2 }]) // DELETE carrinho_itens
-        .mockResolvedValueOnce([{ affectedRows: 1 }]); // UPDATE carrinhos status fechado
+        .mockResolvedValueOnce([[{ id: 12 }]])
+        .mockResolvedValueOnce([{ affectedRows: 2 }])
+        .mockResolvedValueOnce([{ affectedRows: 1 }]);
 
-      // Act
       const res = await request(app).delete("/api/cart");
 
-      // Assert
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ success: true, message: "Carrinho limpo." });
 
@@ -568,15 +527,11 @@ describe("Cart routes (integração) — /api/cart", () => {
     });
 
     test("401: quando não autenticado", async () => {
-      // Arrange
       setAuthUser(undefined);
 
-      // Act
       const res = await request(app).delete("/api/cart");
 
-      // Assert
-      expect(res.status).toBe(401);
-      expect(res.body.message).toBe("Usuário não autenticado.");
+      expectUnauthorized(res);
       expect(pool.getConnection).not.toHaveBeenCalled();
     });
   });

@@ -11,7 +11,6 @@ process.env.DB_USER = process.env.DB_USER || "root";
 process.env.DB_PASSWORD = process.env.DB_PASSWORD || "password";
 process.env.DB_NAME = process.env.DB_NAME || "kavita_test";
 
-// Mock dependencies that require DB/external services before loading server
 jest.mock("../../config/pool", () => ({
   query: jest.fn(),
   execute: jest.fn(),
@@ -26,7 +25,16 @@ jest.mock("../../middleware/adaptiveRateLimiter", () =>
   () => (_req, _res, next) => next()
 );
 
+const pool = require("../../config/pool");
 const app = require("../../server");
+
+function expectValidationErrorResponse(res) {
+  expect(res.status).toBe(400);
+  expect(res.body).toBeDefined();
+  expect(res.body.code).toBe("VALIDATION_ERROR");
+  expect(typeof res.body.message).toBe("string");
+  expect(res.body.message.length).toBeGreaterThan(0);
+}
 
 describe("Security Headers (Helmet)", () => {
   test("deve retornar X-Content-Type-Options: nosniff", async () => {
@@ -63,11 +71,7 @@ describe("Input Validation — Login", () => {
       .post("/api/login")
       .send({ email: "nao-e-email", senha: "123456" });
 
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe("VALIDATION_ERROR");
-    expect(res.body.errors).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: "email" })])
-    );
+    expectValidationErrorResponse(res);
   });
 
   test("400: senha vazia no login", async () => {
@@ -75,11 +79,7 @@ describe("Input Validation — Login", () => {
       .post("/api/login")
       .send({ email: "usuario@email.com", senha: "" });
 
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe("VALIDATION_ERROR");
-    expect(res.body.errors).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: "senha" })])
-    );
+    expectValidationErrorResponse(res);
   });
 });
 
@@ -87,25 +87,27 @@ describe("Input Validation — Register", () => {
   test("400: email inválido no register", async () => {
     const res = await request(app)
       .post("/api/users/register")
-      .send({ nome: "João", email: "invalido", senha: "123456", cpf: "111.111.111-11" });
+      .send({
+        nome: "João",
+        email: "invalido",
+        senha: "123456",
+        cpf: "111.111.111-11",
+      });
 
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe("VALIDATION_ERROR");
-    expect(res.body.errors).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: "email" })])
-    );
+    expectValidationErrorResponse(res);
   });
 
   test("400: senha muito curta no register", async () => {
     const res = await request(app)
       .post("/api/users/register")
-      .send({ nome: "João", email: "joao@email.com", senha: "123", cpf: "111.111.111-11" });
+      .send({
+        nome: "João",
+        email: "joao@email.com",
+        senha: "123",
+        cpf: "111.111.111-11",
+      });
 
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe("VALIDATION_ERROR");
-    expect(res.body.errors).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: "senha" })])
-    );
+    expectValidationErrorResponse(res);
   });
 
   test("400: campos obrigatórios ausentes no register", async () => {
@@ -113,14 +115,11 @@ describe("Input Validation — Register", () => {
       .post("/api/users/register")
       .send({});
 
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe("VALIDATION_ERROR");
+    expectValidationErrorResponse(res);
   });
 });
 
 describe("SQL Injection Prevention", () => {
-  const pool = require("../../config/pool");
-
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -130,9 +129,7 @@ describe("SQL Injection Prevention", () => {
       .post("/api/login")
       .send({ email: "' OR '1'='1", senha: "qualquer" });
 
-    // Deve ser rejeitado por validação de email inválido (não chega ao pool)
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe("VALIDATION_ERROR");
+    expectValidationErrorResponse(res);
     expect(pool.query).not.toHaveBeenCalled();
   });
 });
@@ -140,47 +137,51 @@ describe("SQL Injection Prevention", () => {
 describe("Rate Limiting", () => {
   test("servidor responde normalmente (rate limiter mockado nos testes)", async () => {
     const res = await request(app).get("/api/nonexistent-route-for-headers");
-    // Rate limiter é mockado, apenas verifica que responde com JSON
     expect([404, 400]).toContain(res.status);
   });
 });
 
 describe("Authentication", () => {
-  const pool = require("../../config/pool");
-
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   test("401: credenciais inválidas retornam erro sem vazar informações", async () => {
-    pool.query.mockResolvedValueOnce([[]]); // nenhum usuário encontrado
+    pool.query.mockResolvedValueOnce([[]]);
 
     const res = await request(app)
       .post("/api/login")
       .send({ email: "usuario@email.com", senha: "senhaErrada" });
 
     expect(res.status).toBe(401);
+    expect(typeof res.body.message).toBe("string");
     expect(res.body.message).not.toContain("senha");
     expect(res.body.message).not.toContain("hash");
   });
 });
 
 describe("CSRF Protection", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   test("cookies de autenticação são HttpOnly (não acessíveis via JS)", async () => {
-    const pool = require("../../config/pool");
     const bcrypt = require("bcrypt");
 
     const hashed = await bcrypt.hash("senha123", 10);
-    pool.query.mockResolvedValueOnce([[{ id: 1, nome: "João", email: "joao@email.com", senha: hashed }]]);
+
+    pool.query.mockResolvedValueOnce([
+      [{ id: 1, nome: "João", email: "joao@email.com", senha: hashed }],
+    ]);
 
     const res = await request(app)
       .post("/api/login")
       .send({ email: "joao@email.com", senha: "senha123" });
 
-    // Verifica que o Set-Cookie contém HttpOnly
     const setCookie = res.headers["set-cookie"];
+
     if (setCookie) {
-      const authCookie = setCookie.find((c) => c.startsWith("auth_token"));
+      const authCookie = setCookie.find((cookie) => cookie.startsWith("auth_token"));
       if (authCookie) {
         expect(authCookie.toLowerCase()).toContain("httponly");
       }

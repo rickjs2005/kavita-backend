@@ -11,7 +11,7 @@ const ERROR_CODES = require("../constants/ErrorCodes");
 const cartService = require("../services/cartService");
 
 // ---------------------------------------------------------------------------
-// Internal helper
+// Internal helpers
 // ---------------------------------------------------------------------------
 
 function sendStockLimit(res, err) {
@@ -24,12 +24,25 @@ function sendStockLimit(res, err) {
   });
 }
 
+function getAuthenticatedUserId(req, res) {
+  if (!req.user?.id) {
+    res.status(401).json({
+      code: "UNAUTHORIZED",
+      message: "Usuário não autenticado.",
+    });
+    return null;
+  }
+
+  return req.user.id;
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
 const getCart = async (req, res, next) => {
-  const userId = req.user.id;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
 
   try {
     const result = await cartService.getCart(userId);
@@ -41,8 +54,10 @@ const getCart = async (req, res, next) => {
 };
 
 const addItem = async (req, res, next) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
   const { produto_id, quantidade } = req.body;
-  const userId = req.user.id;
 
   try {
     const result = await cartService.addItem(userId, { produto_id, quantidade });
@@ -65,8 +80,10 @@ const addItem = async (req, res, next) => {
 };
 
 const updateItem = async (req, res, next) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
   const { produto_id, quantidade } = req.body;
-  const userId = req.user.id;
 
   try {
     const result = await cartService.updateItem(userId, { produto_id, quantidade });
@@ -89,7 +106,9 @@ const updateItem = async (req, res, next) => {
 };
 
 const removeItem = async (req, res, next) => {
-  const userId = req.user.id;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
   const produtoId = req.params.produtoId;
 
   try {
@@ -109,7 +128,8 @@ const removeItem = async (req, res, next) => {
 };
 
 const clearCart = async (req, res, next) => {
-  const userId = req.user.id;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
 
   try {
     const result = await cartService.clearCart(userId);

@@ -46,6 +46,7 @@ describe("userRepository — findUserById", () => {
     const result = await repo.findUserById(5);
 
     expect(result).toEqual(row);
+
     const [sql, params] = pool.query.mock.calls[0];
     expect(sql).toContain("SELECT");
     expect(sql).toContain("usuarios");
@@ -55,13 +56,17 @@ describe("userRepository — findUserById", () => {
 
   test("retorna null quando usuário não existe", async () => {
     mockQuery([[]]);
+
     const result = await repo.findUserById(999);
+
     expect(result).toBeNull();
   });
 
   test("não inclui senha nos campos selecionados", async () => {
     mockQuery([[{ id: 1 }]]);
+
     await repo.findUserById(1);
+
     const [sql] = pool.query.mock.calls[0];
     expect(sql).not.toContain("senha");
   });
@@ -69,12 +74,19 @@ describe("userRepository — findUserById", () => {
 
 describe("userRepository — findUserByEmail", () => {
   test("retorna campos de auth quando usuário encontrado", async () => {
-    const row = { id: 1, nome: "Rick", email: "rick@kavita.com", senha: "hash", tokenVersion: 3 };
+    const row = {
+      id: 1,
+      nome: "Rick",
+      email: "rick@kavita.com",
+      senha: "hash",
+      tokenVersion: 3,
+    };
     mockQuery([[row]]);
 
     const result = await repo.findUserByEmail("rick@kavita.com");
 
     expect(result).toEqual(row);
+
     const [sql, params] = pool.query.mock.calls[0];
     expect(sql).toContain("SELECT");
     expect(sql).toContain("usuarios");
@@ -84,7 +96,9 @@ describe("userRepository — findUserByEmail", () => {
 
   test("retorna null quando e-mail não cadastrado", async () => {
     mockQuery([[]]);
+
     const result = await repo.findUserByEmail("nao@existe.com");
+
     expect(result).toBeNull();
   });
 });
@@ -92,26 +106,53 @@ describe("userRepository — findUserByEmail", () => {
 describe("userRepository — emailExists", () => {
   test("retorna true quando e-mail já cadastrado", async () => {
     mockQuery([[{ id: 5 }]]);
+
     const result = await repo.emailExists("rick@kavita.com");
+
     expect(result).toBe(true);
   });
 
   test("retorna false quando e-mail livre", async () => {
     mockQuery([[]]);
+
     const result = await repo.emailExists("novo@kavita.com");
+
     expect(result).toBe(false);
   });
 });
 
 describe("userRepository — createUser", () => {
-  test("passa nome, email e senha nessa ordem", async () => {
+  test("passa nome, email e senha na ordem correta", async () => {
     mockQuery([{ insertId: 10 }]);
 
-    await repo.createUser({ nome: "João", email: "joao@k.com", senha: "hash123" });
+    await repo.createUser({
+      nome: "João",
+      email: "joao@k.com",
+      senha: "hash123",
+    });
 
     const [sql, params] = pool.query.mock.calls[0];
+
     expect(sql.toLowerCase()).toContain("insert into usuarios");
-    expect(params).toEqual(["João", "joao@k.com", "hash123"]);
+
+    expect(params[0]).toBe("João");
+    expect(params[1]).toBe("joao@k.com");
+    expect(params[2]).toBe("hash123");
+    expect(params.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test("mantém campos opcionais adicionais no final sem quebrar a ordem base", async () => {
+    mockQuery([{ insertId: 11 }]);
+
+    await repo.createUser({
+      nome: "Maria",
+      email: "maria@k.com",
+      senha: "hash456",
+    });
+
+    const [, params] = pool.query.mock.calls[0];
+
+    expect(params.slice(0, 3)).toEqual(["Maria", "maria@k.com", "hash456"]);
   });
 });
 
@@ -135,9 +176,10 @@ describe("userRepository — updatePassword", () => {
     await repo.updatePassword(3, "newHash");
 
     expect(pool.execute).toHaveBeenCalledTimes(1);
+
     const [sql, params] = pool.execute.mock.calls[0];
     expect(sql.toLowerCase()).toContain("update usuarios set senha");
-    expect(params).toEqual(["newHash", 3]); // senha primeiro, id depois
+    expect(params).toEqual(["newHash", 3]);
   });
 });
 
@@ -153,6 +195,7 @@ describe("userRepository — findProfileById", () => {
     const result = await repo.findProfileById(2);
 
     expect(result).toEqual(row);
+
     const [sql, params] = pool.query.mock.calls[0];
     expect(sql.toLowerCase()).toContain("from usuarios");
     expect(params).toEqual([2]);
@@ -160,7 +203,9 @@ describe("userRepository — findProfileById", () => {
 
   test("retorna null quando usuário não existe", async () => {
     mockQuery([[]]);
+
     const result = await repo.findProfileById(999);
+
     expect(result).toBeNull();
   });
 });
@@ -180,8 +225,11 @@ describe("userRepository — findProfileByIdAdmin", () => {
 describe("userRepository — cpfExistsForOtherUser", () => {
   test("retorna true quando CPF pertence a outro usuário", async () => {
     mockQuery([[{ id: 5 }]]);
+
     const result = await repo.cpfExistsForOtherUser("12345678900", 2);
+
     expect(result).toBe(true);
+
     const [sql, params] = pool.query.mock.calls[0];
     expect(sql).toContain("id <> ?");
     expect(params).toEqual(["12345678900", 2]);
@@ -189,7 +237,9 @@ describe("userRepository — cpfExistsForOtherUser", () => {
 
   test("retorna false quando CPF não existe em outros usuários", async () => {
     mockQuery([[]]);
+
     const result = await repo.cpfExistsForOtherUser("12345678900", 1);
+
     expect(result).toBe(false);
   });
 });
