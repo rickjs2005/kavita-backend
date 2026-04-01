@@ -403,12 +403,6 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
    e erros sem `code`. É um módulo moderno em estrutura (usa `productService`) mas legado em contrato.
    Tratado como "híbrido", não como referência de código novo.
 
-7. **`services/notificationService.js`** — parece um serviço de notificação completo, mas é um **stub**.
-   Nenhuma das funções envia mensagem real: ambas apenas fazem `console.log`.
-   O arquivo **não é importado por nenhum módulo** — o worker de carrinho abandonado usa `mailService.js`
-   diretamente. Não use `notificationService` como referência de integração e não o importe sem antes
-   implementar o provedor real (WhatsApp, SendGrid, etc.).
-
 Armadilhas já resolvidas (registradas aqui para histórico):
 
 - `routes/admin/adminLogin.js` foi movido para `routes/auth/adminLogin.js` — login é auth, não operação admin
@@ -416,6 +410,7 @@ Armadilhas já resolvidas (registradas aqui para histórico):
 - `routes/public/publicAvaliacaoColaborador.js` → `routes/public/publicServicosAvaliacoes.js` — alinhado ao domínio
 - `routes/uploadsCheckRoutes.js` → `routes/utils/uploadsCheck.js` — segue convenção de subpastas
 - `controllers/cartsController.js`, `configController.js`, `produtosController.js` — são modernos e referência válida
+- `services/notificationService.js` foi **deletado** — era stub que não enviava nada. Canal real de notificação: `workers/abandonedCartNotificationsWorker.js` → `services/mailService.sendTransactionalEmail()`. WhatsApp ainda não implementado (sem provedor definido).
 
 ### Regra de ouro para código novo ou modificado
 
