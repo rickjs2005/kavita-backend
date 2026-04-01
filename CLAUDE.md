@@ -337,7 +337,7 @@ Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antig
 
 | Arquivo | Problema residual |
 |---------|------------------|
-| `controllers/paymentController.js` | `pool.getConnection()` em `startPayment` e `handleWebhook` — dívida do `paymentService` que recebe `conn` como parâmetro; resolver ao refatorar o service |
+| `controllers/paymentController.js` | `res.json()` cru nos 4 endpoints CRUD de métodos — pendente migração para `lib/response.js` alinhada com frontend |
 | `routes/ecommerce/cart.js` | Contrato `success: true` divergente — handlers já em `controllers/cartController.js`, pendente apenas migração de resposta para `lib/response.js` |
 | `controllers/shippingController.js` | Contrato `success: true` divergente — pendente migração para `lib/response.js` alinhada com frontend |
 | `routes/public/publicProducts.js` | `res.json(result)` bare + erros `{ message }` sem `ok`/`code` |
@@ -549,7 +549,6 @@ Estes desvios estão congelados por dependência de frontend. Cada um tem motivo
 | **Cart** | `409` retorna `{ code: "STOCK_LIMIT", ... }` sem `ok: false` | Mesmo motivo |
 | **Shipping** | `res.json({ success: true, ...quote })` | Frontend usa `success` — alinhar antes de migrar |
 | **Payment** | `res.json({ methods })` / `res.json({ method })` nos endpoints CRUD | Frontend (admin e checkout) usa esse shape — alinhar antes de migrar |
-| **Payment** | `pool.getConnection()` em `startPayment` e `handleWebhook` | `paymentService.startPayment(conn, ...)` exige conexão externa; dívida do service, não do controller |
 | **Checkout** | `isFormaPagamentoValida()` inline no controller | Guarda secundária deliberada — protege o controller se o middleware Zod for bypassado em testes |
 
 ### Template para novo módulo de e-commerce
@@ -583,7 +582,7 @@ Próximos a migrar (prioridade decrescente):
 | `controllers/cartController.js` | `success: true` + `res.json()` bare | Alto — módulo de alto tráfego | Handlers já extraídos da rota; migrar resposta para `lib/response.js` e alinhar com frontend |
 | `controllers/publicProductsController.js` | shapes divergentes (`data[]` em listProducts, `products[]`+`pagination` em search) + erros sem `ok`/`code` | Alto — listagem pública de produtos | Requer coordenação frontend: shapes diferentes nos dois endpoints. Ver header do controller para pré-condições |
 | `controllers/shippingController.js` | `success: true` no quote | Médio — uma rota GET | Handler já extraído; migrar resposta para `lib/response.js` e alinhar com frontend |
-| `controllers/paymentController.js` | `res.json()` cru nos 4 endpoints CRUD + `pool.getConnection()` em `startPayment`/`handleWebhook` | Médio | Migrar CRUD para `lib/response.js` alinhando com frontend admin; `pool.getConnection()` resolve ao refatorar `paymentService` para não exigir `conn` externo |
+| `controllers/paymentController.js` | `res.json()` cru nos 4 endpoints CRUD de métodos de pagamento | Médio | Migrar para `lib/response.js` alinhando com frontend admin |
 | `controllers/authController.js` | `res.status(200).json(...)` em 1 handler | Baixo — módulo isolado | — |
 
 Não migrar em lote — tocar apenas ao ter outra razão para abrir o arquivo.
