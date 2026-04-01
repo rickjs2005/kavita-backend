@@ -29,10 +29,7 @@ function sendStockLimit(res, err) {
 // ---------------------------------------------------------------------------
 
 exports.getCart = async (req, res, next) => {
-  const userId = req.user?.id;
-  if (!userId) {
-    return next(new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
-  }
+  const userId = req.user.id;
 
   try {
     const result = await cartService.getCart(userId);
@@ -45,11 +42,7 @@ exports.getCart = async (req, res, next) => {
 
 exports.addItem = async (req, res, next) => {
   const { produto_id, quantidade } = req.body;
-  const userId = req.user?.id;
-
-  if (!userId) {
-    return next(new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
-  }
+  const userId = req.user.id;
 
   try {
     const result = await cartService.addItem(userId, { produto_id, quantidade });
@@ -73,11 +66,7 @@ exports.addItem = async (req, res, next) => {
 
 exports.updateItem = async (req, res, next) => {
   const { produto_id, quantidade } = req.body;
-  const userId = req.user?.id;
-
-  if (!userId) {
-    return next(new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
-  }
+  const userId = req.user.id;
 
   try {
     const result = await cartService.updateItem(userId, { produto_id, quantidade });
@@ -100,12 +89,8 @@ exports.updateItem = async (req, res, next) => {
 };
 
 exports.removeItem = async (req, res, next) => {
-  const userId = req.user?.id;
+  const userId = req.user.id;
   const produtoId = req.params.produtoId;
-
-  if (!userId) {
-    return next(new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
-  }
 
   try {
     const result = await cartService.removeItem(userId, produtoId);
@@ -124,11 +109,7 @@ exports.removeItem = async (req, res, next) => {
 };
 
 exports.clearCart = async (req, res, next) => {
-  const userId = req.user?.id;
-
-  if (!userId) {
-    return next(new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
-  }
+  const userId = req.user.id;
 
   try {
     const result = await cartService.clearCart(userId);
