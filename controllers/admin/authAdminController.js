@@ -65,7 +65,7 @@ async function login(req, res, next) {
     rateLimit.reset();
 
     if (admin.mfa_active && admin.mfa_secret) {
-      const challengeId = authAdminService.createMfaChallenge(
+      const challengeId = await authAdminService.createMfaChallenge(
         admin.id,
         req.ip,
         admin.mfa_secret
@@ -117,19 +117,19 @@ async function loginMfa(req, res, next) {
     return next(new AppError("challengeId e código são obrigatórios.", ERROR_CODES.VALIDATION_ERROR, 400));
   }
 
-  const challenge = authAdminService.getMfaChallenge(challengeId);
+  const challenge = await authAdminService.getMfaChallenge(challengeId);
 
   if (!challenge) {
     return next(new AppError("Sessão de verificação inválida.", ERROR_CODES.AUTH_ERROR, 401));
   }
 
   if (challenge.ip && challenge.ip !== req.ip) {
-    authAdminService.deleteMfaChallenge(challengeId);
+    await authAdminService.deleteMfaChallenge(challengeId);
     return next(new AppError("Sessão de verificação inválida.", ERROR_CODES.AUTH_ERROR, 401));
   }
 
   if (Date.now() > challenge.expiresAt) {
-    authAdminService.deleteMfaChallenge(challengeId);
+    await authAdminService.deleteMfaChallenge(challengeId);
     return next(new AppError("Sessão de verificação expirada. Faça login novamente.", ERROR_CODES.AUTH_ERROR, 401));
   }
 
@@ -150,7 +150,7 @@ async function loginMfa(req, res, next) {
     return next(new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401));
   }
 
-  authAdminService.deleteMfaChallenge(challengeId);
+  await authAdminService.deleteMfaChallenge(challengeId);
 
   try {
     const admin = await authAdminService.findAdminById(challenge.adminId);

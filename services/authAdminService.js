@@ -17,21 +17,9 @@ function permCacheKey(adminId, tokenVersion) {
   return `admin:perm:${adminId}:${tokenVersion ?? 0}`;
 }
 
-// Temporary in-memory store for MFA challenges
+// Fallback in-memory store for MFA challenges (used when Redis is unavailable)
 // Map<challengeId, { adminId, ip, expiresAt, mfaSecret }>
 const mfaChallenges = new Map();
-
-// Periodic cleanup — skipped in test environment to prevent open handles
-if (process.env.NODE_ENV !== "test") {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [id, challenge] of mfaChallenges) {
-      if (now > challenge.expiresAt) {
-        mfaChallenges.delete(id);
-      }
-    }
-  }, 5 * 60 * 1000).unref();
-}
 
 // ---------------------------------------------------------------------------
 // Queries — delegadas a adminRepository
@@ -123,25 +111,55 @@ async function incrementTokenVersion(adminId) {
 }
 
 // ---------------------------------------------------------------------------
-// MFA challenge store
+// MFA challenge store — Redis primary, in-memory Map fallback
 // ---------------------------------------------------------------------------
 
-function createMfaChallenge(adminId, ip, mfaSecret) {
+const MFA_CHALLENGE_TTL_SEC = MFA_CHALLENGE_TTL_MS / 1000; // 300 s
+
+function mfaKey(challengeId) {
+  return `mfa:challenge:${challengeId}`;
+}
+
+async function createMfaChallenge(adminId, ip, mfaSecret) {
   const challengeId = crypto.randomBytes(32).toString("hex");
-  mfaChallenges.set(challengeId, {
-    adminId,
-    ip,
-    expiresAt: Date.now() + MFA_CHALLENGE_TTL_MS,
-    mfaSecret,
-  });
+  const payload = { adminId, ip, expiresAt: Date.now() + MFA_CHALLENGE_TTL_MS, mfaSecret };
+
+  if (redis.ready) {
+    try {
+      await redis.client.set(mfaKey(challengeId), JSON.stringify(payload), "EX", MFA_CHALLENGE_TTL_SEC);
+      return challengeId;
+    } catch {
+      // Fall through to in-memory
+    }
+  }
+
+  mfaChallenges.set(challengeId, payload);
   return challengeId;
 }
 
-function getMfaChallenge(challengeId) {
+async function getMfaChallenge(challengeId) {
+  const key = mfaKey(String(challengeId));
+
+  if (redis.ready) {
+    try {
+      const raw = await redis.client.get(key);
+      if (raw !== null) return JSON.parse(raw);
+    } catch {
+      // Fall through to in-memory
+    }
+  }
+
   return mfaChallenges.get(String(challengeId)) ?? null;
 }
 
-function deleteMfaChallenge(challengeId) {
+async function deleteMfaChallenge(challengeId) {
+  if (redis.ready) {
+    try {
+      await redis.client.del(mfaKey(String(challengeId)));
+    } catch {
+      // Best-effort — key will expire via TTL
+    }
+  }
   mfaChallenges.delete(String(challengeId));
 }
 
