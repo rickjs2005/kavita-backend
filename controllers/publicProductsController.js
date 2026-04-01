@@ -12,6 +12,9 @@
 //   GET /api/products/search
 //     { products: Product[], pagination: { page, limit, total, totalPages } }
 //
+//   GET /api/products/:id
+//     { ...product, images: string[] }   ← bare object, sem wrapper ok/data
+//
 // Formato atual de ERRO (não alterar sem alinhar com o frontend):
 //   HTTP 4xx/5xx  →  { message: "..." }       ← sem ok: false, sem code
 //
@@ -22,11 +25,13 @@
 // Pré-condições para migrar:
 //   1. Frontend atualizado para ler result.data (array) em vez de result diretamente
 //   2. Frontend atualizado para ler result.data.pagination em busca, em vez de result.pagination
-//   3. Testes de integração cobrindo os dois endpoints
+//   3. Frontend atualizado para ler result.data em /:id em vez de result diretamente
+//   4. Testes de integração cobrindo os três endpoints
 
 "use strict";
 
 const productService = require("../services/productService");
+const productRepo = require("../repositories/productRepository");
 const AppError = require("../errors/AppError");
 
 /**
@@ -63,4 +68,31 @@ async function searchProducts(req, res) {
   }
 }
 
-module.exports = { listProducts, searchProducts };
+/**
+ * GET /api/products/:id
+ * Params: id (integer)
+ * Response: { ...product, images: string[] }
+ */
+async function getProductById(req, res) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ message: "ID inválido." });
+    }
+
+    const produto = await productRepo.findProductById(id);
+    if (!produto) {
+      return res.status(404).json({ message: "Produto não encontrado." });
+    }
+
+    const imageRows = await productRepo.findProductImages([id]);
+    const images = imageRows.map((r) => r.image_url);
+
+    return res.json({ ...produto, images });
+  } catch (err) {
+    console.error("[GET /api/products/:id] Erro:", err);
+    return res.status(500).json({ message: "Erro interno no servidor." });
+  }
+}
+
+module.exports = { listProducts, searchProducts, getProductById };

@@ -3,12 +3,10 @@
 // Ponto único de montagem do namespace /api/products.
 // Prefixo montado: /api/products  (apenas aqui — não duplicar em routes/index.js)
 //
-// Endpoints deste arquivo (padrão MODERNO):
+// Endpoints:
 //   GET /api/products          — listagem paginada (categoria, busca, ordenação)
 //   GET /api/products/search   — busca avançada (promoções, faixa de preço, filtros)
-//
-// Endpoints delegados ao legado (ver ao final deste arquivo):
-//   GET /api/products/:id      — detalhe por ID  →  ./_legacy/publicProductById.js
+//   GET /api/products/:id      — detalhe por ID
 //
 // NÃO contém avaliações de produto. Para avaliações: routes/public/_legacy/publicProdutos.js
 
@@ -103,8 +101,31 @@ router.get("/", controller.listProducts);
  */
 router.get("/search", controller.searchProducts);
 
-// Delega GET /:id ao módulo legado.
+/**
+ * @openapi
+ * /api/products/{id}:
+ *   get:
+ *     tags: [Public, Produtos]
+ *     summary: Retorna detalhes de um produto específico por ID
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Detalhes do produto retornados com sucesso
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Product' }
+ *       400:
+ *         description: ID inválido
+ *       404:
+ *         description: Produto não encontrado
+ *       500:
+ *         description: Erro interno no servidor
+ */
 // Rota paramétrica registrada após as literais (/ e /search) — sem risco de sombra.
-router.use(require("./_legacy/publicProductById"));
+router.get("/:id", controller.getProductById);
 
 module.exports = router;

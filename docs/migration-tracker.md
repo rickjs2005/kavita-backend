@@ -29,7 +29,6 @@
 
 | Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
 |---------|--------|-----------|-------------|-------------|
-| `routes/public/_legacy/publicProductById.js` | 83 | nenhum | absorver em `publicProductsController.js` | backend |
 | `routes/admin/_legacy/adminServicos.js` | 421 | nenhum¹ | `servicosAdminController`, `servicosAdminService`, `servicosRepository` (admin) | backend |
 | `routes/admin/_legacy/adminShippingZones.js` | 322 | nenhum | `shippingZonesRepository`, `shippingZonesService`, `shippingZonesController` | backend |
 
@@ -114,7 +113,7 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 
 | Janela | Arquivos | Linhas totais | Estimativa |
 |--------|----------|---------------|------------|
-| Q2 2026 (alta) | 3 | 826 | 2–3 semanas |
+| Q2 2026 (alta) | 2 | 743 | 1–2 semanas |
 | Q3 2026 (média) | 11 | 2.576 | 5–7 semanas |
 | Q4 2026 (baixa) | 8 | 2.344 | 4–6 semanas |
 | **Total** | **22** | **5.819** | — |
@@ -143,5 +142,6 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 | `authRoutes.js` + `login.js` | auth | 2026-04-01 | Migrado de express-validator para Zod |
 | `adminCategorias.js` | admin | 2026 | Moderno |
 | `publicCategorias.js` | public | 2026-04-01 | `findActiveCategories` em `categoriasRepository` + `categoriasPublicController` |
+| `publicProductById.js` | public | 2026-04-01 | absorvido em `publicProductsController.getProductById` + `productRepository.findProductById` |
 | `adminColaboradores.js` | admin | 2026 | Moderno |
 

@@ -179,6 +179,21 @@ async function searchProducts({ q, catIds, minPrice, maxPrice, promo, sort, page
 }
 
 /**
+ * Returns a single product by ID, or null if not found.
+ * Does not include images — call findProductImages([id]) separately.
+ *
+ * @param {number} id
+ * @returns {object|null}
+ */
+async function findProductById(id) {
+  const [rows] = await pool.query(
+    "SELECT * FROM products WHERE id = ?",
+    [id]
+  );
+  return rows[0] || null;
+}
+
+/**
  * Returns product images for a set of product IDs.
  *
  * @param {number[]} ids
@@ -199,6 +214,7 @@ async function findProductImages(ids) {
 
 module.exports = {
   findCategoryByName,
+  findProductById,
   findProducts,
   searchProducts,
   findProductImages,
