@@ -1,13 +1,28 @@
 // controllers/publicProductsController.js
 //
 // Handlers para os endpoints públicos de produtos.
-// Delegam ao productService e retornam o resultado bruto.
 //
-// ⚠️  CONTRATO DIVERGENTE — não normalizado ainda.
-// Ambos os handlers retornam o objeto direto do service (sem wrapper ok/data)
-// e erros como { message } (sem ok: false / code). O frontend depende desse
-// formato. Migrar para lib/response.js + AppError ao alinhar com o frontend.
-// Rastrear em: CLAUDE.md → "Migração de contrato de resposta"
+// ⚠️  CONTRATO DIVERGENTE — requer coordenação com o frontend antes de migrar.
+//
+// Formato atual de SUCESSO (não alterar sem alinhar com o frontend):
+//
+//   GET /api/products
+//     { data: Product[], page, limit, total, totalPages, sort, order }
+//
+//   GET /api/products/search
+//     { products: Product[], pagination: { page, limit, total, totalPages } }
+//
+// Formato atual de ERRO (não alterar sem alinhar com o frontend):
+//   HTTP 4xx/5xx  →  { message: "..." }       ← sem ok: false, sem code
+//
+// Formato-alvo quando migrar (requer mudança coordenada no frontend):
+//   Sucesso  →  response.ok(res, data) ou response.paginated(res, {...})
+//   Erro     →  next(new AppError(...))  →  errorHandler produz { ok: false, code, message }
+//
+// Pré-condições para migrar:
+//   1. Frontend atualizado para ler result.data (array) em vez de result diretamente
+//   2. Frontend atualizado para ler result.data.pagination em busca, em vez de result.pagination
+//   3. Testes de integração cobrindo os dois endpoints
 
 "use strict";
 

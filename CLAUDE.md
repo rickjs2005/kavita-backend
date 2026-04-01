@@ -239,8 +239,9 @@ Os arquivos abaixo estão fora de `_legacy/` e têm arquitetura moderna (service
 | `controllers/shippingController.js` | `GET /api/shipping/quote` | `{ success: true, cep, price, prazo_dias, ... }` | `success` ≠ `ok` |
 | `controllers/paymentController.js` | `GET /api/payment/methods` | `{ methods }` | sem `ok`, sem wrapper `data` |
 | `controllers/paymentController.js` | `GET,POST,PUT /api/admin/payment-methods[/:id]` | `{ methods }` / `{ method }` (201) | sem `ok`, sem wrapper `data` |
-| `routes/public/publicProducts.js` | `GET /api/products`, `/search` | `result` direto (bare) | sem `ok`, sem `data` |
-| `routes/public/publicProducts.js` | erros | `{ message }` | sem `ok: false`, sem `code` |
+| `controllers/publicProductsController.js` | `GET /api/products` | `{ data: Product[], page, limit, total, totalPages, sort, order }` | sem `ok`, paginação no topo |
+| `controllers/publicProductsController.js` | `GET /api/products/search` | `{ products: Product[], pagination: { page, limit, total, totalPages } }` | sem `ok`, shape diferente de listProducts |
+| `controllers/publicProductsController.js` | erros | `{ message }` | sem `ok: false`, sem `code` |
 | `routes/utils/uploadsCheck.js` | `GET /uploads/check/*` (util interno) | `{ ok: false, error: "..." }` | usa `error` em vez de `message` |
 
 > **Regra prática:** ao chamar um desses endpoints em testes de integração, não asserte `ok: true` — asserte o campo real (`success`, `carrinho_id`, etc.). Ao *migrar* o endpoint, lembrar de atualizar o frontend antes ou em conjunto.
@@ -316,7 +317,7 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Site Hero (admin) | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
 | Site Hero (público) | `routes/public/publicSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
 | Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/produtosRepository.js` |
-| Produtos (público) | `routes/public/publicProducts.js` | — | `services/productService.js` | `repositories/productRepository.js` |
+| Produtos (público) | `routes/public/publicProducts.js` | `controllers/publicProductsController.js` | `services/productService.js` | `repositories/productRepository.js` |
 | Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
 | Carts (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
 | Cart (usuário) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
@@ -399,9 +400,10 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
    Ao escrever testes para essas rotas, não asserte `ok: true` — asserte `success: true`. Não copie esse
    padrão em código novo.
 
-6. **`routes/public/publicProducts.js`** — retorna o objeto bruto do service sem wrapper (`ok`, `data`),
-   e erros sem `code`. É um módulo moderno em estrutura (usa `productService`) mas legado em contrato.
-   Tratado como "híbrido", não como referência de código novo.
+6. **`controllers/publicProductsController.js`** — handlers extraídos da rota, mas contrato divergente preservado.
+   `listProducts` retorna `{ data, page, limit, total, totalPages, sort, order }` (sem wrapper `ok`).
+   `searchProducts` retorna `{ products, pagination }` (shape diferente de listProducts — atenção ao escrever testes).
+   Erros retornam `{ message }` sem `ok: false`/`code`. Migração exige coordenação com o frontend.
 
 Armadilhas já resolvidas (registradas aqui para histórico):
 
@@ -581,10 +583,9 @@ Próximos a migrar (prioridade decrescente):
 | Arquivo | Problema | Impacto | Observação |
 |---------|----------|---------|------------|
 | `controllers/cartController.js` | `success: true` + `res.json()` bare | Alto — módulo de alto tráfego | Handlers já extraídos da rota; migrar resposta para `lib/response.js` e alinhar com frontend |
-| `routes/public/publicProducts.js` | bare result + erros sem `ok`/`code` | Alto — listagem pública de produtos | Verificar contrato com o frontend |
+| `controllers/publicProductsController.js` | shapes divergentes (`data[]` em listProducts, `products[]`+`pagination` em search) + erros sem `ok`/`code` | Alto — listagem pública de produtos | Requer coordenação frontend: shapes diferentes nos dois endpoints. Ver header do controller para pré-condições |
 | `controllers/shippingController.js` | `success: true` no quote | Médio — uma rota GET | Handler já extraído; migrar resposta para `lib/response.js` e alinhar com frontend |
 | `controllers/paymentController.js` | `res.json()` cru nos 4 endpoints CRUD + `pool.getConnection()` em `startPayment`/`handleWebhook` | Médio | Migrar CRUD para `lib/response.js` alinhando com frontend admin; `pool.getConnection()` resolve ao refatorar `paymentService` para não exigir `conn` externo |
-| `routes/auth/authRoutes.js` | express-validator legado + res.json | Médio — legado de validação | — |
 | `routes/admin/_legacy/adminPedidos.js` | `res.json()` cru sem helper | Baixo — já em `_legacy/` | — |
 | `controllers/authController.js` | `res.status(200).json(...)` em 1 handler | Baixo — módulo isolado | — |
 
