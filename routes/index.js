@@ -67,7 +67,7 @@ loadRoute("/uploads", "./utils/uploadsCheck");
 // publicProducts.js é o ponto único de montagem de /products.
 // GET /:id (legado) é delegado internamente por publicProducts.js.
 loadRoute("/products", "./public/publicProducts");
-loadRoute("/public/categorias", "./public/_legacy/publicCategorias");
+loadRoute("/public/categorias", "./public/publicCategorias");
 loadRoute("/public/servicos", "./public/publicServicos");
 loadRoute("/public/promocoes", "./public/publicPromocoes");
 loadRoute("/public/produtos", "./public/_legacy/publicProdutos"); // avaliações de produtos

@@ -9,6 +9,30 @@ const pool = require("../config/pool");
 // ---------------------------------------------------------------------------
 
 /**
+ * Returns all active categories with their product count.
+ * Used by the public endpoint GET /api/public/categorias.
+ *
+ * @returns {Array<{ id, name, slug, is_active, sort_order, total_products }>}
+ */
+async function findActiveCategories() {
+  const [rows] = await pool.query(`
+    SELECT
+      c.id,
+      c.name,
+      c.slug,
+      c.is_active,
+      c.sort_order,
+      COUNT(p.id) AS total_products
+    FROM categories c
+    LEFT JOIN products p ON p.category_id = c.id
+    WHERE c.is_active = 1
+    GROUP BY c.id, c.name, c.slug, c.is_active, c.sort_order
+    ORDER BY c.sort_order ASC, c.name ASC
+  `);
+  return rows;
+}
+
+/**
  * Returns all categories ordered by sort_order ASC then name ASC.
  * @returns {Array<{ id, name, slug, is_active, sort_order }>}
  */
@@ -95,6 +119,7 @@ async function deleteCategory(id) {
 // ---------------------------------------------------------------------------
 
 module.exports = {
+  findActiveCategories,
   listCategories,
   findCategoryById,
   createCategory,

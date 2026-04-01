@@ -30,7 +30,6 @@
 | Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
 |---------|--------|-----------|-------------|-------------|
 | `routes/public/_legacy/publicProductById.js` | 83 | nenhum | absorver em `publicProductsController.js` | backend |
-| `routes/public/_legacy/publicCategorias.js` | 73 | nenhum | `categoriasRepository`, `categoriasPublicController` | backend |
 | `routes/admin/_legacy/adminServicos.js` | 421 | nenhum¹ | `servicosAdminController`, `servicosAdminService`, `servicosRepository` (admin) | backend |
 | `routes/admin/_legacy/adminShippingZones.js` | 322 | nenhum | `shippingZonesRepository`, `shippingZonesService`, `shippingZonesController` | backend |
 
@@ -79,6 +78,8 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 | `routes/admin/_legacy/adminStats.js` | 313 | nenhum | `statsRepository`, `statsController` | backend |
 | `routes/admin/_legacy/adminRelatorios.js` | 282 | nenhum | `relatoriosRepository`, `relatoriosController` | backend |
 
+
+
 ---
 
 ### 🟢 Baixa prioridade — Q4 2026 (outubro–dezembro)
@@ -113,7 +114,7 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 
 | Janela | Arquivos | Linhas totais | Estimativa |
 |--------|----------|---------------|------------|
-| Q2 2026 (alta) | 4 | 899 | 2–3 semanas |
+| Q2 2026 (alta) | 3 | 826 | 2–3 semanas |
 | Q3 2026 (média) | 11 | 2.576 | 5–7 semanas |
 | Q4 2026 (baixa) | 8 | 2.344 | 4–6 semanas |
 | **Total** | **22** | **5.819** | — |
@@ -141,15 +142,6 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 | `publicProducts.js` → controller | public | 2026-04-01 | Handlers extraídos para publicProductsController |
 | `authRoutes.js` + `login.js` | auth | 2026-04-01 | Migrado de express-validator para Zod |
 | `adminCategorias.js` | admin | 2026 | Moderno |
+| `publicCategorias.js` | public | 2026-04-01 | `findActiveCategories` em `categoriasRepository` + `categoriasPublicController` |
 | `adminColaboradores.js` | admin | 2026 | Moderno |
 
----
-
-## Bloqueadores conhecidos para remoção completa de validators/
-
-Para deletar `validators/authValidator.js` e a pasta `validators/`:
-
-1. Migrar `routes/auth/_legacy/userAccount.js` (usa `registerValidators`)
-2. Criar `registerSchema` em `schemas/authSchemas.js`
-
-Após isso: nenhum módulo importa mais `authValidator.js` → deletar arquivo e pasta.
