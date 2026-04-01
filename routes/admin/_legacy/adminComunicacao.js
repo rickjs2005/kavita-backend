@@ -166,96 +166,36 @@ function normalizarTelefone(valor) {
   return String(valor).replace(/\D/g, "");
 }
 
-// garante que total é number, mesmo vindo como string do MySQL
-function getPedidoTotalNumber(pedido) {
-  const n = Number(pedido.total ?? 0);
-  if (Number.isNaN(n)) return 0;
-  return n;
-}
+// -----------------------------------------------------------------------------
+// Templates de E-MAIL — extraídos para templates/email/
+// -----------------------------------------------------------------------------
 
-// -----------------------------------------------------------------------------
-// Templates de E-MAIL
-// -----------------------------------------------------------------------------
+const emailTemplates = {
+  confirmacao_pedido: require("../../../templates/email/confirmacaoPedido"),
+  pagamento_aprovado: require("../../../templates/email/pagamentoAprovado"),
+  pedido_enviado:     require("../../../templates/email/pedidoEnviado"),
+};
 
 function buildEmailFromTemplate(templateId, pedido) {
-  switch (templateId) {
-    case "confirmacao_pedido": {
-      const total = getPedidoTotalNumber(pedido);
-      return {
-        subject: `Kavita - Pedido #${pedido.id} recebido`,
-        html: `
-          <p>Olá ${pedido.usuario_nome},</p>
-          <p>Recebemos o seu pedido <strong>#${pedido.id}</strong> no valor de <strong>R$ ${total.toFixed(
-            2
-          )}</strong>.</p>
-          <p>Forma de pagamento: <strong>${pedido.forma_pagamento}</strong></p>
-          <p>Você receberá novas atualizações assim que o pedido avançar.</p>
-          <p>Equipe Kavita 🐄🌱</p>
-        `,
-      };
-    }
-
-    case "pagamento_aprovado": {
-      const total = getPedidoTotalNumber(pedido);
-      return {
-        subject: `Kavita - Pagamento do pedido #${pedido.id} aprovado`,
-        html: `
-          <p>Olá ${pedido.usuario_nome},</p>
-          <p>O pagamento do seu pedido <strong>#${pedido.id}</strong> foi aprovado 🎉.</p>
-          <p>Valor: <strong>R$ ${total.toFixed(2)}</strong></p>
-          <p>Agora vamos separar e preparar o envio.</p>
-          <p>Equipe Kavita</p>
-        `,
-      };
-    }
-
-    case "pedido_enviado":
-      return {
-        subject: `Kavita - Seu pedido #${pedido.id} foi enviado`,
-        html: `
-          <p>Olá ${pedido.usuario_nome},</p>
-          <p>O seu pedido <strong>#${pedido.id}</strong> já foi <strong>enviado</strong> 🚚.</p>
-          <p>Status de entrega atual: <strong>${pedido.status_entrega}</strong></p>
-          <p>Em breve ele chega até você.</p>
-          <p>Equipe Kavita</p>
-        `,
-      };
-
-    default:
-      throw new Error("Template de e-mail não suportado.");
-  }
+  const builder = emailTemplates[templateId];
+  if (!builder) throw new Error("Template de e-mail não suportado.");
+  return builder(pedido);
 }
 
 // -----------------------------------------------------------------------------
-// Templates de WHATSAPP
+// Templates de WHATSAPP — extraídos para templates/whatsapp/
 // -----------------------------------------------------------------------------
 
+const whatsappTemplates = {
+  confirmacao_pedido: require("../../../templates/whatsapp/confirmacaoPedido"),
+  pagamento_aprovado: require("../../../templates/whatsapp/pagamentoAprovado"),
+  pedido_enviado:     require("../../../templates/whatsapp/pedidoEnviado"),
+};
+
 function buildWhatsappFromTemplate(templateId, pedido) {
-  switch (templateId) {
-    case "confirmacao_pedido": {
-      const total = getPedidoTotalNumber(pedido);
-      return `Olá ${
-        pedido.usuario_nome
-      }! Recebemos o seu pedido #${pedido.id} no valor de R$ ${total.toFixed(
-        2
-      )}. Assim que avançar, te avisamos aqui. Equipe Kavita.`;
-    }
-
-    case "pagamento_aprovado": {
-      const total = getPedidoTotalNumber(pedido);
-      return `Olá ${
-        pedido.usuario_nome
-      }! O pagamento do seu pedido #${pedido.id} foi aprovado 🎉. Valor: R$ ${total.toFixed(
-        2
-      )}. Vamos separar e já avisamos quando sair para entrega.`;
-    }
-
-    case "pedido_enviado":
-      return `Olá ${pedido.usuario_nome}! Seu pedido #${pedido.id} foi enviado 🚚. Status de entrega: ${pedido.status_entrega}.`;
-
-    default:
-      throw new Error("Template de WhatsApp não suportado.");
-  }
+  const builder = whatsappTemplates[templateId];
+  if (!builder) throw new Error("Template de WhatsApp não suportado.");
+  return builder(pedido);
 }
 
 // -----------------------------------------------------------------------------

@@ -395,6 +395,7 @@ Armadilhas já resolvidas (registradas aqui para histórico):
 - `routes/uploadsCheckRoutes.js` → `routes/utils/uploadsCheck.js` — segue convenção de subpastas
 - `controllers/cartsController.js`, `configController.js`, `produtosController.js` — são modernos e referência válida
 - `services/notificationService.js` foi **deletado** — era stub que não enviava nada. Canal real de notificação: `workers/abandonedCartNotificationsWorker.js` → `services/mailService.sendTransactionalEmail()`. WhatsApp ainda não implementado (sem provedor definido).
+- Templates de comunicação (email e WhatsApp) foram extraídos para `templates/email/` e `templates/whatsapp/` — cada arquivo exporta uma função `(pedido) => { subject, html }` ou `(pedido) => string`. Consumidor principal: `routes/admin/_legacy/adminComunicacao.js`. Ao migrar esse arquivo para o padrão moderno, os templates já estão prontos para reuso.
 
 ### Regra de ouro para código novo ou modificado
 
