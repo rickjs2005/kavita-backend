@@ -6,7 +6,7 @@ const cotacoesRepo = require("../repositories/cotacoesRepository");
 const postsRepo = require("../repositories/postsRepository");
 const {
   toInt, normalizeSlug, isValidSlug, sanitizeLimitOffset,
-} = require("../services/news/helpers");
+} = require("../services/news/newsHelpers");
 const { response } = require("../lib");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");

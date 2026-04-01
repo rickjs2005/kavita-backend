@@ -5,7 +5,7 @@
 
 const cotacoesRepo = require("../../repositories/cotacoesRepository");
 const { logAdminAction } = require("../../services/adminLogs");
-const { toInt } = require("../../services/news/helpers");
+const { toInt } = require("../../services/news/newsHelpers");
 const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");

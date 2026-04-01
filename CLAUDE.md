@@ -374,7 +374,7 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
    `publicProducts.js` é o moderno. `publicProdutos.js` está em `_legacy/` e será removido. Nunca adicione
    endpoints em `publicProdutos.js`.
 
-4. **`services/news/helpers.js`** — exporta utilitários de domínio (`toInt`, `nowSql`, `normalizeSlug`, etc.)
+4. **`services/news/newsHelpers.js`** — exporta utilitários de domínio (`toInt`, `nowSql`, `normalizeSlug`, etc.)
    que são legítimos e reutilizados por vários controllers de news. **Não** exporta helpers de resposta
    HTTP — esses foram removidos. Para respostas, sempre usar `lib/response.js` + `AppError`.
 

@@ -25,7 +25,7 @@ jest.mock("../../../../services/dronesService", () => ({
 }));
 
 const dronesService = require("../../../../services/dronesService");
-const helpers = require("../../../../controllers/drones/helpers");
+const helpers = require("../../../../controllers/drones/dronesFormatters");
 
 beforeEach(() => {
   jest.clearAllMocks();

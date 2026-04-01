@@ -6,7 +6,7 @@
 
 const climaRepo = require("../../repositories/climaRepository");
 const { logAdminAction } = require("../../services/adminLogs");
-const { toInt, nowSql } = require("../../services/news/helpers");
+const { toInt, nowSql } = require("../../services/news/newsHelpers");
 const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");

@@ -9,7 +9,7 @@
 //   syncAll()        — itera todas as cotações ativas e chama syncOne
 
 const cotacoesRepo = require("../repositories/cotacoesRepository");
-const { nowSql } = require("./news/helpers");
+const { nowSql } = require("./news/newsHelpers");
 
 let cotacoesProviders = null;
 try {

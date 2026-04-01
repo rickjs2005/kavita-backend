@@ -12,7 +12,7 @@ const {
   parseModelKey,
   ensureModelExists,
   DEFAULT_DRONE_MODELS,
-} = require("./drones/helpers");
+} = require("./drones/dronesFormatters");
 
 /**
  * =========================================================

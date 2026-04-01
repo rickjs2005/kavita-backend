@@ -7,7 +7,7 @@ const { logAdminAction } = require("../../services/adminLogs");
 const {
   toInt, isValidDateTimeLike,
   normalizeSlug, isValidSlug, nowSql, sanitizeLimitOffset,
-} = require("../../services/news/helpers");
+} = require("../../services/news/newsHelpers");
 const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
