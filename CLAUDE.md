@@ -319,6 +319,7 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/produtosRepository.js` |
 | Produtos (público) | `routes/public/publicProducts.js` | `controllers/publicProductsController.js` | `services/productService.js` | `repositories/productRepository.js` |
 | Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
+| Pedidos (admin) | `routes/admin/adminPedidos.js` | `controllers/adminOrdersController.js` | `services/orderService.js` | `repositories/orderRepository.js` |
 | Carts (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
 | Cart (usuário) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
@@ -337,8 +338,6 @@ Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antig
 | Arquivo | Problema residual |
 |---------|------------------|
 | `controllers/paymentController.js` | `pool.getConnection()` em `startPayment` e `handleWebhook` — dívida do `paymentService` que recebe `conn` como parâmetro; resolver ao refatorar o service |
-| `routes/auth/authRoutes.js` | Validators do express-validator legado em vez de Zod |
-| `routes/admin/_legacy/adminPedidos.js` | Usa `orderService` mas `res.json()` cru — no meio de migração |
 | `routes/ecommerce/cart.js` | Contrato `success: true` divergente — handlers já em `controllers/cartController.js`, pendente apenas migração de resposta para `lib/response.js` |
 | `controllers/shippingController.js` | Contrato `success: true` divergente — pendente migração para `lib/response.js` alinhada com frontend |
 | `routes/public/publicProducts.js` | `res.json(result)` bare + erros `{ message }` sem `ok`/`code` |
@@ -384,8 +383,7 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
 1. **`routes/ecommerce/payment.js`** — parece moderno (importa paymentService), mas ainda tem
    `pool.query()` direto em 2 handlers. Não use como referência de como misturar padrões.
 
-2. **`routes/admin/_legacy/adminPedidos.js`** — tem o banner LEGADO e usa `orderService`, mas ainda usa
-   `res.json()` cru. Está no meio de uma migração. Não copie a estrutura das rotas.
+2. **`routes/admin/adminPedidos.js`** — migração concluída em 2026-04. Controller em `controllers/adminOrdersController.js`, schemas em `schemas/ordersSchemas.js`. Contrato de resposta mudou para `{ ok: true, data }` — requer atualização no admin frontend para leitura dos GETs. Ver header do controller para detalhes.
 
 3. **`routes/public/_legacy/publicProdutos.js`** vs **`routes/public/publicProducts.js`** — dois arquivos.
    `publicProducts.js` é o moderno. `publicProdutos.js` está em `_legacy/` e será removido. Nunca adicione
@@ -586,7 +584,6 @@ Próximos a migrar (prioridade decrescente):
 | `controllers/publicProductsController.js` | shapes divergentes (`data[]` em listProducts, `products[]`+`pagination` em search) + erros sem `ok`/`code` | Alto — listagem pública de produtos | Requer coordenação frontend: shapes diferentes nos dois endpoints. Ver header do controller para pré-condições |
 | `controllers/shippingController.js` | `success: true` no quote | Médio — uma rota GET | Handler já extraído; migrar resposta para `lib/response.js` e alinhar com frontend |
 | `controllers/paymentController.js` | `res.json()` cru nos 4 endpoints CRUD + `pool.getConnection()` em `startPayment`/`handleWebhook` | Médio | Migrar CRUD para `lib/response.js` alinhando com frontend admin; `pool.getConnection()` resolve ao refatorar `paymentService` para não exigir `conn` externo |
-| `routes/admin/_legacy/adminPedidos.js` | `res.json()` cru sem helper | Baixo — já em `_legacy/` | — |
 | `controllers/authController.js` | `res.status(200).json(...)` em 1 handler | Baixo — módulo isolado | — |
 
 Não migrar em lote — tocar apenas ao ter outra razão para abrir o arquivo.

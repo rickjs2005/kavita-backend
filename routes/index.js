@@ -258,10 +258,10 @@ try {
 // — Operações de negócio —
 
 try {
-  const adminPedidosRoutes = require("./admin/_legacy/adminPedidos");
+  const adminPedidosRoutes = require("./admin/adminPedidos");
   router.use("/admin/pedidos", verifyAdmin, validateCSRF, requirePermission("pedidos.ver"), adminPedidosRoutes);
 } catch (err) {
-  handleRouteLoadError("./admin/_legacy/adminPedidos", err);
+  handleRouteLoadError("./admin/adminPedidos", err);
 }
 try {
   const adminCartsRoutes = require("./admin/adminCarts");
