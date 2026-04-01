@@ -2,7 +2,8 @@ const express = require("express");
 const AuthController = require("../../controllers/authController");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
 const authenticateToken = require("../../middleware/authenticateToken");
-const { forgotPasswordValidators, resetPasswordValidators } = require("../../validators/authValidator");
+const { validate } = require("../../middleware/validate");
+const { forgotPasswordSchema, resetPasswordSchema } = require("../../schemas/authSchemas");
 
 const router = express.Router();
 
@@ -69,7 +70,7 @@ router.post("/logout", logoutLimiter, authenticateToken, (req, res, next) =>
  *       500:
  *         description: Erro interno
  */
-router.post("/forgot-password", forgotPasswordLimiter, forgotPasswordValidators, (req, res, next) =>
+router.post("/forgot-password", forgotPasswordLimiter, validate(forgotPasswordSchema), (req, res, next) =>
   AuthController.forgotPassword(req, res, next)
 );
 
@@ -96,7 +97,7 @@ router.post("/forgot-password", forgotPasswordLimiter, forgotPasswordValidators,
  *       500:
  *         description: Erro interno
  */
-router.post("/reset-password", resetPasswordLimiter, resetPasswordValidators, (req, res, next) =>
+router.post("/reset-password", resetPasswordLimiter, validate(resetPasswordSchema), (req, res, next) =>
   AuthController.resetPassword(req, res, next)
 );
 

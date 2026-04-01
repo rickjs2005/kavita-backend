@@ -1,4 +1,19 @@
 // validators/authValidator.js
+//
+// ⚠️  DEPRECIADO — não importar em código novo.
+//
+// Estado atual (2026-04):
+//   loginValidators      → migrado para schemas/authSchemas.js (loginSchema)
+//   forgotPasswordValidators → migrado para schemas/authSchemas.js (forgotPasswordSchema)
+//   resetPasswordValidators  → migrado para schemas/authSchemas.js (resetPasswordSchema)
+//
+// Ainda necessário por:
+//   routes/auth/_legacy/userAccount.js  →  registerValidators
+//                                           forgotPasswordValidators
+//                                           resetPasswordValidators
+//
+// Remover este arquivo ao concluir a migração de routes/auth/_legacy/userAccount.js.
+//
 const { body, validationResult } = require("express-validator");
 const { isValidCPF } = require("../utils/cpf");
 

@@ -1,7 +1,8 @@
 const express = require("express");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
 const AuthController = require("../../controllers/authController");
-const { loginValidators } = require("../../validators/authValidator");
+const { validate } = require("../../middleware/validate");
+const { loginSchema } = require("../../schemas/authSchemas");
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ const loginRateLimiter = createAdaptiveRateLimiter({
 });
 
 // IMPORTANTE: sempre passar next
-router.post("/", loginRateLimiter, loginValidators, (req, res, next) => {
+router.post("/", loginRateLimiter, validate(loginSchema), (req, res, next) => {
   if (!req.body.senha && req.body.password) {
     req.body.senha = req.body.password;
   }
