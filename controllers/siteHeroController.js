@@ -50,17 +50,17 @@ async function updateHeroRow(fields) {
 
 
 
-exports.getHero = async (req, res) => {
+const getHero = async (req, res) => {
   const data = await getHeroBase();
   return response.ok(res, data);
 };
 
-exports.getHeroPublic = async (req, res) => {
+const getHeroPublic = async (req, res) => {
   const data = await getHeroBase();
   return response.ok(res, data);
 };
 
-exports.updateHero = async (req, res, next) => {
+const updateHero = async (req, res, next) => {
   try {
     // compat: aceita os 2 nomes
     const heroVideo =
@@ -144,3 +144,5 @@ exports.updateHero = async (req, res, next) => {
     return next(err instanceof AppError ? err : new AppError(err?.message || "Erro ao atualizar Hero.", ERROR_CODES.SERVER_ERROR, 500, err?.details || null));
   }
 };
+
+module.exports = { getHero, getHeroPublic, updateHero };

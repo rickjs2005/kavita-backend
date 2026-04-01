@@ -14,7 +14,7 @@ const svc = require("../services/colaboradoresAdminService");
 // POST /api/admin/colaboradores/public  ("Trabalhe conosco")
 // ---------------------------------------------------------------------------
 
-exports.createPublic = async (req, res, next) => {
+const createPublic = async (req, res, next) => {
   try {
     const { id } = await svc.createPublic(req.body, req.file);
     return response.created(
@@ -35,7 +35,7 @@ exports.createPublic = async (req, res, next) => {
 // POST /api/admin/colaboradores  (admin direct create)
 // ---------------------------------------------------------------------------
 
-exports.create = async (req, res, next) => {
+const create = async (req, res, next) => {
   try {
     const { id } = await svc.createAdmin(req.body, req.file);
     return response.created(res, { id }, "Colaborador cadastrado com sucesso.");
@@ -52,7 +52,7 @@ exports.create = async (req, res, next) => {
 // GET /api/admin/colaboradores/pending
 // ---------------------------------------------------------------------------
 
-exports.listPending = async (_req, res, next) => {
+const listPending = async (_req, res, next) => {
   try {
     const colaboradores = await svc.listPending();
     return response.ok(res, colaboradores);
@@ -69,7 +69,7 @@ exports.listPending = async (_req, res, next) => {
 // PUT /api/admin/colaboradores/:id/verify
 // ---------------------------------------------------------------------------
 
-exports.verify = async (req, res, next) => {
+const verify = async (req, res, next) => {
   try {
     await svc.verify(req.params.id);
     return response.ok(res, null, "Colaborador verificado com sucesso.");
@@ -86,7 +86,7 @@ exports.verify = async (req, res, next) => {
 // DELETE /api/admin/colaboradores/:id
 // ---------------------------------------------------------------------------
 
-exports.remove = async (req, res, next) => {
+const remove = async (req, res, next) => {
   try {
     await svc.remove(req.params.id);
     return response.ok(res, null, "Colaborador removido com sucesso.");
@@ -98,3 +98,5 @@ exports.remove = async (req, res, next) => {
     );
   }
 };
+
+module.exports = { createPublic, create, listPending, verify, remove };

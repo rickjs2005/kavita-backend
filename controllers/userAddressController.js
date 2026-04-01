@@ -20,7 +20,7 @@ const { response } = require("../lib");
 // GET /api/users/addresses
 // ---------------------------------------------------------------------------
 
-exports.list = async (req, res, next) => {
+const list = async (req, res, next) => {
   try {
     const rows = await svc.list(req.user.id);
     return response.ok(res, rows);
@@ -33,7 +33,7 @@ exports.list = async (req, res, next) => {
 // POST /api/users/addresses
 // ---------------------------------------------------------------------------
 
-exports.create = async (req, res, next) => {
+const create = async (req, res, next) => {
   try {
     await svc.create(req.user.id, req.body || {});
     return response.created(res);
@@ -50,7 +50,7 @@ exports.create = async (req, res, next) => {
 // PUT /api/users/addresses/:id
 // ---------------------------------------------------------------------------
 
-exports.update = async (req, res, next) => {
+const update = async (req, res, next) => {
   try {
     await svc.update(req.user.id, Number(req.params.id), req.body || {});
     return response.ok(res);
@@ -67,7 +67,7 @@ exports.update = async (req, res, next) => {
 // DELETE /api/users/addresses/:id
 // ---------------------------------------------------------------------------
 
-exports.remove = async (req, res, next) => {
+const remove = async (req, res, next) => {
   try {
     await svc.remove(req.user.id, Number(req.params.id));
     return response.ok(res);
@@ -79,3 +79,5 @@ exports.remove = async (req, res, next) => {
     );
   }
 };
+
+module.exports = { list, create, update, remove };

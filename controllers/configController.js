@@ -6,7 +6,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const svc = require("../services/configAdminService");
 
-exports.getSettings = async (req, res, next) => {
+const getSettings = async (req, res, next) => {
   try {
     const settings = await svc.getSettings();
     return response.ok(res, settings);
@@ -15,7 +15,7 @@ exports.getSettings = async (req, res, next) => {
   }
 };
 
-exports.updateSettings = async (req, res, next) => {
+const updateSettings = async (req, res, next) => {
   try {
     const result = await svc.updateSettings(req.body);
     return response.ok(res, result);
@@ -24,7 +24,7 @@ exports.updateSettings = async (req, res, next) => {
   }
 };
 
-exports.listCategories = async (req, res, next) => {
+const listCategories = async (req, res, next) => {
   try {
     const lista = await svc.listCategories();
     return response.ok(res, lista);
@@ -33,7 +33,7 @@ exports.listCategories = async (req, res, next) => {
   }
 };
 
-exports.createCategory = async (req, res, next) => {
+const createCategory = async (req, res, next) => {
   try {
     const result = await svc.createCategory(req.body);
     return response.created(res, result);
@@ -42,7 +42,7 @@ exports.createCategory = async (req, res, next) => {
   }
 };
 
-exports.updateCategory = async (req, res, next) => {
+const updateCategory = async (req, res, next) => {
   // req.params.id é coercido para number pelo CategoryIdParamSchema.
   try {
     await svc.updateCategory(req.params.id, req.body);
@@ -51,3 +51,5 @@ exports.updateCategory = async (req, res, next) => {
     return next(err instanceof AppError ? err : new AppError("Erro ao atualizar categoria.", ERROR_CODES.SERVER_ERROR, 500));
   }
 };
+
+module.exports = { getSettings, updateSettings, listCategories, createCategory, updateCategory };

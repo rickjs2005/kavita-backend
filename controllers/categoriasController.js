@@ -14,7 +14,7 @@ const svc = require("../services/categoriasAdminService");
 // GET /api/admin/categorias
 // ---------------------------------------------------------------------------
 
-exports.list = async (_req, res, next) => {
+const list = async (_req, res, next) => {
   try {
     const categorias = await svc.list();
     return response.ok(res, categorias);
@@ -31,7 +31,7 @@ exports.list = async (_req, res, next) => {
 // POST /api/admin/categorias
 // ---------------------------------------------------------------------------
 
-exports.create = async (req, res, next) => {
+const create = async (req, res, next) => {
   try {
     // req.body is already validated and coerced by CreateCategorySchema
     const categoria = await svc.create(req.body);
@@ -49,7 +49,7 @@ exports.create = async (req, res, next) => {
 // PUT /api/admin/categorias/:id
 // ---------------------------------------------------------------------------
 
-exports.update = async (req, res, next) => {
+const update = async (req, res, next) => {
   try {
     // req.params.id is coerced to number by CategoryIdParamSchema
     const categoria = await svc.update(req.params.id, req.body);
@@ -67,7 +67,7 @@ exports.update = async (req, res, next) => {
 // PATCH /api/admin/categorias/:id/status
 // ---------------------------------------------------------------------------
 
-exports.updateStatus = async (req, res, next) => {
+const updateStatus = async (req, res, next) => {
   try {
     // req.params.id coerced by CategoryIdParamSchema
     // req.body.is_active validated as boolean by UpdateStatusSchema
@@ -86,7 +86,7 @@ exports.updateStatus = async (req, res, next) => {
 // DELETE /api/admin/categorias/:id
 // ---------------------------------------------------------------------------
 
-exports.remove = async (req, res, next) => {
+const remove = async (req, res, next) => {
   try {
     // req.params.id coerced by CategoryIdParamSchema
     await svc.remove(req.params.id);
@@ -99,3 +99,5 @@ exports.remove = async (req, res, next) => {
     );
   }
 };
+
+module.exports = { list, create, update, updateStatus, remove };

@@ -36,7 +36,7 @@ const { response } = require("../lib");
 // GET /api/public/servicos
 // ---------------------------------------------------------------------------
 
-exports.listServicos = async (req, res, next) => {
+const listServicos = async (req, res, next) => {
   try {
     const { data, page, limit, total, sort, order } =
       await svc.listServicos(req.query);
@@ -62,7 +62,7 @@ exports.listServicos = async (req, res, next) => {
 // GET /api/public/servicos/:id
 // ---------------------------------------------------------------------------
 
-exports.getServico = async (req, res, next) => {
+const getServico = async (req, res, next) => {
   try {
     const servico = await svc.getServico(req.params.id);
     return response.ok(res, servico);
@@ -79,7 +79,7 @@ exports.getServico = async (req, res, next) => {
 // POST /api/public/servicos/solicitacoes
 // ---------------------------------------------------------------------------
 
-exports.createSolicitacao = async (req, res, next) => {
+const createSolicitacao = async (req, res, next) => {
   try {
     const result = await svc.createSolicitacao(req.body);
     return response.created(res, result, "Solicitação criada com sucesso.");
@@ -100,7 +100,7 @@ exports.createSolicitacao = async (req, res, next) => {
 // POST /api/public/servicos/avaliacoes
 // ---------------------------------------------------------------------------
 
-exports.createAvaliacao = async (req, res, next) => {
+const createAvaliacao = async (req, res, next) => {
   try {
     const result = await svc.createAvaliacao(req.body);
     return response.created(res, result, "Avaliação registrada com sucesso.");
@@ -121,7 +121,7 @@ exports.createAvaliacao = async (req, res, next) => {
 // GET /api/public/servicos/:id/avaliacoes
 // ---------------------------------------------------------------------------
 
-exports.listAvaliacoes = async (req, res, next) => {
+const listAvaliacoes = async (req, res, next) => {
   try {
     const rows = await svc.listAvaliacoes(req.params.id);
     return response.ok(res, rows);
@@ -142,7 +142,7 @@ exports.listAvaliacoes = async (req, res, next) => {
 // POST /api/public/servicos/:id/view
 // ---------------------------------------------------------------------------
 
-exports.registerView = async (req, res, next) => {
+const registerView = async (req, res, next) => {
   try {
     await svc.registerView(req.params.id);
     return response.ok(res);
@@ -163,7 +163,7 @@ exports.registerView = async (req, res, next) => {
 // POST /api/public/servicos/:id/whatsapp
 // ---------------------------------------------------------------------------
 
-exports.registerWhatsappClick = async (req, res, next) => {
+const registerWhatsappClick = async (req, res, next) => {
   try {
     await svc.registerWhatsappClick(req.params.id);
     return response.ok(res);
@@ -184,7 +184,7 @@ exports.registerWhatsappClick = async (req, res, next) => {
 // POST /api/public/servicos/trabalhe-conosco
 // ---------------------------------------------------------------------------
 
-exports.createTrabalheConosco = async (req, res, next) => {
+const createTrabalheConosco = async (req, res, next) => {
   try {
     const result = await svc.createTrabalheConosco(req.body);
     return response.created(
@@ -200,3 +200,5 @@ exports.createTrabalheConosco = async (req, res, next) => {
     );
   }
 };
+
+module.exports = { listServicos, getServico, createSolicitacao, createAvaliacao, listAvaliacoes, registerView, registerWhatsappClick, createTrabalheConosco };

@@ -24,7 +24,7 @@ const { response } = require("../lib");
 // GET /api/public/promocoes
 // ---------------------------------------------------------------------------
 
-exports.listPromocoes = async (_req, res, next) => {
+const listPromocoes = async (_req, res, next) => {
   try {
     const data = await svc.listPromocoes();
     return response.ok(res, data);
@@ -41,7 +41,7 @@ exports.listPromocoes = async (_req, res, next) => {
 // GET /api/public/promocoes/:productId
 // ---------------------------------------------------------------------------
 
-exports.getPromocao = async (req, res, next) => {
+const getPromocao = async (req, res, next) => {
   try {
     const data = await svc.getPromocaoByProductId(req.params.productId);
     return response.ok(res, data);
@@ -57,3 +57,5 @@ exports.getPromocao = async (req, res, next) => {
     );
   }
 };
+
+module.exports = { listPromocoes, getPromocao };

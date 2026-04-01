@@ -14,7 +14,7 @@ const svc = require("../services/rolesAdminService");
 // GET /api/admin/roles
 // ---------------------------------------------------------------------------
 
-exports.list = async (_req, res, next) => {
+const list = async (_req, res, next) => {
   try {
     const roles = await svc.list();
     return response.ok(res, roles);
@@ -31,7 +31,7 @@ exports.list = async (_req, res, next) => {
 // GET /api/admin/roles/:id
 // ---------------------------------------------------------------------------
 
-exports.getById = async (req, res, next) => {
+const getById = async (req, res, next) => {
   try {
     const role = await svc.getById(req.params.id);
     return response.ok(res, role);
@@ -48,7 +48,7 @@ exports.getById = async (req, res, next) => {
 // POST /api/admin/roles
 // ---------------------------------------------------------------------------
 
-exports.create = async (req, res, next) => {
+const create = async (req, res, next) => {
   try {
     const role = await svc.create(req.body, req.admin.id);
     return response.created(res, role, "Role criado com sucesso.");
@@ -65,7 +65,7 @@ exports.create = async (req, res, next) => {
 // PUT /api/admin/roles/:id
 // ---------------------------------------------------------------------------
 
-exports.update = async (req, res, next) => {
+const update = async (req, res, next) => {
   try {
     await svc.update(req.params.id, req.body, req.admin.id);
     return response.ok(res, null, "Role atualizado com sucesso.");
@@ -82,7 +82,7 @@ exports.update = async (req, res, next) => {
 // DELETE /api/admin/roles/:id
 // ---------------------------------------------------------------------------
 
-exports.remove = async (req, res, next) => {
+const remove = async (req, res, next) => {
   try {
     await svc.remove(req.params.id, req.admin.id);
     return response.ok(res, null, "Role removido com sucesso.");
@@ -94,3 +94,5 @@ exports.remove = async (req, res, next) => {
     );
   }
 };
+
+module.exports = { list, getById, create, update, remove };

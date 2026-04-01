@@ -15,7 +15,7 @@ const ERROR_CODES = require("../constants/ErrorCodes");
  * PUBLIC - CLIMA
  * ========================================================= */
 
-exports.listClima = async (req, res, next) => {
+const listClima = async (req, res, next) => {
   try {
     const rows = await climaRepo.listClimaPublic();
     return response.ok(res, Array.isArray(rows) ? rows : []);
@@ -25,7 +25,7 @@ exports.listClima = async (req, res, next) => {
   }
 };
 
-exports.getClima = async (req, res, next) => {
+const getClima = async (req, res, next) => {
   const slug = normalizeSlug(req.params.slug);
   if (!slug || !isValidSlug(slug)) {
     return next(new AppError("Slug inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
@@ -45,7 +45,7 @@ exports.getClima = async (req, res, next) => {
  * PUBLIC - COTAÇÕES
  * ========================================================= */
 
-exports.listCotacoes = async (req, res, next) => {
+const listCotacoes = async (req, res, next) => {
   try {
     const group_key = req.query.group_key ? String(req.query.group_key).trim() : null;
     const rows = await cotacoesRepo.listCotacoesPublic({ group_key });
@@ -56,7 +56,7 @@ exports.listCotacoes = async (req, res, next) => {
   }
 };
 
-exports.getCotacao = async (req, res, next) => {
+const getCotacao = async (req, res, next) => {
   const slug = normalizeSlug(req.params.slug);
   if (!slug || !isValidSlug(slug)) {
     return next(new AppError("Slug inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
@@ -76,7 +76,7 @@ exports.getCotacao = async (req, res, next) => {
  * PUBLIC - POSTS
  * ========================================================= */
 
-exports.listPosts = async (req, res, next) => {
+const listPosts = async (req, res, next) => {
   const { lim: limit, off: offset } = sanitizeLimitOffset(req.query.limit, req.query.offset, 50);
   try {
     const posts = await postsRepo.listPostsPublic({ limit, offset });
@@ -87,7 +87,7 @@ exports.listPosts = async (req, res, next) => {
   }
 };
 
-exports.getPost = async (req, res, next) => {
+const getPost = async (req, res, next) => {
   const slug = normalizeSlug(req.params.slug);
   if (!slug || !isValidSlug(slug)) {
     return next(new AppError("Slug inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
@@ -115,7 +115,7 @@ exports.getPost = async (req, res, next) => {
  * PUBLIC - OVERVIEW (HOME)
  * ========================================================= */
 
-exports.overview = async (req, res, next) => {
+const overview = async (req, res, next) => {
   try {
     const postsLimit = Math.min(Math.max(toInt(req.query.posts_limit, 6), 1), 20);
 
@@ -135,3 +135,5 @@ exports.overview = async (req, res, next) => {
     return next(new AppError("Erro ao carregar overview.", ERROR_CODES.SERVER_ERROR, 500));
   }
 };
+
+module.exports = { listClima, getClima, listCotacoes, getCotacao, listPosts, getPost, overview };
