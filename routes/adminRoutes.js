@@ -48,7 +48,7 @@ mount("/admin/news",            "./admin/adminNews");
 mount("/admin/news",            "./admin/adminNewsUpload");
 mount("/admin/site-hero",       "./admin/adminSiteHero");
 mount("/admin/colaboradores",   "./admin/adminColaboradores");
-mount("/admin/servicos",        "./admin/_legacy/adminServicos");
+mount("/admin/servicos",        "./admin/adminServicos");
 mount("/admin/servicos/solicitacoes", "./admin/_legacy/adminSolicitacoesServicos");
 mount("/admin/especialidades",  "./admin/_legacy/adminEspecialidades");
 mount("/admin/drones",          "./admin/adminDrones");

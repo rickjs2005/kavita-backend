@@ -258,9 +258,9 @@ routes/
   admin/
     adminDrones.js          ← moderno (referência canônica)
     adminCarts.js           ← moderno (referência canônica)
+    adminServicos.js        ← moderno
     _legacy/
       adminComunicacao.js   ← legado (SQL inline, sem repository)
-      adminServicos.js      ← legado
       ...
   public/
     publicProducts.js       ← moderno
@@ -306,6 +306,7 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
 | Pedidos (admin) | `routes/admin/adminPedidos.js` | `controllers/adminOrdersController.js` | `services/orderService.js` | `repositories/orderRepository.js` |
 | Carts (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
+| Serviços (admin) | `routes/admin/adminServicos.js` | `controllers/servicosAdminController.js` | `services/servicosAdminService.js` | `repositories/servicosAdminRepository.js` |
 | Cart (usuário) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
 | Pagamento | `routes/ecommerce/payment.js` | `controllers/paymentController.js` | `services/paymentService.js`, `services/paymentWebhookService.js` | — |
@@ -338,9 +339,6 @@ Nunca adicionar novas rotas em arquivos `_legacy/`. Roadmap detalhado: `docs/mig
 
 | Arquivo | Linhas | Prioridade | Janela |
 |---------|--------|-----------|--------|
-| `routes/public/_legacy/publicProductById.js` | 83 | alta | Q2 2026 |
-| `routes/public/_legacy/publicCategorias.js` | 73 | alta | Q2 2026 |
-| `routes/admin/_legacy/adminServicos.js` | 421 | alta | Q2 2026 |
 | `routes/admin/_legacy/adminShippingZones.js` | 322 | alta | Q2 2026 |
 | `routes/auth/_legacy/userProfile.js` | 288 | média | Q3 2026 |
 | `routes/ecommerce/_legacy/pedidos.js` | 181 | média | Q3 2026 |

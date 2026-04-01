@@ -29,13 +29,9 @@
 
 | Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
 |---------|--------|-----------|-------------|-------------|
-| `routes/admin/_legacy/adminServicos.js` | 421 | nenhum¹ | `servicosAdminController`, `servicosAdminService`, `servicosRepository` (admin) | backend |
 | `routes/admin/_legacy/adminShippingZones.js` | 322 | nenhum | `shippingZonesRepository`, `shippingZonesService`, `shippingZonesController` | backend |
 
-¹ `servicosRepository.js` existe para o lado público — reutilizar ou estender para admin.
-
-**Por que alta:** `publicProductById` é o único arquivo legado ainda incluso por uma rota moderna.
-`adminServicos` e `adminShippingZones` afetam fluxos críticos (serviços e frete de checkout).
+**Por que alta:** `adminShippingZones` afeta fluxo crítico de frete no checkout.
 
 ---
 
@@ -113,10 +109,10 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 
 | Janela | Arquivos | Linhas totais | Estimativa |
 |--------|----------|---------------|------------|
-| Q2 2026 (alta) | 2 | 743 | 1–2 semanas |
+| Q2 2026 (alta) | 1 | 322 | ~1 semana |
 | Q3 2026 (média) | 11 | 2.576 | 5–7 semanas |
 | Q4 2026 (baixa) | 8 | 2.344 | 4–6 semanas |
-| **Total** | **22** | **5.819** | — |
+| **Total** | **21** | **5.398** | — |
 
 ---
 
@@ -144,4 +140,5 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 | `publicCategorias.js` | public | 2026-04-01 | `findActiveCategories` em `categoriasRepository` + `categoriasPublicController` |
 | `publicProductById.js` | public | 2026-04-01 | absorvido em `publicProductsController.getProductById` + `productRepository.findProductById` |
 | `adminColaboradores.js` | admin | 2026 | Moderno |
+| `adminServicos.js` | admin | 2026-04-01 | `servicosAdminRepository` + `servicosAdminService` + `servicosAdminController` + Zod schemas |
 
