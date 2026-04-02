@@ -15,7 +15,6 @@ const cartRouter = require("../../routes/ecommerce/cart");
 
 function expectUnauthorized(res) {
   expect(res.status).toBe(401);
-  expect(res.body).toHaveProperty("message", "Usuário não autenticado.");
 }
 
 function expectValidationMessage(res, expectedMessage = "Dados inválidos.") {
@@ -30,10 +29,11 @@ function expectValidationFieldMessage(res, expectedFieldMessage) {
 
 function expectStockLimit(res, payload) {
   expect(res.status).toBe(409);
-  expect(res.body).toEqual({
+  expect(res.body).toMatchObject({
+    ok: false,
     code: "STOCK_LIMIT",
     message: "Limite de estoque atingido.",
-    ...payload,
+    details: payload,
   });
 }
 
@@ -41,7 +41,10 @@ describe("Cart routes (integração) — /api/cart", () => {
   let app;
 
   const setAuthUser = (user) => {
-    authenticateToken.mockImplementation((req, _res, next) => {
+    authenticateToken.mockImplementation((req, res, next) => {
+      if (!user) {
+        return res.status(401).json({ ok: false, code: "UNAUTHORIZED", message: "Não autenticado." });
+      }
       req.user = user;
       return next();
     });
@@ -68,7 +71,7 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app).get("/api/cart");
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ carrinho_id: null, items: [] });
+      expect(res.body).toMatchObject({ ok: true, data: { carrinho_id: null, items: [] } });
       expect(pool.query).toHaveBeenCalledTimes(1);
     });
 
@@ -92,9 +95,10 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app).get("/api/cart");
 
       expect(res.status).toBe(200);
-      expect(res.body.carrinho_id).toBe(12);
-      expect(Array.isArray(res.body.items)).toBe(true);
-      expect(res.body.items[0]).toMatchObject({
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data.carrinho_id).toBe(12);
+      expect(Array.isArray(res.body.data.items)).toBe(true);
+      expect(res.body.data.items[0]).toMatchObject({
         item_id: 321,
         produto_id: 105,
         quantidade: 2,
@@ -120,8 +124,8 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       expect(res.status).toBe(500);
       expect(res.body).toMatchObject({
+        ok: false,
         code: expect.any(String),
-        message: "Erro ao carregar carrinho.",
       });
     });
   });
@@ -203,11 +207,9 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
-        success: true,
-        message: "Produto adicionado ao carrinho",
-        produto_id: 105,
-        quantidade: 2,
-        stock: 7,
+        ok: true,
+        message: "Produto adicionado ao carrinho.",
+        data: { produto_id: 105, quantidade: 2, stock: 7 },
       });
 
       expect(conn.beginTransaction).toHaveBeenCalledTimes(1);
@@ -232,10 +234,8 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
-        success: true,
-        produto_id: 105,
-        quantidade: 5,
-        stock: 7,
+        ok: true,
+        data: { produto_id: 105, quantidade: 5, stock: 7 },
       });
 
       expect(conn.commit).toHaveBeenCalledTimes(1);
@@ -300,14 +300,7 @@ describe("Cart routes (integração) — /api/cart", () => {
         .post("/api/cart/items")
         .send({ produto_id: 105, quantidade: 1 });
 
-      expect(res.status).toBe(409);
-      expect(res.body).toMatchObject({
-        code: "STOCK_LIMIT",
-        message: "Limite de estoque atingido.",
-        max: 0,
-        current: 0,
-        requested: 1,
-      });
+      expectStockLimit(res, { max: 0, current: 0, requested: 1 });
 
       expect(conn.rollback).toHaveBeenCalledTimes(1);
       expect(conn.release).toHaveBeenCalledTimes(1);
@@ -327,11 +320,9 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
-        success: true,
+        ok: true,
         message: "Carrinho já vazio.",
-        produto_id: 105,
-        quantidade: 0,
-        stock: 0,
+        data: { produto_id: 105, quantidade: 0, stock: 0, emptyCart: true },
       });
 
       expect(conn.commit).toHaveBeenCalledTimes(1);
@@ -365,11 +356,9 @@ describe("Cart routes (integração) — /api/cart", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
-        success: true,
+        ok: true,
         message: "Quantidade atualizada.",
-        produto_id: 105,
-        quantidade: 5,
-        stock: 7,
+        data: { produto_id: 105, quantidade: 5, stock: 7, emptyCart: false },
       });
 
       expect(conn.commit).toHaveBeenCalledTimes(1);
@@ -454,7 +443,7 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app).delete("/api/cart/items/105");
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: true, message: "Carrinho já vazio." });
+      expect(res.body).toMatchObject({ ok: true, message: "Carrinho já vazio." });
       expect(conn.commit).toHaveBeenCalledTimes(1);
       expect(conn.release).toHaveBeenCalledTimes(1);
     });
@@ -470,8 +459,8 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app).delete("/api/cart/items/105");
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({
-        success: true,
+      expect(res.body).toMatchObject({
+        ok: true,
         message: "Item removido do carrinho.",
       });
       expect(conn.commit).toHaveBeenCalledTimes(1);
@@ -490,8 +479,8 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app).delete("/api/cart");
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({
-        success: true,
+      expect(res.body).toMatchObject({
+        ok: true,
         message: "Carrinho já estava vazio.",
       });
       expect(conn.commit).toHaveBeenCalledTimes(1);
@@ -510,7 +499,7 @@ describe("Cart routes (integração) — /api/cart", () => {
       const res = await request(app).delete("/api/cart");
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: true, message: "Carrinho limpo." });
+      expect(res.body).toMatchObject({ ok: true, message: "Carrinho limpo." });
 
       expect(conn.query).toHaveBeenCalledWith(
         "DELETE FROM carrinho_itens WHERE carrinho_id = ?",

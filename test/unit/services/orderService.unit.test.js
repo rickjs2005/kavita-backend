@@ -124,7 +124,8 @@ describe("orderService", () => {
       orderRepo.lockOrderForUpdate.mockResolvedValue(null);
       const result = await orderService.updateDeliveryStatus(1, "cancelado");
       expect(result).toEqual({ found: false });
-      expect(conn.rollback).toHaveBeenCalled();
+      // withTransaction commits (empty transaction), not rollback
+      expect(conn.commit).toHaveBeenCalled();
     });
 
     test("cancelado — rollback em erro", async () => {

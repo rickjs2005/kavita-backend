@@ -75,8 +75,8 @@ describe("Shipping Routes (integration)", () => {
 
       // Assert
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body).toMatchObject({
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toMatchObject({
         cep: "36940000",
         price: 19.9,
         prazo_dias: 5,

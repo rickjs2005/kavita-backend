@@ -32,7 +32,7 @@ const POOL_PATH = require.resolve("../../config/pool");
 const VERIFY_ADMIN_PATH = require.resolve("../../middleware/verifyAdmin");
 const BCRYPT_PATH = require.resolve("bcrypt");
 const ADMIN_LOGS_PATH = require.resolve("../../services/adminLogs");
-const ROUTER_PATH = require.resolve("../../routes/admin/_legacy/adminAdmins");
+const ROUTER_PATH = require.resolve("../../routes/admin/adminAdmins");
 const MOUNT = "/api/admin/admins";
 
 // ---------------------------------------------------------------------------

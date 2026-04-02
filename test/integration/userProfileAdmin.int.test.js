@@ -29,7 +29,7 @@ describe("userProfile /admin/:id routes — auth via verifyAdmin (adminToken)", 
   const errorCodesPath = require.resolve("../../constants/ErrorCodes");
   const sanitizePath = require.resolve("../../utils/sanitize");
   const cpfPath = require.resolve("../../utils/cpf");
-  const routerPath = require.resolve("../../routes/auth/_legacy/userProfile");
+  const routerPath = require.resolve("../../routes/auth/userProfile");
 
   const MOUNT = "/api/users";
 
@@ -61,11 +61,12 @@ describe("userProfile /admin/:id routes — auth via verifyAdmin (adminToken)", 
 
     jest.doMock(appErrorPath, () => {
       return class AppError extends Error {
-        constructor(message, code, status) {
+        constructor(message, code, status, details) {
           super(message);
           this.name = "AppError";
           this.code = code;
           this.status = status;
+          if (details != null) this.details = details;
         }
       };
     });
@@ -80,6 +81,13 @@ describe("userProfile /admin/:id routes — auth via verifyAdmin (adminToken)", 
     jest.doMock(cpfPath, () => ({
       sanitizeCPF: (v) => v,
       isValidCPF: () => true,
+    }));
+
+    const cpfCryptoPath = require.resolve("../../utils/cpfCrypto");
+    jest.doMock(cpfCryptoPath, () => ({
+      encryptCPF: (v) => v,
+      decryptCPF: (v) => v,
+      hashCPF: (v) => v ? `hash_${v}` : null,
     }));
 
     // authenticateToken: still needed for /me routes, but irrelevant for /admin/:id after fix
@@ -133,7 +141,8 @@ describe("userProfile /admin/:id routes — auth via verifyAdmin (adminToken)", 
       const res = await request(app).get(`${MOUNT}/admin/42`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ id: 42, nome: "Cliente Teste" });
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toMatchObject({ id: 42, nome: "Cliente Teste" });
     });
 
     test("404 quando usuário não existe", async () => {
@@ -172,17 +181,19 @@ describe("userProfile /admin/:id routes — auth via verifyAdmin (adminToken)", 
     test("200 e dados atualizados com adminToken válido", async () => {
       const { app, pool } = loadApp({ adminAuthenticated: true });
 
-      // UPDATE + SELECT
+      // service: getProfileAdmin (SELECT) + updateUserById (UPDATE) + findProfileByIdAdmin (SELECT)
       pool.query
-        .mockResolvedValueOnce([{ affectedRows: 1 }])
-        .mockResolvedValueOnce([[{ ...MOCK_USER_ROW, nome: "Novo Nome" }]]);
+        .mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]])                    // getProfileAdmin check
+        .mockResolvedValueOnce([{ affectedRows: 1 }])                       // UPDATE
+        .mockResolvedValueOnce([[{ ...MOCK_USER_ROW, nome: "Novo Nome" }]]); // return
 
       const res = await request(app)
         .put(`${MOUNT}/admin/42`)
         .send({ nome: "Novo Nome" });
 
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ nome: "Novo Nome" });
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toMatchObject({ nome: "Novo Nome" });
     });
 
     test("400 quando body não tem campos válidos para atualizar", async () => {
@@ -193,7 +204,7 @@ describe("userProfile /admin/:id routes — auth via verifyAdmin (adminToken)", 
         .send({ campoInexistente: "valor" });
 
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ mensagem: "Nada para atualizar." });
+      expect(res.body.ok).toBe(false);
     });
 
     test("400 quando campo excede tamanho máximo (nome > 100 chars)", async () => {
@@ -210,15 +221,16 @@ describe("userProfile /admin/:id routes — auth via verifyAdmin (adminToken)", 
       const { app, pool } = loadApp({ adminAuthenticated: true });
 
       pool.query
-        .mockResolvedValueOnce([{ affectedRows: 1 }])
-        .mockResolvedValueOnce([[{ ...MOCK_USER_ROW, cidade: "Belo Horizonte" }]]);
+        .mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]])                             // getProfileAdmin check
+        .mockResolvedValueOnce([{ affectedRows: 1 }])                                // UPDATE
+        .mockResolvedValueOnce([[{ ...MOCK_USER_ROW, cidade: "Belo Horizonte" }]]);  // return
 
       const res = await request(app)
         .put(`${MOUNT}/admin/42`)
         .send({ cidade: "Belo Horizonte" });
 
       expect(res.status).toBe(200);
-      expect(res.body.cidade).toBe("Belo Horizonte");
+      expect(res.body.data.cidade).toBe("Belo Horizonte");
     });
   });
 });

@@ -51,7 +51,7 @@ function loadApp() {
   const errCodesPath = require.resolve("../../constants/ErrorCodes");
   const sanitizePath = require.resolve("../../utils/sanitize");
   const cpfPath     = require.resolve("../../utils/cpf");
-  const routerPath  = require.resolve("../../routes/auth/_legacy/userProfile");
+  const routerPath  = require.resolve("../../routes/auth/userProfile");
 
   jest.doMock(errCodesPath, () => ({
     VALIDATION_ERROR: "VALIDATION_ERROR",
@@ -62,11 +62,12 @@ function loadApp() {
 
   jest.doMock(appErrPath, () =>
     class AppError extends Error {
-      constructor(message, code, status) {
+      constructor(message, code, status, details) {
         super(message);
         this.name = "AppError";
         this.code = code;
         this.status = status;
+        if (details != null) this.details = details;
       }
     }
   );
@@ -78,6 +79,13 @@ function loadApp() {
   jest.doMock(cpfPath, () => ({
     sanitizeCPF: (v) => v,
     isValidCPF: () => true,
+  }));
+
+  const cpfCryptoPath = require.resolve("../../utils/cpfCrypto");
+  jest.doMock(cpfCryptoPath, () => ({
+    encryptCPF: (v) => v,
+    decryptCPF: (v) => v,
+    hashCPF: (v) => v ? `hash_${v}` : null,
   }));
 
   // authenticateToken: injeta usuário autenticado
@@ -107,14 +115,17 @@ describe("GET /api/users/me — sem campos sensíveis", () => {
 
     expect(res.status).toBe(200);
 
+    expect(res.body.ok).toBe(true);
+    const data = res.body.data;
+
     // Nenhum campo proibido na resposta
     for (const field of FORBIDDEN_FIELDS) {
-      expect(res.body).not.toHaveProperty(field);
+      expect(data).not.toHaveProperty(field);
     }
 
     // Campos esperados presentes
     for (const field of EXPECTED_FIELDS) {
-      expect(res.body).toHaveProperty(field);
+      expect(data).toHaveProperty(field);
     }
   });
 
@@ -135,12 +146,11 @@ describe("PUT /api/users/me — sem campos sensíveis na resposta", () => {
   test("200 e resposta NÃO inclui status_conta após atualização bem-sucedida", async () => {
     const { app, pool } = loadApp();
 
-    // mock: (1) verificação de CPF duplicado não ocorre (nome não é CPF)
-    // (2) UPDATE bem-sucedido
-    // (3) SELECT de retorno (sem status_conta)
+    // service flow: getProfile (SELECT) + updateUserById (UPDATE) + findProfileById (SELECT)
     pool.query
-      .mockResolvedValueOnce([{ affectedRows: 1 }])         // UPDATE usuarios
-      .mockResolvedValueOnce([[{ ...MOCK_USER_ROW, nome: "Novo Nome" }]]); // SELECT retorno
+      .mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]])                    // getProfile check
+      .mockResolvedValueOnce([{ affectedRows: 1 }])                       // UPDATE
+      .mockResolvedValueOnce([[{ ...MOCK_USER_ROW, nome: "Novo Nome" }]]); // SELECT return
 
     const res = await request(app)
       .put("/api/users/me")
@@ -148,12 +158,15 @@ describe("PUT /api/users/me — sem campos sensíveis na resposta", () => {
 
     expect(res.status).toBe(200);
 
+    expect(res.body.ok).toBe(true);
+    const data = res.body.data;
+
     // status_conta NÃO deve estar na resposta
-    expect(res.body).not.toHaveProperty("status_conta");
+    expect(data).not.toHaveProperty("status_conta");
 
     // campos internos nunca expostos
     for (const field of FORBIDDEN_FIELDS) {
-      expect(res.body).not.toHaveProperty(field);
+      expect(data).not.toHaveProperty(field);
     }
   });
 
@@ -161,8 +174,9 @@ describe("PUT /api/users/me — sem campos sensíveis na resposta", () => {
     const { app, pool } = loadApp();
 
     pool.query
-      .mockResolvedValueOnce([{ affectedRows: 1 }])
-      .mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]]);
+      .mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]])   // getProfile check
+      .mockResolvedValueOnce([{ affectedRows: 1 }])      // UPDATE
+      .mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]]);  // SELECT return
 
     const res = await request(app)
       .put("/api/users/me")
@@ -170,8 +184,9 @@ describe("PUT /api/users/me — sem campos sensíveis na resposta", () => {
 
     expect(res.status).toBe(200);
 
+    expect(res.body.ok).toBe(true);
     for (const field of EXPECTED_FIELDS) {
-      expect(res.body).toHaveProperty(field);
+      expect(res.body.data).toHaveProperty(field);
     }
   });
 
@@ -182,22 +197,24 @@ describe("PUT /api/users/me — sem campos sensíveis na resposta", () => {
     pool.query.mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]]);
     const getRes = await request(app).get("/api/users/me");
     expect(getRes.status).toBe(200);
-    const getKeys = Object.keys(getRes.body).sort();
+    const getKeys = Object.keys(getRes.body.data).sort();
 
     // PUT /me — novo loadApp para reset isolado
     jest.resetModules();
     jest.clearAllMocks();
     const { app: app2, pool: pool2 } = loadApp();
 
+    // service does: getProfile (SELECT) + _buildUpdateSets + updateUserById (UPDATE) + findProfileById (SELECT)
     pool2.query
-      .mockResolvedValueOnce([{ affectedRows: 1 }])
-      .mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]]);
+      .mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]])             // getProfile check
+      .mockResolvedValueOnce([{ affectedRows: 1 }])                // UPDATE
+      .mockResolvedValueOnce([[{ ...MOCK_USER_ROW }]]);            // findProfileById return
 
     const putRes = await request(app2)
       .put("/api/users/me")
       .send({ cidade: "Contagem" });
     expect(putRes.status).toBe(200);
-    const putKeys = Object.keys(putRes.body).sort();
+    const putKeys = Object.keys(putRes.body.data).sort();
 
     // Os dois contratos devem ser idênticos
     expect(putKeys).toEqual(getKeys);
