@@ -70,6 +70,15 @@ async function updateSettingsById(id, data) {
   await pool.query("UPDATE shop_settings SET ? WHERE id = ?", [data, id]);
 }
 
+async function findLogoUrl(id) {
+  const [rows] = await pool.query("SELECT logo_url FROM shop_settings WHERE id = ? LIMIT 1", [id]);
+  return rows[0]?.logo_url || null;
+}
+
+async function updateLogoUrl(id, logoUrl) {
+  await pool.query("UPDATE shop_settings SET logo_url = ?, updated_at = NOW() WHERE id = ?", [logoUrl, id]);
+}
+
 async function findAllCategories() {
   const [rows] = await pool.query(
     "SELECT id, nome, slug, ativo FROM categories ORDER BY nome ASC"
@@ -97,6 +106,8 @@ module.exports = {
   ensureSettings,
   findSettingsById,
   updateSettingsById,
+  findLogoUrl,
+  updateLogoUrl,
   findAllCategories,
   insertCategory,
   updateCategoryById,

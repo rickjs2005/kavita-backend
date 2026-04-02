@@ -1,6 +1,6 @@
 # Migration Tracker — kavita-backend
 
-> **Última atualização:** 2026-04-02 (2)
+> **Última atualização:** 2026-04-02 (3)
 >
 > **Como usar:**
 > - Ao abrir uma PR que toca um arquivo `_legacy/`: migrar o arquivo completo, OU documentar
@@ -72,7 +72,6 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 
 | Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
 |---------|--------|-----------|-------------|-------------|
-| `routes/admin/_legacy/adminConfigUpload.js` | 143 | nenhum | `configUploadController` | backend |
 | `routes/admin/_legacy/adminPermissions.js` | 197 | nenhum | `permissionsController` | backend |
 | `routes/admin/_legacy/adminLogs.js` | 255 | nenhum | `logsRepository`, `logsController` | backend |
 | `routes/admin/_legacy/adminCupons.js` | 337 | nenhum | `cuponsRepository`, `cuponsService`, `cuponsController` | backend |
@@ -101,8 +100,8 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 |--------|----------|---------------|------------|
 | Q2 2026 (alta) | 0 | 0 | ✅ concluído |
 | Q3 2026 (média) | 9 | 1.968 | 4–6 semanas |
-| Q4 2026 (baixa) | 7 | 2.262 | 3–5 semanas |
-| **Total** | **16** | **3.994** | — |
+| Q4 2026 (baixa) | 6 | 2.119 | 3–5 semanas |
+| **Total** | **15** | **3.851** | — |
 
 ---
 
@@ -135,4 +134,5 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 | `adminComunicacao.js` | admin | 2026-04-02 | `comunicacaoRepository` (existia) + `comunicacaoService` (reescrito com templates extraídos) + `comunicacaoController` + Zod schemas; `dispararEventoComunicacao` preservado |
 | `favorites.js` | ecommerce | 2026-04-02 | `favoritesRepository` + `favoritesService` + `favoritesController` + Zod schemas; contrato migrado de `{ success: true }` para `{ ok: true }` |
 | `adminEspecialidades.js` | admin | 2026-04-02 | `especialidadesRepository` + `especialidadesController`; endpoint público movido de `GET /api/admin/especialidades/public` para `GET /api/public/especialidades` |
+| `adminConfigUpload.js` | admin | 2026-04-02 | `shopConfigUploadService` + `shopConfigUploadController`; `findLogoUrl`/`updateLogoUrl` adicionados a `configRepository`; path fix: UPLOAD_ROOT incorreto substituído por `path.resolve(process.cwd(), ...)` |
 
