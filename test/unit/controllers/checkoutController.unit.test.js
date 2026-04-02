@@ -1020,3 +1020,125 @@ describe("checkoutController.create (unit)", () => {
     expect(conn.release).toHaveBeenCalledTimes(1);
   });
 });
+
+// =========================================================================
+// checkoutController.previewCoupon (unit)
+// =========================================================================
+
+describe("checkoutController.previewCoupon (unit)", () => {
+  function makeRes() {
+    return {
+      _status: 200,
+      _body: null,
+      status(code) { this._status = code; return this; },
+      json(body) { this._body = body; return this; },
+    };
+  }
+
+  let previewCoupon, checkoutService;
+
+  const checkoutSvcPath = require.resolve("../../../services/checkoutService");
+  const paymentSvcPath = require.resolve("../../../services/paymentService");
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+
+    jest.doMock(checkoutSvcPath, () => ({
+      create: jest.fn(),
+      previewCoupon: jest.fn(),
+    }));
+    jest.doMock(paymentSvcPath, () => ({
+      normalizeFormaPagamento: jest.fn().mockReturnValue("pix"),
+    }));
+
+    const ctrl = require("../../../controllers/checkoutController");
+    previewCoupon = ctrl.previewCoupon;
+    checkoutService = require(checkoutSvcPath);
+  });
+
+  test("400 se codigo vazio", async () => {
+    const req = { body: { codigo: "", produtos: [{ id: 1 }] } };
+    const res = makeRes();
+    const next = jest.fn();
+
+    await previewCoupon(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0].status).toBe(400);
+  });
+
+  test("400 se codigo ausente", async () => {
+    const req = { body: { produtos: [{ id: 1 }] } };
+    const next = jest.fn();
+
+    await previewCoupon(req, makeRes(), next);
+
+    expect(next.mock.calls[0][0].status).toBe(400);
+  });
+
+  test("400 se produtos vazio", async () => {
+    const req = { body: { codigo: "CUP", produtos: [] } };
+    const next = jest.fn();
+
+    await previewCoupon(req, makeRes(), next);
+
+    expect(next.mock.calls[0][0].status).toBe(400);
+  });
+
+  test("400 se produtos ausente", async () => {
+    const req = { body: { codigo: "CUP" } };
+    const next = jest.fn();
+
+    await previewCoupon(req, makeRes(), next);
+
+    expect(next.mock.calls[0][0].status).toBe(400);
+  });
+
+  test("sucesso — retorna response.ok com desconto", async () => {
+    checkoutService.previewCoupon.mockResolvedValue({
+      desconto: 15,
+      total_original: 100,
+      total_com_desconto: 85,
+      cupom: { id: 1 },
+    });
+
+    const req = { body: { codigo: "DESC15", produtos: [{ id: 1, quantidade: 2 }] } };
+    const res = makeRes();
+    const next = jest.fn();
+
+    await previewCoupon(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res._body.ok).toBe(true);
+    expect(res._body.data.desconto).toBe(15);
+    expect(res._body.data.total_com_desconto).toBe(85);
+    expect(res._body.message).toContain("Cupom aplicado");
+  });
+
+  test("propaga AppError do service", async () => {
+    const AppError = require("../../../errors/AppError");
+    const err = new AppError("Cupom expirado.", "VALIDATION_ERROR", 400);
+    checkoutService.previewCoupon.mockRejectedValue(err);
+
+    const req = { body: { codigo: "EXP", produtos: [{ id: 1 }] } };
+    const next = jest.fn();
+
+    await previewCoupon(req, makeRes(), next);
+
+    expect(next).toHaveBeenCalledWith(err);
+  });
+
+  test("erro bruto wrapeado em AppError 500", async () => {
+    checkoutService.previewCoupon.mockRejectedValue(new Error("db fail"));
+
+    const req = { body: { codigo: "X", produtos: [{ id: 1 }] } };
+    const next = jest.fn();
+
+    await previewCoupon(req, makeRes(), next);
+
+    const wrapped = next.mock.calls[0][0];
+    expect(wrapped.status).toBe(500);
+    expect(wrapped.message).toContain("cupom");
+  });
+});

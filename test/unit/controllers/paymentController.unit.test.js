@@ -191,4 +191,81 @@ describe("paymentController", () => {
     expect(paymentService.disableMethod).toHaveBeenCalledWith(5);
     expect(res.json).toHaveBeenCalledWith({ ok: true });
   });
+
+  // -----------------------------------------------------------------------
+  // Branch coverage: erro bruto (não-AppError) nos admin handlers
+  // Cobre linhas 57, 88, 102 (ternário instanceof AppError → false)
+  // -----------------------------------------------------------------------
+
+  test("adminListMethods — erro bruto wrapeado em AppError 500", async () => {
+    paymentService.listAllMethods.mockRejectedValue(new Error("raw db"));
+    req = {};
+
+    await ctrl.adminListMethods(req, res, next);
+
+    const err = next.mock.calls[0][0];
+    expect(err.message).toBe("Erro ao listar métodos de pagamento (admin).");
+    expect(err.status).toBe(500);
+  });
+
+  test("adminUpdateMethod — erro bruto wrapeado em AppError 500", async () => {
+    paymentService.editMethod.mockRejectedValue(new Error("raw db"));
+    req = { params: { id: "1" }, body: {} };
+
+    await ctrl.adminUpdateMethod(req, res, next);
+
+    const err = next.mock.calls[0][0];
+    expect(err.message).toBe("Erro ao atualizar método de pagamento.");
+    expect(err.status).toBe(500);
+  });
+
+  test("adminDeleteMethod — erro bruto wrapeado em AppError 500", async () => {
+    paymentService.disableMethod.mockRejectedValue(new Error("raw db"));
+    req = { params: { id: "1" } };
+
+    await ctrl.adminDeleteMethod(req, res, next);
+
+    const err = next.mock.calls[0][0];
+    expect(err.message).toBe("Erro ao desativar método de pagamento.");
+    expect(err.status).toBe(500);
+  });
+
+  // -----------------------------------------------------------------------
+  // startPayment — branch: erro bruto com propriedades extra (linhas 130-141)
+  // -----------------------------------------------------------------------
+
+  test("startPayment — erro bruto com .message/.status/.error logado e wrapeado", async () => {
+    const rawErr = new Error("MP API down");
+    rawErr.status = 503;
+    rawErr.error = "service_unavailable";
+    paymentService.startPayment.mockRejectedValue(rawErr);
+    req = { body: { pedidoId: 1 }, user: { id: 1 } };
+
+    await ctrl.startPayment(req, res, next);
+
+    const err = next.mock.calls[0][0];
+    expect(err.message).toBe("Erro ao iniciar pagamento com o Mercado Pago.");
+    expect(err.status).toBe(500);
+  });
+
+  test("startPayment — erro bruto SEM .message/.status (branch interior)", async () => {
+    paymentService.startPayment.mockRejectedValue({ weird: true });
+    req = { body: { pedidoId: 1 }, user: { id: 1 } };
+
+    await ctrl.startPayment(req, res, next);
+
+    const err = next.mock.calls[0][0];
+    expect(err.status).toBe(500);
+  });
+
+  test("startPayment — AppError do service é propagado sem wrapper", async () => {
+    const AppError = require("../../../errors/AppError");
+    const appErr = new AppError("Pedido não encontrado.", "NOT_FOUND", 404);
+    paymentService.startPayment.mockRejectedValue(appErr);
+    req = { body: { pedidoId: 1 }, user: { id: 1 } };
+
+    await ctrl.startPayment(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(appErr);
+  });
 });
