@@ -15,9 +15,11 @@ const toInt = (v) => {
 };
 
 function makeStockLimitError({ max, requested, current }) {
-  const err = new AppError("Limite de estoque atingido.", ERROR_CODES.STOCK_LIMIT, 409);
-  err.meta = { max, requested, current };
-  return err;
+  return new AppError("Limite de estoque atingido.", ERROR_CODES.STOCK_LIMIT, 409, {
+    max,
+    requested,
+    current,
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -1,27 +1,18 @@
 "use strict";
 // controllers/shippingController.js
-// =============================================================================
-// ⚠️  CONTRATO CONGELADO — NÃO USE COMO REFERÊNCIA PARA CÓDIGO NOVO
-// =============================================================================
-// Este controller retorna { success: true, ...quote } — divergente do padrão
-// oficial { ok: true, data }. O frontend de checkout depende deste shape.
 //
-// Ao tocar este arquivo:
-//   - PRESERVE o formato de resposta exato
-//   - NÃO copie este padrão em código novo
-//   - Para migrar: coordenar com frontend checkout (ver CLAUDE.md § Contratos)
+// Handler de cotação de frete.
+// Formato A: { ok: true, data } / erros via next(AppError).
 //
-// Shape congelado:
-//   GET /api/shipping/quote → { success: true, cep, price, prazo_dias, ... }
-//   Erros: via next(new AppError(...)) → padrão A (ok: false) ✅
-// =============================================================================
+// Consumer: routes/ecommerce/shipping.js
 
+const { response } = require("../lib");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { getQuote } = require("../services/shippingQuoteService");
 
 // ---------------------------------------------------------------------------
-// Input parsers (privados — usados apenas por getShippingQuote)
+// Input parsers
 // ---------------------------------------------------------------------------
 
 function parseCep(raw) {
@@ -33,13 +24,12 @@ function parseCep(raw) {
 }
 
 function parseItems(raw) {
-  // items vem como JSON stringificado (urlencoded) no querystring
   let items = raw;
 
   if (typeof raw === "string") {
     try {
       items = JSON.parse(raw);
-    } catch (e) {
+    } catch {
       throw new AppError("Parâmetro 'items' inválido (JSON).", ERROR_CODES.VALIDATION_ERROR, 400);
     }
   }
@@ -83,13 +73,9 @@ const getShippingQuote = async (req, res, next) => {
 
     const quote = await getQuote({ cep, items });
 
-    return res.status(200).json({
-      success: true,
-      ...quote,
-    });
+    response.ok(res, quote);
   } catch (err) {
-    console.error("[shippingController] erro em /api/shipping/quote:", err);
-    return next(
+    next(
       err instanceof AppError
         ? err
         : new AppError("Erro ao cotar frete.", ERROR_CODES.SERVER_ERROR, 500)

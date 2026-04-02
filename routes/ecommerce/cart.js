@@ -1,17 +1,8 @@
 "use strict";
-
 // routes/ecommerce/cart.js
-// =============================================================================
-// ⚠️  CONTRATO CONGELADO — controller retorna { success: true }, não { ok: true }
-// =============================================================================
-// Rota magra: middleware + wiring de handlers.
-// Lógica de negócio: services/cartService.js
-// Handlers:         controllers/cartController.js
-//
-// O cartController tem contrato congelado por dependência de frontend.
-// NÃO copie este padrão. NÃO altere shapes sem coordenar com frontend.
-// Ver CLAUDE.md § "Contratos de resposta" e header de cartController.js.
-// =============================================================================
+// ✅ Padrão moderno — rota magra.
+// authenticateToken aplicado via router.use().
+// validateCSRF aplicado no mount em ecommerceRoutes.js.
 
 const express = require("express");
 const router = express.Router();
