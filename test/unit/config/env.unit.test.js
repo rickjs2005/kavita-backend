@@ -34,7 +34,7 @@ function loadEnv(extraEnv = {}) {
   const allEnv = { ...BASE_ENV, ...extraEnv };
 
   // Remove vars que não estamos passando (garante isolamento)
-  const relevant = [...Object.keys(BASE_ENV), "MP_WEBHOOK_SECRET", "NODE_ENV"];
+  const relevant = [...Object.keys(BASE_ENV), "MP_WEBHOOK_SECRET", "CPF_ENCRYPTION_KEY", "NODE_ENV"];
   for (const k of relevant) {
     saved[k] = process.env[k];
     if (k in allEnv) {
@@ -87,6 +87,7 @@ describe("config/env.js — startup validation", () => {
     const { error } = loadEnv({
       NODE_ENV: "production",
       MP_WEBHOOK_SECRET: "super-secret-webhook-key",
+      CPF_ENCRYPTION_KEY: "test-cpf-key-32-chars-minimum!!!",
     });
     expect(error).toBeNull();
   });
