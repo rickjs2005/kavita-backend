@@ -140,8 +140,47 @@ describe("paymentController", () => {
   });
 
   // -----------------------------------------------------------------------
-  // adminDeleteMethod
+  // Admin CRUD
   // -----------------------------------------------------------------------
+
+  test("adminListMethods retorna { methods }", async () => {
+    paymentService.listAllMethods.mockResolvedValue([{ id: 1 }]);
+    req = {};
+
+    await ctrl.adminListMethods(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ methods: [{ id: 1 }] });
+  });
+
+  test("adminCreateMethod retorna 201 { method }", async () => {
+    paymentService.addMethod.mockResolvedValue({ id: 2, code: "pix" });
+    req = { body: { code: "pix", label: "Pix" } };
+
+    await ctrl.adminCreateMethod(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith({ method: { id: 2, code: "pix" } });
+  });
+
+  test("adminUpdateMethod retorna { method }", async () => {
+    paymentService.editMethod.mockResolvedValue({ id: 1, label: "Pix v2" });
+    req = { params: { id: "1" }, body: { label: "Pix v2" } };
+
+    await ctrl.adminUpdateMethod(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ method: { id: 1, label: "Pix v2" } });
+  });
+
+  test("adminCreateMethod propaga AppError do service", async () => {
+    const AppError = require("../../../errors/AppError");
+    const appErr = new AppError("dup", "VALIDATION_ERROR", 400);
+    paymentService.addMethod.mockRejectedValue(appErr);
+    req = { body: {} };
+
+    await ctrl.adminCreateMethod(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(appErr);
+  });
 
   test("adminDeleteMethod retorna { ok: true } (único endpoint formato A)", async () => {
     paymentService.disableMethod.mockResolvedValue();

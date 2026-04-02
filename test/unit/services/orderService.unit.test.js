@@ -210,6 +210,15 @@ describe("orderService", () => {
       );
     });
 
+    test("'enviado' — erro na comunicação não impede retorno { found: true }", async () => {
+      orderRepo.setDeliveryStatus.mockResolvedValue(1);
+      comunicacao.dispararEventoComunicacao.mockRejectedValue(new Error("smtp down"));
+
+      const result = await orderService.updateDeliveryStatus(1, "enviado");
+
+      expect(result).toEqual({ found: true });
+    });
+
     test("status normal (não cancelado, não enviado) — sem evento", async () => {
       orderRepo.setDeliveryStatus.mockResolvedValue(1);
 

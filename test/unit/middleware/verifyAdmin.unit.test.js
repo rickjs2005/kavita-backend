@@ -211,6 +211,18 @@ describe("verifyAdmin — sucesso", () => {
     expect(authAdminService.getAdminPermissions).toHaveBeenCalledWith(1, 0);
   });
 
+  test("JWT sem tokenVersion (undefined) tratado como 0 — bate com DB 0", async () => {
+    jwt.verify.mockReturnValue({ id: 1 }); // sem tokenVersion
+    authAdminService.findAdminById.mockResolvedValue({ ...ADMIN_ROW, tokenVersion: 0 });
+    authAdminService.getAdminPermissions.mockResolvedValue(["p1"]);
+
+    const { req, res, next } = makeReqRes("valid-token");
+    await verifyAdmin(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(req.admin).toBeDefined();
+  });
+
   test("getAdminPermissions retorna array vazio → req.admin.permissions = []", async () => {
     jwt.verify.mockReturnValue({ id: 1, tokenVersion: 2 });
     authAdminService.findAdminById.mockResolvedValue(ADMIN_ROW);

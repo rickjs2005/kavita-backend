@@ -184,6 +184,47 @@ describe("paymentWebhookService", () => {
       expect(repo.updatePedidoPayment).toHaveBeenCalledWith(conn, 50, "falhou", "pay-888");
     });
 
+    test("re-delivery: evento existente não processado → marca received e continua", async () => {
+      repo.findWebhookEventForUpdate.mockResolvedValue({ id: 99, processed_at: null });
+
+      const { Payment } = require("mercadopago");
+      Payment.mockImplementation(() => ({
+        get: jest.fn().mockResolvedValue({
+          status: "approved",
+          metadata: { pedidoId: 77 },
+        }),
+      }));
+
+      const result = await handleWebhookEvent({
+        eventId: "evt-redelivery",
+        type: "payment",
+        dataId: "pay-555",
+        payload: "{}",
+        signatureHeader: "sig",
+      });
+
+      expect(result).toBe("processed");
+      expect(repo.markWebhookEventReceived).toHaveBeenCalledWith(conn, 99, expect.any(Object));
+      expect(repo.insertWebhookEvent).not.toHaveBeenCalled();
+    });
+
+    test("rollback falho é capturado sem impedir propagação do erro original", async () => {
+      repo.findWebhookEventForUpdate.mockRejectedValue(new Error("original error"));
+      conn.rollback.mockRejectedValue(new Error("rollback failed"));
+
+      await expect(
+        handleWebhookEvent({
+          eventId: "evt-double-fail",
+          type: "payment",
+          dataId: "1",
+          payload: "{}",
+          signatureHeader: "sig",
+        })
+      ).rejects.toThrow("original error");
+
+      expect(conn.release).toHaveBeenCalled();
+    });
+
     test("faz rollback em erro e propaga exceção", async () => {
       repo.findWebhookEventForUpdate.mockRejectedValue(new Error("db crash"));
 
