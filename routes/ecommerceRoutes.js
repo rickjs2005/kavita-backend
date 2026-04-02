@@ -30,10 +30,10 @@ try {
   handleRouteLoadError("./ecommerce/cart", err);
 }
 try {
-  const favoritesRoutes = require("./ecommerce/_legacy/favorites");
+  const favoritesRoutes = require("./ecommerce/favorites");
   router.use("/favorites", validateCSRF, favoritesRoutes);
 } catch (err) {
-  handleRouteLoadError("./ecommerce/_legacy/favorites", err);
+  handleRouteLoadError("./ecommerce/favorites", err);
 }
 try {
   const checkoutRoutes = require("./ecommerce/checkout");

@@ -1,6 +1,6 @@
 # Migration Tracker — kavita-backend
 
-> **Última atualização:** 2026-04-02
+> **Última atualização:** 2026-04-02 (2)
 >
 > **Como usar:**
 > - Ao abrir uma PR que toca um arquivo `_legacy/`: migrar o arquivo completo, OU documentar
@@ -48,7 +48,6 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 | Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
 |---------|--------|-----------|-------------|-------------|
 | `routes/ecommerce/_legacy/pedidos.js` | 181 | nenhum | `pedidosRepository` (user-side), `pedidosController` (usuário) | backend |
-| `routes/ecommerce/_legacy/favorites.js` | 146 | nenhum | `favoritesRepository`, `favoritesController` | backend |
 
 #### Admin — operações com usuários/admins
 
@@ -102,7 +101,7 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 | Janela | Arquivos | Linhas totais | Estimativa |
 |--------|----------|---------------|------------|
 | Q2 2026 (alta) | 0 | 0 | ✅ concluído |
-| Q3 2026 (média) | 10 | 2.114 | 4–6 semanas |
+| Q3 2026 (média) | 9 | 1.968 | 4–6 semanas |
 | Q4 2026 (baixa) | 8 | 2.344 | 4–6 semanas |
 | **Total** | **18** | **4.458** | — |
 
@@ -135,4 +134,5 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 | `adminServicos.js` | admin | 2026-04-01 | `servicosAdminRepository` + `servicosAdminService` + `servicosAdminController` + Zod schemas |
 | `adminShippingZones.js` | admin | 2026-04-02 | `shippingZonesRepository` + `shippingZonesService` + `shippingZonesController` + Zod schemas |
 | `adminComunicacao.js` | admin | 2026-04-02 | `comunicacaoRepository` (existia) + `comunicacaoService` (reescrito com templates extraídos) + `comunicacaoController` + Zod schemas; `dispararEventoComunicacao` preservado |
+| `favorites.js` | ecommerce | 2026-04-02 | `favoritesRepository` + `favoritesService` + `favoritesController` + Zod schemas; contrato migrado de `{ success: true }` para `{ ok: true }` |
 
