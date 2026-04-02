@@ -360,8 +360,10 @@ Nunca adicionar novas rotas em arquivos `_legacy/`. Roadmap detalhado: `docs/mig
 
 Armadilhas ativas (não resolvidas por organização — exigem migração futura):
 
-1. **`routes/ecommerce/payment.js`** — parece moderno (importa paymentService), mas ainda tem
-   `pool.query()` direto em 2 handlers. Não use como referência de como misturar padrões.
+1. **`routes/ecommerce/payment.js`** — rota magra e moderna (35 linhas, puro wiring), mas monta
+   rotas admin (`/admin/payment-methods`) dentro do contexto ecommerce em vez de `adminRoutes.js`.
+   O controller (`paymentController.js`) tem contratos de resposta congelados (`{ methods }`, `{ method }`)
+   — ver header do controller. **Não mover para `_legacy/`** — a rota está correta, apenas o mount é híbrido.
 
 2. **`routes/admin/adminPedidos.js`** — migração concluída em 2026-04. Controller em `controllers/adminOrdersController.js`, schemas em `schemas/ordersSchemas.js`. Contrato de resposta mudou para `{ ok: true, data }` — requer atualização no admin frontend para leitura dos GETs. Ver header do controller para detalhes.
 

@@ -1,12 +1,18 @@
 // routes/ecommerce/payment.js
+// =============================================================================
+// MOUNT HÍBRIDO — rotas admin de payment-methods estão aqui (não em adminRoutes)
+// =============================================================================
+// Esta rota é moderna e magra (puro wiring), mas monta TANTO endpoints públicos/
+// user quanto endpoints admin (/admin/payment-methods) no mesmo arquivo.
+// Motivo: o webhook do Mercado Pago e /methods não usam cookie de sessão,
+// então auth e CSRF são aplicados por rota, não pelo mount() global de adminRoutes.
 //
-// Rota magra: middleware + wiring de handlers.
+// O controller (paymentController.js) tem CONTRATOS CONGELADOS — ver header dele.
+// NÃO copie os shapes de resposta ({ methods }, { method }) em código novo.
+//
 // Lógica de negócio: services/paymentService.js, services/paymentWebhookService.js
 // Handlers:         controllers/paymentController.js
-// Documentação:     docs/swagger/payment.js
-//
-// Nota: autenticação e CSRF são aplicados por rota (não globalmente), porque
-// /webhook não usa cookie de sessão e /methods é público.
+// =============================================================================
 "use strict";
 
 const express = require("express");
