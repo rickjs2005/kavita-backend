@@ -7,6 +7,37 @@ const ERROR_CODES = require("../../constants/ErrorCodes");
 const { classify, safeUnlink, parseModelKey, ensureModelExists } = require("./dronesFormatters");
 const { response } = require("../../lib");
 
+// ---------------------------------------------------------------------------
+// Private helper — file validation + persist (deduplicates 4 create/update handlers)
+// ---------------------------------------------------------------------------
+
+/**
+ * Validates a multer file (type via classify, size limit) and persists it
+ * to the drones media folder. Returns { media_type, media_path }.
+ * On validation failure, cleans up the temp file and throws AppError.
+ */
+async function validateAndPersistFile(file) {
+  const info = classify(file);
+  if (!info) {
+    safeUnlink(file);
+    throw new AppError("Tipo de arquivo inválido. Use jpg/png/webp ou mp4.", ERROR_CODES.VALIDATION_ERROR, 400);
+  }
+
+  if (file.size > info.max) {
+    safeUnlink(file);
+    const mb = Math.round(info.max / 1024 / 1024);
+    throw new AppError(`Arquivo excede ${mb}MB.`, ERROR_CODES.VALIDATION_ERROR, 400);
+  }
+
+  const saved = await mediaService.persistMedia([file], { folder: "drones" });
+  const media_path = saved?.[0]?.path;
+  if (!media_path) {
+    throw new AppError("Falha ao salvar arquivo.", ERROR_CODES.SERVER_ERROR, 500);
+  }
+
+  return { media_type: info.media_type, media_path };
+}
+
 // ========================
 // Model-scoped gallery
 // ========================
@@ -36,23 +67,7 @@ async function createModelGalleryItem(req, res, next) {
 
     if (!file) throw new AppError("Arquivo de mídia obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400);
 
-    const info = classify(file);
-    if (!info) {
-      safeUnlink(file);
-      throw new AppError("Tipo de arquivo inválido. Use jpg/png/webp ou mp4.", ERROR_CODES.VALIDATION_ERROR, 400);
-    }
-
-    if (file.size > info.max) {
-      safeUnlink(file);
-      const mb = Math.round(info.max / 1024 / 1024);
-      throw new AppError(`Arquivo excede ${mb}MB.`, ERROR_CODES.VALIDATION_ERROR, 400);
-    }
-
-    const saved = await mediaService.persistMedia([file], { folder: "drones" });
-    const media_path = saved?.[0]?.path;
-    if (!media_path) {
-      throw new AppError("Falha ao salvar arquivo.", ERROR_CODES.SERVER_ERROR, 500);
-    }
+    const { media_type, media_path } = await validateAndPersistFile(file);
 
     const sort_order = parseInt(req.body.sort_order, 10) || 0;
     const is_active = String(req.body.is_active || "1") === "0" ? 0 : 1;
@@ -60,14 +75,14 @@ async function createModelGalleryItem(req, res, next) {
 
     const id = await dronesService.createGalleryItem({
       model_key: modelKey,
-      media_type: info.media_type,
+      media_type,
       media_path,
       title,
       sort_order,
       is_active,
     });
 
-    return response.created(res, { id, media_type: info.media_type, media_path, model_key: modelKey }, "Item criado.");
+    return response.created(res, { id, media_type, media_path, model_key: modelKey }, "Item criado.");
   } catch (e) {
     console.error("[drones/admin] createModelGalleryItem error:", e);
     if (file) safeUnlink(file);
@@ -90,19 +105,9 @@ async function updateModelGalleryItem(req, res, next) {
     const body = req.body || {};
 
     if (file) {
-      const info = classify(file);
-      if (!info) {
-        safeUnlink(file);
-        throw new AppError("Tipo inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
-      }
-      if (file.size > info.max) {
-        safeUnlink(file);
-        const mb = Math.round(info.max / 1024 / 1024);
-        throw new AppError(`Excede ${mb}MB.`, ERROR_CODES.VALIDATION_ERROR, 400);
-      }
-      const saved = await mediaService.persistMedia([file], { folder: "drones" });
-      patch.media_path = saved?.[0]?.path;
-      patch.media_type = info.media_type;
+      const { media_type, media_path } = await validateAndPersistFile(file);
+      patch.media_path = media_path;
+      patch.media_type = media_type;
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "sort_order")) patch.sort_order = parseInt(body.sort_order, 10) || 0;
@@ -162,21 +167,7 @@ async function createGalleryItem(req, res, next) {
   try {
     if (!file) throw new AppError("Arquivo de mídia obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400);
 
-    const info = classify(file);
-    if (!info) {
-      safeUnlink(file);
-      throw new AppError("Tipo inválido. Use jpg/png/webp ou mp4.", ERROR_CODES.VALIDATION_ERROR, 400);
-    }
-
-    if (file.size > info.max) {
-      safeUnlink(file);
-      const mb = Math.round(info.max / 1024 / 1024);
-      throw new AppError(`Excede ${mb}MB.`, ERROR_CODES.VALIDATION_ERROR, 400);
-    }
-
-    const saved = await mediaService.persistMedia([file], { folder: "drones" });
-    const media_path = saved?.[0]?.path;
-    if (!media_path) throw new AppError("Falha ao salvar arquivo.", ERROR_CODES.SERVER_ERROR, 500);
+    const { media_type, media_path } = await validateAndPersistFile(file);
 
     const body = req.body || {};
     const model_key = body.model_key ? String(body.model_key).trim() || null : null;
@@ -186,14 +177,14 @@ async function createGalleryItem(req, res, next) {
 
     const id = await dronesService.createGalleryItem({
       model_key,
-      media_type: info.media_type,
+      media_type,
       media_path,
       title,
       sort_order,
       is_active,
     });
 
-    return response.created(res, { id, media_type: info.media_type, media_path }, "Item criado.");
+    return response.created(res, { id, media_type, media_path }, "Item criado.");
   } catch (e) {
     console.error("[drones/admin] createGalleryItem error:", e);
     if (file) safeUnlink(file);
@@ -212,19 +203,9 @@ async function updateGalleryItem(req, res, next) {
     const body = req.body || {};
 
     if (file) {
-      const info = classify(file);
-      if (!info) {
-        safeUnlink(file);
-        throw new AppError("Tipo inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
-      }
-      if (file.size > info.max) {
-        safeUnlink(file);
-        const mb = Math.round(info.max / 1024 / 1024);
-        throw new AppError(`Excede ${mb}MB.`, ERROR_CODES.VALIDATION_ERROR, 400);
-      }
-      const saved = await mediaService.persistMedia([file], { folder: "drones" });
-      patch.media_path = saved?.[0]?.path;
-      patch.media_type = info.media_type;
+      const { media_type, media_path } = await validateAndPersistFile(file);
+      patch.media_path = media_path;
+      patch.media_type = media_type;
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "model_key")) {

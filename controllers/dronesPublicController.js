@@ -43,6 +43,87 @@ async function getPage(req, res, next) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Private helpers — extracted for readability and deduplication
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds the standardised landing shape used by getRoot and getModelAggregate.
+ * Single source of truth for the fields exposed to the public frontend.
+ */
+function buildLandingShape(landing) {
+  return {
+    hero_title: landing.hero_title || null,
+    hero_subtitle: landing.hero_subtitle || null,
+    hero_video_path: landing.hero_video_path || null,
+    hero_image_fallback_path: landing.hero_image_fallback_path || null,
+    cta_title: landing.cta_title || null,
+    cta_message_template: landing.cta_message_template || null,
+    cta_button_label: landing.cta_button_label || null,
+    sections_order_json: parseJsonField(landing.sections_order_json),
+  };
+}
+
+/**
+ * Enriches a list of drone models with media selection and resolved paths.
+ * Handles both the new table (drone_model_media_selections) and the legacy
+ * fallback (page_settings.models_json).
+ */
+async function enrichModelsWithMedia(items, modelsJson) {
+  const keys = items
+    .map((m) => String(m.key || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  // 1) New source (drone_model_media_selections)
+  let selectionsMap = {};
+  try {
+    selectionsMap = await dronesService.getSelectionsMapForModels(keys);
+  } catch (_) {
+    selectionsMap = {};
+  }
+
+  // 2) Merge with legacy fallback (page_settings.models_json)
+  const withSelection = items.map((m) => {
+    const key = String(m.key || "").trim().toLowerCase();
+    const sel = selectionsMap?.[key] || null;
+    const legacy = modelsJson?.[key] || {};
+
+    return {
+      ...m,
+      current_hero_media_id: sel?.HERO ?? legacy.current_hero_media_id ?? null,
+      current_card_media_id: sel?.CARD ?? legacy.current_card_media_id ?? null,
+    };
+  });
+
+  // 3) Resolve media IDs → paths
+  const wantedIds = withSelection
+    .flatMap((m) => [m.current_card_media_id, m.current_hero_media_id])
+    .filter((x) => Number.isFinite(Number(x)) && Number(x) > 0)
+    .map((x) => Number(x));
+
+  const mediaRows = await dronesService.getGalleryItemsByIds(wantedIds);
+  const mediaById = mediaRows.reduce((acc, r) => {
+    acc[String(r.id)] = r;
+    return acc;
+  }, {});
+
+  return withSelection.map((m) => {
+    const card = m.current_card_media_id ? mediaById[String(m.current_card_media_id)] : null;
+    const hero = m.current_hero_media_id ? mediaById[String(m.current_hero_media_id)] : null;
+    return {
+      ...m,
+      card_media_path: card?.media_path || null,
+      card_media_type: card?.media_type || null,
+      hero_media_path: hero?.media_path || null,
+      hero_media_type: hero?.media_type || null,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
 /**
  * =========================================================
  * ✅ NOVO ROOT: agregados com ?model=xxx (dinâmico via DB)
@@ -66,29 +147,18 @@ async function getRoot(req, res, next) {
       modelData = models_json?.[modelKey] || null;
     }
 
-    // Galeria
     const galleryResult = await dronesService.listGalleryPublic({ page: 1, limit: 1000, model_key: modelKey || null });
     const galleryItems = extractItems(galleryResult);
     const gallery = modelKey ? galleryItems.filter((g) => String(g.model_key || "") === modelKey) : galleryItems;
 
-    // Comentários aprovados
     const comments = await dronesService.listApprovedComments({
       page: req.query.page,
       limit: req.query.limit,
-      model_key: modelKey || null, // se o service suportar, filtra
+      model_key: modelKey || null,
     });
 
     return response.ok(res, {
-      landing: {
-        hero_title: landing.hero_title || null,
-        hero_subtitle: landing.hero_subtitle || null,
-        hero_video_path: landing.hero_video_path || null,
-        hero_image_fallback_path: landing.hero_image_fallback_path || null,
-        cta_title: landing.cta_title || null,
-        cta_message_template: landing.cta_message_template || null,
-        cta_button_label: landing.cta_button_label || null,
-        sections_order_json: parseJsonField(landing.sections_order_json),
-      },
+      landing: buildLandingShape(landing),
       model: modelRow ? { key: modelRow.key, label: modelRow.label } : null,
       model_data: modelData,
       gallery,
@@ -110,71 +180,10 @@ async function listModels(req, res, next) {
   try {
     const items = await safeListModelsFromDb();
 
-    // 1) Fonte robusta (tabela drone_model_media_selections)
-    //    - pega em lote pra evitar N+1
-    const keys = items
-      .map((m) => String(m.key || "").trim().toLowerCase())
-      .filter(Boolean);
-
-    let selectionsMap = {};
-    try {
-      selectionsMap = await dronesService.getSelectionsMapForModels(keys);
-    } catch (err) {
-      // se a migration ainda não existe em algum ambiente, não quebra o endpoint público
-      selectionsMap = {};
-    }
-
-    // 2) Fallback legado (page_settings.models_json)
     const landing = await dronesService.getPageSettings();
     const models_json = parseJsonField(landing?.models_json) || {};
 
-    const withSelection = items.map((m) => {
-      const key = String(m.key || "").trim().toLowerCase();
-
-      const sel = selectionsMap?.[key] || null;
-      const heroFromTable = sel?.HERO ?? null;
-      const cardFromTable = sel?.CARD ?? null;
-
-      const legacy = models_json?.[key] || {};
-      const heroLegacy = legacy.current_hero_media_id ?? null;
-      const cardLegacy = legacy.current_card_media_id ?? null;
-
-      return {
-        ...m,
-        current_hero_media_id: heroFromTable ?? heroLegacy,
-        current_card_media_id: cardFromTable ?? cardLegacy,
-      };
-    });
-
-    // ✅ NOVO: resolver ids -> media_path/media_type
-    const wantedIds = withSelection
-      .flatMap((m) => [m.current_card_media_id, m.current_hero_media_id])
-      .filter((x) => Number.isFinite(Number(x)) && Number(x) > 0)
-      .map((x) => Number(x));
-
-    const mediaRows = await dronesService.getGalleryItemsByIds(wantedIds);
-
-    // mapa por id
-    const mediaById = mediaRows.reduce((acc, r) => {
-      acc[String(r.id)] = r;
-      return acc;
-    }, {});
-
-    const enriched = withSelection.map((m) => {
-      const card = m.current_card_media_id ? mediaById[String(m.current_card_media_id)] : null;
-      const hero = m.current_hero_media_id ? mediaById[String(m.current_hero_media_id)] : null;
-
-      return {
-        ...m,
-
-        // ✅ O SEU FRONT JÁ SUPORTA ISSO:
-        card_media_path: card?.media_path || null,
-        card_media_type: card?.media_type || null,
-
-        hero_media_path: hero?.media_path || null,
-        hero_media_type: hero?.media_type || null,
-      };
-    });
+    const enriched = await enrichModelsWithMedia(items, models_json);
 
     return response.ok(res, { items: enriched });
   } catch (e) {
@@ -210,16 +219,7 @@ async function getModelAggregate(req, res, next) {
     });
 
     return response.ok(res, {
-      landing: {
-        hero_title: landing.hero_title || null,
-        hero_subtitle: landing.hero_subtitle || null,
-        hero_video_path: landing.hero_video_path || null,
-        hero_image_fallback_path: landing.hero_image_fallback_path || null,
-        cta_title: landing.cta_title || null,
-        cta_message_template: landing.cta_message_template || null,
-        cta_button_label: landing.cta_button_label || null,
-        sections_order_json: parseJsonField(landing.sections_order_json),
-      },
+      landing: buildLandingShape(landing),
       model: { key: modelRow.key, label: modelRow.label },
       model_data: modelData,
       gallery,
