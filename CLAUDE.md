@@ -53,11 +53,11 @@ Bug num módulo legado (urgente):
 **Q: `adminLogin.js` está em `routes/auth/`, não em `routes/admin/`. Por quê?**
 A: Login é ponto de entrada de sessão — sem `verifyAdmin`. Tudo em `routes/admin/` é protegido pelo middleware. Manter login em `auth/` deixa o contrato claro.
 
-**Q: Qual a diferença entre `productRepository.js` e `produtosRepository.js`?**
-A: Domínios diferentes. `productRepository.js` = leitura pública (listagem, busca, sem mutações). `produtosRepository.js` = CRUD admin completo (insert, update, delete, imagens). O cabeçalho de cada arquivo explica.
+**Q: Qual a diferença entre `productPublicRepository.js` e `productAdminRepository.js`?**
+A: Contextos diferentes. `productPublicRepository.js` = leitura pública (listagem, busca, sem mutações). `productAdminRepository.js` = CRUD admin completo (insert, update, delete, imagens). O cabeçalho de cada arquivo indica o par.
 
-**Q: Qual a diferença entre `cartRepository.js` e `cartsRepository.js`?**
-A: Contextos diferentes. `cartRepository.js` = carrinho ativo do usuário (ecommerce). `cartsRepository.js` = carrinhos abandonados para o painel admin. Não são duplicatas.
+**Q: Qual a diferença entre `cartRepository.js` e `abandonedCartsRepository.js`?**
+A: Contextos diferentes. `cartRepository.js` = carrinho ativo do usuário (ecommerce). `abandonedCartsRepository.js` = carrinhos abandonados para o painel admin.
 
 **Q: `verifyAdmin` ou `authenticateToken`?**
 A: `verifyAdmin` para rotas do painel admin (cookie `adminToken`, 2h). `authenticateToken` para rotas de usuário final (cookie `auth_token`, 7d). São contextos de autenticação completamente independentes. `verifyUser` e `requireRole` foram removidos.
@@ -301,11 +301,11 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | News (público) | `routes/public/publicNews.js` | `controllers/newsPublicController.js` | — | `repositories/postsRepository.js`, `climaRepository.js`, `cotacoesRepository.js` |
 | Site Hero (admin) | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
 | Site Hero (público) | `routes/public/publicSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
-| Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/produtosRepository.js` |
-| Produtos (público) | `routes/public/publicProducts.js` | `controllers/publicProductsController.js` | `services/productService.js` | `repositories/productRepository.js` |
+| Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/productAdminRepository.js` |
+| Produtos (público) | `routes/public/publicProducts.js` | `controllers/publicProductsController.js` | `services/productService.js` | `repositories/productPublicRepository.js` |
 | Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
 | Pedidos (admin) | `routes/admin/adminPedidos.js` | `controllers/adminOrdersController.js` | `services/orderService.js` | `repositories/orderRepository.js` |
-| Carts (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
+| Carts (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/abandonedCartsRepository.js` |
 | Serviços (admin) | `routes/admin/adminServicos.js` | `controllers/servicosAdminController.js` | `services/servicosAdminService.js` | `repositories/servicosAdminRepository.js` |
 | Zonas de frete (admin) | `routes/admin/adminShippingZones.js` | `controllers/shippingZonesController.js` | `services/shippingZonesService.js` | `repositories/shippingZonesRepository.js` |
 | Comunicação (admin) | `routes/admin/adminComunicacao.js` | `controllers/comunicacaoController.js` | `services/comunicacaoService.js` | `repositories/comunicacaoRepository.js` |
@@ -451,12 +451,12 @@ Alguns domínios têm dois arquivos de repository com nomes similares — um por
 
 | Par | Arquivo | Contexto | Critério |
 |-----|---------|----------|---------|
-| Produtos | `productRepository.js` | Público/ecommerce | Leitura + busca, sem mutações |
-| Produtos | `produtosRepository.js` | Admin | CRUD completo + imagens |
+| Produtos | `productPublicRepository.js` | Público/ecommerce | Leitura + busca, sem mutações |
+| Produtos | `productAdminRepository.js` | Admin | CRUD completo + imagens |
 | Carrinho | `cartRepository.js` | Usuário logado | Carrinho ativo (aberto), checkout |
-| Carrinho | `cartsRepository.js` | Admin/painel | Carrinhos abandonados, notificações |
+| Carrinho | `abandonedCartsRepository.js` | Admin/painel | Carrinhos abandonados, notificações |
 
-Regra para novos pares: se um domínio precisar de um segundo repository, nomear o arquivo de admin com sufixo descritivo ou prefixo de contexto (ex: `pedidosAdminRepository.js`) e documentar o par no header de ambos os arquivos.
+Regra para novos pares: nomear com sufixo de contexto (`Public`, `Admin`) ou prefixo descritivo (`abandoned`). Documentar o par no header de ambos os arquivos.
 
 ### Estilo de export em controllers
 

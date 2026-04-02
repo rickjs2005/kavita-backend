@@ -7,7 +7,7 @@
 // Regra de negócio codificada aqui:
 //   promo_price (valor absoluto) > discount_percent (percentual) > list price
 //
-// Consumidores: productRepository.js, checkoutRepository.js
+// Consumidores: productPublicRepository.js, checkoutRepository.js
 // Qualquer novo módulo que precise de preço efetivo de produto deve usar estas funções.
 
 /**
@@ -62,7 +62,7 @@ function activePromoWhere(alias = null) {
 
 /**
  * LEFT JOIN subquery que resolve para a promoção ativa de maior id por produto.
- * Desempate por MAX(id) — mesma semântica original de productRepository.js.
+ * Desempate por MAX(id) — mesma semântica original de productPublicRepository.js.
  * O alias do resultado é sempre "promo".
  *
  * @param {string} productAlias - Alias da tabela de produtos (padrão: "p")

@@ -306,8 +306,8 @@ e passar no moderno, a migração está correta.
 | Item | Detalhe |
 |------|---------|
 | **Risco principal** | Cálculo de `final_price` (promo_price se definido, senão aplica discount_percent sobre o preço do produto) deve ser replicado exatamente no service. |
-| **Dependência** | Lê tabela `products` para verificar existência e obter preço base. `produtosRepository` pode ser reutilizado para essa leitura. |
-| **Pré-requisito** | Nenhum (pode reutilizar `produtosRepository` para reads de produto). |
+| **Dependência** | Lê tabela `products` para verificar existência e obter preço base. `productAdminRepository` pode ser reutilizado para essa leitura. |
+| **Pré-requisito** | Nenhum (pode reutilizar `productAdminRepository` para reads de produto). |
 
 ### `adminCupons.js`
 
@@ -322,7 +322,7 @@ e passar no moderno, a migração está correta.
 | Item | Detalhe |
 |------|---------|
 | **Risco principal** | `GET /api/public/produtos?busca=` pode ser código morto. Se for removido antes de confirmar com o frontend, há risco de quebra silenciosa. **Confirmar antes de iniciar a migração.** |
-| **Dependência** | Sistema de avaliação de produtos usa `produto_avaliacoes`. Verificar se `productRepository` já tem queries para essa tabela antes de criar um novo. |
+| **Dependência** | Sistema de avaliação de produtos usa `produto_avaliacoes`. Verificar se `productPublicRepository` já tem queries para essa tabela antes de criar um novo. |
 | **Pré-requisito** | Confirmar status do endpoint `GET ?busca=`. |
 
 ---
@@ -380,7 +380,7 @@ Estes módulos já seguem o padrão completo e servem como exemplo:
 | Auth admin | `routes/admin/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
 | Drones (admin) | `routes/admin/adminDrones.js` | `controllers/drones/` | `services/drones/` | `repositories/dronesRepository.js` |
 | Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
-| Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/produtosRepository.js` |
+| Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/productAdminRepository.js` |
 | News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
 | Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |

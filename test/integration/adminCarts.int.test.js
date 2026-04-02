@@ -33,7 +33,7 @@ describe("AdminCarts routes (routes/admin/adminCarts.js)", () => {
       ...envOverrides,
     };
 
-    // cartsRepository usa pool.query diretamente — sem getConnection
+    // abandonedCartsRepository usa pool.query diretamente — sem getConnection
     const poolMock = {
       query: jest.fn(),
     };

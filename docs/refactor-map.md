@@ -247,7 +247,7 @@ status = "aberto"             status = "convertido" (post-commit, pool.query)
 | Order status transitions | `routes/adminPedidos.js` + `paymentWebhookService.js` | `services/orderService.js` |
 | Cart auto-creation | `routes/cart.js` | `services/cartService.js` |
 | Address normalization at checkout | `routes/checkoutRoutes.js` | `services/addressService.js` or `utils/address.js` (already partially exists) |
-| Promotion-aware pricing | `routes/checkoutRoutes.js (preview)` + `checkoutController.js` | `services/pricingService.js` or `repositories/productRepository.js` |
+| Promotion-aware pricing | `routes/checkoutRoutes.js (preview)` + `checkoutController.js` | `services/pricingService.js` or `repositories/productPublicRepository.js` |
 
 ---
 

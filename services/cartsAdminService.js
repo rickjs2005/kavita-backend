@@ -4,7 +4,7 @@
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
-const repo = require("../repositories/cartsRepository");
+const repo = require("../repositories/abandonedCartsRepository");
 const { logger } = require("../lib");
 
 const DEFAULT_ABANDON_THRESHOLD_HOURS =

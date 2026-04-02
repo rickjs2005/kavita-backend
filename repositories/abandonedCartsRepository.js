@@ -1,13 +1,12 @@
 "use strict";
-// repositories/cartsRepository.js
+// repositories/abandonedCartsRepository.js
 //
 // Escopo: domínio ADMIN de carrinhos — carrinhos ABANDONADOS e recuperação.
 // Responsabilidades: scan de carrinhos abertos sem registro, listagem de
 //                    abandonados, inserção de notificações (email/whatsapp),
 //                    consulta para geração de link WhatsApp.
 //
-// ⚠️  NÃO confundir com cartRepository.js, que é o domínio do USUÁRIO:
-//     carrinho ativo (aberto), leitura com itens, queries de checkout.
+// Par usuário: repositories/cartRepository.js (carrinho ativo do usuário)
 //
 // Consumidor: services/cartsAdminService.js
 //

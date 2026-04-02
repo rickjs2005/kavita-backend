@@ -1,11 +1,11 @@
-// repositories/productRepository.js
+// repositories/productPublicRepository.js
 //
 // Escopo: domínio PÚBLICO de produtos.
 // Responsabilidades: listagem paginada, busca avançada com filtros de promoção,
 //                    resolução de slug de categoria, busca de imagens para exibição.
 //
 // NÃO contém mutações (INSERT/UPDATE/DELETE).
-// Para CRUD admin, use: repositories/produtosRepository.js
+// Par admin: repositories/productAdminRepository.js
 //
 // Consumidor: services/productService.js
 // Pool: importado internamente (sem suporte a transação — não é necessário aqui).

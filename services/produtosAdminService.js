@@ -6,7 +6,7 @@ const pool = require("../config/pool");
 const mediaService = require("./mediaService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
-const repo = require("../repositories/produtosRepository");
+const repo = require("../repositories/productAdminRepository");
 const { logger } = require("../lib");
 
 // ---------------------------------------------------------------------------

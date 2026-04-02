@@ -1,5 +1,5 @@
 "use strict";
-// repositories/produtosRepository.js
+// repositories/productAdminRepository.js
 //
 // Escopo: domínio ADMIN de produtos.
 // Responsabilidades: CRUD completo (insert, update, delete), gerenciamento de
@@ -7,7 +7,7 @@
 //                    leitura para edição no painel.
 //
 // NÃO contém queries de busca pública nem cálculo de promoções.
-// Para listagem/busca pública, use: repositories/productRepository.js
+// Par público: repositories/productPublicRepository.js
 //
 // Consumidor: services/produtosAdminService.js
 //

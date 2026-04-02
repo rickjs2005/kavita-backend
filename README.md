@@ -307,10 +307,10 @@ O Helmet 8 define `Cross-Origin-Resource-Policy: same-origin` por padrão. O ove
 | Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
 | News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js` |
 | Site Hero | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
-| Produtos (público) | `routes/public/publicProducts.js` | — | `services/productService.js` | `repositories/productRepository.js` |
-| Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/produtosRepository.js` |
+| Produtos (público) | `routes/public/publicProducts.js` | — | `services/productService.js` | `repositories/productPublicRepository.js` |
+| Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/productAdminRepository.js` |
 | Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
-| Carrinhos (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
+| Carrinhos (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/abandonedCartsRepository.js` |
 | Cart (usuário) | `routes/ecommerce/cart.js` | — | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
 | Pedidos | `routes/ecommerce/pedidos.js` | — | `services/orderService.js` | `repositories/orderRepository.js` |
@@ -660,7 +660,7 @@ exports.create = async (req, res, next) => {
 ```js
 const AppError = require("../errors/AppError");
 const { ERROR_CODES } = require("../constants/ErrorCodes");
-const repository = require("../repositories/produtosRepository");
+const repository = require("../repositories/productAdminRepository");
 
 async function listar(query) {
   return repository.findAll(query);

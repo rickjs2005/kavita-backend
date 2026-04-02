@@ -3,7 +3,7 @@
 "use strict";
 const ERROR_CODES = require("../constants/ErrorCodes");
 
-const productRepo = require("../repositories/productRepository");
+const productRepo = require("../repositories/productPublicRepository");
 const AppError = require("../errors/AppError");
 
 // ---------------------------------------------------------------------------

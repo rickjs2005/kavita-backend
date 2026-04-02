@@ -22,7 +22,7 @@
 
 const { response } = require("../lib");
 const productService = require("../services/productService");
-const productRepo = require("../repositories/productRepository");
+const productRepo = require("../repositories/productPublicRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 
