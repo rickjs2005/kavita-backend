@@ -31,6 +31,7 @@ load("/uploads", "./utils/uploadsCheck");
 load("/products", "./public/publicProducts");
 load("/public/categorias", "./public/publicCategorias");
 load("/public/servicos", "./public/publicServicos");
+load("/public/especialidades", "./public/publicEspecialidades");
 load("/public/promocoes", "./public/publicPromocoes");
 load("/public/produtos", "./public/_legacy/publicProdutos"); // avaliações de produtos
 

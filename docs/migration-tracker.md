@@ -72,7 +72,6 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 
 | Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
 |---------|--------|-----------|-------------|-------------|
-| `routes/admin/_legacy/adminEspecialidades.js` | 82 | `adminServicos` (shared domain) | `especialidadesRepository`, `especialidadesController` | backend |
 | `routes/admin/_legacy/adminConfigUpload.js` | 143 | nenhum | `configUploadController` | backend |
 | `routes/admin/_legacy/adminPermissions.js` | 197 | nenhum | `permissionsController` | backend |
 | `routes/admin/_legacy/adminLogs.js` | 255 | nenhum | `logsRepository`, `logsController` | backend |
@@ -102,8 +101,8 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 |--------|----------|---------------|------------|
 | Q2 2026 (alta) | 0 | 0 | ✅ concluído |
 | Q3 2026 (média) | 9 | 1.968 | 4–6 semanas |
-| Q4 2026 (baixa) | 8 | 2.344 | 4–6 semanas |
-| **Total** | **18** | **4.458** | — |
+| Q4 2026 (baixa) | 7 | 2.262 | 3–5 semanas |
+| **Total** | **16** | **3.994** | — |
 
 ---
 
@@ -135,4 +134,5 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 | `adminShippingZones.js` | admin | 2026-04-02 | `shippingZonesRepository` + `shippingZonesService` + `shippingZonesController` + Zod schemas |
 | `adminComunicacao.js` | admin | 2026-04-02 | `comunicacaoRepository` (existia) + `comunicacaoService` (reescrito com templates extraídos) + `comunicacaoController` + Zod schemas; `dispararEventoComunicacao` preservado |
 | `favorites.js` | ecommerce | 2026-04-02 | `favoritesRepository` + `favoritesService` + `favoritesController` + Zod schemas; contrato migrado de `{ success: true }` para `{ ok: true }` |
+| `adminEspecialidades.js` | admin | 2026-04-02 | `especialidadesRepository` + `especialidadesController`; endpoint público movido de `GET /api/admin/especialidades/public` para `GET /api/public/especialidades` |
 

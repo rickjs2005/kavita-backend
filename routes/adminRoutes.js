@@ -50,7 +50,7 @@ mount("/admin/site-hero",       "./admin/adminSiteHero");
 mount("/admin/colaboradores",   "./admin/adminColaboradores");
 mount("/admin/servicos",        "./admin/adminServicos");
 mount("/admin/servicos/solicitacoes", "./admin/_legacy/adminSolicitacoesServicos");
-mount("/admin/especialidades",  "./admin/_legacy/adminEspecialidades");
+mount("/admin/especialidades",  "./admin/adminEspecialidades");
 mount("/admin/drones",          "./admin/adminDrones");
 
 /* ============================================================
