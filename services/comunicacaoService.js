@@ -1,117 +1,115 @@
+"use strict";
 // services/comunicacaoService.js
+//
+// Regras de negócio para envio de comunicações transacionais.
+// Consumidores:
+//   - controllers/comunicacaoController.js   (admin: envio manual com override)
+//   - services/checkoutNotificationService.js (evento pedido_criado)
+//   - services/orderService.js               (eventos pagamento_aprovado, pedido_enviado)
+
 const { sendTransactionalEmail } = require("./mailService");
-const comunicacaoRepository = require("../repositories/comunicacaoRepository");
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
+const repo = require("../repositories/comunicacaoRepository");
 
-/* ------------------------------------------------------------------ */
-/*                               Helpers                              */
-/* ------------------------------------------------------------------ */
+// ---------------------------------------------------------------------------
+// Templates (extraídos para templates/email/ e templates/whatsapp/)
+// ---------------------------------------------------------------------------
 
-// 🔧 busca os dados principais do pedido + cliente
-async function carregarPedidoBasico(pedidoId) {
-  return comunicacaoRepository.getPedidoBasico(pedidoId);
-}
+const emailTemplates = {
+  confirmacao_pedido: require("../templates/email/confirmacaoPedido"),
+  pagamento_aprovado: require("../templates/email/pagamentoAprovado"),
+  pedido_enviado:     require("../templates/email/pedidoEnviado"),
+};
 
-// 🔧 tabela de log (comunicacoes_enviadas)
-async function logComunicacao(params) {
-  try {
-    await comunicacaoRepository.insertLogComunicacao(params);
-  } catch (err) {
-    console.error("[comunicacao] Erro ao logar comunicação:", err);
-  }
-}
+const whatsappTemplates = {
+  confirmacao_pedido: require("../templates/whatsapp/confirmacaoPedido"),
+  pagamento_aprovado: require("../templates/whatsapp/pagamentoAprovado"),
+  pedido_enviado:     require("../templates/whatsapp/pedidoEnviado"),
+};
 
-// 🔧 normaliza telefone (só dígitos)
+// Mapa de tipoEvento → templateId (usado por dispararEventoComunicacao)
+const EVENTO_TEMPLATE = {
+  pedido_criado:      "confirmacao_pedido",
+  pagamento_aprovado: "pagamento_aprovado",
+  pedido_enviado:     "pedido_enviado",
+};
+
+// ---------------------------------------------------------------------------
+// Helpers internos
+// ---------------------------------------------------------------------------
+
 function normalizarTelefone(valor) {
   if (!valor) return "";
   return String(valor).replace(/\D/g, "");
 }
 
-// ✅ normaliza valor monetário para 2 casas (evita toFixed em string/decimal)
-function money2(v) {
-  const n = Number(v ?? 0);
-  return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+function buildEmail(templateId, pedido) {
+  const fn = emailTemplates[templateId];
+  if (!fn) {
+    throw new AppError(
+      "Template de e-mail não suportado.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
+  return fn(pedido);
 }
 
-/* ------------------------------------------------------------------ */
-/*                          TEMPLATES - E-MAIL                         */
-/* ------------------------------------------------------------------ */
+function buildWhatsapp(templateId, pedido) {
+  const fn = whatsappTemplates[templateId];
+  if (!fn) {
+    throw new AppError(
+      "Template de WhatsApp não suportado.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
+  return fn(pedido);
+}
 
-function buildEmailFromTemplate(templateId, pedido) {
-  const totalFmt = money2(pedido?.total);
-
-  switch (templateId) {
-    case "confirmacao_pedido":
-      return {
-        subject: `Kavita - Pedido #${pedido.id} recebido`,
-        html: `
-          <p>Olá ${pedido.usuario_nome},</p>
-          <p>Recebemos o seu pedido <strong>#${pedido.id}</strong> no valor de <strong>R$ ${totalFmt}</strong>.</p>
-          <p>Forma de pagamento: <strong>${pedido.forma_pagamento}</strong></p>
-          <p>Você receberá novas atualizações assim que o pedido avançar.</p>
-          <p>Equipe Kavita 🐄🌱</p>
-        `,
-      };
-
-    case "pagamento_aprovado":
-      return {
-        subject: `Kavita - Pagamento do pedido #${pedido.id} aprovado`,
-        html: `
-          <p>Olá ${pedido.usuario_nome},</p>
-          <p>O pagamento do seu pedido <strong>#${pedido.id}</strong> foi aprovado 🎉.</p>
-          <p>Valor: <strong>R$ ${totalFmt}</strong></p>
-          <p>Agora vamos separar e preparar o envio.</p>
-          <p>Equipe Kavita</p>
-        `,
-      };
-
-    case "pedido_enviado":
-      return {
-        subject: `Kavita - Seu pedido #${pedido.id} foi enviado`,
-        html: `
-          <p>Olá ${pedido.usuario_nome},</p>
-          <p>O seu pedido <strong>#${pedido.id}</strong> já foi <strong>enviado</strong> 🚚.</p>
-          <p>Status de entrega atual: <strong>${pedido.status_entrega}</strong></p>
-          <p>Em breve ele chega até você.</p>
-          <p>Equipe Kavita</p>
-        `,
-      };
-
-    default:
-      throw new Error("Template de e-mail não suportado.");
+/**
+ * Persiste log de comunicação. Erros são silenciados para não interromper
+ * o fluxo principal de envio.
+ */
+async function log(params) {
+  try {
+    await repo.insertLogComunicacao(params);
+  } catch (err) {
+    console.error("[comunicacao] Erro ao logar comunicação:", err);
   }
 }
 
-/* ------------------------------------------------------------------ */
-/*                        TEMPLATES - WHATSAPP                         */
-/* ------------------------------------------------------------------ */
+// ---------------------------------------------------------------------------
+// Admin: envio manual com suporte a override de destino
+// ---------------------------------------------------------------------------
 
-function buildWhatsappFromTemplate(templateId, pedido) {
-  const totalFmt = money2(pedido?.total);
-
-  switch (templateId) {
-    case "confirmacao_pedido":
-      return `Olá ${pedido.usuario_nome}! Recebemos o seu pedido #${pedido.id} no valor de R$ ${totalFmt}. Assim que avançar, te aviso por aqui. Equipe Kavita.`;
-
-    case "pagamento_aprovado":
-      return `Olá ${pedido.usuario_nome}! O pagamento do seu pedido #${pedido.id} foi aprovado 🎉. Vamos separar e já te avisamos quando sair para entrega.`;
-
-    case "pedido_enviado":
-      return `Olá ${pedido.usuario_nome}! Seu pedido #${pedido.id} foi enviado 🚚. Status de entrega: ${pedido.status_entrega}. Qualquer dúvida é só responder.`;
-
-    default:
-      throw new Error("Template de WhatsApp não suportado.");
+/**
+ * Envia e-mail transacional para um pedido via painel admin.
+ * Retorna { statusEnvio, message } — nunca lança erro de envio (falhas são logadas).
+ * Lança AppError para pedido não encontrado ou e-mail ausente.
+ *
+ * @param {string}      templateId    ID do template (ex: "confirmacao_pedido")
+ * @param {number}      pedidoId
+ * @param {string|null} emailOverride Endereço manual (sobrescreve o do cliente)
+ * @returns {{ statusEnvio: string, message: string }}
+ */
+async function sendEmail(templateId, pedidoId, emailOverride) {
+  const pedido = await repo.getPedidoBasico(pedidoId);
+  if (!pedido) {
+    throw new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404);
   }
-}
 
-/* ------------------------------------------------------------------ */
-/*                     ENVIO UNITÁRIO (e-mail/whats)                   */
-/* ------------------------------------------------------------------ */
+  const to = emailOverride || pedido.usuario_email;
+  if (!to) {
+    throw new AppError(
+      "Cliente não possui e-mail cadastrado.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
 
-async function enviarEmailTemplate(templateId, pedido) {
-  const to = pedido.usuario_email;
-  if (!to) return; // sem e-mail, só ignora
-
-  const { subject, html } = buildEmailFromTemplate(templateId, pedido);
+  const { subject, html } = buildEmail(templateId, pedido);
 
   let statusEnvio = "sucesso";
   let erro = null;
@@ -124,7 +122,7 @@ async function enviarEmailTemplate(templateId, pedido) {
     erro = String(e?.message || e);
   }
 
-  await logComunicacao({
+  await log({
     usuarioId: pedido.usuario_id,
     pedidoId: pedido.id,
     canal: "email",
@@ -135,52 +133,92 @@ async function enviarEmailTemplate(templateId, pedido) {
     statusEnvio,
     erro,
   });
+
+  return {
+    statusEnvio,
+    message:
+      statusEnvio === "sucesso"
+        ? "E-mail enviado com sucesso."
+        : "E-mail registrado, mas houve erro no envio.",
+  };
 }
 
-async function enviarWhatsappTemplate(templateId, pedido) {
-  const telefone = normalizarTelefone(pedido.usuario_telefone);
-  if (!telefone) return; // sem telefone, ignora
+/**
+ * Envia mensagem de WhatsApp para um pedido via painel admin.
+ * Retorna { statusEnvio, message } — nunca lança erro de envio (falhas são logadas).
+ * Lança AppError para pedido não encontrado ou telefone ausente.
+ *
+ * @param {string}      templateId        ID do template
+ * @param {number}      pedidoId
+ * @param {string|null} telefoneOverride  Número manual (só dígitos, com DDD)
+ * @returns {{ statusEnvio: string, message: string }}
+ */
+async function sendWhatsapp(templateId, pedidoId, telefoneOverride) {
+  const pedido = await repo.getPedidoBasico(pedidoId);
+  if (!pedido) {
+    throw new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
 
-  const mensagem = buildWhatsappFromTemplate(templateId, pedido);
+  const destino = normalizarTelefone(telefoneOverride || pedido.usuario_telefone);
+  if (!destino) {
+    throw new AppError(
+      "Cliente não possui telefone válido cadastrado.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400
+    );
+  }
+
+  const mensagem = buildWhatsapp(templateId, pedido);
 
   let statusEnvio = "sucesso";
   let erro = null;
 
   try {
-    // Aqui entra a integração real com a API de WhatsApp (Cloud API, Z-API etc.)
-    // Exemplo por enquanto:
-    console.log(`[FAKE WHATSAPP] Enviando mensagem para 55${telefone}: ${mensagem}`);
+    // Integração real com API de WhatsApp entraria aqui.
+    console.log(
+      `[FAKE WHATSAPP] Enviando para 55${destino}: ${mensagem}`
+    );
   } catch (e) {
     console.error("[comunicacao] Erro ao enviar WhatsApp:", e);
     statusEnvio = "erro";
     erro = String(e?.message || e);
   }
 
-  await logComunicacao({
+  await log({
     usuarioId: pedido.usuario_id,
     pedidoId: pedido.id,
     canal: "whatsapp",
     tipoTemplate: templateId,
-    destino: telefone,
+    destino,
     assunto: null,
     mensagem,
     statusEnvio,
     erro,
   });
+
+  return {
+    statusEnvio,
+    message:
+      statusEnvio === "sucesso"
+        ? "WhatsApp enviado (ou simulado) com sucesso."
+        : "WhatsApp registrado, mas houve erro no envio real.",
+  };
 }
 
-/* ------------------------------------------------------------------ */
-/*                    FUNÇÃO PRINCIPAL DE EVENTO                       */
-/* ------------------------------------------------------------------ */
+// ---------------------------------------------------------------------------
+// Interno: disparado por eventos de sistema (checkout, pagamento, entrega)
+// ---------------------------------------------------------------------------
+
 /**
- * tipoEvento:
- *  - "pedido_criado"
- *  - "pagamento_aprovado"
- *  - "pedido_enviado"
+ * Dispara comunicação automática por evento de negócio.
+ * Nunca lança — falhas são logadas para não interromper o fluxo do chamador.
+ *
+ * @param {"pedido_criado"|"pagamento_aprovado"|"pedido_enviado"} tipoEvento
+ * @param {number} pedidoId
  */
 async function dispararEventoComunicacao(tipoEvento, pedidoId) {
   try {
-    const pedido = await carregarPedidoBasico(pedidoId);
+    const pedido = await repo.getPedidoBasico(pedidoId);
     if (!pedido) {
       console.warn(
         `[comunicacao] Pedido ${pedidoId} não encontrado para evento ${tipoEvento}`
@@ -188,25 +226,67 @@ async function dispararEventoComunicacao(tipoEvento, pedidoId) {
       return;
     }
 
-    switch (tipoEvento) {
-      case "pedido_criado":
-        // foco no WhatsApp + e-mail se tiver
-        await enviarWhatsappTemplate("confirmacao_pedido", pedido);
-        await enviarEmailTemplate("confirmacao_pedido", pedido);
-        break;
+    const templateId = EVENTO_TEMPLATE[tipoEvento];
+    if (!templateId) {
+      console.warn("[comunicacao] tipoEvento não suportado:", tipoEvento);
+      return;
+    }
 
-      case "pagamento_aprovado":
-        await enviarWhatsappTemplate("pagamento_aprovado", pedido);
-        await enviarEmailTemplate("pagamento_aprovado", pedido);
-        break;
+    // WhatsApp
+    const destino = normalizarTelefone(pedido.usuario_telefone);
+    if (destino) {
+      const mensagem = buildWhatsapp(templateId, pedido);
+      let statusEnvio = "sucesso";
+      let erro = null;
 
-      case "pedido_enviado":
-        await enviarWhatsappTemplate("pedido_enviado", pedido);
-        await enviarEmailTemplate("pedido_enviado", pedido);
-        break;
+      try {
+        console.log(
+          `[FAKE WHATSAPP] Enviando mensagem para 55${destino}: ${mensagem}`
+        );
+      } catch (e) {
+        console.error("[comunicacao] Erro ao enviar WhatsApp:", e);
+        statusEnvio = "erro";
+        erro = String(e?.message || e);
+      }
 
-      default:
-        console.warn("[comunicacao] tipoEvento não suportado:", tipoEvento);
+      await log({
+        usuarioId: pedido.usuario_id,
+        pedidoId: pedido.id,
+        canal: "whatsapp",
+        tipoTemplate: templateId,
+        destino,
+        assunto: null,
+        mensagem,
+        statusEnvio,
+        erro,
+      });
+    }
+
+    // E-mail
+    if (pedido.usuario_email) {
+      const { subject, html } = buildEmail(templateId, pedido);
+      let statusEnvio = "sucesso";
+      let erro = null;
+
+      try {
+        await sendTransactionalEmail(pedido.usuario_email, subject, html);
+      } catch (e) {
+        console.error("[comunicacao] Erro ao enviar e-mail:", e);
+        statusEnvio = "erro";
+        erro = String(e?.message || e);
+      }
+
+      await log({
+        usuarioId: pedido.usuario_id,
+        pedidoId: pedido.id,
+        canal: "email",
+        tipoTemplate: templateId,
+        destino: pedido.usuario_email,
+        assunto: subject,
+        mensagem: html,
+        statusEnvio,
+        erro,
+      });
     }
   } catch (err) {
     console.error(
@@ -216,6 +296,12 @@ async function dispararEventoComunicacao(tipoEvento, pedidoId) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
 module.exports = {
+  sendEmail,
+  sendWhatsapp,
   dispararEventoComunicacao,
 };

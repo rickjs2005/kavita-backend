@@ -74,7 +74,7 @@ mount("/admin/shipping",          "./admin/adminShippingZones");
  * Sistema e segurança
  * ============================================================ */
 
-mount("/admin/comunicacao",  "./admin/_legacy/adminComunicacao");
+mount("/admin/comunicacao",  "./admin/adminComunicacao");
 mount("/admin/users",        "./admin/_legacy/adminUsers",       requirePermission("usuarios.ver"));
 mount("/admin/admins",       "./admin/_legacy/adminAdmins");
 mount("/admin/roles",        "./admin/adminRoles");

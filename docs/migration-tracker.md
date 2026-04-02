@@ -56,11 +56,7 @@ Ao migrar `userAccount.js`: criar `registerSchema` e pode-se então deletar `aut
 |---------|--------|-----------|-------------|-------------|
 | `routes/admin/_legacy/adminUsers.js` | 183 | nenhum | `adminUsersController`, `adminUsersService` | backend |
 | `routes/admin/_legacy/adminAdmins.js` | 258 | nenhum | `adminAdminsController` | backend |
-| `routes/admin/_legacy/adminComunicacao.js` | 462 | nenhum³ | `adminComunicacaoController` | backend |
 | `routes/admin/_legacy/adminSolicitacoesServicos.js` | 166 | `adminServicos` (shared domain) | `solicitacoesController` | backend |
-
-³ `comunicacaoService.js` existe com unit test. A rota ainda tem SQL inline e templates hardcoded.
-Templates HTML/WhatsApp devem ser preservados exatamente.
 
 #### Admin — analytics
 
@@ -106,9 +102,9 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 | Janela | Arquivos | Linhas totais | Estimativa |
 |--------|----------|---------------|------------|
 | Q2 2026 (alta) | 0 | 0 | ✅ concluído |
-| Q3 2026 (média) | 11 | 2.576 | 5–7 semanas |
+| Q3 2026 (média) | 10 | 2.114 | 4–6 semanas |
 | Q4 2026 (baixa) | 8 | 2.344 | 4–6 semanas |
-| **Total** | **19** | **4.920** | — |
+| **Total** | **18** | **4.458** | — |
 
 ---
 
@@ -138,4 +134,5 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 | `adminColaboradores.js` | admin | 2026 | Moderno |
 | `adminServicos.js` | admin | 2026-04-01 | `servicosAdminRepository` + `servicosAdminService` + `servicosAdminController` + Zod schemas |
 | `adminShippingZones.js` | admin | 2026-04-02 | `shippingZonesRepository` + `shippingZonesService` + `shippingZonesController` + Zod schemas |
+| `adminComunicacao.js` | admin | 2026-04-02 | `comunicacaoRepository` (existia) + `comunicacaoService` (reescrito com templates extraídos) + `comunicacaoController` + Zod schemas; `dispararEventoComunicacao` preservado |
 

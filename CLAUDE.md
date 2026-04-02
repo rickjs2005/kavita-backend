@@ -259,8 +259,8 @@ routes/
     adminDrones.js          ← moderno (referência canônica)
     adminCarts.js           ← moderno (referência canônica)
     adminServicos.js        ← moderno
+    adminComunicacao.js     ← moderno
     _legacy/
-      adminComunicacao.js   ← legado (SQL inline, sem repository)
       ...
   public/
     publicProducts.js       ← moderno
@@ -308,6 +308,7 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Carts (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/cartsRepository.js` |
 | Serviços (admin) | `routes/admin/adminServicos.js` | `controllers/servicosAdminController.js` | `services/servicosAdminService.js` | `repositories/servicosAdminRepository.js` |
 | Zonas de frete (admin) | `routes/admin/adminShippingZones.js` | `controllers/shippingZonesController.js` | `services/shippingZonesService.js` | `repositories/shippingZonesRepository.js` |
+| Comunicação (admin) | `routes/admin/adminComunicacao.js` | `controllers/comunicacaoController.js` | `services/comunicacaoService.js` | `repositories/comunicacaoRepository.js` |
 | Cart (usuário) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
 | Pagamento | `routes/ecommerce/payment.js` | `controllers/paymentController.js` | `services/paymentService.js`, `services/paymentWebhookService.js` | — |
@@ -345,7 +346,6 @@ Nunca adicionar novas rotas em arquivos `_legacy/`. Roadmap detalhado: `docs/mig
 | `routes/ecommerce/_legacy/favorites.js` | 146 | média | Q3 2026 |
 | `routes/admin/_legacy/adminUsers.js` | 183 | média | Q3 2026 |
 | `routes/admin/_legacy/adminAdmins.js` | 258 | média | Q3 2026 |
-| `routes/admin/_legacy/adminComunicacao.js` | 462 | média | Q3 2026 |
 | `routes/admin/_legacy/adminSolicitacoesServicos.js` | 166 | média | Q3 2026 |
 | `routes/admin/_legacy/adminStats.js` | 313 | média | Q3 2026 |
 | `routes/admin/_legacy/adminRelatorios.js` | 282 | média | Q3 2026 |
@@ -393,7 +393,7 @@ Armadilhas já resolvidas (registradas aqui para histórico):
 - `routes/uploadsCheckRoutes.js` → `routes/utils/uploadsCheck.js` — segue convenção de subpastas
 - `controllers/cartsController.js`, `configController.js`, `produtosController.js` — são modernos e referência válida
 - `services/notificationService.js` foi **deletado** — era stub que não enviava nada. Canal real de notificação: `workers/abandonedCartNotificationsWorker.js` → `services/mailService.sendTransactionalEmail()`. WhatsApp ainda não implementado (sem provedor definido).
-- Templates de comunicação (email e WhatsApp) foram extraídos para `templates/email/` e `templates/whatsapp/` — cada arquivo exporta uma função `(pedido) => { subject, html }` ou `(pedido) => string`. Consumidor principal: `routes/admin/_legacy/adminComunicacao.js`. Ao migrar esse arquivo para o padrão moderno, os templates já estão prontos para reuso.
+- Templates de comunicação (email e WhatsApp) foram extraídos para `templates/email/` e `templates/whatsapp/` — cada arquivo exporta uma função `(pedido) => { subject, html }` ou `(pedido) => string`. Consumidores: `services/comunicacaoService.js` (via `emailTemplates`/`whatsappTemplates`). A migração de `adminComunicacao.js` para o padrão moderno foi concluída em 2026-04-02.
 
 ### Regra de ouro para código novo ou modificado
 
