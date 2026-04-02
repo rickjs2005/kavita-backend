@@ -49,7 +49,7 @@ mount("/admin/news",            "./admin/adminNewsUpload");
 mount("/admin/site-hero",       "./admin/adminSiteHero");
 mount("/admin/colaboradores",   "./admin/adminColaboradores");
 mount("/admin/servicos",        "./admin/adminServicos");
-mount("/admin/servicos/solicitacoes", "./admin/_legacy/adminSolicitacoesServicos");
+mount("/admin/servicos/solicitacoes", "./admin/adminSolicitacoesServicos");
 mount("/admin/especialidades",  "./admin/adminEspecialidades");
 mount("/admin/drones",          "./admin/adminDrones");
 
@@ -75,7 +75,7 @@ mount("/admin/shipping",          "./admin/adminShippingZones");
  * ============================================================ */
 
 mount("/admin/comunicacao",  "./admin/adminComunicacao");
-mount("/admin/users",        "./admin/_legacy/adminUsers",       requirePermission("usuarios.ver"));
+mount("/admin/users",        "./admin/adminUsers",       requirePermission("usuarios.ver"));
 mount("/admin/admins",       "./admin/_legacy/adminAdmins");
 mount("/admin/roles",        "./admin/adminRoles");
 mount("/admin/permissions",  "./admin/_legacy/adminPermissions");

@@ -349,10 +349,7 @@ Nunca adicionar novas rotas em arquivos `_legacy/`. Roadmap detalhado: `docs/mig
 | Arquivo | Linhas | Prioridade | Janela |
 |---------|--------|-----------|--------|
 | `routes/auth/_legacy/userProfile.js` | 288 | média | Q3 2026 |
-| `routes/ecommerce/_legacy/pedidos.js` | 181 | média | Q3 2026 |
-| `routes/admin/_legacy/adminUsers.js` | 183 | média | Q3 2026 |
 | `routes/admin/_legacy/adminAdmins.js` | 258 | média | Q3 2026 |
-| `routes/admin/_legacy/adminSolicitacoesServicos.js` | 166 | média | Q3 2026 |
 | `routes/admin/_legacy/adminStats.js` | 313 | média | Q3 2026 |
 | `routes/admin/_legacy/adminRelatorios.js` | 282 | média | Q3 2026 |
 | `routes/admin/_legacy/adminEspecialidades.js` | 82 | baixa | Q4 2026 |
