@@ -131,6 +131,26 @@ Opcionais relevantes: `PORT` (padrão 5000), `DB_PORT` (padrão 3306), `ALLOWED_
 
 Para storage de mídia: `MEDIA_STORAGE_DRIVER` (`disk` padrão | `s3` | `gcs`). Se omitido, usa disco local.
 
+### Deploy de CPF encryption (LGPD)
+
+O código e a migration já existem. Para ativar em produção:
+
+```bash
+# Opção 1: script automatizado (backup + migration + verificação)
+chmod +x scripts/deploy-cpf-encryption.sh
+./scripts/deploy-cpf-encryption.sh
+
+# Opção 2: manual
+export CPF_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+# Salvar a chave no .env de produção ANTES de continuar
+npm run db:migrate
+# Verificar: SELECT id, LEFT(cpf,40), LEFT(cpf_hash,20) FROM usuarios LIMIT 5
+```
+
+**Sem `CPF_ENCRYPTION_KEY`:** encrypt/decrypt são no-op (plaintext). Compatível com dev local.
+**Com chave:** AES-256-GCM + HMAC-SHA256 para busca indexada. Detalhes: `utils/cpfCrypto.js`.
+**Perder a chave = perder acesso aos CPFs.** Guarde em vault ou secrets manager.
+
 ## Arquitetura
 
 ### Ponto de entrada e middleware (server.js)
