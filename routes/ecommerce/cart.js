@@ -1,14 +1,17 @@
 "use strict";
 
 // routes/ecommerce/cart.js
-//
+// =============================================================================
+// ⚠️  CONTRATO CONGELADO — controller retorna { success: true }, não { ok: true }
+// =============================================================================
 // Rota magra: middleware + wiring de handlers.
 // Lógica de negócio: services/cartService.js
 // Handlers:         controllers/cartController.js
-// Documentação:     docs/swagger/cart.js
 //
-// Contrato de resposta atual: { success: true, ... } — divergente do padrão { ok: true }.
-// NÃO alterar sem alinhar com o frontend. Ver CLAUDE.md § "Contratos divergentes".
+// O cartController tem contrato congelado por dependência de frontend.
+// NÃO copie este padrão. NÃO altere shapes sem coordenar com frontend.
+// Ver CLAUDE.md § "Contratos de resposta" e header de cartController.js.
+// =============================================================================
 
 const express = require("express");
 const router = express.Router();

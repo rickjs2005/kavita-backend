@@ -356,6 +356,50 @@ Nunca adicionar novas rotas em arquivos `_legacy/`. Roadmap detalhado: `docs/mig
 | `routes/public/_legacy/publicShopConfig.js` | 182 | baixa | Q4 2026 |
 | `routes/public/_legacy/publicProdutos.js` | 354 | baixa | Q4 2026 |
 
+### Classificação de módulos — qual arquivo usar como modelo
+
+Ao iniciar um módulo novo ou procurar referência de implementação, use esta classificação:
+
+#### Referências canônicas — copie desses
+
+Para cada camada, o(s) módulo(s) abaixo representam o padrão oficial mais completo e atualizado:
+
+| Camada | Módulo referência | Por que este |
+|--------|------------------|-------------|
+| Rota magra (admin) | `routes/admin/adminDrones.js` | Wiring puro, middleware via mount(), Zod validate, upload com multer |
+| Rota magra (ecommerce) | `routes/ecommerce/checkout.js` | Auth + CSRF por rota, recalcShipping middleware |
+| Rota magra (público) | `routes/public/publicDrones.js` | Sem auth, paginação, upload público (comentários) |
+| Controller (CRUD admin) | `controllers/adminOrdersController.js` | response.ok/created, AppError, formatação no controller |
+| Controller (público) | `controllers/favoritesController.js` | response.ok/created/noContent, AppError, conciso |
+| Service (transação) | `services/checkoutService.js` | Advisory lock, transação ACID, reserveStock, fire-and-forget |
+| Service (CRUD) | `services/comunicacaoService.js` | Lógica de negócio + templates, sem req/res |
+| Repository | `repositories/checkoutRepository.js` | Queries parametrizadas, suporte a conn (transação) |
+| Schema Zod | `schemas/checkoutSchemas.js` | Transformações, normalização, coerção, mensagens pt-BR |
+
+> **Regra:** se o módulo referência tem um padrão que seu código novo não tem, pergunte por quê antes de omitir.
+
+#### Módulos congelados — NÃO copie desses
+
+Estes arquivos são modernos na estrutura (controller, service, repository), mas têm **contratos de resposta divergentes** congelados por dependência de frontend. O header de cada arquivo documenta o shape exato.
+
+| Arquivo | Shape congelado | Motivo |
+|---------|----------------|--------|
+| `controllers/cartController.js` | `{ success: true, ... }` + bare GET + `STOCK_LIMIT` 409 | Frontend cart |
+| `controllers/shippingController.js` | `{ success: true, ...quote }` | Frontend checkout |
+| `controllers/paymentController.js` | `{ methods }`, `{ method }` bare | Frontend admin + checkout |
+| `controllers/publicProductsController.js` | `getProductById`: bare `{ ...product, images }` | Frontend público |
+| `routes/ecommerce/payment.js` | Mount híbrido (admin em ecommerce) | Webhook sem cookie |
+| `routes/ecommerce/cart.js` | Contrato `success: true` via cartController | Frontend cart |
+| `routes/ecommerce/shipping.js` | Contrato `success: true` via shippingController | Frontend checkout |
+
+> **Regra:** ao tocar esses arquivos, preserve o contrato exato. Para migrar: coordenar com frontend, abrir issue, só então alterar.
+
+#### Módulos legados — migrar ao tocar
+
+Todos em `routes/*/_legacy/`. Cada um tem banner `ARQUIVO LEGADO` no topo. Roadmap completo: `docs/migration-tracker.md`.
+
+> **Regra:** ao tocar qualquer `_legacy/`, migrar completo na mesma PR ou justificar na PR description + abrir issue.
+
 ### Onde um desenvolvedor novo vai se confundir
 
 Armadilhas ativas (não resolvidas por organização — exigem migração futura):
