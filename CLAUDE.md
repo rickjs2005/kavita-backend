@@ -21,21 +21,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 Nova feature completa:
-  routes/{contexto}/               ← rota magra, só wiring (NUNCA em _legacy/)
-  schemas/{domínio}Schemas.js      ← validação Zod
+  routes/{contexto}/                 ← rota magra, só wiring
+  schemas/{domínio}Schemas.js        ← validação Zod
   controllers/{domínio}Controller.js ← extrai dados de req, delega ao service
-  services/{domínio}Service.js     ← lógica de negócio
+  services/{domínio}Service.js       ← lógica de negócio
   repositories/{domínio}Repository.js ← queries SQL
-
-Nova rota num módulo legado (está em routes/*/‌_legacy/):
-  → migrar o arquivo inteiro para o padrão moderno na mesma PR
-  → mover o arquivo migrado de _legacy/ para routes/{contexto}/
-  → nunca adicionar SQL inline em arquivo legado
-
-Bug num módulo legado (urgente):
-  → corrigir o bug primeiro
-  → criar schema Zod para a rota afetada na mesma PR
-  → abrir issue para migração completa do arquivo
 ```
 
 ### Regra sobre qual pasta de rota usar
@@ -276,44 +266,12 @@ Todo arquivo **novo ou modificado** deve:
 
 O projeto está em migração arquitetural ativa. **Todo arquivo novo ou modificado deve seguir o padrão moderno.**
 
-### Convenção `_legacy/`
+### Migração `_legacy/` — concluída (2026-04)
 
-Arquivos legados ficam em subpastas `_legacy/` dentro do diretório de rotas correspondente:
+Todos os arquivos legados que existiam em subpastas `_legacy/` foram migrados para o padrão moderno.
+Não existem mais diretórios `_legacy/` em nenhuma pasta de rotas.
 
-```
-routes/
-  admin/
-    adminDrones.js          ← moderno (referência canônica)
-    adminCarts.js           ← moderno (referência canônica)
-    adminServicos.js        ← moderno
-    adminComunicacao.js     ← moderno
-    _legacy/
-      ...
-  public/
-    publicProducts.js       ← moderno
-    publicDrones.js         ← moderno
-    _legacy/
-      publicServicos.js     ← legado
-      ...
-  auth/
-    adminLogin.js           ← moderno
-    userAddresses.js        ← moderno
-    _legacy/
-      userProfile.js        ← legado
-      ...
-  ecommerce/
-    cart.js                 ← moderno
-    checkout.js             ← moderno
-    _legacy/
-      pedidos.js            ← legado
-      ...
-```
-
-**Regra:** ao terminar a migração de um arquivo legado, mover de `_legacy/` para `routes/{contexto}/` e atualizar `routes/index.js`.
-
-> **Para desenvolvedores novos:** arquivos em `_legacy/` **não representam o padrão do projeto**.
-> Leia um módulo moderno primeiro.
-> Referências canônicas: `routes/admin/adminDrones.js`, `routes/admin/adminCarts.js`.
+Referências canônicas: `routes/admin/adminDrones.js`, `routes/admin/adminCarts.js`.
 
 ### Módulos modernos — padrão oficial
 
@@ -344,10 +302,16 @@ Rota magra → controller → service → repository, Zod em `schemas/`, `lib/re
 | Clima (news) | — | `controllers/news/adminClimaController.js` | — | `repositories/climaRepository.js` |
 | Cotações (news) | — | `controllers/news/adminCotacoesController.js` | — | `repositories/cotacoesRepository.js` |
 | Posts (news) | — | `controllers/news/adminPostsController.js` | — | `repositories/postsRepository.js` |
+| Perfil usuário | `routes/auth/userProfile.js` | `controllers/userProfileController.js` | `services/userProfileService.js` | `repositories/userRepository.js` |
+| Stats (admin) | `routes/admin/adminStats.js` | `controllers/statsController.js` | — | `repositories/statsRepository.js` |
+| Relatórios (admin) | `routes/admin/adminRelatorios.js` | `controllers/relatoriosController.js` | — | `repositories/relatoriosRepository.js` |
+| Cupons (admin) | `routes/admin/adminCupons.js` | `controllers/cuponsController.js` | — | `repositories/cuponsRepository.js` |
+| Avaliações (público) | `routes/public/publicProdutos.js` | `controllers/avaliacoesController.js` | `services/avaliacoesService.js` | `repositories/avaliacoesRepository.js` |
+| Promoções (admin) | `routes/admin/adminMarketingPromocoes.js` | `controllers/promocoesAdminController.js` | — | `repositories/promocoesAdminRepository.js` |
 
 ### Módulo híbrido — modernização parcial
 
-Arquivos fora de `_legacy/` com problemas arquiteturais ou de contrato residuais.
+Arquivos com problemas arquiteturais ou de contrato residuais.
 Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antigo.
 
 | Arquivo | Problema residual |
@@ -357,28 +321,10 @@ Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antig
 | `controllers/shippingController.js` | Contrato `success: true` divergente — pendente migração para `lib/response.js` alinhada com frontend |
 | `routes/public/publicProducts.js` | `GET /api/products/:id` retorna bare object `{ ...product, images }` — pendente migração para `response.ok(res, data)` alinhada com frontend |
 
-### Módulos legados — exceção temporária
+### Módulos legados — migração concluída
 
-Todos têm o cabeçalho `ARQUIVO LEGADO` no próprio código e estão em subpastas `_legacy/`.
-Usam `pool.query()` direto na rota, validação inline (`if (!campo)`) e `res.json()` sem helper.
-
-**Regra de toque:** ao modificar qualquer arquivo `_legacy/`, migrar o arquivo completo na mesma PR,
-ou documentar na PR description por que não foi feito e abrir issue de acompanhamento.
-Nunca adicionar novas rotas em arquivos `_legacy/`. Roadmap detalhado: `docs/migration-tracker.md`.
-
-| Arquivo | Linhas | Prioridade | Janela |
-|---------|--------|-----------|--------|
-| `routes/auth/_legacy/userProfile.js` | 288 | média | Q3 2026 |
-| `routes/admin/_legacy/adminAdmins.js` | 258 | média | Q3 2026 |
-| `routes/admin/_legacy/adminStats.js` | 313 | média | Q3 2026 |
-| `routes/admin/_legacy/adminRelatorios.js` | 282 | média | Q3 2026 |
-| `routes/admin/_legacy/adminEspecialidades.js` | 82 | baixa | Q4 2026 |
-| `routes/admin/_legacy/adminPermissions.js` | 197 | baixa | Q4 2026 |
-| `routes/admin/_legacy/adminLogs.js` | 255 | baixa | Q4 2026 |
-| `routes/admin/_legacy/adminCupons.js` | 337 | baixa | Q4 2026 |
-| `routes/admin/_legacy/adminMarketingPromocoes.js` | 394 | baixa | Q4 2026 |
-| `routes/public/_legacy/publicShopConfig.js` | 182 | baixa | Q4 2026 |
-| `routes/public/_legacy/publicProdutos.js` | 354 | baixa | Q4 2026 |
+Todos os módulos legados foram migrados para o padrão moderno em 2026-04.
+Não existem mais arquivos com o banner `ARQUIVO LEGADO` no código.
 
 ### Classificação de módulos — qual arquivo usar como modelo
 
@@ -416,11 +362,10 @@ Estes arquivos são modernos na estrutura (controller, service, repository), mas
 
 > **Regra:** ao tocar esses arquivos, preserve o contrato exato. Para migrar: coordenar com frontend, abrir issue, só então alterar.
 
-#### Módulos legados — migrar ao tocar
+#### Módulos legados — migração concluída (2026-04)
 
-Todos em `routes/*/_legacy/`. Cada um tem banner `ARQUIVO LEGADO` no topo. Roadmap completo: `docs/migration-tracker.md`.
-
-> **Regra:** ao tocar qualquer `_legacy/`, migrar completo na mesma PR ou justificar na PR description + abrir issue.
+Todos os módulos que estavam em `routes/*/_legacy/` foram migrados para o padrão moderno.
+Não existem mais diretórios `_legacy/`.
 
 ### Onde um desenvolvedor novo vai se confundir
 
@@ -429,13 +374,13 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
 1. **`routes/ecommerce/payment.js`** — rota magra e moderna (35 linhas, puro wiring), mas monta
    rotas admin (`/admin/payment-methods`) dentro do contexto ecommerce em vez de `adminRoutes.js`.
    O controller (`paymentController.js`) usa `response.ok/created/noContent` (Formato A).
-   **Não mover para `_legacy/`** — a rota está correta, apenas o mount é híbrido.
+   A rota está correta, apenas o mount é híbrido.
 
 2. **`routes/admin/adminPedidos.js`** — migração concluída em 2026-04. Controller em `controllers/adminOrdersController.js`, schemas em `schemas/ordersSchemas.js`. Contrato de resposta mudou para `{ ok: true, data }` — requer atualização no admin frontend para leitura dos GETs. Ver header do controller para detalhes.
 
-3. **`routes/public/_legacy/publicProdutos.js`** vs **`routes/public/publicProducts.js`** — dois arquivos.
-   `publicProducts.js` é o moderno. `publicProdutos.js` está em `_legacy/` e será removido. Nunca adicione
-   endpoints em `publicProdutos.js`.
+3. **`routes/public/publicProdutos.js`** vs **`routes/public/publicProducts.js`** — dois arquivos com domínios distintos.
+   `publicProducts.js` = catálogo de produtos (listagem, busca, detalhe).
+   `publicProdutos.js` = avaliações de produtos + quick search legado. Ambos são modernos (migrado em 2026-04).
 
 4. **`services/news/newsHelpers.js`** — exporta utilitários de domínio (`toInt`, `nowSql`, `normalizeSlug`, etc.)
    que são legítimos e reutilizados por vários controllers de news. **Não** exporta helpers de resposta
@@ -760,3 +705,9 @@ Ao migrar cart, shipping ou payment: a mudança de formato **quebra o cliente** 
 - `controllers/adminOrdersController.js` — 2026-04 (contrato mudou de bare array para `{ ok, data }` — requer atualização no admin frontend para os GETs)
 - `controllers/publicProductsController.js` (listProducts + searchProducts) — 2026-04-02 (`response.paginated`; `getProductById` pendente)
 - `controllers/authController.js` — 2026-04 (todos os handlers já usam `response.ok()`)
+- `controllers/userProfileController.js` — 2026-04 (migrado de `routes/auth/_legacy/userProfile.js`)
+- `controllers/statsController.js` — 2026-04 (migrado de `routes/admin/_legacy/adminStats.js`)
+- `controllers/relatoriosController.js` — 2026-04 (migrado de `routes/admin/_legacy/adminRelatorios.js`)
+- `controllers/cuponsController.js` — 2026-04 (migrado de `routes/admin/_legacy/adminCupons.js`)
+- `controllers/avaliacoesController.js` — 2026-04 (migrado de `routes/public/_legacy/publicProdutos.js`)
+- `controllers/promocoesAdminController.js` — 2026-04 (migrado de `routes/admin/_legacy/adminMarketingPromocoes.js`)

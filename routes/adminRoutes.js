@@ -36,8 +36,8 @@ function mount(path, moduleName, ...extra) {
 
 mount("/admin/produtos",            "./admin/adminProdutos");
 mount("/admin/categorias",          "./admin/adminCategorias");
-mount("/admin/marketing/promocoes", "./admin/_legacy/adminMarketingPromocoes");
-mount("/admin/cupons",              "./admin/_legacy/adminCupons");
+mount("/admin/marketing/promocoes", "./admin/adminMarketingPromocoes");
+mount("/admin/cupons",              "./admin/adminCupons");
 
 /* ============================================================
  * Conteúdo editorial
@@ -59,8 +59,8 @@ mount("/admin/drones",          "./admin/adminDrones");
 
 mount("/admin/pedidos",    "./admin/adminPedidos",   requirePermission("pedidos.ver"));
 mount("/admin/carrinhos",  "./admin/adminCarts");
-mount("/admin/stats",      "./admin/_legacy/adminStats");
-mount("/admin/relatorios", "./admin/_legacy/adminRelatorios", requirePermission("relatorios.ver"));
+mount("/admin/stats",      "./admin/adminStats");
+mount("/admin/relatorios", "./admin/adminRelatorios", requirePermission("relatorios.ver"));
 
 /* ============================================================
  * Configuração da loja

@@ -37,10 +37,10 @@ load("/users", "./auth/userRegister");
 
 // Perfil e endereços (autenticados + CSRF)
 try {
-  const userProfileRoutes = require("./auth/_legacy/userProfile");
+  const userProfileRoutes = require("./auth/userProfile");
   router.use("/users", validateCSRF, userProfileRoutes);
 } catch (err) {
-  handleRouteLoadError("./auth/_legacy/userProfile", err);
+  handleRouteLoadError("./auth/userProfile", err);
 }
 try {
   const userAddressesRoutes = require("./auth/userAddresses");
