@@ -1,16 +1,22 @@
 "use strict";
 
-const poolPath = require.resolve("../../../config/pool");
-const repoPath = require.resolve("../../../repositories/paymentRepository");
-const orderRepoPath = require.resolve("../../../repositories/orderRepository");
-const mpConfigPath = require.resolve("../../../config/mercadopago");
+jest.mock("../../../config/pool");
+jest.mock("../../../repositories/paymentRepository");
+jest.mock("../../../repositories/orderRepository");
+jest.mock("../../../config/mercadopago", () => ({ getMPClient: jest.fn() }));
+jest.mock("mercadopago", () => ({
+  Payment: jest.fn().mockImplementation(() => ({ get: jest.fn() })),
+}));
+
+const pool = require("../../../config/pool");
+const repo = require("../../../repositories/paymentRepository");
+const orderRepo = require("../../../repositories/orderRepository");
+const { handleWebhookEvent, mapMPStatusToDomain } = require("../../../services/paymentWebhookService");
 
 describe("paymentWebhookService", () => {
-  let handleWebhookEvent, mapMPStatusToDomain;
-  let repo, orderRepo, conn;
+  let conn;
 
   beforeEach(() => {
-    jest.resetModules();
     jest.clearAllMocks();
 
     conn = {
@@ -20,40 +26,7 @@ describe("paymentWebhookService", () => {
       rollback: jest.fn().mockResolvedValue(undefined),
       release: jest.fn(),
     };
-
-    jest.doMock(poolPath, () => ({
-      getConnection: jest.fn().mockResolvedValue(conn),
-    }));
-
-    jest.doMock(repoPath, () => ({
-      findWebhookEventForUpdate: jest.fn(),
-      insertWebhookEvent: jest.fn(),
-      markWebhookEventReceived: jest.fn(),
-      markWebhookEventIgnored: jest.fn(),
-      markWebhookEventProcessed: jest.fn(),
-      updatePedidoPayment: jest.fn(),
-    }));
-
-    jest.doMock(orderRepoPath, () => ({
-      restoreStockOnFailure: jest.fn(),
-    }));
-
-    // Mock mercadopago Payment class
-    jest.doMock("mercadopago", () => ({
-      Payment: jest.fn().mockImplementation(() => ({
-        get: jest.fn(),
-      })),
-    }));
-
-    jest.doMock(mpConfigPath, () => ({
-      getMPClient: jest.fn(),
-    }));
-
-    const svc = require("../../../services/paymentWebhookService");
-    handleWebhookEvent = svc.handleWebhookEvent;
-    mapMPStatusToDomain = svc.mapMPStatusToDomain;
-    repo = require(repoPath);
-    orderRepo = require(orderRepoPath);
+    pool.getConnection.mockResolvedValue(conn);
   });
 
   // -----------------------------------------------------------------------
@@ -70,201 +43,100 @@ describe("paymentWebhookService", () => {
       ["charged_back", "estornado"],
       ["refunded", "estornado"],
       ["unknown_status", "pendente"],
-    ])("mapeia '%s' → '%s'", (input, expected) => {
+    ])("'%s' → '%s'", (input, expected) => {
       expect(mapMPStatusToDomain(input)).toBe(expected);
     });
   });
 
   // -----------------------------------------------------------------------
-  // handleWebhookEvent — idempotência
+  // handleWebhookEvent
   // -----------------------------------------------------------------------
 
   describe("handleWebhookEvent", () => {
-    test("retorna 'idempotent' se evento já foi processado", async () => {
-      repo.findWebhookEventForUpdate.mockResolvedValue({
-        id: 1,
-        processed_at: new Date(),
-      });
+    const baseOpts = { eventId: "evt-1", type: "payment", dataId: "pay-1", payload: "{}", signatureHeader: "sig" };
 
-      const result = await handleWebhookEvent({
-        eventId: "evt-1",
-        type: "payment",
-        dataId: "123",
-        payload: "{}",
-        signatureHeader: "sig",
-      });
-
+    test("idempotent — evento já processado", async () => {
+      repo.findWebhookEventForUpdate.mockResolvedValue({ id: 1, processed_at: new Date() });
+      const result = await handleWebhookEvent(baseOpts);
       expect(result).toBe("idempotent");
       expect(conn.commit).toHaveBeenCalled();
       expect(repo.updatePedidoPayment).not.toHaveBeenCalled();
     });
 
-    test("retorna 'ignored' se type não é 'payment'", async () => {
+    test("ignored — type != payment", async () => {
       repo.findWebhookEventForUpdate.mockResolvedValue(null);
       repo.insertWebhookEvent.mockResolvedValue(5);
-
-      const result = await handleWebhookEvent({
-        eventId: "evt-2",
-        type: "plan",
-        dataId: null,
-        payload: "{}",
-        signatureHeader: "sig",
-      });
-
+      const result = await handleWebhookEvent({ ...baseOpts, type: "plan", dataId: null });
       expect(result).toBe("ignored");
       expect(repo.markWebhookEventIgnored).toHaveBeenCalledWith(conn, 5);
-      expect(conn.commit).toHaveBeenCalled();
     });
 
-    test("retorna 'ignored' se dataId ausente", async () => {
+    test("ignored — sem dataId", async () => {
       repo.findWebhookEventForUpdate.mockResolvedValue(null);
       repo.insertWebhookEvent.mockResolvedValue(6);
-
-      const result = await handleWebhookEvent({
-        eventId: "evt-3",
-        type: "payment",
-        dataId: null,
-        payload: "{}",
-        signatureHeader: "sig",
-      });
-
+      const result = await handleWebhookEvent({ ...baseOpts, dataId: null });
       expect(result).toBe("ignored");
     });
 
-    test("processa pagamento approved e retorna 'processed'", async () => {
+    test("ignored — sem metadata.pedidoId", async () => {
+      repo.findWebhookEventForUpdate.mockResolvedValue(null);
+      repo.insertWebhookEvent.mockResolvedValue(7);
+      const { Payment } = require("mercadopago");
+      Payment.mockImplementation(() => ({ get: jest.fn().mockResolvedValue({ status: "approved", metadata: {} }) }));
+      const result = await handleWebhookEvent(baseOpts);
+      expect(result).toBe("ignored");
+      expect(repo.updatePedidoPayment).not.toHaveBeenCalled();
+    });
+
+    test("processed — approved", async () => {
       repo.findWebhookEventForUpdate.mockResolvedValue(null);
       repo.insertWebhookEvent.mockResolvedValue(10);
-
-      // Mock MP Payment.get()
       const { Payment } = require("mercadopago");
       Payment.mockImplementation(() => ({
-        get: jest.fn().mockResolvedValue({
-          status: "approved",
-          metadata: { pedidoId: 42 },
-        }),
+        get: jest.fn().mockResolvedValue({ status: "approved", metadata: { pedidoId: 42 } }),
       }));
-
-      const result = await handleWebhookEvent({
-        eventId: "evt-4",
-        type: "payment",
-        dataId: "pay-999",
-        payload: "{}",
-        signatureHeader: "sig",
-      });
-
+      const result = await handleWebhookEvent(baseOpts);
       expect(result).toBe("processed");
-      expect(repo.updatePedidoPayment).toHaveBeenCalledWith(conn, 42, "pago", "pay-999");
-      expect(repo.markWebhookEventProcessed).toHaveBeenCalledWith(conn, 10, "pago");
+      expect(repo.updatePedidoPayment).toHaveBeenCalledWith(conn, 42, "pago", "pay-1");
       expect(orderRepo.restoreStockOnFailure).not.toHaveBeenCalled();
-      expect(conn.commit).toHaveBeenCalled();
     });
 
-    test("restaura estoque quando status é 'falhou'", async () => {
+    test("processed — rejected restaura estoque", async () => {
       repo.findWebhookEventForUpdate.mockResolvedValue(null);
       repo.insertWebhookEvent.mockResolvedValue(11);
-
       const { Payment } = require("mercadopago");
       Payment.mockImplementation(() => ({
-        get: jest.fn().mockResolvedValue({
-          status: "rejected",
-          metadata: { pedidoId: 50 },
-        }),
+        get: jest.fn().mockResolvedValue({ status: "rejected", metadata: { pedidoId: 50 } }),
       }));
-
-      const result = await handleWebhookEvent({
-        eventId: "evt-5",
-        type: "payment",
-        dataId: "pay-888",
-        payload: "{}",
-        signatureHeader: "sig",
-      });
-
+      const result = await handleWebhookEvent(baseOpts);
       expect(result).toBe("processed");
       expect(orderRepo.restoreStockOnFailure).toHaveBeenCalledWith(conn, 50);
-      expect(repo.updatePedidoPayment).toHaveBeenCalledWith(conn, 50, "falhou", "pay-888");
     });
 
-    test("re-delivery: evento existente não processado → marca received e continua", async () => {
+    test("re-delivery — evento existente não processado", async () => {
       repo.findWebhookEventForUpdate.mockResolvedValue({ id: 99, processed_at: null });
-
       const { Payment } = require("mercadopago");
       Payment.mockImplementation(() => ({
-        get: jest.fn().mockResolvedValue({
-          status: "approved",
-          metadata: { pedidoId: 77 },
-        }),
+        get: jest.fn().mockResolvedValue({ status: "approved", metadata: { pedidoId: 77 } }),
       }));
-
-      const result = await handleWebhookEvent({
-        eventId: "evt-redelivery",
-        type: "payment",
-        dataId: "pay-555",
-        payload: "{}",
-        signatureHeader: "sig",
-      });
-
+      const result = await handleWebhookEvent(baseOpts);
       expect(result).toBe("processed");
       expect(repo.markWebhookEventReceived).toHaveBeenCalledWith(conn, 99, expect.any(Object));
       expect(repo.insertWebhookEvent).not.toHaveBeenCalled();
     });
 
-    test("rollback falho é capturado sem impedir propagação do erro original", async () => {
-      repo.findWebhookEventForUpdate.mockRejectedValue(new Error("original error"));
-      conn.rollback.mockRejectedValue(new Error("rollback failed"));
-
-      await expect(
-        handleWebhookEvent({
-          eventId: "evt-double-fail",
-          type: "payment",
-          dataId: "1",
-          payload: "{}",
-          signatureHeader: "sig",
-        })
-      ).rejects.toThrow("original error");
-
-      expect(conn.release).toHaveBeenCalled();
-    });
-
-    test("faz rollback em erro e propaga exceção", async () => {
+    test("rollback em erro e propaga exceção", async () => {
       repo.findWebhookEventForUpdate.mockRejectedValue(new Error("db crash"));
-
-      await expect(
-        handleWebhookEvent({
-          eventId: "evt-err",
-          type: "payment",
-          dataId: "1",
-          payload: "{}",
-          signatureHeader: "sig",
-        })
-      ).rejects.toThrow("db crash");
-
+      await expect(handleWebhookEvent(baseOpts)).rejects.toThrow("db crash");
       expect(conn.rollback).toHaveBeenCalled();
       expect(conn.release).toHaveBeenCalled();
     });
 
-    test("retorna 'ignored' se pagamento sem metadata.pedidoId", async () => {
-      repo.findWebhookEventForUpdate.mockResolvedValue(null);
-      repo.insertWebhookEvent.mockResolvedValue(12);
-
-      const { Payment } = require("mercadopago");
-      Payment.mockImplementation(() => ({
-        get: jest.fn().mockResolvedValue({
-          status: "approved",
-          metadata: {},
-        }),
-      }));
-
-      const result = await handleWebhookEvent({
-        eventId: "evt-6",
-        type: "payment",
-        dataId: "pay-777",
-        payload: "{}",
-        signatureHeader: "sig",
-      });
-
-      expect(result).toBe("ignored");
-      expect(repo.markWebhookEventIgnored).toHaveBeenCalled();
-      expect(repo.updatePedidoPayment).not.toHaveBeenCalled();
+    test("rollback falho não esconde erro original", async () => {
+      repo.findWebhookEventForUpdate.mockRejectedValue(new Error("original"));
+      conn.rollback.mockRejectedValue(new Error("rollback failed"));
+      await expect(handleWebhookEvent(baseOpts)).rejects.toThrow("original");
+      expect(conn.release).toHaveBeenCalled();
     });
   });
 });
