@@ -18,6 +18,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../../../config/pool");
 const verifyAdmin = require("../../../middleware/verifyAdmin");
+const { decryptCPF } = require("../../../utils/cpfCrypto");
 
 /**
  * @openapi
@@ -54,7 +55,7 @@ router.get("/", verifyAdmin, async (req, res) => {
       ORDER BY criado_em DESC
     `);
 
-    res.json(rows);
+    res.json(rows.map((r) => ({ ...r, cpf: decryptCPF(r.cpf) })));
   } catch (err) {
     console.error("Erro ao listar usuários:", err);
     res.status(500).json({ message: "Erro ao listar usuários" });

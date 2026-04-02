@@ -120,6 +120,13 @@ JWT_SECRET, EMAIL_USER, EMAIL_PASS, APP_URL, BACKEND_URL,
 DB_HOST, DB_USER, DB_PASSWORD, DB_NAME
 ```
 
+Obrigatórias em produção (ausência gera erro em prod, warn em dev):
+
+```
+MP_WEBHOOK_SECRET     — sem isso o webhook rejeita pagamentos (401)
+CPF_ENCRYPTION_KEY    — sem isso CPFs ficam em plaintext (risco LGPD)
+```
+
 Opcionais relevantes: `PORT` (padrão 5000), `DB_PORT` (padrão 3306), `ALLOWED_ORIGINS` (CSV de origens CORS além de localhost).
 
 Para storage de mídia: `MEDIA_STORAGE_DRIVER` (`disk` padrão | `s3` | `gcs`). Se omitido, usa disco local.
