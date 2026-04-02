@@ -3,7 +3,7 @@
 // Business rules for the colaboradores admin module.
 //
 // Owns: image validation, media persistence, NOT_FOUND detection,
-// verificado flag semantics (0 = public, 1 = admin), email stub.
+// verificado flag semantics (0 = public, 1 = admin), approval email.
 //
 // Does NOT own: HTTP request/response, SQL.
 
@@ -13,6 +13,8 @@ const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/colaboradoresRepository");
 const mediaService = require("./mediaService");
 const { validateFileMagicBytes } = require("../utils/fileValidation");
+const { sendTransactionalEmail } = require("./mailService");
+const colaboradorAprovadoEmail = require("../templates/email/colaboradorAprovado");
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -75,15 +77,13 @@ async function _create(data, file) {
 }
 
 // ---------------------------------------------------------------------------
-// Email stub
-// TODO: replace with a real email service (e.g. comunicacaoService or SES).
+// Email de aprovação
 // ---------------------------------------------------------------------------
 
 async function _sendAprovadoEmail(email, nome) {
   if (!email) return;
-  console.log(
-    `[EMAIL STUB] Enviar para ${email}: Olá ${nome}, seu cadastro na Kavita foi aprovado!`
-  );
+  const { subject, html } = colaboradorAprovadoEmail({ nome });
+  await sendTransactionalEmail(email, subject, html);
 }
 
 // ---------------------------------------------------------------------------
