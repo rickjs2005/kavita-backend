@@ -1,30 +1,14 @@
 "use strict";
 // controllers/paymentController.js
-// =============================================================================
-// ⚠️  CONTRATO CONGELADO — NÃO USE COMO REFERÊNCIA PARA CÓDIGO NOVO
-// =============================================================================
-// Este controller retorna bare objects ({ methods }, { method }) nos endpoints
-// de listagem/CRUD — divergente do padrão oficial { ok: true, data }.
-// O frontend (admin e checkout) depende desses shapes exatos.
 //
-// Ao tocar este arquivo:
-//   - PRESERVE o formato de resposta exato
-//   - NÃO copie este padrão em código novo
-//   - Para migrar: coordenar com frontend admin + checkout (ver CLAUDE.md § Contratos)
-//
-// Shapes congelados:
-//   GET  /api/payment/methods       → { methods: [...] }
-//   GET  /api/admin/.../methods     → { methods: [...] }
-//   POST /api/admin/.../methods     → { method: {...} }   (201)
-//   PUT  /api/admin/.../methods/:id → { method: {...} }
-//   DELETE /api/admin/.../:id       → { ok: true }         ← único endpoint no padrão A
-//   POST /api/payment/start         → bare result do paymentService
-//   POST /api/payment/webhook       → { ok: true }         (webhook — padrão A)
-//   Erros: via next(new AppError(...)) → padrão A (ok: false) ✅
-// =============================================================================
+// Handlers de pagamento: Mercado Pago + CRUD de métodos de pagamento.
+// Todos os endpoints migrados para response.ok/created/noContent (Formato A).
+// Webhook do MP: retorna { ok: true } com status 200 mesmo em erro
+// (Mercado Pago interpreta 4xx/5xx como falha e reenvia infinitamente).
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const { response } = require("../lib");
 const paymentService = require("../services/paymentService");
 const { handleWebhookEvent } = require("../services/paymentWebhookService");
 
@@ -35,7 +19,7 @@ const { handleWebhookEvent } = require("../services/paymentWebhookService");
 const listMethods = async (_req, res, next) => {
   try {
     const methods = await paymentService.listActiveMethods();
-    return res.json({ methods });
+    return response.ok(res, methods);
   } catch (err) {
     return next(
       err instanceof AppError
@@ -52,7 +36,7 @@ const listMethods = async (_req, res, next) => {
 const adminListMethods = async (_req, res, next) => {
   try {
     const methods = await paymentService.listAllMethods();
-    return res.json({ methods });
+    return response.ok(res, methods);
   } catch (err) {
     return next(
       err instanceof AppError
@@ -69,7 +53,7 @@ const adminListMethods = async (_req, res, next) => {
 const adminCreateMethod = async (req, res, next) => {
   try {
     const created = await paymentService.addMethod(req.body || {});
-    return res.status(201).json({ method: created });
+    return response.created(res, created);
   } catch (err) {
     return next(
       err instanceof AppError
@@ -83,7 +67,7 @@ const adminUpdateMethod = async (req, res, next) => {
   const id = Number(req.params.id);
   try {
     const updated = await paymentService.editMethod(id, req.body || {});
-    return res.json({ method: updated });
+    return response.ok(res, updated);
   } catch (err) {
     return next(
       err instanceof AppError
@@ -97,7 +81,7 @@ const adminDeleteMethod = async (req, res, next) => {
   const id = Number(req.params.id);
   try {
     await paymentService.disableMethod(id);
-    return res.json({ ok: true });
+    return response.noContent(res);
   } catch (err) {
     return next(
       err instanceof AppError
@@ -125,7 +109,7 @@ const startPayment = async (req, res, next) => {
 
   try {
     const result = await paymentService.startPayment(pedidoIdNum, req.user.id);
-    return res.json(result);
+    return response.ok(res, result);
   } catch (err) {
     if (!(err instanceof AppError)) {
       console.error("[payment/start] erro bruto:", err);

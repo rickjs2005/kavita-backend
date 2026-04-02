@@ -1,22 +1,7 @@
 // controllers/publicProductsController.js
-// =============================================================================
-// ⚠️  CONTRATO MISTO — getProductById NÃO É REFERÊNCIA PARA CÓDIGO NOVO
-// =============================================================================
-// listProducts e searchProducts: padrão A ✅ (response.paginated)
-// getProductById: contrato CONGELADO — bare object, migração pendente.
 //
-// Ao tocar getProductById:
-//   - PRESERVE o formato bare { ...product, images }
-//   - NÃO copie este padrão em código novo
-//   - Para migrar: coordenar com frontend público (ver CLAUDE.md § Contratos)
-//
-// Shapes por endpoint:
-//   GET /api/products        → { ok: true, data: [...], meta: { total, page, limit, pages } } ✅
-//   GET /api/products/search → { ok: true, data: [...], meta: { total, page, limit, pages } } ✅
-//   GET /api/products/:id    → { ...product, images: string[] }  ← CONGELADO
-//   Erros (list/search)      → { ok: false, code, message } via AppError ✅
-//   Erros (getById)          → { message: "..." }  ← CONGELADO
-// =============================================================================
+// Handlers para os endpoints públicos de produtos.
+// Todos os endpoints usam response.ok/paginated + AppError (Formato A).
 
 "use strict";
 
@@ -55,27 +40,28 @@ async function searchProducts(req, res, next) {
 /**
  * GET /api/products/:id
  * Params: id (integer)
- * Response: { ...product, images: string[] }   (contrato legado — não migrado)
  */
-async function getProductById(req, res) {
+async function getProductById(req, res, next) {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({ message: "ID inválido." });
+      return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
 
     const produto = await productRepo.findProductById(id);
     if (!produto) {
-      return res.status(404).json({ message: "Produto não encontrado." });
+      return next(new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404));
     }
 
     const imageRows = await productRepo.findProductImages([id]);
     const images = imageRows.map((r) => r.image_url);
 
-    return res.json({ ...produto, images });
+    return response.ok(res, { ...produto, images });
   } catch (err) {
-    console.error("[GET /api/products/:id] Erro:", err);
-    return res.status(500).json({ message: "Erro interno no servidor." });
+    return next(
+      err instanceof AppError ? err
+        : new AppError("Erro interno no servidor.", ERROR_CODES.SERVER_ERROR, 500)
+    );
   }
 }
 

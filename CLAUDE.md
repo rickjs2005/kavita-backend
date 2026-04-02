@@ -390,8 +390,6 @@ Estes arquivos são modernos na estrutura (controller, service, repository), mas
 |---------|----------------|--------|
 | `controllers/cartController.js` | `{ success: true, ... }` + bare GET + `STOCK_LIMIT` 409 | Frontend cart |
 | `controllers/shippingController.js` | `{ success: true, ...quote }` | Frontend checkout |
-| `controllers/paymentController.js` | `{ methods }`, `{ method }` bare | Frontend admin + checkout |
-| `controllers/publicProductsController.js` | `getProductById`: bare `{ ...product, images }` | Frontend público |
 | `routes/ecommerce/payment.js` | Mount híbrido (admin em ecommerce) | Webhook sem cookie |
 | `routes/ecommerce/cart.js` | Contrato `success: true` via cartController | Frontend cart |
 | `routes/ecommerce/shipping.js` | Contrato `success: true` via shippingController | Frontend checkout |
@@ -410,8 +408,8 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
 
 1. **`routes/ecommerce/payment.js`** — rota magra e moderna (35 linhas, puro wiring), mas monta
    rotas admin (`/admin/payment-methods`) dentro do contexto ecommerce em vez de `adminRoutes.js`.
-   O controller (`paymentController.js`) tem contratos de resposta congelados (`{ methods }`, `{ method }`)
-   — ver header do controller. **Não mover para `_legacy/`** — a rota está correta, apenas o mount é híbrido.
+   O controller (`paymentController.js`) usa `response.ok/created/noContent` (Formato A).
+   **Não mover para `_legacy/`** — a rota está correta, apenas o mount é híbrido.
 
 2. **`routes/admin/adminPedidos.js`** — migração concluída em 2026-04. Controller em `controllers/adminOrdersController.js`, schemas em `schemas/ordersSchemas.js`. Contrato de resposta mudou para `{ ok: true, data }` — requer atualização no admin frontend para leitura dos GETs. Ver header do controller para detalhes.
 

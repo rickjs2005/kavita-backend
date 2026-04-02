@@ -45,7 +45,7 @@ describe("paymentController", () => {
 
     await ctrl.listMethods(req, res, next);
 
-    expect(res.json).toHaveBeenCalledWith({ methods: [{ id: 1, name: "Pix" }] });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, data: [{ id: 1, name: "Pix" }] }));
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -83,7 +83,7 @@ describe("paymentController", () => {
     await ctrl.startPayment(req, res, next);
 
     expect(paymentService.startPayment).toHaveBeenCalledWith(42, 7);
-    expect(res.json).toHaveBeenCalledWith({ init_point: "https://mp.com/pay" });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, data: { init_point: "https://mp.com/pay" } }));
   });
 
   test("startPayment rejeita pedidoId inválido", async () => {
@@ -222,7 +222,7 @@ describe("paymentController", () => {
 
     await ctrl.adminListMethods(req, res, next);
 
-    expect(res.json).toHaveBeenCalledWith({ methods: [{ id: 1 }] });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, data: [{ id: 1 }] }));
   });
 
   test("adminCreateMethod retorna 201 { method }", async () => {
@@ -231,8 +231,7 @@ describe("paymentController", () => {
 
     await ctrl.adminCreateMethod(req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(201);
-    expect(res.json).toHaveBeenCalledWith({ method: { id: 2, code: "pix" } });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, data: { id: 2, code: "pix" } }));
   });
 
   test("adminUpdateMethod retorna { method }", async () => {
@@ -241,7 +240,7 @@ describe("paymentController", () => {
 
     await ctrl.adminUpdateMethod(req, res, next);
 
-    expect(res.json).toHaveBeenCalledWith({ method: { id: 1, label: "Pix v2" } });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, data: { id: 1, label: "Pix v2" } }));
   });
 
   test("adminCreateMethod propaga AppError do service", async () => {
@@ -255,14 +254,15 @@ describe("paymentController", () => {
     expect(next).toHaveBeenCalledWith(appErr);
   });
 
-  test("adminDeleteMethod retorna { ok: true } (único endpoint formato A)", async () => {
+  test("adminDeleteMethod retorna 204 noContent", async () => {
     paymentService.disableMethod.mockResolvedValue();
+    res.end = jest.fn(); // noContent calls res.status(204).end()
     req = { params: { id: "5" } };
 
     await ctrl.adminDeleteMethod(req, res, next);
 
     expect(paymentService.disableMethod).toHaveBeenCalledWith(5);
-    expect(res.json).toHaveBeenCalledWith({ ok: true });
+    expect(res.status).toHaveBeenCalledWith(204);
   });
 
   // -----------------------------------------------------------------------
