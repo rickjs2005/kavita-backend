@@ -4,7 +4,7 @@
 // Business logic for admin roles management.
 // Owns the transaction lifecycle for update and remove.
 
-const pool = require("../config/pool");
+const { withTransaction } = require("../lib/withTransaction");
 const repo = require("../repositories/rolesRepository");
 const { logAdminAction } = require("./adminLogs");
 const AppError = require("../errors/AppError");
@@ -85,10 +85,7 @@ async function update(id, { nome, descricao, permissions }, adminId) {
     throw new AppError("Role não encontrado.", ERROR_CODES.NOT_FOUND, 404);
   }
 
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  await withTransaction(async (conn) => {
     // Update scalar fields if any were provided
     if (nome !== undefined || descricao !== undefined) {
       await repo.updateRoleFields(conn, id, { nome, descricao });
@@ -104,14 +101,7 @@ async function update(id, { nome, descricao, permissions }, adminId) {
         await repo.insertRolePermissions(conn, id, permIds);
       }
     }
-
-    await conn.commit();
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
+  });
 
   logAdminAction({
     adminId,
@@ -126,10 +116,7 @@ async function update(id, { nome, descricao, permissions }, adminId) {
 // ---------------------------------------------------------------------------
 
 async function remove(id, adminId) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  await withTransaction(async (conn) => {
     const role = await repo.findRoleForDelete(conn, id);
     if (!role) {
       throw new AppError("Role não encontrado.", ERROR_CODES.NOT_FOUND, 404);
@@ -144,14 +131,7 @@ async function remove(id, adminId) {
 
     await repo.deleteRolePermissions(conn, id);
     await repo.deleteRole(conn, id);
-
-    await conn.commit();
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
+  });
 
   logAdminAction({
     adminId,

@@ -2,7 +2,7 @@
 // services/produtosAdminService.js
 // Regras de negócio para gestão de produtos no painel admin.
 
-const pool = require("../config/pool");
+const { withTransaction } = require("../lib/withTransaction");
 const mediaService = require("./mediaService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -108,31 +108,26 @@ async function getProduct(id) {
 
 async function createProduct(body, files) {
   const fields = parseAndValidateProductFields(body);
-  const conn = await pool.getConnection();
   let uploadedMedia = [];
 
   try {
-    await conn.beginTransaction();
+    return await withTransaction(async (conn) => {
+      const productId = await repo.insert(conn, fields);
 
-    const productId = await repo.insert(conn, fields);
-
-    if (files.length) {
-      uploadedMedia = await mediaService.persistMedia(files, { folder: "products" });
-      if (uploadedMedia.length) {
-        const paths = uploadedMedia.map((m) => m.path);
-        await repo.insertImages(conn, productId, paths);
-        await repo.setMainImage(conn, productId, paths[0]);
+      if (files.length) {
+        uploadedMedia = await mediaService.persistMedia(files, { folder: "products" });
+        if (uploadedMedia.length) {
+          const paths = uploadedMedia.map((m) => m.path);
+          await repo.insertImages(conn, productId, paths);
+          await repo.setMainImage(conn, productId, paths[0]);
+        }
       }
-    }
 
-    await conn.commit();
-    return productId;
+      return productId;
+    });
   } catch (err) {
-    await conn.rollback();
     await mediaService.enqueueOrphanCleanup([...uploadedMedia, ...rawFileTargets(files)]);
     throw err;
-  } finally {
-    conn.release();
   }
 }
 
@@ -147,39 +142,36 @@ async function updateProduct(id, body, files) {
     keep = [];
   }
 
-  const conn = await pool.getConnection();
   let uploadedMedia = [];
-  let removedDuringUpdate = [];
 
   try {
-    await conn.beginTransaction();
-
-    const affectedRows = await repo.update(conn, id, fields);
-    if (affectedRows === 0) {
-      // Lança diretamente — o bloco catch gerencia rollback e cleanup
-      throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
-    }
-
-    const curImgs = await repo.findImagesByProductId(conn, id);
-    const currentPaths = curImgs.map((r) => r.path);
-    const toRemove = currentPaths.filter((p) => !keep.includes(p));
-
-    if (toRemove.length) {
-      await repo.deleteImages(conn, id, toRemove);
-      removedDuringUpdate = toRemove;
-    }
-
-    if (files.length) {
-      uploadedMedia = await mediaService.persistMedia(files, { folder: "products" });
-      if (uploadedMedia.length) {
-        const uploadedPaths = uploadedMedia.map((m) => m.path);
-        await repo.insertImages(conn, id, uploadedPaths);
-        keep = [...keep, ...uploadedPaths];
+    const removedDuringUpdate = await withTransaction(async (conn) => {
+      const affectedRows = await repo.update(conn, id, fields);
+      if (affectedRows === 0) {
+        throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
       }
-    }
 
-    await repo.setMainImage(conn, id, keep[0] || null);
-    await conn.commit();
+      const curImgs = await repo.findImagesByProductId(conn, id);
+      const currentPaths = curImgs.map((r) => r.path);
+      const toRemove = currentPaths.filter((p) => !keep.includes(p));
+
+      if (toRemove.length) {
+        await repo.deleteImages(conn, id, toRemove);
+      }
+
+      if (files.length) {
+        uploadedMedia = await mediaService.persistMedia(files, { folder: "products" });
+        if (uploadedMedia.length) {
+          const uploadedPaths = uploadedMedia.map((m) => m.path);
+          await repo.insertImages(conn, id, uploadedPaths);
+          keep = [...keep, ...uploadedPaths];
+        }
+      }
+
+      await repo.setMainImage(conn, id, keep[0] || null);
+
+      return toRemove;
+    });
 
     if (removedDuringUpdate.length) {
       mediaService.removeMedia(removedDuringUpdate).catch((e) => {
@@ -187,40 +179,27 @@ async function updateProduct(id, body, files) {
       });
     }
   } catch (err) {
-    await conn.rollback();
     await mediaService.enqueueOrphanCleanup([...uploadedMedia, ...rawFileTargets(files)]);
     throw err;
-  } finally {
-    conn.release();
   }
 }
 
 async function deleteProduct(id) {
-  const conn = await pool.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    const imgs = await repo.findImagesByProductId(conn, id);
+  const imgs = await withTransaction(async (conn) => {
+    const images = await repo.findImagesByProductId(conn, id);
     const affectedRows = await repo.remove(conn, id);
 
     if (affectedRows === 0) {
-      // Lança diretamente — o bloco catch gerencia rollback
       throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
     }
 
-    await conn.commit();
+    return images;
+  });
 
-    if (imgs.length) {
-      mediaService.removeMedia(imgs.map((r) => r.path)).catch((e) => {
-        logger.error({ err: e, productId: id }, "Falha ao remover mídias de produto excluído");
-      });
-    }
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
+  if (imgs.length) {
+    mediaService.removeMedia(imgs.map((r) => r.path)).catch((e) => {
+      logger.error({ err: e, productId: id }, "Falha ao remover mídias de produto excluído");
+    });
   }
 }
 

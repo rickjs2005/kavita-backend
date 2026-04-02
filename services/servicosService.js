@@ -10,7 +10,7 @@
 //
 // normalizeImages e mapRowToService são exportados para testes unitários.
 
-const pool = require("../config/pool");
+const { withTransaction } = require("../lib/withTransaction");
 const repo = require("../repositories/servicosRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -174,9 +174,7 @@ async function createAvaliacao(body) {
     ? sanitizeText(String(comentario), 1000)
     : null;
 
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
+  return withTransaction(async (conn) => {
     const insertId = await repo.createAvaliacao(conn, {
       colaborador_id,
       nota,
@@ -184,14 +182,8 @@ async function createAvaliacao(body) {
       autor_nome: nomeFinal,
     });
     await repo.updateRating(conn, colaborador_id, nota);
-    await conn.commit();
     return { id: insertId };
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 /**

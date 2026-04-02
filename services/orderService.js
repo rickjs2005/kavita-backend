@@ -2,6 +2,7 @@
 
 const { dispararEventoComunicacao } = require("./comunicacaoService");
 const pool = require("../config/pool");
+const { withTransaction } = require("../lib/withTransaction");
 const orderRepo = require("../repositories/orderRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -113,17 +114,11 @@ async function updateDeliveryStatus(pedidoId, newStatus) {
   }
 
   if (newStatus === "cancelado") {
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-
+    const found = await withTransaction(async (conn) => {
       // FOR UPDATE serializes concurrent cancellations on the same order.
       const pedido = await orderRepo.lockOrderForUpdate(conn, pedidoId);
 
-      if (!pedido) {
-        await conn.rollback();
-        return { found: false };
-      }
+      if (!pedido) return false;
 
       // Idempotency guard: restore stock only if not already cancelled AND
       // the payment webhook has not already restored it on failure.
@@ -136,14 +131,9 @@ async function updateDeliveryStatus(pedidoId, newStatus) {
       }
 
       await orderRepo.setDeliveryStatus(conn, pedidoId, "cancelado");
-
-      await conn.commit();
-    } catch (err) {
-      await conn.rollback().catch(() => {});
-      throw err;
-    } finally {
-      conn.release();
-    }
+      return true;
+    });
+    if (!found) return { found: false };
   } else {
     const affectedRows = await orderRepo.setDeliveryStatus(pool, pedidoId, newStatus);
     if (affectedRows === 0) return { found: false };

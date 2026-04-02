@@ -7,7 +7,7 @@
 // Tabelas: colaboradores, colaborador_images
 // Pasta de mídia: services/
 
-const pool = require("../config/pool");
+const { withTransaction } = require("../lib/withTransaction");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const mediaService = require("./mediaService");
@@ -69,32 +69,28 @@ async function listServicos() {
 async function createServico(body, files = []) {
   if (files.length) validateImages(files);
 
-  const conn = await pool.getConnection();
   let uploadedMedia = [];
 
   try {
-    await conn.beginTransaction();
+    const result = await withTransaction(async (conn) => {
+      const colaboradorId = await repo.insertServico(conn, body);
 
-    const colaboradorId = await repo.insertServico(conn, body);
+      if (files.length) {
+        uploadedMedia = await mediaService.persistMedia(files, { folder: "services" });
 
-    if (files.length) {
-      uploadedMedia = await mediaService.persistMedia(files, { folder: "services" });
-
-      if (uploadedMedia.length) {
-        const paths = uploadedMedia.map((m) => m.path);
-        await repo.insertImages(conn, colaboradorId, paths);
-        await repo.updateMainImage(conn, colaboradorId, paths[0]);
+        if (uploadedMedia.length) {
+          const paths = uploadedMedia.map((m) => m.path);
+          await repo.insertImages(conn, colaboradorId, paths);
+          await repo.updateMainImage(conn, colaboradorId, paths[0]);
+        }
       }
-    }
 
-    await conn.commit();
-    return { id: colaboradorId };
+      return { id: colaboradorId };
+    });
+    return result;
   } catch (err) {
-    await conn.rollback();
     if (uploadedMedia.length) mediaService.enqueueOrphanCleanup(uploadedMedia);
     throw err;
-  } finally {
-    conn.release();
   }
 }
 
@@ -117,39 +113,38 @@ async function createServico(body, files = []) {
 async function updateServico(id, body, keepImages = [], files = []) {
   if (files.length) validateImages(files);
 
-  const conn = await pool.getConnection();
   let newlyUploaded = [];
 
   try {
-    await conn.beginTransaction();
+    const toRemove = await withTransaction(async (conn) => {
+      await repo.updateServico(conn, id, body);
 
-    await repo.updateServico(conn, id, body);
+      const existingImages = await repo.findImagesByColaboradorId(conn, id);
 
-    const existingImages = await repo.findImagesByColaboradorId(conn, id);
+      const toKeep = existingImages.filter((img) => keepImages.includes(img.path));
+      const removing = existingImages.filter((img) => !keepImages.includes(img.path));
+      const removeIds = removing.map((img) => img.id);
 
-    const toKeep = existingImages.filter((img) => keepImages.includes(img.path));
-    const toRemove = existingImages.filter((img) => !keepImages.includes(img.path));
-    const removeIds = toRemove.map((img) => img.id);
-
-    if (removeIds.length) {
-      await repo.deleteImagesByIds(conn, removeIds, id);
-    }
-
-    if (files.length) {
-      newlyUploaded = await mediaService.persistMedia(files, { folder: "services" });
-      if (newlyUploaded.length) {
-        const paths = newlyUploaded.map((m) => m.path);
-        await repo.insertImages(conn, id, paths);
+      if (removeIds.length) {
+        await repo.deleteImagesByIds(conn, removeIds, id);
       }
-    }
 
-    const finalPaths = [
-      ...toKeep.map((img) => img.path),
-      ...newlyUploaded.map((m) => m.path),
-    ];
-    await repo.updateMainImage(conn, id, finalPaths[0] ?? null);
+      if (files.length) {
+        newlyUploaded = await mediaService.persistMedia(files, { folder: "services" });
+        if (newlyUploaded.length) {
+          const paths = newlyUploaded.map((m) => m.path);
+          await repo.insertImages(conn, id, paths);
+        }
+      }
 
-    await conn.commit();
+      const finalPaths = [
+        ...toKeep.map((img) => img.path),
+        ...newlyUploaded.map((m) => m.path),
+      ];
+      await repo.updateMainImage(conn, id, finalPaths[0] ?? null);
+
+      return removing;
+    });
 
     if (toRemove.length) {
       mediaService
@@ -157,11 +152,8 @@ async function updateServico(id, body, keepImages = [], files = []) {
         .catch((err) => console.error("[servicosAdminService] Erro ao remover mídias antigas:", err));
     }
   } catch (err) {
-    await conn.rollback();
     if (newlyUploaded.length) mediaService.enqueueOrphanCleanup(newlyUploaded);
     throw err;
-  } finally {
-    conn.release();
   }
 }
 
@@ -174,32 +166,22 @@ async function updateServico(id, body, keepImages = [], files = []) {
  * @param {number} id
  */
 async function deleteServico(id) {
-  const conn = await pool.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    const images = await repo.findImagesByColaboradorId(conn, id);
+  const images = await withTransaction(async (conn) => {
+    const imgs = await repo.findImagesByColaboradorId(conn, id);
     await repo.deleteAllImages(conn, id);
     const affected = await repo.deleteServico(conn, id);
 
     if (affected === 0) {
-      await conn.rollback();
       throw new AppError("Serviço não encontrado.", ERROR_CODES.NOT_FOUND, 404);
     }
 
-    await conn.commit();
+    return imgs;
+  });
 
-    if (images.length) {
-      mediaService
-        .removeMedia(images.map((img) => ({ path: img.path })))
-        .catch((err) => console.error("[servicosAdminService] Erro ao remover mídias de serviço excluído:", err));
-    }
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
+  if (images.length) {
+    mediaService
+      .removeMedia(images.map((img) => ({ path: img.path })))
+      .catch((err) => console.error("[servicosAdminService] Erro ao remover mídias de serviço excluído:", err));
   }
 }
 

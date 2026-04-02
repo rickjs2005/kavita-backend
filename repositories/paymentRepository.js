@@ -12,102 +12,72 @@ const pool = require("../config/pool");
 /* ---- Payment methods --------------------------------------------------- */
 
 async function getActiveMethods() {
-  const conn = await pool.getConnection();
-  try {
-    const [rows] = await conn.query(
-      `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
-         FROM payment_methods
-        WHERE is_active = 1
-        ORDER BY sort_order ASC, id ASC`
-    );
-    return rows;
-  } finally {
-    conn.release();
-  }
+  const [rows] = await pool.query(
+    `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
+       FROM payment_methods
+      WHERE is_active = 1
+      ORDER BY sort_order ASC, id ASC`
+  );
+  return rows;
 }
 
 async function getAllMethods() {
-  const conn = await pool.getConnection();
-  try {
-    const [rows] = await conn.query(
-      `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
-         FROM payment_methods
-        ORDER BY sort_order ASC, id ASC`
-    );
-    return rows;
-  } finally {
-    conn.release();
-  }
+  const [rows] = await pool.query(
+    `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
+       FROM payment_methods
+      ORDER BY sort_order ASC, id ASC`
+  );
+  return rows;
 }
 
 async function findMethodById(id) {
-  const conn = await pool.getConnection();
-  try {
-    const [[row]] = await conn.query(
-      `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
-         FROM payment_methods
-        WHERE id = ?`,
-      [id]
-    );
-    return row || null;
-  } finally {
-    conn.release();
-  }
+  const [[row]] = await pool.query(
+    `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
+       FROM payment_methods
+      WHERE id = ?`,
+    [id]
+  );
+  return row || null;
 }
 
 async function createMethod({ code, label, description, is_active, sort_order }) {
-  const conn = await pool.getConnection();
-  try {
-    const [result] = await conn.query(
-      `INSERT INTO payment_methods (code, label, description, is_active, sort_order, created_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
-      [code, label, description, is_active, sort_order]
-    );
-    const [[created]] = await conn.query(
-      `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
-         FROM payment_methods
-        WHERE id = ?`,
-      [result.insertId]
-    );
-    return created;
-  } finally {
-    conn.release();
-  }
+  const [result] = await pool.query(
+    `INSERT INTO payment_methods (code, label, description, is_active, sort_order, created_at)
+     VALUES (?, ?, ?, ?, ?, NOW())`,
+    [code, label, description, is_active, sort_order]
+  );
+  const [[created]] = await pool.query(
+    `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
+       FROM payment_methods
+      WHERE id = ?`,
+    [result.insertId]
+  );
+  return created;
 }
 
 async function updateMethodById(id, fields, values) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.query(
-      `UPDATE payment_methods
-          SET ${fields.join(", ")}, updated_at = NOW()
-        WHERE id = ?`,
-      [...values, id]
-    );
-    const [[updated]] = await conn.query(
-      `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
-         FROM payment_methods
-        WHERE id = ?`,
-      [id]
-    );
-    return updated;
-  } finally {
-    conn.release();
-  }
+  await pool.query(
+    `UPDATE payment_methods
+        SET ${fields.join(", ")}, updated_at = NOW()
+      WHERE id = ?`,
+    [...values, id]
+  );
+  const [[updated]] = await pool.query(
+    `SELECT id, code, label, description, is_active, sort_order, created_at, updated_at
+       FROM payment_methods
+      WHERE id = ?`,
+    [id]
+  );
+  return updated;
 }
 
 async function softDeleteMethod(id) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.query(
-      `UPDATE payment_methods
-          SET is_active = 0, updated_at = NOW()
-        WHERE id = ?`,
-      [id]
-    );
-  } finally {
-    conn.release();
-  }
+  await pool.query(
+    `UPDATE payment_methods
+        SET is_active = 0, updated_at = NOW()
+      WHERE id = ?`,
+    [id]
+  );
 }
 
 /* ---- Pedidos -------------------------------------------------------------- */

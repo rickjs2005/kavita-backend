@@ -3,7 +3,7 @@
 
 const { Payment } = require("mercadopago");
 const { getMPClient } = require("../config/mercadopago");
-const pool = require("../config/pool");
+const { withTransaction } = require("../lib/withTransaction");
 const repo = require("../repositories/paymentRepository");
 const orderRepo = require("../repositories/orderRepository");
 
@@ -49,10 +49,7 @@ async function handleWebhookEvent({
   payload,
   signatureHeader,
 }) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  return withTransaction(async (conn) => {
     // Layer 3: idempotência — UNIQUE(event_id) + FOR UPDATE previne race conditions
     const existingEvent = await repo.findWebhookEventForUpdate(conn, eventId);
 
@@ -67,7 +64,6 @@ async function handleWebhookEvent({
       });
     } else if (existingEvent.processed_at) {
       // Evento já processado — resposta idempotente
-      await conn.commit();
       return "idempotent";
     } else {
       dbEventId = existingEvent.id;
@@ -81,7 +77,6 @@ async function handleWebhookEvent({
     // Ignora eventos que não são de pagamento ou não têm ID de pagamento
     if (type !== "payment" || !dataId) {
       await repo.markWebhookEventIgnored(conn, dbEventId);
-      await conn.commit();
       return "ignored";
     }
 
@@ -94,7 +89,6 @@ async function handleWebhookEvent({
     if (!pedidoId) {
       console.warn("[payment/webhook] pagamento sem metadata.pedidoId", dataId);
       await repo.markWebhookEventIgnored(conn, dbEventId);
-      await conn.commit();
       return "ignored";
     }
 
@@ -109,18 +103,8 @@ async function handleWebhookEvent({
     await repo.updatePedidoPayment(conn, pedidoId, novoStatus, dataId);
     await repo.markWebhookEventProcessed(conn, dbEventId, novoStatus);
 
-    await conn.commit();
     return "processed";
-  } catch (err) {
-    try {
-      await conn.rollback();
-    } catch (rollbackErr) {
-      console.error("[payment/webhook] rollback falhou:", rollbackErr);
-    }
-    throw err;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 module.exports = { mapMPStatusToDomain, handleWebhookEvent };

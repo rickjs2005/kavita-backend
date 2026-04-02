@@ -7,7 +7,7 @@
 // normalizeInput is exported so tests can exercise the normalisation
 // rules in isolation without going through the HTTP layer.
 
-const pool = require("../config/pool");
+const { withTransaction } = require("../lib/withTransaction");
 const addressRepo = require("../repositories/addressRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -164,23 +164,12 @@ async function create(userId, rawBody) {
     throw new AppError(norm.errors.join(" "), ERROR_CODES.VALIDATION_ERROR, 400);
   }
 
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  await withTransaction(async (conn) => {
     if (norm.data.is_default) {
       await addressRepo.clearDefaultForUser(conn, userId);
     }
-
     await addressRepo.createAddress(conn, userId, norm.data);
-
-    await conn.commit();
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -197,10 +186,7 @@ async function update(userId, addressId, rawBody) {
     throw new AppError(norm.errors.join(" "), ERROR_CODES.VALIDATION_ERROR, 400);
   }
 
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  await withTransaction(async (conn) => {
     if (norm.data.is_default) {
       await addressRepo.clearDefaultForUser(conn, userId);
     }
@@ -210,14 +196,7 @@ async function update(userId, addressId, rawBody) {
     if (result.affectedRows === 0) {
       throw new AppError("Endereço não encontrado.", ERROR_CODES.NOT_FOUND, 404);
     }
-
-    await conn.commit();
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------

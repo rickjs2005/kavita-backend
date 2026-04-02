@@ -1,6 +1,6 @@
 "use strict";
 
-const pool = require("../config/pool");
+const { withTransaction } = require("../lib/withTransaction");
 const cartRepo = require("../repositories/cartRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -52,10 +52,7 @@ async function addItem(userId, { produto_id, quantidade }) {
   const produtoIdNum = toInt(produto_id);
   const qtdNum = toInt(quantidade);
 
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  return withTransaction(async (conn) => {
     // 1) find or create open cart
     const carrinho = await cartRepo.findOpenCart(conn, userId);
     const carrinhoId = carrinho?.id ?? await cartRepo.createCart(conn, userId);
@@ -89,18 +86,8 @@ async function addItem(userId, { produto_id, quantidade }) {
       await cartRepo.insertCartItem(conn, carrinhoId, produtoIdNum, desired, produto.price);
     }
 
-    await conn.commit();
     return { produto_id: produtoIdNum, quantidade: desired, stock };
-  } catch (e) {
-    try {
-      await conn.rollback();
-    } catch (rb) {
-      console.error("cartService.addItem rollback erro:", rb);
-    }
-    throw e;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 /**
@@ -118,14 +105,10 @@ async function updateItem(userId, { produto_id, quantidade }) {
   const produtoIdNum = toInt(produto_id);
   const qtdNum = toInt(quantidade);
 
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  return withTransaction(async (conn) => {
     const carrinho = await cartRepo.findOpenCart(conn, userId);
 
     if (!carrinho) {
-      await conn.commit();
       return { produto_id: produtoIdNum, quantidade: 0, stock: 0, emptyCart: true };
     }
 
@@ -147,18 +130,8 @@ async function updateItem(userId, { produto_id, quantidade }) {
 
     await cartRepo.updateCartItemByProduct(conn, carrinho.id, produtoIdNum, qtdNum);
 
-    await conn.commit();
     return { produto_id: produtoIdNum, quantidade: qtdNum, stock, emptyCart: false };
-  } catch (e) {
-    try {
-      await conn.rollback();
-    } catch (rb) {
-      console.error("cartService.updateItem rollback erro:", rb);
-    }
-    throw e;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 /**
@@ -170,31 +143,17 @@ async function updateItem(userId, { produto_id, quantidade }) {
  * @returns {{ removed: boolean }}
  */
 async function removeItem(userId, produtoId) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  return withTransaction(async (conn) => {
     const carrinho = await cartRepo.findOpenCart(conn, userId);
 
     if (!carrinho) {
-      await conn.commit();
       return { removed: false };
     }
 
     await cartRepo.deleteCartItem(conn, carrinho.id, produtoId);
 
-    await conn.commit();
     return { removed: true };
-  } catch (e) {
-    try {
-      await conn.rollback();
-    } catch (rb) {
-      console.error("cartService.removeItem rollback erro:", rb);
-    }
-    throw e;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 /**
@@ -205,32 +164,18 @@ async function removeItem(userId, produtoId) {
  * @returns {{ cleared: boolean }}
  */
 async function clearCart(userId) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  return withTransaction(async (conn) => {
     const carrinho = await cartRepo.findOpenCart(conn, userId);
 
     if (!carrinho) {
-      await conn.commit();
       return { cleared: false };
     }
 
     await cartRepo.deleteAllCartItems(conn, carrinho.id);
     await cartRepo.closeCart(conn, carrinho.id);
 
-    await conn.commit();
     return { cleared: true };
-  } catch (e) {
-    try {
-      await conn.rollback();
-    } catch (rb) {
-      console.error("cartService.clearCart rollback erro:", rb);
-    }
-    throw e;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------
