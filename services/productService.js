@@ -84,7 +84,7 @@ async function _attachImages(products) {
  * Resolves category slugs to IDs via DB lookup.
  *
  * @param {object} query  req.query
- * @returns {{ data, page, limit, total, totalPages, sort, order }}
+ * @returns {{ items: object[], total: number, page: number, limit: number }}
  * @throws {AppError} 404 when category slug is not found
  */
 async function listProducts(query) {
@@ -131,22 +131,14 @@ async function listProducts(query) {
 
   const data = await _attachImages(rows);
 
-  return {
-    data,
-    page: pageNum,
-    limit: limitNum,
-    total,
-    totalPages: Math.ceil(total / limitNum),
-    sort: sortKey,
-    order: orderDir.toLowerCase(),
-  };
+  return { items: data, total, page: pageNum, limit: limitNum };
 }
 
 /**
  * Advanced product search with price range, category, and promotion filters.
  *
  * @param {object} query  req.query
- * @returns {{ products, pagination }}
+ * @returns {{ items: object[], total: number, page: number, limit: number }}
  * @throws {AppError} 400 when minPrice or maxPrice is non-numeric
  */
 async function searchProducts(query) {
@@ -191,15 +183,7 @@ async function searchProducts(query) {
 
   const products = await _attachImages(rows);
 
-  return {
-    products,
-    pagination: {
-      page: pageNum,
-      limit: limitNum,
-      total,
-      totalPages: Math.ceil(total / limitNum),
-    },
-  };
+  return { items: products, total, page: pageNum, limit: limitNum };
 }
 
 module.exports = { listProducts, searchProducts };

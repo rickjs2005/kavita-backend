@@ -328,7 +328,7 @@ Ao tocar: corrija apenas o problema em questão — não ampliar o padrão antig
 | `controllers/paymentController.js` | `res.json()` cru nos 4 endpoints CRUD de métodos — pendente migração para `lib/response.js` alinhada com frontend |
 | `routes/ecommerce/cart.js` | Contrato `success: true` divergente — handlers já em `controllers/cartController.js`, pendente apenas migração de resposta para `lib/response.js` |
 | `controllers/shippingController.js` | Contrato `success: true` divergente — pendente migração para `lib/response.js` alinhada com frontend |
-| `routes/public/publicProducts.js` | `res.json(result)` bare + erros `{ message }` sem `ok`/`code` |
+| `routes/public/publicProducts.js` | `GET /api/products/:id` retorna bare object `{ ...product, images }` — pendente migração para `response.ok(res, data)` alinhada com frontend |
 
 ### Módulos legados — exceção temporária
 
@@ -379,10 +379,7 @@ Armadilhas ativas (não resolvidas por organização — exigem migração futur
    Ao escrever testes para essas rotas, não asserte `ok: true` — asserte `success: true`. Não copie esse
    padrão em código novo.
 
-6. **`controllers/publicProductsController.js`** — handlers extraídos da rota, mas contrato divergente preservado.
-   `listProducts` retorna `{ data, page, limit, total, totalPages, sort, order }` (sem wrapper `ok`).
-   `searchProducts` retorna `{ products, pagination }` (shape diferente de listProducts — atenção ao escrever testes).
-   Erros retornam `{ message }` sem `ok: false`/`code`. Migração exige coordenação com o frontend.
+6. **`controllers/publicProductsController.js`** — `listProducts` e `searchProducts` migrados para `response.paginated` (2026-04-02). Apenas `getProductById` mantém bare object — pendente coordenação de frontend separada.
 
 Armadilhas já resolvidas (registradas aqui para histórico):
 
@@ -619,14 +616,12 @@ O projeto tem **3 formatos de resposta simultaneamente ativos**. Isso é resulta
 | `controllers/cartController.js` | `POST/PUT/DELETE /api/cart*` | B: `{ success: true, message, ... }` | C: `{ code: "STOCK_LIMIT", ... }` no 409 | Frontend cart |
 | `controllers/shippingController.js` | `GET /api/shipping/quote` | B: `{ success: true, cep, price, ... }` | A | Frontend checkout |
 | `controllers/paymentController.js` | `GET /api/payment/methods` e CRUD admin | C: `{ methods }` / `{ method }` | A | Frontend admin e checkout |
-| `controllers/publicProductsController.js` | `GET /api/products` | C: `{ data[], page, limit, ... }` | `{ message }` sem `ok`/`code` | Frontend público |
-| `controllers/publicProductsController.js` | `GET /api/products/search` | C: `{ products[], pagination }` ¹ | `{ message }` sem `ok`/`code` | Frontend público |
+| `controllers/publicProductsController.js` | `GET /api/products/:id` | C: `{ ...product, images }` bare | `{ message }` | Frontend público |
 | `controllers/authController.js` | 1 handler | res.json híbrido | A | Baixo — pode migrar isolado |
-| `routes/utils/uploadsCheck.js` | `GET /uploads/check/*` | — | `{ ok: false, error }` ² | Utilitário interno |
+| `routes/utils/uploadsCheck.js` | `GET /uploads/check/*` | — | `{ ok: false, error }` ¹ | Utilitário interno |
 | Todos os outros modernos | — | A | A | — já no padrão |
 
-¹ Shape diferente de `listProducts` no mesmo controller — atenção em testes.
-² Usa `error` em vez de `message` — único caso; utilitário interno sem cliente externo.
+¹ Usa `error` em vez de `message` — único caso; utilitário interno sem cliente externo.
 
 ### Regra para código novo
 
@@ -667,12 +662,12 @@ Migração incremental, não em lote. Tocar apenas ao ter outra razão para abri
 | Arquivo | Pré-condição obrigatória | Prioridade |
 |---------|--------------------------|-----------|
 | `controllers/cartController.js` | Alinhamento frontend: `success → ok`, `carrinho_id → data` | Alta |
-| `controllers/publicProductsController.js` | Unificar shapes dos 2 endpoints + alinhamento frontend | Alta |
 | `controllers/shippingController.js` | Alinhamento frontend checkout | Média |
 | `controllers/paymentController.js` | Alinhamento frontend admin e checkout | Média |
+| `controllers/publicProductsController.js` | `getProductById` bare object → `response.ok(res, data)` | Baixa |
 | `controllers/authController.js` | Nenhuma — pode migrar isolado | Baixa |
 
-Ao migrar qualquer um dos 4 primeiros: a mudança de formato **quebra o cliente** — coordenar frontend antes de mergar.
+Ao migrar cart, shipping ou payment: a mudança de formato **quebra o cliente** — coordenar frontend antes de mergar.
 
 ### Histórico de arquivos já migrados para Formato A
 
@@ -680,3 +675,4 @@ Ao migrar qualquer um dos 4 primeiros: a mudança de formato **quebra o cliente*
 - `controllers/news/adminClimaController.js` — 2026-03
 - `controllers/news/adminCotacoesController.js` — 2026-03
 - `controllers/adminOrdersController.js` — 2026-04 (contrato mudou de bare array para `{ ok, data }` — requer atualização no admin frontend para os GETs)
+- `controllers/publicProductsController.js` (listProducts + searchProducts) — 2026-04-02 (`response.paginated`; `getProductById` pendente)
