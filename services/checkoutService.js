@@ -82,16 +82,120 @@ async function restoreStock(connOrPool, pedidoId) {
 }
 
 // ---------------------------------------------------------------------------
+// Internal helpers — private, extracted from create() for readability.
+// Each handles one logical step of the checkout pipeline.
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks if an identical order (same products + coupon) was created
+ * in the last 2 minutes. Returns the existing order or null.
+ */
+async function detectDuplicateOrder(conn, userId, produtos, cupomCodigo) {
+  const cupomNorm = cupomCodigo
+    ? String(cupomCodigo).trim().toUpperCase()
+    : null;
+
+  const sortedProds = [...produtos]
+    .map((p) => `${Number(p.id)}:${Number(p.quantidade || 0)}`)
+    .sort()
+    .join(",");
+
+  const recentOrders = await checkoutRepo.findRecentOrders(conn, userId);
+
+  const match = recentOrders.find(
+    (row) =>
+      row.composicao === sortedProds &&
+      (row.cupom ?? null) === cupomNorm
+  );
+
+  return match ? { pedido_id: match.pedido_id, cupomNorm } : { pedido_id: null, cupomNorm };
+}
+
+/**
+ * Locks product rows (FOR UPDATE) and fetches active promotions.
+ * Returns two maps: product info and promotion final prices.
+ */
+async function buildPricingMaps(conn, produtos) {
+  const ids = produtos.map((p) => Number(p.id));
+
+  const prodRows = await checkoutRepo.lockProducts(conn, ids);
+  const mapProdutos = {};
+  prodRows.forEach((row) => {
+    mapProdutos[Number(row.id)] = {
+      price: Number(row.price),
+      stock: Number(row.quantity),
+    };
+  });
+
+  const promoRows = await checkoutRepo.getActivePromotions(conn, ids);
+  const mapPromocoes = {};
+  promoRows.forEach((row) => {
+    mapPromocoes[Number(row.product_id)] = Number(row.final_price);
+  });
+
+  return { mapProdutos, mapPromocoes };
+}
+
+/**
+ * Validates and applies a coupon to the subtotal.
+ * Returns discount info or zeroed defaults if no coupon was provided.
+ */
+async function applyCouponIfPresent(conn, cupomCodigo, subtotal) {
+  if (!cupomCodigo || !String(cupomCodigo).trim()) {
+    return { totalFinal: subtotal, descontoTotal: 0, cupomAplicado: null };
+  }
+
+  try {
+    const { desconto, cupomAplicado } = await couponService.applyCoupon(
+      conn, cupomCodigo, subtotal
+    );
+    return {
+      totalFinal: subtotal - desconto,
+      descontoTotal: desconto,
+      cupomAplicado,
+    };
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    console.error("[checkoutService] Erro ao aplicar cupom:", err);
+    throw new AppError(
+      "Erro ao aplicar o cupom de desconto.",
+      ERROR_CODES.SERVER_ERROR,
+      500
+    );
+  }
+}
+
+/**
+ * Post-commit side effects: notification + cart closure.
+ * Both are fire-and-forget — failures do not affect the order.
+ */
+async function postCommitSideEffects(pedidoId, userId) {
+  try {
+    await checkoutNotificationService.notifyOrderCreated(pedidoId);
+  } catch (err) {
+    console.error("[checkoutService] Erro ao disparar comunicação:", err);
+  }
+
+  // Close open cart — outside transaction.
+  // A crash here leaves the cart as "aberto" but the order exists — acceptable,
+  // does not affect inventory or order integrity.
+  try {
+    await cartRepo.convertCart(userId);
+  } catch (err) {
+    console.error("[checkoutService] Erro ao fechar carrinho:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main checkout operation
 // ---------------------------------------------------------------------------
 
 /**
  * Creates an order for an authenticated user.
  *
- * Handles: advisory lock (idempotency), product composition deduplication,
- * user info update, stock validation + debit (reserveStock), coupon
- * application, shipping persistence, abandoned-cart recovery, cart closure,
- * and post-commit communication event.
+ * Pipeline: advisory lock → deduplication → create order → price & reserve
+ * stock → apply coupon → persist totals & shipping → mark cart recovered →
+ * commit → notify + close cart.
  *
  * @param {number} userId
  * @param {object} body  Validated checkout payload (from req.body, after
@@ -124,10 +228,7 @@ async function create(userId, body) {
   try {
     connection = await pool.getConnection();
 
-    /* 0) Advisory lock — serializes concurrent checkouts from the same user.
-     *    GET_LOCK is a MySQL global advisory lock by name.
-     *    Timeout: 5 s. Returns 409 if another transaction holds the lock.
-     *    RELEASE_LOCK must be called BEFORE connection.release() — see finally block. */
+    /* 0) Advisory lock — serializes concurrent checkouts from the same user. */
     const [[lockRow]] = await connection.query(
       "SELECT GET_LOCK(?, 5) AS ok",
       [lockName]
@@ -144,14 +245,14 @@ async function create(userId, body) {
 
     await connection.beginTransaction();
 
-    /* 1) Update user info — non-blocking (does not abort the order on failure) */
+    /* 1) Update user info — non-blocking */
     try {
       await checkoutRepo.updateUserInfo(connection, userId, { nome, telefone, cpf });
     } catch (err) {
       console.error("[checkoutService] Erro ao atualizar dados do usuário:", err);
     }
 
-    /* 2) Find open cart — non-blocking (used later to mark abandoned cart recovered) */
+    /* 2) Find open cart — non-blocking (used later to mark as recovered) */
     let carrinhoAberto = null;
     try {
       carrinhoAberto = await checkoutRepo.findOpenCartId(connection, userId);
@@ -159,108 +260,38 @@ async function create(userId, body) {
       console.error("[checkoutService] Erro ao buscar carrinho aberto:", err);
     }
 
-    /* 2.5) Deduplication by product composition + coupon.
-     *
-     *  Fingerprint: sorted "id:qty" pairs joined by comma, plus normalized coupon code.
-     *  Same products + different coupon = NOT a duplicate (intentional re-submit).
-     *  Window: 2 min — covers high latency, double-click, and auto-retry.
-     *  GET_LOCK (step 0) ensures only one transaction from this user reaches here
-     *  at a time — no race condition.                                            */
-    const cupomNorm = cupom_codigo
-      ? String(cupom_codigo).trim().toUpperCase()
-      : null;
-
-    const sortedProds = [...produtos]
-      .map((p) => `${Number(p.id)}:${Number(p.quantidade || 0)}`)
-      .sort()
-      .join(",");
-
-    const recentOrders = await checkoutRepo.findRecentOrders(connection, userId);
-
-    const pedidoDuplicado = recentOrders.find(
-      (row) =>
-        row.composicao === sortedProds &&
-        (row.cupom ?? null) === cupomNorm
+    /* 3) Deduplication — same products + coupon within 2 min = idempotent */
+    const { pedido_id: dupId, cupomNorm } = await detectDuplicateOrder(
+      connection, userId, produtos, cupom_codigo
     );
-
-    if (pedidoDuplicado) {
+    if (dupId) {
       await connection.rollback();
-      return { idempotente: true, pedido_id: pedidoDuplicado.pedido_id };
+      return { idempotente: true, pedido_id: dupId };
     }
 
-    /* 3) Create order record with status = 'pendente' */
-    const enderecoStr = JSON.stringify(endereco || {});
-
+    /* 4) Create order record */
     const pedidoId = await checkoutRepo.createOrder(connection, {
       userId,
-      enderecoStr,
+      enderecoStr: JSON.stringify(endereco || {}),
       formaPagamento,
       cupomNorm,
     });
 
-    /* 4) Lock product rows and fetch active promotions.
-     *
-     *  Pricing rule:
-     *    products.price               = list price (never changed by promotions)
-     *    product_promotions.final_price = effective price when a promotion is active
-     *    Coupon applies on the post-promotion subtotal.
-     *    Same formula used in publicPromocoes.js and preview-cupom.             */
-    const ids = produtos.map((p) => Number(p.id));
+    /* 5) Lock products + fetch active promotions → pricing maps */
+    const { mapProdutos, mapPromocoes } = await buildPricingMaps(connection, produtos);
 
-    const prodRows = await checkoutRepo.lockProducts(connection, ids);
-    const mapProdutos = {};
-    prodRows.forEach((row) => {
-      mapProdutos[Number(row.id)] = {
-        price: Number(row.price),
-        stock: Number(row.quantity),
-      };
-    });
-
-    const promoRows = await checkoutRepo.getActivePromotions(connection, ids);
-    const mapPromocoes = {};
-    promoRows.forEach((row) => {
-      mapPromocoes[Number(row.product_id)] = Number(row.final_price);
-    });
-
-    /* 5) Insert order items + debit stock (atomic within this transaction) */
-    const { total: totalPedido } = await reserveStock(
-      connection,
-      pedidoId,
-      produtos,
-      mapProdutos,
-      mapPromocoes
+    /* 6) Insert order items + debit stock */
+    const { total: subtotal } = await reserveStock(
+      connection, pedidoId, produtos, mapProdutos, mapPromocoes
     );
 
-    /* 6) Apply coupon (optional) */
-    let totalFinal = totalPedido;
-    let descontoTotal = 0;
-    let cupomAplicado = null;
+    /* 7) Apply coupon (optional) */
+    const { totalFinal, descontoTotal, cupomAplicado } = await applyCouponIfPresent(
+      connection, cupom_codigo, subtotal
+    );
 
-    if (cupom_codigo && String(cupom_codigo).trim()) {
-      try {
-        const { desconto, cupomAplicado: info } = await couponService.applyCoupon(
-          connection, cupom_codigo, totalPedido
-        );
-        descontoTotal = desconto;
-        totalFinal = totalPedido - descontoTotal;
-        cupomAplicado = info;
-      } catch (errCupom) {
-        if (errCupom instanceof AppError) throw errCupom;
-        console.error("[checkoutService] Erro ao aplicar cupom:", errCupom);
-        throw new AppError(
-          "Erro ao aplicar o cupom de desconto.",
-          ERROR_CODES.SERVER_ERROR,
-          500
-        );
-      }
-    }
-
-    /* 7) Persist final total */
+    /* 8) Persist final total + shipping */
     await checkoutRepo.updateOrderTotal(connection, pedidoId, totalFinal);
-
-    /* 7.1) Persist shipping data inside the transaction.
-     *  Values were injected into req.body by recalcShippingMiddleware.
-     *  The controller passes them through as part of `body`. */
     await checkoutRepo.updateOrderShipping(connection, pedidoId, {
       shipping_price,
       shipping_rule_applied,
@@ -268,42 +299,26 @@ async function create(userId, body) {
       shipping_cep,
     });
 
-    /* 8) Mark abandoned cart as recovered — non-blocking */
+    /* 9) Mark abandoned cart as recovered — non-blocking */
     try {
       if (carrinhoAberto?.id) {
         await checkoutRepo.markAbandonedCartRecovered(connection, carrinhoAberto.id);
       }
     } catch (err) {
-      console.error(
-        "[checkoutService] Erro ao marcar carrinho como recuperado:",
-        err
-      );
+      console.error("[checkoutService] Erro ao marcar carrinho como recuperado:", err);
     }
 
-    /* 9) Commit */
+    /* 10) Commit */
     await connection.commit();
 
-    /* 9.1) Communication event — non-blocking, runs after commit */
-    try {
-      await checkoutNotificationService.notifyOrderCreated(pedidoId);
-    } catch (errCom) {
-      console.error("[checkoutService] Erro ao disparar comunicação:", errCom);
-    }
-
-    /* 10) Close open cart — non-blocking, outside transaction.
-     *  A crash here leaves the cart as "aberto" but the order exists — acceptable,
-     *  does not affect inventory or order integrity. */
-    try {
-      await cartRepo.convertCart(userId);
-    } catch (err) {
-      console.error("[checkoutService] Erro ao fechar carrinho:", err);
-    }
+    /* 11) Post-commit side effects (fire-and-forget) */
+    await postCommitSideEffects(pedidoId, userId);
 
     return {
       idempotente: false,
       pedido_id: pedidoId,
       total: totalFinal,
-      total_sem_desconto: totalPedido,
+      total_sem_desconto: subtotal,
       desconto_total: descontoTotal,
       cupom_aplicado: cupomAplicado,
     };
@@ -318,9 +333,6 @@ async function create(userId, body) {
     throw err;
   } finally {
     if (connection) {
-      // RELEASE_LOCK must be called BEFORE connection.release() to avoid leaking
-      // the advisory lock back to the pool (MySQL advisory locks are per-connection;
-      // connection.release() does NOT release them).
       if (lockAcquired) {
         await connection
           .query("SELECT RELEASE_LOCK(?)", [lockName])
