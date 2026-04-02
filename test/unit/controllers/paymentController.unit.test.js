@@ -49,14 +49,27 @@ describe("paymentController", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  test("listMethods chama next com AppError em erro", async () => {
+  test("listMethods — erro bruto wrapeado em 500", async () => {
     paymentService.listActiveMethods.mockRejectedValue(new Error("db"));
     req = {};
 
     await ctrl.listMethods(req, res, next);
 
     expect(next).toHaveBeenCalled();
-    expect(next.mock.calls[0][0]).toBeInstanceOf(Error);
+    const err = next.mock.calls[0][0];
+    expect(err.status).toBe(500);
+    expect(err.message).toContain("listar métodos");
+  });
+
+  test("listMethods — AppError do service propagado sem wrapper", async () => {
+    const AppError = require("../../../errors/AppError");
+    const appErr = new AppError("limite", "RATE_LIMIT", 429);
+    paymentService.listActiveMethods.mockRejectedValue(appErr);
+    req = {};
+
+    await ctrl.listMethods(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(appErr);
   });
 
   // -----------------------------------------------------------------------
@@ -137,6 +150,66 @@ describe("paymentController", () => {
 
     expect(webhookService.handleWebhookEvent).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  test("webhook processed (não-idempotent) → { ok: true } sem idempotent key", async () => {
+    webhookService.handleWebhookEvent.mockResolvedValue("processed");
+    req = {
+      body: { id: "evt-proc", type: "payment", data: { id: "pay-p" } },
+      get: jest.fn().mockReturnValue("sig"),
+    };
+
+    await ctrl.handleWebhook(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
+  });
+
+  test("webhook com req.body=null → fallback {} → sem id → 200", async () => {
+    req = {
+      body: null,
+      get: jest.fn().mockReturnValue("sig"),
+    };
+
+    await ctrl.handleWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(webhookService.handleWebhookEvent).not.toHaveBeenCalled();
+  });
+
+  test("webhook erro em NODE_ENV=development → retorna 500", async () => {
+    const origEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+
+    webhookService.handleWebhookEvent.mockRejectedValue(new Error("dev crash"));
+    req = {
+      body: { id: "evt-dev", type: "payment", data: {} },
+      get: jest.fn().mockReturnValue("sig"),
+    };
+
+    await ctrl.handleWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ ok: false });
+
+    process.env.NODE_ENV = origEnv;
+  });
+
+  test("webhook erro em NODE_ENV=production → retorna 200 { ok: true }", async () => {
+    const origEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+
+    webhookService.handleWebhookEvent.mockRejectedValue(new Error("prod crash"));
+    req = {
+      body: { id: "evt-prod", type: "payment", data: {} },
+      get: jest.fn().mockReturnValue("sig"),
+    };
+
+    await ctrl.handleWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
+
+    process.env.NODE_ENV = origEnv;
   });
 
   // -----------------------------------------------------------------------

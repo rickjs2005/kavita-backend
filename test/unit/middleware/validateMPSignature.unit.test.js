@@ -148,6 +148,25 @@ describe("validateMPSignature middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  test("valida assinatura corretamente quando data.id está ausente (fallback '')", () => {
+    const validateMPSignature = require("../../../middleware/validateMPSignature");
+
+    // dataId ausente → manifest usa "" como id
+    const { header } = makeSignature({ secret: SECRET, dataId: "", requestId: "req-1" });
+    const body = { id: 12345, type: "payment" }; // SEM data.id
+
+    const { req, res, next } = makeMockReqRes({
+      signatureHeader: header,
+      requestId: "req-1",
+      body,
+    });
+
+    validateMPSignature(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
   // Comportamento antigo (pré c4f7d87): produção retornava 200 (fail-open) e
   // development retornava 500. O commit c4f7d87 "harden payment flows" mudou
   // para fail-closed (401) em todos os ambientes — aceitar webhooks sem secret
