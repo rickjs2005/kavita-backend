@@ -36,7 +36,7 @@ load("/public/promocoes", "./public/publicPromocoes");
 load("/public/produtos", "./public/_legacy/publicProdutos"); // avaliações de produtos
 
 // — Configuração e visual —
-load("/config", "./public/_legacy/publicShopConfig");
+load("/config", "./public/publicShopConfig");
 load("/public/site-hero", "./public/publicSiteHero");
 
 // — Editorial: notícias e drones —

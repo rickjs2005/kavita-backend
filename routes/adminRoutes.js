@@ -76,9 +76,9 @@ mount("/admin/shipping",          "./admin/adminShippingZones");
 
 mount("/admin/comunicacao",  "./admin/adminComunicacao");
 mount("/admin/users",        "./admin/adminUsers",       requirePermission("usuarios.ver"));
-mount("/admin/admins",       "./admin/_legacy/adminAdmins");
+mount("/admin/admins",       "./admin/adminAdmins");
 mount("/admin/roles",        "./admin/adminRoles");
-mount("/admin/permissions",  "./admin/_legacy/adminPermissions");
-mount("/admin/logs",         "./admin/_legacy/adminLogs");
+mount("/admin/permissions",  "./admin/adminPermissions");
+mount("/admin/logs",         "./admin/adminLogs");
 
 module.exports = router;

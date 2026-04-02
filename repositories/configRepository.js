@@ -102,12 +102,28 @@ async function updateCategoryById(id, nome, slug, ativo) {
   return result.affectedRows;
 }
 
+const PUBLIC_SETTINGS_FIELDS = `
+  store_name, logo_url, cnpj, footer_tagline, contact_whatsapp, contact_email,
+  social_instagram_url, social_whatsapp_url,
+  address_city, address_state, address_street, address_neighborhood, address_zip,
+  footer_partner_cta_enabled, footer_partner_cta_title, footer_partner_cta_text,
+  footer_partner_cta_href, footer_links
+`;
+
+async function findPublicSettings() {
+  const [rows] = await pool.query(
+    `SELECT ${PUBLIC_SETTINGS_FIELDS} FROM shop_settings ORDER BY id ASC LIMIT 1`
+  );
+  return rows[0] || null;
+}
+
 module.exports = {
   ensureSettings,
   findSettingsById,
   updateSettingsById,
   findLogoUrl,
   updateLogoUrl,
+  findPublicSettings,
   findAllCategories,
   insertCategory,
   updateCategoryById,
