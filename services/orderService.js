@@ -5,8 +5,6 @@ const pool = require("../config/pool");
 const orderRepo = require("../repositories/orderRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
-const { parseAddress } = require("../utils/address");
-
 // ---------------------------------------------------------------------------
 // Allowed status transitions — single source of truth for this domain.
 // ---------------------------------------------------------------------------
@@ -21,80 +19,34 @@ const ALLOWED_DELIVERY_STATUSES = [
 ];
 
 // ---------------------------------------------------------------------------
-// Formatting helpers
-// ---------------------------------------------------------------------------
-
-const onlyDigits = (v) => String(v ?? "").replace(/\D/g, "");
-
-const formatCep = (cep) => {
-  const d = onlyDigits(cep);
-  if (d.length === 8) return `${d.slice(0, 5)}-${d.slice(5)}`;
-  return cep;
-};
-
-const normalizeEndereco = (endereco) => {
-  if (!endereco || typeof endereco !== "object") return endereco;
-  if (!("cep" in endereco)) return endereco;
-  return { ...endereco, cep: formatCep(endereco.cep) };
-};
-
-function formatOrder(row, itens) {
-  return {
-    id: row.pedido_id,
-    usuario_id: row.usuario_id,
-    usuario: row.usuario_nome,
-    email: row.usuario_email ?? null,
-    telefone: row.usuario_telefone ?? null,
-    cpf: row.usuario_cpf ?? null,
-    endereco: normalizeEndereco(parseAddress(row.endereco)),
-    forma_pagamento: row.forma_pagamento,
-    status_pagamento: row.status_pagamento,
-    status_entrega: row.status_entrega,
-    // Total cobrado = subtotal de produtos + frete
-    total: Number(row.total ?? 0) + Number(row.shipping_price ?? 0),
-    shipping_price: Number(row.shipping_price ?? 0),
-    data_pedido: row.data_pedido,
-    itens: itens.map((i) => ({
-      produto: i.produto_nome,
-      quantidade: i.quantidade,
-      preco_unitario: Number(i.preco_unitario),
-    })),
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Service functions
 // ---------------------------------------------------------------------------
 
 /**
- * Returns all orders with their items, ordered by date descending.
+ * Returns all orders with their items (raw rows), ordered by date descending.
+ * Formatting for HTTP response is the controller's responsibility.
  *
- * @returns {object[]}
+ * @returns {{ pedidos: object[], itens: object[] }}
  */
 async function listOrders() {
   const pedidos = await orderRepo.findAllOrderRows();
   const itens = await orderRepo.findAllOrderItems();
-
-  return pedidos.map((p) =>
-    formatOrder(
-      p,
-      itens.filter((i) => i.pedido_id === p.pedido_id)
-    )
-  );
+  return { pedidos, itens };
 }
 
 /**
- * Returns a single order with its items, or null if not found.
+ * Returns a single order with its items (raw rows), or null if not found.
+ * Formatting for HTTP response is the controller's responsibility.
  *
  * @param {number|string} id
- * @returns {object|null}
+ * @returns {{ pedido: object, itens: object[] } | null}
  */
 async function getOrderById(id) {
   const pedido = await orderRepo.findOrderRowById(id);
   if (!pedido) return null;
 
   const itens = await orderRepo.findOrderItemsById(id);
-  return formatOrder(pedido, itens);
+  return { pedido, itens };
 }
 
 /**

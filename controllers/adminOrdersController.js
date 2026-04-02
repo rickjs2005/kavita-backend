@@ -27,11 +27,61 @@ const orderService = require("../services/orderService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { response } = require("../lib");
+const { parseAddress } = require("../utils/address");
+
+// ---------------------------------------------------------------------------
+// Formatting helpers — presentation layer, private to this controller.
+// Transforms raw DB rows into the HTTP response shape.
+// ---------------------------------------------------------------------------
+
+const onlyDigits = (v) => String(v ?? "").replace(/\D/g, "");
+
+const formatCep = (cep) => {
+  const d = onlyDigits(cep);
+  if (d.length === 8) return `${d.slice(0, 5)}-${d.slice(5)}`;
+  return cep;
+};
+
+const normalizeEndereco = (endereco) => {
+  if (!endereco || typeof endereco !== "object") return endereco;
+  if (!("cep" in endereco)) return endereco;
+  return { ...endereco, cep: formatCep(endereco.cep) };
+};
+
+function formatOrder(row, itens) {
+  return {
+    id: row.pedido_id,
+    usuario_id: row.usuario_id,
+    usuario: row.usuario_nome,
+    email: row.usuario_email ?? null,
+    telefone: row.usuario_telefone ?? null,
+    cpf: row.usuario_cpf ?? null,
+    endereco: normalizeEndereco(parseAddress(row.endereco)),
+    forma_pagamento: row.forma_pagamento,
+    status_pagamento: row.status_pagamento,
+    status_entrega: row.status_entrega,
+    total: Number(row.total ?? 0) + Number(row.shipping_price ?? 0),
+    shipping_price: Number(row.shipping_price ?? 0),
+    data_pedido: row.data_pedido,
+    itens: itens.map((i) => ({
+      produto: i.produto_nome,
+      quantidade: i.quantidade,
+      preco_unitario: Number(i.preco_unitario),
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
 
 async function listOrders(req, res, next) {
   try {
-    const pedidos = await orderService.listOrders();
-    return response.ok(res, pedidos);
+    const { pedidos, itens } = await orderService.listOrders();
+    const data = pedidos.map((p) =>
+      formatOrder(p, itens.filter((i) => i.pedido_id === p.pedido_id))
+    );
+    return response.ok(res, data);
   } catch (err) {
     return next(
       err instanceof AppError
@@ -43,11 +93,11 @@ async function listOrders(req, res, next) {
 
 async function getOrderById(req, res, next) {
   try {
-    const pedido = await orderService.getOrderById(req.params.id);
-    if (!pedido) {
+    const result = await orderService.getOrderById(req.params.id);
+    if (!result) {
       return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
     }
-    return response.ok(res, pedido);
+    return response.ok(res, formatOrder(result.pedido, result.itens));
   } catch (err) {
     return next(
       err instanceof AppError
