@@ -68,7 +68,7 @@ mount("/admin/relatorios", "./admin/_legacy/adminRelatorios", requirePermission(
 
 mount("/admin/config",            "./admin/adminConfig",              requirePermission("config.editar"));
 mount("/admin/shop-config/upload","./admin/_legacy/adminConfigUpload", requirePermission("config.editar"));
-mount("/admin/shipping",          "./admin/_legacy/adminShippingZones");
+mount("/admin/shipping",          "./admin/adminShippingZones");
 
 /* ============================================================
  * Sistema e segurança

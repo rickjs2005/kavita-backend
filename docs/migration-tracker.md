@@ -1,6 +1,6 @@
 # Migration Tracker — kavita-backend
 
-> **Última atualização:** 2026-04-01
+> **Última atualização:** 2026-04-02
 >
 > **Como usar:**
 > - Ao abrir uma PR que toca um arquivo `_legacy/`: migrar o arquivo completo, OU documentar
@@ -27,11 +27,7 @@
 
 ### 🔴 Alta prioridade — Q2 2026 (abril–junho)
 
-| Arquivo | Linhas | Bloqueador | Falta criar | Responsável |
-|---------|--------|-----------|-------------|-------------|
-| `routes/admin/_legacy/adminShippingZones.js` | 322 | nenhum | `shippingZonesRepository`, `shippingZonesService`, `shippingZonesController` | backend |
-
-**Por que alta:** `adminShippingZones` afeta fluxo crítico de frete no checkout.
+> ✅ Todos os arquivos de alta prioridade foram migrados.
 
 ---
 
@@ -109,10 +105,10 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 
 | Janela | Arquivos | Linhas totais | Estimativa |
 |--------|----------|---------------|------------|
-| Q2 2026 (alta) | 1 | 322 | ~1 semana |
+| Q2 2026 (alta) | 0 | 0 | ✅ concluído |
 | Q3 2026 (média) | 11 | 2.576 | 5–7 semanas |
 | Q4 2026 (baixa) | 8 | 2.344 | 4–6 semanas |
-| **Total** | **21** | **5.398** | — |
+| **Total** | **19** | **4.920** | — |
 
 ---
 
@@ -141,4 +137,5 @@ Templates HTML/WhatsApp devem ser preservados exatamente.
 | `publicProductById.js` | public | 2026-04-01 | absorvido em `publicProductsController.getProductById` + `productRepository.findProductById` |
 | `adminColaboradores.js` | admin | 2026 | Moderno |
 | `adminServicos.js` | admin | 2026-04-01 | `servicosAdminRepository` + `servicosAdminService` + `servicosAdminController` + Zod schemas |
+| `adminShippingZones.js` | admin | 2026-04-02 | `shippingZonesRepository` + `shippingZonesService` + `shippingZonesController` + Zod schemas |
 
