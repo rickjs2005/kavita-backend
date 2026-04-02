@@ -19,6 +19,7 @@ const express = require("express");
 const router = express.Router();
 const userRepo = require("../../../repositories/userRepository");
 const { sanitizeCPF, isValidCPF } = require("../../../utils/cpf");
+const { encryptCPF, hashCPF } = require("../../../utils/cpfCrypto");
 const authenticateToken = require("../../../middleware/authenticateToken");
 const verifyAdmin = require("../../../middleware/verifyAdmin");
 const { sanitizeText } = require("../../../utils/sanitize");
@@ -148,7 +149,7 @@ router.put("/me", authenticateToken, async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(body, "cpf")) {
       const v = body.cpf;
       if (v === "") {
-        sets.push("cpf = NULL");
+        sets.push("cpf = NULL", "cpf_hash = NULL");
       } else {
         const cpfLimpo = sanitizeCPF(v);
         if (!isValidCPF(cpfLimpo)) {
@@ -161,8 +162,8 @@ router.put("/me", authenticateToken, async (req, res) => {
             .json({ mensagem: "CPF já cadastrado para outro usuário." });
         }
 
-        sets.push("cpf = ?");
-        values.push(cpfLimpo);
+        sets.push("cpf = ?", "cpf_hash = ?");
+        values.push(encryptCPF(cpfLimpo), hashCPF(cpfLimpo));
       }
     }
 
@@ -232,7 +233,7 @@ router.put("/admin/:id", verifyAdmin, async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(body, "cpf")) {
       const v = body.cpf;
       if (v === "") {
-        sets.push("cpf = NULL");
+        sets.push("cpf = NULL", "cpf_hash = NULL");
       } else {
         const cpfLimpo = sanitizeCPF(v);
         if (!isValidCPF(cpfLimpo)) {
@@ -245,8 +246,8 @@ router.put("/admin/:id", verifyAdmin, async (req, res) => {
             .json({ mensagem: "CPF já cadastrado para outro usuário." });
         }
 
-        sets.push("cpf = ?");
-        values.push(cpfLimpo);
+        sets.push("cpf = ?", "cpf_hash = ?");
+        values.push(encryptCPF(cpfLimpo), hashCPF(cpfLimpo));
       }
     }
 

@@ -1,6 +1,7 @@
 "use strict";
 
 const pool = require("../config/pool");
+const { decryptCPF } = require("../utils/cpfCrypto");
 
 // ---------------------------------------------------------------------------
 // Query fragments
@@ -46,7 +47,7 @@ const ITENS_SELECT = `
  */
 async function findAllOrderRows() {
   const [rows] = await pool.query(`${ORDER_SELECT} ORDER BY p.data_pedido DESC`);
-  return rows;
+  return rows.map((r) => ({ ...r, usuario_cpf: decryptCPF(r.usuario_cpf) }));
 }
 
 /**
@@ -67,7 +68,8 @@ async function findAllOrderItems() {
  */
 async function findOrderRowById(id) {
   const [[row]] = await pool.query(`${ORDER_SELECT} WHERE p.id = ?`, [id]);
-  return row ?? null;
+  if (!row) return null;
+  return { ...row, usuario_cpf: decryptCPF(row.usuario_cpf) };
 }
 
 /**

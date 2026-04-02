@@ -1,8 +1,13 @@
 // repositories/userRepository.js
 // All SQL for the usuarios table (auth, profile, admin user management).
+//
+// CPF encryption: all CPF writes use encryptCPF() + hashCPF().
+// All CPF reads decrypt via decryptCPF(). Duplicate checks use cpf_hash.
+// See utils/cpfCrypto.js for implementation details.
 "use strict";
 
 const pool = require("../config/pool");
+const { encryptCPF, decryptCPF, hashCPF } = require("../utils/cpfCrypto");
 
 // ---------------------------------------------------------------------------
 // Auth queries
@@ -52,31 +57,34 @@ async function emailExists(email) {
 }
 
 /**
- * Returns users matching a given email OR CPF (sanitized, digits-only).
+ * Returns users matching a given email OR CPF hash.
  * Used during registration to detect duplicates in a single query.
  *
  * @param {string} email
- * @param {string} cpf  Sanitized digits-only CPF
+ * @param {string} cpf  Sanitized digits-only CPF (will be hashed for lookup)
  * @returns {{ id: number, email: string, cpf: string }[]}
  */
 async function findUserByEmailOrCpf(email, cpf) {
+  const cpfHash = hashCPF(cpf);
   const [rows] = await pool.query(
-    "SELECT id, email, cpf FROM usuarios WHERE email = ? OR cpf = ?",
-    [email, cpf]
+    "SELECT id, email, cpf FROM usuarios WHERE email = ? OR cpf_hash = ?",
+    [email, cpfHash]
   );
-  return rows;
+  // Decrypt CPF for callers that compare returned values
+  return rows.map((r) => ({ ...r, cpf: decryptCPF(r.cpf) }));
 }
 
 /**
  * Creates a new user. Password must already be hashed.
  * cpf is optional — pass sanitized digits-only string when available.
+ * CPF is encrypted at rest; cpf_hash is stored for indexed lookups.
  *
  * @param {{ nome: string, email: string, senha: string, cpf?: string|null }} data
  */
 async function createUser({ nome, email, senha, cpf = null }) {
   await pool.query(
-    "INSERT INTO usuarios (nome, email, senha, cpf) VALUES (?, ?, ?, ?)",
-    [nome, email, senha, cpf]
+    "INSERT INTO usuarios (nome, email, senha, cpf, cpf_hash) VALUES (?, ?, ?, ?, ?)",
+    [nome, email, senha, encryptCPF(cpf), hashCPF(cpf)]
   );
 }
 
@@ -117,7 +125,7 @@ const ADMIN_PROFILE_FIELDS =
   "id, nome, email, telefone, cpf, endereco, cidade, estado, cep, pais, ponto_referencia, status_conta";
 
 /**
- * Returns a user's public profile by ID.
+ * Returns a user's public profile by ID. CPF is decrypted before returning.
  *
  * @param {number} userId
  * @returns {object|null}
@@ -127,11 +135,14 @@ async function findProfileById(userId) {
     `SELECT ${PROFILE_FIELDS} FROM usuarios WHERE id = ?`,
     [userId]
   );
-  return rows[0] || null;
+  const row = rows[0] || null;
+  if (row) row.cpf = decryptCPF(row.cpf);
+  return row;
 }
 
 /**
  * Returns a user's profile (including status_conta) for admin use.
+ * CPF is decrypted before returning.
  *
  * @param {number} userId
  * @returns {object|null}
@@ -141,20 +152,24 @@ async function findProfileByIdAdmin(userId) {
     `SELECT ${ADMIN_PROFILE_FIELDS} FROM usuarios WHERE id = ?`,
     [userId]
   );
-  return rows[0] || null;
+  const row = rows[0] || null;
+  if (row) row.cpf = decryptCPF(row.cpf);
+  return row;
 }
 
 /**
  * Checks whether a CPF is already used by another user.
+ * Uses cpf_hash for indexed lookup (no decryption needed).
  *
  * @param {string} cpf    Sanitized digits-only CPF
  * @param {number} excludeUserId  ID of the user being updated (excluded from check)
  * @returns {boolean}
  */
 async function cpfExistsForOtherUser(cpf, excludeUserId) {
+  const cpfH = hashCPF(cpf);
   const [rows] = await pool.query(
-    "SELECT id FROM usuarios WHERE cpf = ? AND id <> ?",
-    [cpf, excludeUserId]
+    "SELECT id FROM usuarios WHERE cpf_hash = ? AND id <> ?",
+    [cpfH, excludeUserId]
   );
   return rows.length > 0;
 }

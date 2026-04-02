@@ -2,6 +2,7 @@
 
 const pool = require("../config/pool");
 const promoSql = require("./shared/promoSql");
+const { encryptCPF, hashCPF } = require("../utils/cpfCrypto");
 
 // ---------------------------------------------------------------------------
 // Transactional — MUST be called inside an open transaction on `conn`,
@@ -315,8 +316,8 @@ async function updateUserInfo(conn, userId, { nome, telefone, cpf }) {
   if (cpf && String(cpf).trim()) {
     const digits = String(cpf).replace(/\D/g, "");
     if (digits) {
-      campos.push("cpf = ?");
-      valores.push(digits);
+      campos.push("cpf = ?", "cpf_hash = ?");
+      valores.push(encryptCPF(digits), hashCPF(digits));
     }
   }
 
