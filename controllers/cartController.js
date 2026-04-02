@@ -1,10 +1,25 @@
 "use strict";
 // controllers/cartController.js
+// =============================================================================
+// ⚠️  CONTRATO CONGELADO — NÃO USE COMO REFERÊNCIA PARA CÓDIGO NOVO
+// =============================================================================
+// Este controller retorna { success: true, ... } em mutações e bare object no
+// GET — ambos DIVERGENTES do padrão oficial { ok: true, data }.
+// O frontend depende desses shapes exatos.
 //
-// Handlers do carrinho do usuário autenticado.
-// Contrato de resposta atual: { success: true, ... } — divergente do padrão { ok: true }.
-// NÃO alterar o formato de resposta sem alinhar com o frontend.
-// Ver CLAUDE.md § "Contratos divergentes em módulos não-legados".
+// Ao tocar este arquivo:
+//   - PRESERVE o formato de resposta exato (success, code "STOCK_LIMIT", etc.)
+//   - NÃO copie este padrão em código novo
+//   - Para migrar: coordenar com frontend antes (ver CLAUDE.md § Contratos)
+//
+// Shapes congelados:
+//   GET  /api/cart           → { carrinho_id, items: [...] }
+//   POST /api/cart/items     → { success: true, produto_id, quantidade, stock, message }
+//   PATCH /api/cart/items    → { success: true, produto_id, quantidade, stock, message }
+//   DELETE /api/cart/items/X → { success: true, message }
+//   DELETE /api/cart         → { success: true, message }
+//   409 (estoque)            → { code: "STOCK_LIMIT", message, max, current, requested }
+// =============================================================================
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");

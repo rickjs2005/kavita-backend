@@ -597,30 +597,47 @@ Proibições absolutas para código novo:
 
 Esta seção é a referência canônica sobre formatos de resposta. As menções em outras partes do documento apontam para aqui.
 
+### Decisão rápida (leia isto primeiro)
+
+```
+Escrevendo código NOVO?
+  → Formato A. Sempre. Sem exceção.
+  → Sucesso: response.ok(res, data)  ou  response.created / .paginated / .noContent
+  → Erro:    next(new AppError(msg, ERROR_CODES.XXX, status))
+
+Tocando cartController, shippingController ou paymentController?
+  → NÃO mude o formato de resposta.
+  → Esses arquivos têm contrato CONGELADO — o header do arquivo explica o shape exato.
+  → Para migrar: abra issue, coordene com frontend, só então altere.
+
+Na dúvida sobre qual formato um endpoint usa?
+  → Consulte o "Mapa por arquivo" abaixo.
+```
+
 ### Os três formatos em produção
 
 O projeto tem **3 formatos de resposta simultaneamente ativos**. Isso é resultado de migração incremental — não é intenção de design. O objetivo de longo prazo é convergir tudo para o Formato A.
 
-| # | Formato de sucesso | Formato de erro | Status |
-|---|---|---|---|
-| **A — oficial** | `{ ok: true, data?, message?, meta? }` | `{ ok: false, code, message, details? }` | Use sempre em código novo |
-| **B — congelado** | `{ success: true, ... }` | A (via AppError) | Frontend depende — não altere sem alinhar |
-| **C — congelado** | Bare object (`{ carrinho_id }`, `{ methods }`, etc.) | variável | Frontend depende — não altere sem alinhar |
+| # | Formato de sucesso | Formato de erro | Status | Onde |
+|---|---|---|---|---|
+| **A — oficial** | `{ ok: true, data?, message?, meta? }` | `{ ok: false, code, message, details? }` | Use sempre em código novo | Todos os módulos modernos |
+| **B — congelado** | `{ success: true, ... }` | A (via AppError) | Frontend depende — não altere sem alinhar | `cartController` (mutações), `shippingController` |
+| **C — congelado** | Bare object (`{ carrinho_id }`, `{ methods }`, etc.) | variável | Frontend depende — não altere sem alinhar | `cartController` (GET), `paymentController`, `publicProductsController` (getById) |
 
-### Mapa por arquivo
+### Mapa por arquivo — contratos congelados
 
-| Arquivo | Endpoints | Formato sucesso | Formato erro | Bloqueador de migração |
-|---------|-----------|----------------|--------------|----------------------|
-| `controllers/cartController.js` | `GET /api/cart` | C: `{ carrinho_id, items }` | — | Frontend cart |
-| `controllers/cartController.js` | `POST/PUT/DELETE /api/cart*` | B: `{ success: true, message, ... }` | C: `{ code: "STOCK_LIMIT", ... }` no 409 | Frontend cart |
-| `controllers/shippingController.js` | `GET /api/shipping/quote` | B: `{ success: true, cep, price, ... }` | A | Frontend checkout |
-| `controllers/paymentController.js` | `GET /api/payment/methods` e CRUD admin | C: `{ methods }` / `{ method }` | A | Frontend admin e checkout |
-| `controllers/publicProductsController.js` | `GET /api/products/:id` | C: `{ ...product, images }` bare | `{ message }` | Frontend público |
-| `controllers/authController.js` | 1 handler | res.json híbrido | A | Baixo — pode migrar isolado |
-| `routes/utils/uploadsCheck.js` | `GET /uploads/check/*` | — | `{ ok: false, error }` ¹ | Utilitário interno |
-| Todos os outros modernos | — | A | A | — já no padrão |
+Apenas os controllers que **divergem** do padrão A estão listados aqui. Todos os outros usam formato A.
 
-¹ Usa `error` em vez de `message` — único caso; utilitário interno sem cliente externo.
+| Controller | Endpoint | Formato sucesso | Formato erro | Bloqueador |
+|-----------|----------|----------------|--------------|-----------|
+| `cartController.js` | `GET /api/cart` | C: `{ carrinho_id, items }` | — | Frontend cart |
+| `cartController.js` | `POST/PATCH/DELETE /api/cart*` | B: `{ success: true, message, ... }` | C: `{ code: "STOCK_LIMIT", ... }` no 409 | Frontend cart |
+| `shippingController.js` | `GET /api/shipping/quote` | B: `{ success: true, cep, price, ... }` | A (via AppError) ✅ | Frontend checkout |
+| `paymentController.js` | `GET /methods`, CRUD admin | C: `{ methods }` / `{ method }` | A (via AppError) ✅ | Frontend admin + checkout |
+| `paymentController.js` | `POST /start` | C: bare result do service | A ✅ | Frontend checkout |
+| `publicProductsController.js` | `GET /api/products/:id` | C: `{ ...product, images }` bare | `{ message }` | Frontend público |
+
+> **Nota:** `authController.js` já usa formato A em todos os handlers (migrado para `response.ok()` em 2026-04). Não é mais divergente.
 
 ### Regra para código novo
 
@@ -637,7 +654,7 @@ Tocando arquivo com formato B ou C?
 ### Como asserts de teste diferem por módulo
 
 ```js
-// Formato A — módulos modernos (adminOrdersController, drones, news, ...)
+// Formato A — módulos modernos (adminOrdersController, drones, news, auth, ...)
 expect(res.body.ok).toBe(true);
 expect(res.body.data).toBeDefined();
 
@@ -664,7 +681,6 @@ Migração incremental, não em lote. Tocar apenas ao ter outra razão para abri
 | `controllers/shippingController.js` | Alinhamento frontend checkout | Média |
 | `controllers/paymentController.js` | Alinhamento frontend admin e checkout | Média |
 | `controllers/publicProductsController.js` | `getProductById` bare object → `response.ok(res, data)` | Baixa |
-| `controllers/authController.js` | Nenhuma — pode migrar isolado | Baixa |
 
 Ao migrar cart, shipping ou payment: a mudança de formato **quebra o cliente** — coordenar frontend antes de mergar.
 
@@ -675,3 +691,4 @@ Ao migrar cart, shipping ou payment: a mudança de formato **quebra o cliente** 
 - `controllers/news/adminCotacoesController.js` — 2026-03
 - `controllers/adminOrdersController.js` — 2026-04 (contrato mudou de bare array para `{ ok, data }` — requer atualização no admin frontend para os GETs)
 - `controllers/publicProductsController.js` (listProducts + searchProducts) — 2026-04-02 (`response.paginated`; `getProductById` pendente)
+- `controllers/authController.js` — 2026-04 (todos os handlers já usam `response.ok()`)

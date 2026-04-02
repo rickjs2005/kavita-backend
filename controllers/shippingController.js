@@ -1,10 +1,20 @@
 "use strict";
 // controllers/shippingController.js
+// =============================================================================
+// ⚠️  CONTRATO CONGELADO — NÃO USE COMO REFERÊNCIA PARA CÓDIGO NOVO
+// =============================================================================
+// Este controller retorna { success: true, ...quote } — divergente do padrão
+// oficial { ok: true, data }. O frontend de checkout depende deste shape.
 //
-// Handler de cotação de frete.
-// Contrato de resposta atual: { success: true, ...quote } — divergente do padrão { ok: true }.
-// NÃO alterar o formato sem alinhar com o frontend.
-// Ver CLAUDE.md § "Contratos divergentes em módulos não-legados".
+// Ao tocar este arquivo:
+//   - PRESERVE o formato de resposta exato
+//   - NÃO copie este padrão em código novo
+//   - Para migrar: coordenar com frontend checkout (ver CLAUDE.md § Contratos)
+//
+// Shape congelado:
+//   GET /api/shipping/quote → { success: true, cep, price, prazo_dias, ... }
+//   Erros: via next(new AppError(...)) → padrão A (ok: false) ✅
+// =============================================================================
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");

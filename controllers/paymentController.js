@@ -1,7 +1,27 @@
 "use strict";
 // controllers/paymentController.js
+// =============================================================================
+// ⚠️  CONTRATO CONGELADO — NÃO USE COMO REFERÊNCIA PARA CÓDIGO NOVO
+// =============================================================================
+// Este controller retorna bare objects ({ methods }, { method }) nos endpoints
+// de listagem/CRUD — divergente do padrão oficial { ok: true, data }.
+// O frontend (admin e checkout) depende desses shapes exatos.
 //
-// Handlers de pagamento: Mercado Pago + CRUD de métodos de pagamento.
+// Ao tocar este arquivo:
+//   - PRESERVE o formato de resposta exato
+//   - NÃO copie este padrão em código novo
+//   - Para migrar: coordenar com frontend admin + checkout (ver CLAUDE.md § Contratos)
+//
+// Shapes congelados:
+//   GET  /api/payment/methods       → { methods: [...] }
+//   GET  /api/admin/.../methods     → { methods: [...] }
+//   POST /api/admin/.../methods     → { method: {...} }   (201)
+//   PUT  /api/admin/.../methods/:id → { method: {...} }
+//   DELETE /api/admin/.../:id       → { ok: true }         ← único endpoint no padrão A
+//   POST /api/payment/start         → bare result do paymentService
+//   POST /api/payment/webhook       → { ok: true }         (webhook — padrão A)
+//   Erros: via next(new AppError(...)) → padrão A (ok: false) ✅
+// =============================================================================
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");

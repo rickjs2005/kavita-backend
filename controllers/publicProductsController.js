@@ -1,23 +1,22 @@
 // controllers/publicProductsController.js
+// =============================================================================
+// ⚠️  CONTRATO MISTO — getProductById NÃO É REFERÊNCIA PARA CÓDIGO NOVO
+// =============================================================================
+// listProducts e searchProducts: padrão A ✅ (response.paginated)
+// getProductById: contrato CONGELADO — bare object, migração pendente.
 //
-// Handlers para os endpoints públicos de produtos.
+// Ao tocar getProductById:
+//   - PRESERVE o formato bare { ...product, images }
+//   - NÃO copie este padrão em código novo
+//   - Para migrar: coordenar com frontend público (ver CLAUDE.md § Contratos)
 //
-// Contrato de resposta (alinhado com frontend em 2026-04-02):
-//
-//   GET /api/products
-//   GET /api/products/search
-//     { ok: true, data: Product[], meta: { total, page, limit, pages } }
-//     via response.paginated(res, { items, total, page, limit })
-//
-//   GET /api/products/:id
-//     { ...product, images: string[] }   ← bare object, migração pendente
-//                                          (requer coordenação de frontend separada)
-//
-//   Erros em GET /api/products e /api/products/search:
-//     { ok: false, code, message }  via next(new AppError(...)) → errorHandler
-//
-//   Erros em GET /api/products/:id (não migrado):
-//     HTTP 4xx  →  { message: "..." }
+// Shapes por endpoint:
+//   GET /api/products        → { ok: true, data: [...], meta: { total, page, limit, pages } } ✅
+//   GET /api/products/search → { ok: true, data: [...], meta: { total, page, limit, pages } } ✅
+//   GET /api/products/:id    → { ...product, images: string[] }  ← CONGELADO
+//   Erros (list/search)      → { ok: false, code, message } via AppError ✅
+//   Erros (getById)          → { message: "..." }  ← CONGELADO
+// =============================================================================
 
 "use strict";
 
