@@ -219,6 +219,62 @@ describe("POST /api/payment/start — E2E", () => {
 
     expect(res.status).toBe(200);
   });
+
+  test("200: boleto → preference exclui credit_card e bank_transfer", async () => {
+    const { app, paymentRepoMock, mpCreateMock } = buildApp({ user: { id: 7 } });
+    paymentRepoMock.getPedidoById.mockResolvedValue({
+      id: 1, usuario_id: 7, status_pagamento: "pendente", forma_pagamento: "boleto",
+    });
+    paymentRepoMock.getTotalPedido.mockResolvedValue(150);
+
+    const res = await request(app).post("/api/payment/start").send({ pedidoId: 1 });
+
+    expect(res.status).toBe(200);
+    const body = mpCreateMock.mock.calls[0][0].body;
+    expect(body.payment_methods.excluded_payment_types).toEqual(
+      expect.arrayContaining([{ id: "credit_card" }, { id: "bank_transfer" }])
+    );
+  });
+
+  test("200: cartao_mp → preference exclui bank_transfer e ticket", async () => {
+    const { app, paymentRepoMock, mpCreateMock } = buildApp({ user: { id: 7 } });
+    paymentRepoMock.getPedidoById.mockResolvedValue({
+      id: 1, usuario_id: 7, status_pagamento: "pendente", forma_pagamento: "cartao_mp",
+    });
+    paymentRepoMock.getTotalPedido.mockResolvedValue(200);
+
+    const res = await request(app).post("/api/payment/start").send({ pedidoId: 1 });
+
+    expect(res.status).toBe(200);
+    const body = mpCreateMock.mock.calls[0][0].body;
+    expect(body.payment_methods.excluded_payment_types).toEqual(
+      expect.arrayContaining([{ id: "bank_transfer" }, { id: "ticket" }])
+    );
+  });
+
+  test("409: status 'estornado' → rejeita repagamento", async () => {
+    const { app, paymentRepoMock } = buildApp({ user: { id: 7 } });
+    paymentRepoMock.getPedidoById.mockResolvedValue({
+      id: 1, usuario_id: 7, status_pagamento: "estornado", forma_pagamento: "pix",
+    });
+
+    const res = await request(app).post("/api/payment/start").send({ pedidoId: 1 });
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toContain("não pode ser pago");
+  });
+
+  test("400: forma_pagamento vazia no pedido → VALIDATION_ERROR", async () => {
+    const { app, paymentRepoMock } = buildApp({ user: { id: 7 } });
+    paymentRepoMock.getPedidoById.mockResolvedValue({
+      id: 1, usuario_id: 7, status_pagamento: "pendente", forma_pagamento: "",
+    });
+
+    const res = await request(app).post("/api/payment/start").send({ pedidoId: 1 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain("Forma de pagamento");
+  });
 });
 
 // =========================================================================
