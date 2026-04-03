@@ -238,4 +238,32 @@ describe("dronesPublicController", () => {
     expect(res._status).toBe(201);
     expect(res._body.data.id).toBe(42);
   });
+
+  test("getModelAggregate retorna dados do modelo", async () => {
+    dronesService.getPageSettings.mockResolvedValue({ models_json: '{"agras":{}}' });
+    dronesService.listGalleryPublic.mockResolvedValue({ items: [{ id: 1, model_key: "agras" }] });
+    dronesService.listApprovedComments.mockResolvedValue({ items: [] });
+
+    const req = { params: { modelKey: "agras" }, query: {} };
+    const res = makeRes();
+
+    await ctrl.getModelAggregate(req, res, jest.fn());
+
+    expect(res._status).toBe(200);
+    expect(res._body.ok).toBe(true);
+  });
+
+  test("getModelAggregate erro de modelo inexistente", async () => {
+    formatters.ensureModelExists.mockRejectedValueOnce(
+      Object.assign(new Error("Modelo não encontrado."), { code: "NOT_FOUND", status: 404 })
+    );
+
+    const req = { params: { modelKey: "xxx" }, query: {} };
+    const next = jest.fn();
+
+    await ctrl.getModelAggregate(req, makeRes(), next);
+
+    expect(next).toHaveBeenCalled();
+  });
+
 });
