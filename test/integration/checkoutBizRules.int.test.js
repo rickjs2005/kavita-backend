@@ -317,3 +317,162 @@ describe("Checkout — promoção ativa", () => {
     expect(res.body.data.total_sem_desconto).toBe(120);
   });
 });
+
+// =========================================================================
+// DEDUPLICAÇÃO (service REAL detecta match no DB)
+// =========================================================================
+
+describe("Checkout — deduplicação real", () => {
+  test("200: pedido idêntico recente → retorna existente sem criar novo", async () => {
+    const { app, conn } = setup();
+
+    // Build handlers with dedup returning a match
+    const handlers = baseHandlers();
+    // Replace dedup handler (group_concat + pedidos_produtos)
+    for (let i = 0; i < handlers.length; i++) {
+      if (handlers[i].match("group_concat xxxx pedidos_produtos")) {
+        handlers[i] = {
+          match: (s) => s.includes("group_concat") && s.includes("pedidos_produtos"),
+          reply: () => [[{ pedido_id: 777, composicao: "1:2", cupom: null }]],
+        };
+        break;
+      }
+    }
+    setQueryRouter(conn, handlers);
+
+    const res = await request(app).post(MOUNT).send(BODY);
+
+    expect(res.status).toBe(200); // idempotente → 200, não 201
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data.idempotente).toBe(true);
+    expect(res.body.data.pedido_id).toBe(777);
+    // Transação foi rollback (nenhum dado escrito)
+    expect(conn.rollback).toHaveBeenCalled();
+    expect(conn.commit).not.toHaveBeenCalled();
+  });
+
+  test("201: mesmo produto mas cupom diferente → NÃO é dedup", async () => {
+    const { app, conn } = setup();
+
+    const handlers = baseHandlers({
+      coupon: {
+        id: 1, codigo: "NOVO", tipo: "percentual", valor: 5,
+        ativo: 1, expiracao: null, usos: 0, max_usos: null, minimo: 0,
+      },
+    });
+    // Replace dedup handler
+    for (let i = 0; i < handlers.length; i++) {
+      if (handlers[i].match("group_concat xxxx pedidos_produtos")) {
+        handlers[i] = {
+          match: (s) => s.includes("group_concat") && s.includes("pedidos_produtos"),
+          reply: () => [[{ pedido_id: 777, composicao: "1:2", cupom: null }]],
+          // cupom=null ≠ cupom="NOVO" → não match
+        };
+        break;
+      }
+    }
+    setQueryRouter(conn, handlers);
+
+    const res = await request(app).post(MOUNT).send({
+      ...BODY, cupom_codigo: "NOVO",
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.idempotente).toBeUndefined();
+    expect(res.body.data.pedido_id).toBe(500); // novo pedido
+  });
+});
+
+// =========================================================================
+// FALHA TRANSACIONAL (erro genérico no meio do fluxo)
+// =========================================================================
+
+describe("Checkout — falha transacional", () => {
+  test("500: erro no meio da transação → rollback + release + SERVER_ERROR", async () => {
+    const { app, conn } = setup();
+
+    const handlers = baseHandlers();
+    // Override createOrder para falhar
+    const createIdx = handlers.findIndex((h) => h.match("insert into pedidos"));
+    handlers[createIdx] = {
+      match: (s) => s.includes("insert into pedidos") && !s.includes("pedidos_produtos"),
+      reply: () => { throw new Error("deadlock detected"); },
+    };
+    setQueryRouter(conn, handlers);
+
+    const res = await request(app).post(MOUNT).send(BODY);
+
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe("SERVER_ERROR");
+    expect(res.body.message).not.toContain("deadlock"); // não vaza detalhes
+    expect(conn.rollback).toHaveBeenCalled();
+    expect(conn.release).toHaveBeenCalled();
+  });
+
+  test("409: advisory lock timeout → 409 com mensagem clara", async () => {
+    const { app, conn } = setup();
+
+    conn.query.mockImplementation(async (sql) => {
+      if (normalizeSql(sql).includes("get_lock")) return [[{ ok: 0 }]];
+      return [[], {}];
+    });
+
+    const res = await request(app).post(MOUNT).send(BODY);
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toContain("Outro checkout");
+    // Lock não foi adquirido, então RELEASE_LOCK não precisa ser chamado
+  });
+});
+
+// =========================================================================
+// MÚLTIPLOS PRODUTOS
+// =========================================================================
+
+describe("Checkout — múltiplos produtos", () => {
+  test("201: checkout com 3 produtos diferentes → total correto", async () => {
+    const { app, conn } = setup();
+
+    const products = [
+      { id: 1, price: 50, quantity: 10 },
+      { id: 2, price: 30, quantity: 5 },
+      { id: 3, price: 100, quantity: 20 },
+    ];
+    setQueryRouter(conn, baseHandlers({ products }));
+
+    const res = await request(app).post(MOUNT).send({
+      ...BODY,
+      produtos: [
+        { id: 1, quantidade: 2 }, // 100
+        { id: 2, quantidade: 3 }, // 90
+        { id: 3, quantidade: 1 }, // 100
+      ],
+    });
+
+    expect(res.status).toBe(201);
+    // total = (2*50) + (3*30) + (1*100) = 100 + 90 + 100 = 290
+    expect(res.body.data.total).toBe(290);
+  });
+
+  test("400: um produto com estoque insuficiente entre vários → 400 sem debitar os anteriores", async () => {
+    const { app, conn } = setup();
+
+    const products = [
+      { id: 1, price: 50, quantity: 10 },
+      { id: 2, price: 30, quantity: 1 }, // só 1 disponível
+    ];
+    setQueryRouter(conn, baseHandlers({ products }));
+
+    const res = await request(app).post(MOUNT).send({
+      ...BODY,
+      produtos: [
+        { id: 1, quantidade: 2 },
+        { id: 2, quantidade: 5 }, // pede 5, tem 1
+      ],
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain("Estoque insuficiente");
+    expect(conn.rollback).toHaveBeenCalled();
+  });
+});
