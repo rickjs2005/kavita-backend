@@ -74,6 +74,24 @@ describe("pageController", () => {
       await ctrl.upsertPage(makeReq({ body: {} }), makeRes(), next);
       expect(next.mock.calls[0][0].code).toBe("VALIDATION_ERROR");
     });
+
+    test("with JSON body fields", async () => {
+      dronesService.sanitizeText.mockReturnValue("Title");
+      dronesService.upsertPageSettings.mockResolvedValue({ id: 1 });
+
+      const req = makeReq({
+        body: {
+          hero_title: "Title",
+          specs_items_json: '[{"t":"a"}]',
+          features_items_json: '[{"t":"b"}]',
+          benefits_items_json: '[{"t":"c"}]',
+          sections_order_json: '["hero","specs"]',
+          models_json: '{"agras":{}}',
+        },
+      });
+      await ctrl.upsertPage(req, makeRes(), makeNext());
+      expect(response.ok).toHaveBeenCalled();
+    });
   });
 
   describe("resetPageToDefault", () => {
@@ -129,6 +147,31 @@ describe("pageController", () => {
       const next = makeNext();
       await ctrl.upsertLandingConfig(makeReq({ body: {} }), makeRes(), next);
       expect(next.mock.calls[0][0].code).toBe("VALIDATION_ERROR");
+    });
+
+    test("with sections_order_json body", async () => {
+      dronesService.sanitizeText.mockReturnValue("Title");
+      dronesService.upsertPageSettings.mockResolvedValue({ id: 1 });
+      await ctrl.upsertLandingConfig(
+        makeReq({ body: { hero_title: "Title", sections_order_json: '["hero","specs"]', cta_title: "CTA" } }),
+        makeRes(), makeNext()
+      );
+      expect(response.ok).toHaveBeenCalled();
+    });
+
+    test("error → wraps in 500", async () => {
+      dronesService.sanitizeText.mockReturnValue("Title");
+      dronesService.upsertPageSettings.mockRejectedValue(new Error("db"));
+      const next = makeNext();
+      await ctrl.upsertLandingConfig(makeReq({ body: { hero_title: "T" } }), makeRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AppError);
+    });
+
+    test("getLandingConfig error → 500", async () => {
+      dronesService.getPageSettings.mockRejectedValue(new Error("db"));
+      const next = makeNext();
+      await ctrl.getLandingConfig(makeReq(), makeRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AppError);
     });
   });
 });
