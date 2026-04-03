@@ -25,6 +25,30 @@ function mapMPStatusToDomain(mpStatus) {
   return "pendente";
 }
 
+/**
+ * Guards against dangerous backward status transitions.
+ * Even though Layer 2 (API fetch) always gets the real current status,
+ * this provides defense-in-depth against edge cases (API caching, race conditions).
+ *
+ * Allowed transitions:
+ *   pendente → pago, falhou, estornado
+ *   falhou   → pago, pendente (retry)
+ *   pago     → estornado (chargeback/refund only)
+ *   estornado → (final — no transitions allowed)
+ *
+ * @returns {boolean} true if the transition is safe
+ */
+function isStatusTransitionSafe(currentStatus, newStatus) {
+  if (currentStatus === newStatus) return true; // no-op, harmless
+
+  const BLOCKED = {
+    pago: new Set(["falhou", "pendente"]),
+    estornado: new Set(["pago", "falhou", "pendente"]),
+  };
+
+  return !BLOCKED[currentStatus]?.has(newStatus);
+}
+
 // ---------------------------------------------------------------------------
 // Event handler
 // ---------------------------------------------------------------------------
@@ -109,6 +133,22 @@ async function handleWebhookEvent({
 
     const novoStatus = mapMPStatusToDomain(payment.status);
 
+    // Guard: check current order status and block dangerous backward transitions.
+    // Prevents edge cases where a stale API response could regress a "pago" order.
+    const pedidoRow = await conn.query(
+      "SELECT status_pagamento FROM pedidos WHERE id = ? FOR UPDATE",
+      [pedidoId]
+    );
+    const currentStatus = pedidoRow[0]?.[0]?.status_pagamento || "pendente";
+
+    if (!isStatusTransitionSafe(currentStatus, novoStatus)) {
+      console.warn("[payment/webhook] transição bloqueada:", {
+        pedidoId, currentStatus, novoStatus, dataId,
+      });
+      await repo.markWebhookEventProcessed(conn, dbEventId, `blocked:${currentStatus}->${novoStatus}`);
+      return "processed";
+    }
+
     // Restaura estoque ANTES de atualizar status para que a guarda de idempotência
     // funcione corretamente em duplicatas com event_id diferente.
     if (novoStatus === "falhou") {
@@ -122,4 +162,4 @@ async function handleWebhookEvent({
   });
 }
 
-module.exports = { mapMPStatusToDomain, handleWebhookEvent };
+module.exports = { mapMPStatusToDomain, isStatusTransitionSafe, handleWebhookEvent };

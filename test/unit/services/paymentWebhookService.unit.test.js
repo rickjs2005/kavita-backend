@@ -11,7 +11,7 @@ jest.mock("mercadopago", () => ({
 const pool = require("../../../config/pool");
 const repo = require("../../../repositories/paymentRepository");
 const orderRepo = require("../../../repositories/orderRepository");
-const { handleWebhookEvent, mapMPStatusToDomain } = require("../../../services/paymentWebhookService");
+const { handleWebhookEvent, mapMPStatusToDomain, isStatusTransitionSafe } = require("../../../services/paymentWebhookService");
 
 describe("paymentWebhookService", () => {
   let conn;
@@ -21,7 +21,9 @@ describe("paymentWebhookService", () => {
 
     conn = {
       beginTransaction: jest.fn().mockResolvedValue(undefined),
-      query: jest.fn(),
+      // Default: conn.query returns a row with status_pagamento = "pendente"
+      // (used by the status transition guard in handleWebhookEvent).
+      query: jest.fn().mockResolvedValue([[{ status_pagamento: "pendente" }]]),
       commit: jest.fn().mockResolvedValue(undefined),
       rollback: jest.fn().mockResolvedValue(undefined),
       release: jest.fn(),
@@ -137,6 +139,58 @@ describe("paymentWebhookService", () => {
       conn.rollback.mockRejectedValue(new Error("rollback failed"));
       await expect(handleWebhookEvent(baseOpts)).rejects.toThrow("original");
       expect(conn.release).toHaveBeenCalled();
+    });
+
+    test("blocked transition — pago → falhou is prevented", async () => {
+      repo.findWebhookEventForUpdate.mockResolvedValue(null);
+      repo.insertWebhookEvent.mockResolvedValue(20);
+      conn.query.mockResolvedValue([[{ status_pagamento: "pago" }]]);
+      const { Payment } = require("mercadopago");
+      Payment.mockImplementation(() => ({
+        get: jest.fn().mockResolvedValue({ status: "rejected", metadata: { pedidoId: 99 } }),
+      }));
+      const result = await handleWebhookEvent(baseOpts);
+      expect(result).toBe("processed");
+      expect(repo.updatePedidoPayment).not.toHaveBeenCalled();
+      expect(orderRepo.restoreStockOnFailure).not.toHaveBeenCalled();
+      expect(repo.markWebhookEventProcessed).toHaveBeenCalledWith(
+        conn, 20, "blocked:pago->falhou"
+      );
+    });
+
+    test("transient MP API error throws with transient flag", async () => {
+      repo.findWebhookEventForUpdate.mockResolvedValue(null);
+      repo.insertWebhookEvent.mockResolvedValue(21);
+      const { Payment } = require("mercadopago");
+      Payment.mockImplementation(() => ({
+        get: jest.fn().mockRejectedValue(new Error("timeout")),
+      }));
+      await expect(handleWebhookEvent(baseOpts)).rejects.toMatchObject({
+        transient: true,
+      });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // isStatusTransitionSafe
+  // -----------------------------------------------------------------------
+
+  describe("isStatusTransitionSafe", () => {
+    test.each([
+      ["pendente", "pago", true],
+      ["pendente", "falhou", true],
+      ["pendente", "estornado", true],
+      ["falhou", "pago", true],
+      ["falhou", "pendente", true],
+      ["pago", "estornado", true],
+      ["pago", "falhou", false],
+      ["pago", "pendente", false],
+      ["estornado", "pago", false],
+      ["estornado", "falhou", false],
+      ["estornado", "pendente", false],
+      ["pago", "pago", true],
+    ])("%s → %s = %s", (from, to, expected) => {
+      expect(isStatusTransitionSafe(from, to)).toBe(expected);
     });
   });
 });
