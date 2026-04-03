@@ -42,6 +42,15 @@ describe("statsController", () => {
       expect(callData.points).toHaveLength(3);
     });
 
+    test("success — maps rows with dia as Date object", async () => {
+      repo.getSalesSeries.mockResolvedValue([
+        { dia: new Date(), total: 50 },
+      ]);
+      await ctrl.getVendas(makeReq({ range: 1 }), makeRes(), makeNext());
+      const callData = response.ok.mock.calls[0][1];
+      expect(callData.points[0].total).toBe(50);
+    });
+
     test("error", async () => {
       repo.getSalesSeries.mockRejectedValue(new Error("db"));
       const next = makeNext();
@@ -51,6 +60,13 @@ describe("statsController", () => {
   });
 
   describe("getTopProdutos", () => {
+    test("error", async () => {
+      repo.getTopProducts.mockRejectedValue(new Error("db"));
+      const next = makeNext();
+      await ctrl.getTopProdutos(makeReq({ limit: 5 }), makeRes(), next);
+      expect(next).toHaveBeenCalled();
+    });
+
     test("success", async () => {
       const data = [{ id: 1, name: "P1" }];
       repo.getTopProducts.mockResolvedValue(data);
