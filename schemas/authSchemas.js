@@ -30,7 +30,7 @@ const emailField = (maxLen = 254) =>
 const registerSchema = z.object({
   nome: z.string().trim().min(1, "Nome é obrigatório."),
   email: emailField(),
-  senha: z.string().trim().min(6, "Senha deve ter no mínimo 6 caracteres."),
+  senha: z.string().trim().min(8, "Senha deve ter no mínimo 8 caracteres."),
   cpf: z.preprocess(
     (v) => (typeof v === "string" ? sanitizeCPF(v) : v),
     z.string().refine(isValidCPF, "CPF inválido.")

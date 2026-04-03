@@ -176,13 +176,12 @@ describe("paymentController", () => {
     expect(webhookService.handleWebhookEvent).not.toHaveBeenCalled();
   });
 
-  test("webhook erro em NODE_ENV=development → retorna 500", async () => {
-    const origEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = "development";
-
-    webhookService.handleWebhookEvent.mockRejectedValue(new Error("dev crash"));
+  test("webhook erro transitório (err.transient=true) → retorna 500 para MP retentar", async () => {
+    const transientErr = new Error("MP API timeout");
+    transientErr.transient = true;
+    webhookService.handleWebhookEvent.mockRejectedValue(transientErr);
     req = {
-      body: { id: "evt-dev", type: "payment", data: {} },
+      body: { id: "evt-transient", type: "payment", data: {} },
       get: jest.fn().mockReturnValue("sig"),
     };
 
@@ -190,17 +189,12 @@ describe("paymentController", () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ ok: false });
-
-    process.env.NODE_ENV = origEnv;
   });
 
-  test("webhook erro em NODE_ENV=production → retorna 200 { ok: true }", async () => {
-    const origEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = "production";
-
-    webhookService.handleWebhookEvent.mockRejectedValue(new Error("prod crash"));
+  test("webhook erro permanente (sem transient) → retorna 200 para não retentar", async () => {
+    webhookService.handleWebhookEvent.mockRejectedValue(new Error("business error"));
     req = {
-      body: { id: "evt-prod", type: "payment", data: {} },
+      body: { id: "evt-perm", type: "payment", data: {} },
       get: jest.fn().mockReturnValue("sig"),
     };
 
@@ -208,8 +202,6 @@ describe("paymentController", () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ ok: true });
-
-    process.env.NODE_ENV = origEnv;
   });
 
   // -----------------------------------------------------------------------

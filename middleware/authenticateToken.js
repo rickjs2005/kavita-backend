@@ -39,7 +39,10 @@ module.exports = async function authenticateToken(req, _res, next) {
       id: user.id,
       nome: user.nome,
       email: user.email,
-      role: payload.role || "user",
+      // Role comes from the database, never from the JWT payload.
+      // The usuarios table has no role column — all users are "user".
+      // Admin auth is a completely separate context (verifyAdmin + admins table).
+      role: user.role || "user",
     };
 
     return next();

@@ -1,4 +1,12 @@
 -- SCHEMA EXTRAÍDO DO BANCO REAL KAVITA
+--
+-- ⚠️  ATENÇÃO: este arquivo é um SNAPSHOT de referência.
+-- A fonte canônica do schema é a pasta migrations/.
+-- Para criar um banco novo, use: npm run db:migrate
+-- Este arquivo foi atualizado manualmente para incluir colunas
+-- adicionadas pelas migrations pós-criação (tokenVersion, cpf_hash,
+-- cupom_codigo) em 2026-04-03.
+--
 
 -- --------------------------------------------------
 -- TABLE: admin_logs
@@ -66,6 +74,7 @@ CREATE TABLE `admins` (
   `ativo` tinyint(1) NOT NULL DEFAULT '1',
   `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `ultimo_login` datetime DEFAULT NULL,
+  `tokenVersion` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`),
   KEY `fk_admins_role` (`role_id`),
@@ -602,6 +611,7 @@ CREATE TABLE `pedidos` (
   `shipping_rule_applied` varchar(32) DEFAULT NULL,
   `shipping_prazo_dias` int DEFAULT NULL,
   `shipping_cep` varchar(8) DEFAULT NULL,
+  `cupom_codigo` varchar(50) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `usuario_id` (`usuario_id`),
   KEY `idx_pedidos_pagamento` (`pagamento_id`),
@@ -877,7 +887,7 @@ CREATE TABLE `usuarios` (
   `endereco` varchar(255) DEFAULT NULL,
   `data_nascimento` date DEFAULT NULL,
   `telefone` varchar(20) DEFAULT NULL,
-  `cpf` varchar(14) DEFAULT NULL,
+  `cpf` varchar(100) DEFAULT NULL,
   `criado_em` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `resetToken` varchar(255) DEFAULT NULL,
   `resetTokenExpires` datetime DEFAULT NULL,
@@ -887,8 +897,11 @@ CREATE TABLE `usuarios` (
   `cep` varchar(10) DEFAULT NULL,
   `ponto_referencia` varchar(255) DEFAULT NULL,
   `status_conta` enum('ativo','bloqueado') NOT NULL DEFAULT 'ativo',
+  `tokenVersion` int NOT NULL DEFAULT '0',
+  `cpf_hash` varchar(64) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`),
-  UNIQUE KEY `usuarios_cpf_unique` (`cpf`)
+  UNIQUE KEY `usuarios_cpf_unique` (`cpf`),
+  UNIQUE KEY `usuarios_cpf_hash_unique` (`cpf_hash`)
 ) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 

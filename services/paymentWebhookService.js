@@ -80,9 +80,24 @@ async function handleWebhookEvent({
       return "ignored";
     }
 
-    // Layer 2: consulta o status REAL do pagamento na API do MP
-    const paymentClient = new Payment(getMPClient());
-    const payment = await paymentClient.get({ id: dataId });
+    // Layer 2: consulta o status REAL do pagamento na API do MP.
+    // Erros aqui são transitórios (MP fora do ar, timeout, etc.) —
+    // a transação é revertida e o caller deve retornar 5xx para que o MP retente.
+    let payment;
+    try {
+      const paymentClient = new Payment(getMPClient());
+      payment = await paymentClient.get({ id: dataId });
+    } catch (mpErr) {
+      console.error("[payment/webhook] erro ao consultar API do MP:", {
+        dataId,
+        message: mpErr.message,
+        status: mpErr.status ?? null,
+      });
+      // Rethrow como erro transitório marcado — o controller decidirá o status HTTP
+      const transient = new Error(`MP API error: ${mpErr.message}`);
+      transient.transient = true;
+      throw transient;
+    }
 
     const pedidoId = payment.metadata?.pedidoId;
 

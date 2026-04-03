@@ -221,9 +221,11 @@ app.use("/api", apiRoutes);
 console.info("✅ Sistema de rotas centralizado carregado em /api");
 
 /* ============================
- * Swagger
+ * Swagger — disabled in production to prevent API documentation leak
  * ============================ */
-setupDocs(app);
+if (process.env.NODE_ENV !== "production") {
+  setupDocs(app);
+}
 
 /* ============================
  * Tratamento de Erros (404 & 500)

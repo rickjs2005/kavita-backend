@@ -163,9 +163,15 @@ const handleWebhook = async (req, res) => {
       .status(200)
       .json({ ok: true, ...(outcome === "idempotent" ? { idempotent: true } : {}) });
   } catch (err) {
-    console.error("[payment/webhook] erro:", err, err?.stack);
-    const status = process.env.NODE_ENV === "development" ? 500 : 200;
-    return res.status(status).json({ ok: status === 200 });
+    console.error("[payment/webhook] erro:", err.message, err?.stack);
+
+    // Transient errors (MP API down, DB connection lost, etc.) → 500
+    // so Mercado Pago retries with exponential backoff.
+    // Business/permanent errors → 200 to prevent infinite retries.
+    const isTransient = !!(err.transient);
+    const status = isTransient ? 500 : 200;
+
+    return res.status(status).json({ ok: !isTransient });
   }
 };
 
