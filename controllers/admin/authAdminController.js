@@ -8,6 +8,7 @@ const {
 } = require("../../security/accountLockout");
 const authAdminService = require("../../services/authAdminService");
 const { response } = require("../../lib");
+const logger = require("../../lib/logger");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 
@@ -43,7 +44,7 @@ async function login(req, res, next) {
     await syncFromRedis(lockoutKey);
     assertNotLocked(lockoutKey);
 
-    console.log("🔐 Tentativa de login de admin");
+    logger.info({ email: emailNormalizado }, "tentativa de login de admin");
 
     const admin = await authAdminService.findAdminByEmail(emailNormalizado);
 
@@ -79,7 +80,7 @@ async function login(req, res, next) {
 
     await authAdminService.updateLastLogin(admin.id);
 
-    console.log("✅ Login de admin bem-sucedido, id:", admin.id);
+    logger.info({ adminId: admin.id }, "login de admin bem-sucedido");
 
     logAdminAction({
       adminId: admin.id,

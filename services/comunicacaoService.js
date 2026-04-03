@@ -11,6 +11,7 @@ const { sendTransactionalEmail } = require("./mailService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/comunicacaoRepository");
+const logger = require("../lib/logger");
 
 // ---------------------------------------------------------------------------
 // Templates (extraídos para templates/email/ e templates/whatsapp/)
@@ -175,9 +176,7 @@ async function sendWhatsapp(templateId, pedidoId, telefoneOverride) {
 
   try {
     // Integração real com API de WhatsApp entraria aqui.
-    console.log(
-      `[FAKE WHATSAPP] Enviando para 55${destino}: ${mensagem}`
-    );
+    logger.info({ destino, templateId }, "FAKE WHATSAPP — integração real não implementada");
   } catch (e) {
     console.error("[comunicacao] Erro ao enviar WhatsApp:", e);
     statusEnvio = "erro";
@@ -240,9 +239,7 @@ async function dispararEventoComunicacao(tipoEvento, pedidoId) {
       let erro = null;
 
       try {
-        console.log(
-          `[FAKE WHATSAPP] Enviando mensagem para 55${destino}: ${mensagem}`
-        );
+        logger.info({ destino, templateId }, "FAKE WHATSAPP — integração real não implementada");
       } catch (e) {
         console.error("[comunicacao] Erro ao enviar WhatsApp:", e);
         statusEnvio = "erro";

@@ -22,6 +22,7 @@ const apiRoutes = require("./routes");
 const createAdaptiveRateLimiter = require("./middleware/adaptiveRateLimiter");
 const { issueCsrfToken } = require("./middleware/csrfProtection");
 const requestLogger = require("./middleware/requestLogger");
+const requestTimeout = require("./middleware/requestTimeout");
 const errorHandler = require("./middleware/errorHandler");
 const AppError = require("./errors/AppError");
 const ERROR_CODES = require("./constants/ErrorCodes");
@@ -214,6 +215,7 @@ if (process.env.NODE_ENV !== "production") {
 /* ============================
  * Rotas da API
  * ============================ */
+app.use("/api", requestTimeout(30_000)); // 30s timeout para rotas de API
 app.get("/api/csrf-token", issueCsrfToken);
 app.use("/api", apiRoutes);
 console.info("✅ Sistema de rotas centralizado carregado em /api");
