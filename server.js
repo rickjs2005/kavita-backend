@@ -1,5 +1,9 @@
 require("dotenv").config();
 
+// Sentry must init before other imports to capture early errors.
+// No-op if SENTRY_DSN is not set.
+require("./lib/sentry").init();
+
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");

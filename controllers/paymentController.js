@@ -9,6 +9,7 @@
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { response } = require("../lib");
+const sentry = require("../lib/sentry");
 const paymentService = require("../services/paymentService");
 const { handleWebhookEvent } = require("../services/paymentWebhookService");
 
@@ -164,6 +165,12 @@ const handleWebhook = async (req, res) => {
       .json({ ok: true, ...(outcome === "idempotent" ? { idempotent: true } : {}) });
   } catch (err) {
     console.error("[payment/webhook] erro:", err.message, err?.stack);
+
+    // Always report webhook errors to Sentry — payment failures are critical.
+    sentry.captureException(err, {
+      tags: { domain: "webhook", transient: String(!!err.transient) },
+      extra: { eventId: String(req.body?.id ?? ""), type: req.body?.type },
+    });
 
     // Transient errors (MP API down, DB connection lost, etc.) → 500
     // so Mercado Pago retries with exponential backoff.

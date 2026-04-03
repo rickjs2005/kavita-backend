@@ -1,0 +1,77 @@
+# cd.yml — Build & publish Docker image after CI passes.
+#
+# Triggers:
+#   - Push to main (after CI passes via needs: ci)
+#   - Manual dispatch with environment choice
+#
+# Strategy:
+#   1. CI job runs tests (reuses ci.yml logic)
+#   2. Build Docker image with commit SHA tag
+#   3. Push to container registry
+#   4. Tag as :latest for the target environment
+#
+# Prerequisites:
+#   - Repository secrets: REGISTRY_URL, REGISTRY_USERNAME, REGISTRY_PASSWORD
+#   - Or: configure for GitHub Container Registry (ghcr.io) with GITHUB_TOKEN
+
+name: CD — Backend
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: kavita-backend
+
+jobs:
+  # ── Gate: CI must pass ───────────────────────────────────────────────
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # ── Build & Push ─────────────────────────────────────────────────────
+  build:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set image tag
+        id: tag
+        run: |
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          ENV=${{ github.event.inputs.environment || 'staging' }}
+          echo "sha_tag=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "env_tag=${ENV}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.sha_tag }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.env_tag }}

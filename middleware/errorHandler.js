@@ -2,6 +2,7 @@
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const logger = require("../lib/logger");
+const sentry = require("../lib/sentry");
 
 module.exports = (err, req, res, _next) => {
   // Pool esgotado: todas as conexões ocupadas e fila cheia.
@@ -40,6 +41,11 @@ module.exports = (err, req, res, _next) => {
 
   if (status >= 500) {
     logger.error(logPayload, "request error 5xx");
+    sentry.captureException(err, {
+      tags: { code, url: req.originalUrl },
+      extra: { status, method: req.method, requestId: req.id },
+      user: req.user ? { id: req.user.id, email: req.user.email } : undefined,
+    });
   } else {
     logger.warn(logPayload, "request error 4xx");
   }
