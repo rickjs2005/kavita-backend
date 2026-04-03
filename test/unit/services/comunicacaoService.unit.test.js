@@ -313,3 +313,111 @@ describe("services/comunicacaoService - dispararEventoComunicacao()", () => {
     expect(sendTransactionalEmail).not.toHaveBeenCalled();
   });
 });
+
+describe("services/comunicacaoService - sendEmail()", () => {
+  let comunicacaoService, pool, sendTransactionalEmail;
+
+  const poolPath = require.resolve("../../../config/pool");
+  const mailServicePath = require.resolve("../../../services/mailService");
+
+  const makePedido = (overrides = {}) => ({
+    id: 10, usuario_id: 7, total: 100, usuario_nome: "Rick",
+    usuario_email: "rick@test.com", usuario_telefone: "31999",
+    status_pagamento: "pago", status_entrega: "enviado",
+    forma_pagamento: "PIX", data_pedido: "2026-04-01",
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    jest.doMock(poolPath, () => ({ query: jest.fn() }));
+    jest.doMock(mailServicePath, () => ({ sendTransactionalEmail: jest.fn() }));
+    pool = require(poolPath);
+    ({ sendTransactionalEmail } = require(mailServicePath));
+    comunicacaoService = require("../../../services/comunicacaoService");
+    jest.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => console.error.mockRestore?.());
+
+  function mockPedidoQuery(pedido) {
+    pool.query.mockImplementation(async (sql) => {
+      if (String(sql).includes("FROM pedidos")) return [[pedido], []];
+      return [{ insertId: 1 }, undefined];
+    });
+  }
+
+  test("success — sends email and returns sucesso", async () => {
+    mockPedidoQuery(makePedido());
+    sendTransactionalEmail.mockResolvedValue();
+    const result = await comunicacaoService.sendEmail("confirmacao_pedido", 10, null);
+    expect(result.statusEnvio).toBe("sucesso");
+    expect(sendTransactionalEmail).toHaveBeenCalledWith("rick@test.com", expect.any(String), expect.any(String));
+  });
+
+  test("uses emailOverride", async () => {
+    mockPedidoQuery(makePedido());
+    sendTransactionalEmail.mockResolvedValue();
+    await comunicacaoService.sendEmail("confirmacao_pedido", 10, "alt@t.com");
+    expect(sendTransactionalEmail).toHaveBeenCalledWith("alt@t.com", expect.any(String), expect.any(String));
+  });
+
+  test("pedido not found → throws NOT_FOUND", async () => {
+    mockPedidoQuery(null);
+    await expect(comunicacaoService.sendEmail("confirmacao_pedido", 999)).rejects.toThrow("Pedido não encontrado");
+  });
+
+  test("no email → throws VALIDATION_ERROR", async () => {
+    mockPedidoQuery(makePedido({ usuario_email: null }));
+    await expect(comunicacaoService.sendEmail("confirmacao_pedido", 10)).rejects.toThrow("e-mail");
+  });
+
+  test("email failure → returns erro status", async () => {
+    mockPedidoQuery(makePedido());
+    sendTransactionalEmail.mockRejectedValue(new Error("smtp"));
+    const result = await comunicacaoService.sendEmail("confirmacao_pedido", 10);
+    expect(result.statusEnvio).toBe("erro");
+  });
+});
+
+describe("services/comunicacaoService - sendWhatsapp()", () => {
+  let comunicacaoService, pool;
+
+  const poolPath = require.resolve("../../../config/pool");
+  const mailServicePath = require.resolve("../../../services/mailService");
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    jest.doMock(poolPath, () => ({ query: jest.fn() }));
+    jest.doMock(mailServicePath, () => ({ sendTransactionalEmail: jest.fn() }));
+    pool = require(poolPath);
+    comunicacaoService = require("../../../services/comunicacaoService");
+    jest.spyOn(console, "log").mockImplementation(() => {});
+    jest.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    console.log.mockRestore?.();
+    console.error.mockRestore?.();
+  });
+
+  function mockPedidoQuery(pedido) {
+    pool.query.mockImplementation(async (sql) => {
+      if (String(sql).includes("FROM pedidos")) return [[pedido], []];
+      return [{ insertId: 1 }, undefined];
+    });
+  }
+
+  test("success", async () => {
+    mockPedidoQuery({ id: 10, usuario_id: 7, total: 100, usuario_telefone: "31999", usuario_nome: "R", status_pagamento: "pago", status_entrega: "enviado", forma_pagamento: "PIX", data_pedido: "2026" });
+    const result = await comunicacaoService.sendWhatsapp("confirmacao_pedido", 10, null);
+    expect(result.statusEnvio).toBe("sucesso");
+  });
+
+  test("no telefone → throws", async () => {
+    mockPedidoQuery({ id: 10, usuario_id: 7, total: 100, usuario_telefone: null, usuario_nome: "R" });
+    await expect(comunicacaoService.sendWhatsapp("confirmacao_pedido", 10)).rejects.toThrow("telefone");
+  });
+});
