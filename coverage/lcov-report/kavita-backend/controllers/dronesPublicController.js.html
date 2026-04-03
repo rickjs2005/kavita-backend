@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">63.08% </span>
+                <span class="strong">72.48% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>94/149</span>
+                <span class='fraction'>108/149</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">60.16% </span>
+                <span class="strong">65.04% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>74/123</span>
+                <span class='fraction'>80/123</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">75% </span>
+                <span class="strong">85% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>15/20</span>
+                <span class='fraction'>17/20</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">65.94% </span>
+                <span class="strong">75.36% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>91/138</span>
+                <span class='fraction'>104/138</span>
             </div>
         
             
@@ -511,7 +511,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -658,35 +658,35 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -906,7 +906,7 @@ async function getPage(req, res, next) {
  */
 function buildLandingShape(landing) {
   return {
-    hero_title: landing.hero_title || <span class="branch-1 cbranch-no" title="branch not covered" >null,</span>
+    hero_title: landing.hero_title || null,
     hero_subtitle: landing.hero_subtitle || null,
     hero_video_path: landing.hero_video_path || null,
     hero_image_fallback_path: landing.hero_image_fallback_path || null,
@@ -1051,27 +1051,27 @@ async function listModels(req, res, next) {
  * GET /api/public/drones/models/:modelKey
  * =========================================================
  */
-async function <span class="fstat-no" title="function not covered" >getModelAggregate(</span>req, res, next) {
-<span class="cstat-no" title="statement not covered" >  try {</span>
-    const modelKey = <span class="cstat-no" title="statement not covered" >parseModelKey(req.params.modelKey);</span>
-    const modelRow = <span class="cstat-no" title="statement not covered" >await ensureModelExists(modelKey);</span>
+async function getModelAggregate(req, res, next) {
+  try {
+    const modelKey = parseModelKey(req.params.modelKey);
+    const modelRow = await ensureModelExists(modelKey);
 &nbsp;
-    const landing = <span class="cstat-no" title="statement not covered" >await dronesService.getPageSettings();</span>
-<span class="cstat-no" title="statement not covered" >    if (!landing) <span class="cstat-no" title="statement not covered" >return response.ok(res, null);</span></span>
+    const landing = await dronesService.getPageSettings();
+    <span class="missing-if-branch" title="if path not taken" >I</span>if (!landing) <span class="cstat-no" title="statement not covered" >return response.ok(res, null);</span>
 &nbsp;
-    const models_json = <span class="cstat-no" title="statement not covered" >parseJsonField(landing.models_json) || {};</span>
-    const modelData = <span class="cstat-no" title="statement not covered" >models_json?.[modelKey] || null;</span>
+    const models_json = parseJsonField(landing.models_json) || <span class="branch-1 cbranch-no" title="branch not covered" >{};</span>
+    const modelData = models_json?.[modelKey] || <span class="branch-1 cbranch-no" title="branch not covered" >null;</span>
 &nbsp;
-    const galleryResult = <span class="cstat-no" title="statement not covered" >await dronesService.listGalleryPublic({ page: 1, limit: 1000, model_key: modelKey });</span>
-    const gallery = <span class="cstat-no" title="statement not covered" >extractItems(galleryResult).filter(<span class="fstat-no" title="function not covered" >(g</span>) =&gt; <span class="cstat-no" title="statement not covered" >String(g.model_key || "") === modelKey)</span>;</span>
+    const galleryResult = await dronesService.listGalleryPublic({ page: 1, limit: 1000, model_key: modelKey });
+    const gallery = extractItems(galleryResult).filter((g) =&gt; String(g.model_key || <span class="branch-1 cbranch-no" title="branch not covered" >"")</span> === modelKey);
 &nbsp;
-    const comments = <span class="cstat-no" title="statement not covered" >await dronesService.listApprovedComments({</span>
+    const comments = await dronesService.listApprovedComments({
       page: req.query.page,
       limit: req.query.limit,
       model_key: modelKey, // se o service suportar
     });
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    return response.ok(res, {</span>
+    return response.ok(res, {
       landing: buildLandingShape(landing),
       model: { key: modelRow.key, label: modelRow.label },
       model_data: modelData,
@@ -1079,8 +1079,8 @@ async function <span class="fstat-no" title="function not covered" >getModelAggr
       comments,
     });
   } catch (e) {
-<span class="cstat-no" title="statement not covered" >    console.error("[drones/public] getModelAggregate error:", e);</span>
-<span class="cstat-no" title="statement not covered" >    return next(e instanceof AppError ? e : new AppError("Erro ao carregar modelo público.", ERROR_CODES.SERVER_ERROR, 500));</span>
+    console.error("[drones/public] getModelAggregate error:", e);
+    return next(e instanceof AppError ? <span class="branch-0 cbranch-no" title="branch not covered" >e </span>: new AppError("Erro ao carregar modelo público.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 &nbsp;
@@ -1252,7 +1252,7 @@ module.exports = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-02T16:39:27.923Z
+                at 2026-04-03T13:24:04.874Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
