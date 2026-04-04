@@ -198,6 +198,24 @@ async function syncClima(req, res, next) {
   }
 }
 
+/**
+ * POST /api/admin/news/clima/sync-all
+ * Trigger manual do batch sync (mesma logica do cron job).
+ */
+async function syncClimaAll(req, res, next) {
+  try {
+    const climaSyncService = require("../../services/climaSyncService");
+    const report = await climaSyncService.syncAll();
+
+    await logAdmin(req, "sync-all", "news_clima", null);
+
+    return response.ok(res, report);
+  } catch (error) {
+    console.error("adminClimaController.syncAll:", error);
+    return next(new AppError("Erro ao sincronizar clima (batch).", ERROR_CODES.SERVER_ERROR, 500));
+  }
+}
+
 module.exports = {
   listClima,
   suggestClimaStations,
@@ -205,4 +223,5 @@ module.exports = {
   updateClima,
   deleteClima,
   syncClima,
+  syncClimaAll,
 };

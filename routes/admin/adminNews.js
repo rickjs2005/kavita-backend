@@ -15,6 +15,7 @@ router.get("/clima/stations", newsAdmin.suggestClimaStations);
 router.post("/clima", validate(createClimaBodySchema), newsAdmin.createClima);
 router.put("/clima/:id", validate(updateClimaBodySchema), newsAdmin.updateClima);
 router.delete("/clima/:id", newsAdmin.deleteClima);
+router.post("/clima/sync-all", newsAdmin.syncClimaAll);
 router.post("/clima/:id/sync", newsAdmin.syncClima);
 
 // COTAÇÕES

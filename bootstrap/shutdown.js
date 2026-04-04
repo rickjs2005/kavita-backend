@@ -5,6 +5,11 @@
 
 const pool = require("../config/pool");
 
+let climaSyncJob;
+try {
+  climaSyncJob = require("../jobs/climaSyncJob");
+} catch { /* optional dependency */ }
+
 function registerShutdownHandlers(server) {
   const shutdown = async (signal) => {
     console.warn(`[${signal}] Sinal recebido. Iniciando graceful shutdown...`);
@@ -14,6 +19,11 @@ function registerShutdownHandlers(server) {
       process.exit(1);
     }, 30_000);
     forceExit.unref();
+
+    // Stop cron jobs first (non-blocking)
+    if (climaSyncJob && typeof climaSyncJob.stop === "function") {
+      climaSyncJob.stop();
+    }
 
     server.close(async () => {
       console.info("[shutdown] Servidor HTTP encerrado.");
