@@ -216,6 +216,78 @@ async function syncClimaAll(req, res, next) {
   }
 }
 
+/**
+ * GET /api/admin/news/clima/config
+ * Returns persistent sync config + runtime state.
+ */
+async function getSyncConfig(_req, res, next) {
+  try {
+    const configRepo = require("../../repositories/newsSyncConfigRepository");
+    const climaSyncJob = require("../../jobs/climaSyncJob");
+
+    const dbConfig = await configRepo.getConfig();
+    const runtimeState = climaSyncJob.getState();
+
+    return response.ok(res, {
+      clima_sync_enabled: Boolean(dbConfig?.clima_sync_enabled),
+      clima_sync_cron: dbConfig?.clima_sync_cron || "0 */3 * * *",
+      clima_sync_delay_ms: dbConfig?.clima_sync_delay_ms ?? 1500,
+      runtime: runtimeState,
+    });
+  } catch (error) {
+    console.error("adminClimaController.getSyncConfig:", error);
+    return next(new AppError("Erro ao carregar configuração de sync.", ERROR_CODES.SERVER_ERROR, 500));
+  }
+}
+
+/**
+ * PUT /api/admin/news/clima/config
+ * Updates sync config and restarts the cron job.
+ */
+async function updateSyncConfig(req, res, next) {
+  try {
+    const cron = require("node-cron");
+    const configRepo = require("../../repositories/newsSyncConfigRepository");
+    const climaSyncJob = require("../../jobs/climaSyncJob");
+
+    const { clima_sync_enabled, clima_sync_cron, clima_sync_delay_ms } = req.body;
+
+    // Validate cron expression if provided
+    if (clima_sync_cron !== undefined && !cron.validate(clima_sync_cron)) {
+      return next(new AppError(
+        "Expressão cron inválida.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+        { field: "clima_sync_cron", value: clima_sync_cron }
+      ));
+    }
+
+    const patch = {};
+    if (clima_sync_enabled !== undefined) patch.clima_sync_enabled = Boolean(clima_sync_enabled);
+    if (clima_sync_cron !== undefined) patch.clima_sync_cron = String(clima_sync_cron);
+    if (clima_sync_delay_ms !== undefined) patch.clima_sync_delay_ms = Number(clima_sync_delay_ms) || 1500;
+
+    await configRepo.updateConfig(patch);
+    await logAdmin(req, "atualizou-config", "news_clima_sync_config", 1);
+
+    // Restart cron with new config
+    await climaSyncJob.restart();
+
+    const dbConfig = await configRepo.getConfig();
+    const runtimeState = climaSyncJob.getState();
+
+    return response.ok(res, {
+      clima_sync_enabled: Boolean(dbConfig?.clima_sync_enabled),
+      clima_sync_cron: dbConfig?.clima_sync_cron || "0 */3 * * *",
+      clima_sync_delay_ms: dbConfig?.clima_sync_delay_ms ?? 1500,
+      runtime: runtimeState,
+    });
+  } catch (error) {
+    console.error("adminClimaController.updateSyncConfig:", error);
+    return next(new AppError("Erro ao salvar configuração de sync.", ERROR_CODES.SERVER_ERROR, 500));
+  }
+}
+
 module.exports = {
   listClima,
   suggestClimaStations,
@@ -224,4 +296,6 @@ module.exports = {
   deleteClima,
   syncClima,
   syncClimaAll,
+  getSyncConfig,
+  updateSyncConfig,
 };

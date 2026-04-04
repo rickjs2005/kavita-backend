@@ -3,12 +3,10 @@
 // jobs/climaSyncJob.js
 //
 // Cron job que sincroniza dados de chuva automaticamente.
-// Registrado no boot do servidor (server.js).
+// Registrado no boot do servidor (server.js → bootstrap/workers.js).
 //
-// Env vars:
-//   CLIMA_SYNC_ENABLED   — "true" para habilitar (default: false)
-//   CLIMA_SYNC_CRON      — expressao cron (default: "0 */3 * * *" = a cada 3h)
-//   CLIMA_SYNC_DELAY_MS  — delay entre cidades em ms (default: 1500)
+// Config priority: DB (news_sync_config) > env vars > defaults.
+// Runtime state (last run, status) exposed via getState() for the admin UI.
 
 const cron = require("node-cron");
 const { syncAll } = require("../services/climaSyncService");
@@ -17,10 +15,45 @@ const TAG = "[clima-sync]";
 
 let _task = null;
 let _running = false;
+let _cronExpr = null;
+
+// Runtime state — ephemeral, reset on restart.
+const _state = {
+  enabled: false,
+  cronExpr: null,
+  lastRunAt: null,
+  lastStatus: null,    // "success" | "partial" | "error" | null
+  lastError: null,
+  lastReport: null,    // { total, success, failed, durationMs }
+};
 
 /**
- * Executa o sync e loga o resultado. Protege contra execucao concorrente
- * caso o job anterior nao tenha terminado antes do proximo tick.
+ * Reads config from DB, falls back to env vars, then defaults.
+ */
+async function loadConfig() {
+  try {
+    const repo = require("../repositories/newsSyncConfigRepository");
+    const row = await repo.getConfig();
+    if (row) {
+      return {
+        enabled: Boolean(row.clima_sync_enabled),
+        cronExpr: row.clima_sync_cron || "0 */3 * * *",
+        delayMs: row.clima_sync_delay_ms ?? 1500,
+      };
+    }
+  } catch {
+    // Table may not exist yet (migration pending) — fall through to env vars
+  }
+
+  return {
+    enabled: String(process.env.CLIMA_SYNC_ENABLED || "").toLowerCase() === "true",
+    cronExpr: process.env.CLIMA_SYNC_CRON || "0 */3 * * *",
+    delayMs: Number(process.env.CLIMA_SYNC_DELAY_MS) || 1500,
+  };
+}
+
+/**
+ * Executa o sync e registra o resultado no runtime state.
  */
 async function tick() {
   if (_running) {
@@ -29,25 +62,40 @@ async function tick() {
   }
 
   _running = true;
-  const startedAt = new Date().toISOString();
+  _state.lastRunAt = new Date().toISOString();
 
   try {
     console.info(`${TAG} iniciando sync automatico...`);
     const report = await syncAll();
 
-    console.info(`${TAG} concluido`, {
-      startedAt,
+    _state.lastReport = {
       total: report.total,
       success: report.success,
       failed: report.failed,
       durationMs: report.durationMs,
-    });
+    };
+
+    if (report.failed === 0) {
+      _state.lastStatus = "success";
+      _state.lastError = null;
+    } else if (report.success > 0) {
+      _state.lastStatus = "partial";
+      _state.lastError = `${report.failed} cidade(s) falharam`;
+    } else {
+      _state.lastStatus = "error";
+      _state.lastError = "Todas as cidades falharam";
+    }
+
+    console.info(`${TAG} concluido`, _state.lastReport);
 
     if (report.failed > 0) {
       const failures = report.results.filter((r) => !r.ok);
       console.warn(`${TAG} falhas:`, failures);
     }
   } catch (err) {
+    _state.lastStatus = "error";
+    _state.lastError = err?.message || "Erro inesperado";
+    _state.lastReport = null;
     console.error(`${TAG} erro inesperado:`, err?.message || err);
   } finally {
     _running = false;
@@ -55,41 +103,66 @@ async function tick() {
 }
 
 /**
- * Registra o cron job. Chamado uma vez no boot do servidor.
- * Faz noop silencioso se CLIMA_SYNC_ENABLED != "true".
+ * Registra o cron job. Lê config do DB (com fallback para env vars).
  */
-function register() {
-  const enabled = String(process.env.CLIMA_SYNC_ENABLED || "").toLowerCase() === "true";
+async function register() {
+  const cfg = await loadConfig();
 
-  if (!enabled) {
-    console.info(`${TAG} desabilitado (CLIMA_SYNC_ENABLED != true)`);
+  _state.enabled = cfg.enabled;
+  _state.cronExpr = cfg.cronExpr;
+
+  if (!cfg.enabled) {
+    console.info(`${TAG} desabilitado (modo manual)`);
     return;
   }
 
-  const cronExpr = process.env.CLIMA_SYNC_CRON || "0 */3 * * *";
-
-  if (!cron.validate(cronExpr)) {
-    console.error(`${TAG} expressao cron invalida: "${cronExpr}"`);
+  if (!cron.validate(cfg.cronExpr)) {
+    console.error(`${TAG} expressao cron invalida: "${cfg.cronExpr}"`);
     return;
   }
 
-  _task = cron.schedule(cronExpr, tick, {
+  _cronExpr = cfg.cronExpr;
+  _task = cron.schedule(cfg.cronExpr, tick, {
     scheduled: true,
     timezone: "America/Sao_Paulo",
   });
 
-  console.info(`${TAG} agendado: "${cronExpr}" (timezone: America/Sao_Paulo)`);
+  console.info(`${TAG} agendado: "${cfg.cronExpr}" (timezone: America/Sao_Paulo)`);
 }
 
 /**
- * Para o cron job. Util para shutdown gracioso e testes.
+ * Para o cron job.
  */
 function stop() {
   if (_task) {
     _task.stop();
     _task = null;
+    _cronExpr = null;
     console.info(`${TAG} parado`);
   }
 }
 
-module.exports = { register, stop, tick };
+/**
+ * Re-registra o cron job com nova config do DB. Chamado após update de config.
+ */
+async function restart() {
+  stop();
+  await register();
+}
+
+/**
+ * Retorna runtime state para o admin UI.
+ */
+function getState() {
+  return {
+    enabled: _state.enabled,
+    cronExpr: _state.cronExpr,
+    running: _running,
+    lastRunAt: _state.lastRunAt,
+    lastStatus: _state.lastStatus,
+    lastError: _state.lastError,
+    lastReport: _state.lastReport,
+  };
+}
+
+module.exports = { register, stop, restart, tick, getState };

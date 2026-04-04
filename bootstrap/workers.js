@@ -41,7 +41,9 @@ function startWorkers() {
 
   // --- Clima auto-sync (cron) ---
   if (climaSyncJob && typeof climaSyncJob.register === "function") {
-    climaSyncJob.register();
+    climaSyncJob.register().catch((err) => {
+      console.error("⚠️ Falha ao registrar clima sync job:", err?.message || err);
+    });
   }
 }
 

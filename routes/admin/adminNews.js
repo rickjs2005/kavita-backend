@@ -11,6 +11,8 @@ router.use("/upload", adminNewsUploadRoutes);
 
 // CLIMA
 router.get("/clima", newsAdmin.listClima);
+router.get("/clima/config", newsAdmin.getSyncConfig);
+router.put("/clima/config", newsAdmin.updateSyncConfig);
 router.get("/clima/stations", newsAdmin.suggestClimaStations);
 router.post("/clima", validate(createClimaBodySchema), newsAdmin.createClima);
 router.put("/clima/:id", validate(updateClimaBodySchema), newsAdmin.updateClima);
