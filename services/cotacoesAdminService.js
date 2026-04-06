@@ -36,11 +36,16 @@ function normalizeSyncMessage(msg, max = 255) {
   return s.length > max ? s.slice(0, max - 3) + "..." : s;
 }
 
+/**
+ * Calcula variação percentual do dia: ((novo - anterior) / anterior) * 100.
+ * Retorna null se qualquer operando for inválido ou se prevPrice for zero.
+ * Resultado arredondado a 4 casas decimais (ex: 2.3456 → "+2.3456%").
+ */
 function calcVariationDay(priceNow, prevPrice) {
   const nowN = toNumberOrNull(priceNow);
   const prevN = toNumberOrNull(prevPrice);
-  if (nowN === null || prevN === null) return null;
-  return Number((nowN - prevN).toFixed(6));
+  if (nowN === null || prevN === null || prevN === 0) return null;
+  return Number((((nowN - prevN) / prevN) * 100).toFixed(4));
 }
 
 /**
