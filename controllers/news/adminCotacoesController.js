@@ -142,6 +142,32 @@ async function syncCotacoesAll(req, res, next) {
   }
 }
 
+/**
+ * GET /api/admin/news/cotacoes/config
+ * Returns sync configuration and runtime state (mirrors clima pattern).
+ */
+async function getCotacoesSyncConfig(_req, res, next) {
+  try {
+    let cotacoesSyncJob;
+    try { cotacoesSyncJob = require("../../jobs/cotacoesSyncJob"); } catch { /* optional */ }
+
+    const runtimeState = cotacoesSyncJob?.getState?.() || {
+      enabled: false, cronExpr: null, running: false,
+      lastRunAt: null, lastStatus: null, lastError: null, lastReport: null,
+    };
+
+    return response.ok(res, {
+      cotacoes_sync_enabled: runtimeState.enabled,
+      cotacoes_sync_cron: runtimeState.cronExpr || process.env.COTACOES_SYNC_CRON || "0 */4 * * *",
+      cotacoes_provider_enabled: process.env.COTACOES_PROVIDER_ENABLED === "true",
+      runtime: runtimeState,
+    });
+  } catch (error) {
+    console.error("adminCotacoesController.getCotacoesSyncConfig:", error);
+    return next(new AppError("Erro ao carregar configuração de sync.", ERROR_CODES.SERVER_ERROR, 500));
+  }
+}
+
 module.exports = {
   listCotacoes,
   createCotacao,
@@ -150,4 +176,5 @@ module.exports = {
   syncCotacao,
   syncCotacoesAll,
   getCotacoesMeta,
+  getCotacoesSyncConfig,
 };
