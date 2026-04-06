@@ -23,6 +23,7 @@ router.post("/clima/:id/sync", newsAdmin.syncClima);
 // COTAÇÕES
 router.get("/cotacoes", newsAdmin.listCotacoes);
 router.get("/cotacoes/config", newsAdmin.getCotacoesSyncConfig);
+router.put("/cotacoes/config", newsAdmin.updateCotacoesSyncConfig);
 router.get("/cotacoes/meta", newsAdmin.getCotacoesMeta);
 router.post("/cotacoes", validate(createCotacaoBodySchema), newsAdmin.createCotacao);
 router.put("/cotacoes/:id", validate(updateCotacaoBodySchema), newsAdmin.updateCotacao);

@@ -144,27 +144,77 @@ async function syncCotacoesAll(req, res, next) {
 
 /**
  * GET /api/admin/news/cotacoes/config
- * Returns sync configuration and runtime state (mirrors clima pattern).
+ * Returns sync configuration (DB + runtime state). Mirrors clima pattern.
  */
 async function getCotacoesSyncConfig(_req, res, next) {
   try {
-    let cotacoesSyncJob;
+    let configRepo, cotacoesSyncJob;
+    try { configRepo = require("../../repositories/newsSyncConfigRepository"); } catch { /* optional */ }
     try { cotacoesSyncJob = require("../../jobs/cotacoesSyncJob"); } catch { /* optional */ }
 
+    const dbConfig = configRepo ? await configRepo.getConfig() : null;
     const runtimeState = cotacoesSyncJob?.getState?.() || {
       enabled: false, cronExpr: null, running: false,
       lastRunAt: null, lastStatus: null, lastError: null, lastReport: null,
     };
 
     return response.ok(res, {
-      cotacoes_sync_enabled: runtimeState.enabled,
-      cotacoes_sync_cron: runtimeState.cronExpr || process.env.COTACOES_SYNC_CRON || "0 */4 * * *",
+      cotacoes_sync_enabled: Boolean(dbConfig?.cotacoes_sync_enabled ?? runtimeState.enabled),
+      cotacoes_sync_cron: dbConfig?.cotacoes_sync_cron || runtimeState.cronExpr || "0 */4 * * *",
       cotacoes_provider_enabled: process.env.COTACOES_PROVIDER_ENABLED === "true",
       runtime: runtimeState,
     });
   } catch (error) {
     console.error("adminCotacoesController.getCotacoesSyncConfig:", error);
     return next(new AppError("Erro ao carregar configuração de sync.", ERROR_CODES.SERVER_ERROR, 500));
+  }
+}
+
+/**
+ * PUT /api/admin/news/cotacoes/config
+ * Updates sync config and restarts the cron job. Mirrors clima pattern.
+ */
+async function updateCotacoesSyncConfig(req, res, next) {
+  try {
+    const cron = require("node-cron");
+    const configRepo = require("../../repositories/newsSyncConfigRepository");
+    const cotacoesSyncJob = require("../../jobs/cotacoesSyncJob");
+
+    const { cotacoes_sync_enabled, cotacoes_sync_cron } = req.body;
+
+    if (cotacoes_sync_cron !== undefined && !cron.validate(cotacoes_sync_cron)) {
+      return next(new AppError(
+        "Expressão cron inválida.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+        { field: "cotacoes_sync_cron", value: cotacoes_sync_cron }
+      ));
+    }
+
+    const patch = {};
+    if (cotacoes_sync_enabled !== undefined) patch.cotacoes_sync_enabled = Boolean(cotacoes_sync_enabled);
+    if (cotacoes_sync_cron !== undefined) patch.cotacoes_sync_cron = String(cotacoes_sync_cron);
+
+    await configRepo.updateConfig(patch);
+
+    const adminId = req.admin?.id || req.user?.id || req.adminId || req.userId || null;
+    await logAdminAction({ adminId, acao: "atualizou-config", entidade: "news_cotacoes_sync_config", entidadeId: 1 });
+
+    // Restart cron with new config
+    await cotacoesSyncJob.restart();
+
+    const dbConfig = await configRepo.getConfig();
+    const runtimeState = cotacoesSyncJob.getState();
+
+    return response.ok(res, {
+      cotacoes_sync_enabled: Boolean(dbConfig?.cotacoes_sync_enabled),
+      cotacoes_sync_cron: dbConfig?.cotacoes_sync_cron || "0 */4 * * *",
+      cotacoes_provider_enabled: process.env.COTACOES_PROVIDER_ENABLED === "true",
+      runtime: runtimeState,
+    });
+  } catch (error) {
+    console.error("adminCotacoesController.updateCotacoesSyncConfig:", error);
+    return next(new AppError("Erro ao salvar configuração de sync.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
 
@@ -177,4 +227,5 @@ module.exports = {
   syncCotacoesAll,
   getCotacoesMeta,
   getCotacoesSyncConfig,
+  updateCotacoesSyncConfig,
 };

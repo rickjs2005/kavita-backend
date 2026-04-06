@@ -6,8 +6,9 @@
 // (BCB PTAX, Stooq).
 // Registrado no boot do servidor (server.js → bootstrap/workers.js).
 //
-// Padrão: idêntico ao climaSyncJob.js — env vars > defaults.
-// Reusa cotacoesAdminService.syncAll() para evitar duplicação de lógica.
+// Config priority: DB (news_sync_config) > env vars > defaults.
+// Runtime state exposed via getState() for the admin UI.
+// Pattern: identical to climaSyncJob.js.
 
 const cron = require("node-cron");
 const logger = require("../lib/logger");
@@ -17,6 +18,7 @@ const TAG = "[cotacoes-sync]";
 
 let _task = null;
 let _running = false;
+let _cronExpr = null;
 
 // Runtime state — ephemeral, reset on restart.
 const _state = {
@@ -29,12 +31,24 @@ const _state = {
 };
 
 /**
- * Reads config from env vars.
+ * Reads config from DB, falls back to env vars, then defaults.
  */
-function loadConfig() {
+async function loadConfig() {
+  try {
+    const repo = require("../repositories/newsSyncConfigRepository");
+    const row = await repo.getConfig();
+    if (row && row.cotacoes_sync_enabled !== undefined) {
+      return {
+        enabled: Boolean(row.cotacoes_sync_enabled),
+        cronExpr: row.cotacoes_sync_cron || "0 */4 * * *",
+      };
+    }
+  } catch {
+    // Table or columns may not exist yet — fall through to env vars
+  }
+
   return {
-    enabled:
-      String(process.env.COTACOES_SYNC_ENABLED || "").toLowerCase() === "true",
+    enabled: String(process.env.COTACOES_SYNC_ENABLED || "").toLowerCase() === "true",
     cronExpr: process.env.COTACOES_SYNC_CRON || "0 */4 * * *",
   };
 }
@@ -56,11 +70,6 @@ async function tick() {
   try {
     logger.info(`${TAG} iniciando sync automático...`);
 
-    // syncAll() from cotacoesAdminService already:
-    // - filters ativo=1
-    // - iterates each cotação calling syncOne()
-    // - catches per-item exceptions
-    // - returns { total, ok, error, items }
     const summary = await syncAll();
 
     const durationMs = Date.now() - t0;
@@ -106,16 +115,16 @@ async function tick() {
 }
 
 /**
- * Registra o cron job.
+ * Registra o cron job. Lê config do DB (com fallback para env vars).
  */
-function register() {
-  const cfg = loadConfig();
+async function register() {
+  const cfg = await loadConfig();
 
   _state.enabled = cfg.enabled;
   _state.cronExpr = cfg.cronExpr;
 
   if (!cfg.enabled) {
-    logger.info(`${TAG} desabilitado (COTACOES_SYNC_ENABLED != true)`);
+    logger.info(`${TAG} desabilitado (modo manual)`);
     return;
   }
 
@@ -124,6 +133,7 @@ function register() {
     return;
   }
 
+  _cronExpr = cfg.cronExpr;
   _task = cron.schedule(cfg.cronExpr, tick, {
     scheduled: true,
     timezone: "America/Sao_Paulo",
@@ -139,8 +149,17 @@ function stop() {
   if (_task) {
     _task.stop();
     _task = null;
+    _cronExpr = null;
     logger.info(`${TAG} parado`);
   }
+}
+
+/**
+ * Re-registra o cron job com nova config do DB. Chamado após update de config.
+ */
+async function restart() {
+  stop();
+  await register();
 }
 
 /**
@@ -158,4 +177,4 @@ function getState() {
   };
 }
 
-module.exports = { register, stop, tick, getState };
+module.exports = { register, stop, restart, tick, getState };

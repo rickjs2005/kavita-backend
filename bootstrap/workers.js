@@ -58,12 +58,9 @@ function startWorkers() {
 
   // --- Cotações auto-sync (cron) ---
   if (cotacoesSyncJob && typeof cotacoesSyncJob.register === "function") {
-    try {
-      cotacoesSyncJob.register();
-      console.info("📈 Job de sync de cotações registrado");
-    } catch (err) {
+    cotacoesSyncJob.register().catch((err) => {
       console.error("⚠️ Falha ao registrar cotações sync job:", err?.message || err);
-    }
+    });
   }
 }
 
