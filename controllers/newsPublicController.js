@@ -72,6 +72,25 @@ const getCotacao = async (req, res, next) => {
   }
 };
 
+const getCotacaoHistory = async (req, res, next) => {
+  const slug = normalizeSlug(req.params.slug);
+  if (!slug || !isValidSlug(slug)) {
+    return next(new AppError("Slug inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
+  }
+
+  try {
+    const cotacao = await cotacoesRepo.getCotacaoPublicBySlug(slug);
+    if (!cotacao) return next(new AppError("Cotação não encontrada.", ERROR_CODES.NOT_FOUND, 404));
+
+    const limit = Math.min(Math.max(toInt(req.query.limit, 10), 1), 50);
+    const rows = await cotacoesRepo.listCotacaoHistoryPublic(cotacao.id, limit);
+    return response.ok(res, Array.isArray(rows) ? rows : [], null, { slug, limit });
+  } catch (error) {
+    console.error("newsPublicController.getCotacaoHistory:", error);
+    return next(new AppError("Erro ao buscar histórico.", ERROR_CODES.SERVER_ERROR, 500));
+  }
+};
+
 /* =========================================================
  * PUBLIC - POSTS
  * ========================================================= */
@@ -136,4 +155,4 @@ const overview = async (req, res, next) => {
   }
 };
 
-module.exports = { listClima, getClima, listCotacoes, getCotacao, listPosts, getPost, overview };
+module.exports = { listClima, getClima, listCotacoes, getCotacao, getCotacaoHistory, listPosts, getPost, overview };

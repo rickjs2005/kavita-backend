@@ -255,6 +255,23 @@ async function insertCotacaoHistory({
   return { id: res.insertId, ...payload };
 }
 
+// ─── History (public read) ───────────────────────────────────────────────────
+
+/**
+ * Returns the most recent history entries for a cotação (public).
+ * Only includes successful syncs (sync_status = 'ok') to avoid showing errors.
+ */
+async function listCotacaoHistoryPublic(cotacaoId, limit = 10) {
+  return query(
+    `SELECT id, price, variation_day, source, observed_at, created_at
+     FROM news_cotacoes_history
+     WHERE cotacao_id = ? AND sync_status = 'ok' AND price IS NOT NULL
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    [cotacaoId, limit],
+  );
+}
+
 // ─── Public (site, sem autenticação) ─────────────────────────────────────────
 
 async function listCotacoesPublic({ group_key } = {}) {
@@ -291,6 +308,7 @@ module.exports = {
   updateCotacao,
   deleteCotacao,
   insertCotacaoHistory,
+  listCotacaoHistoryPublic,
   listCotacoesPublic,
   getCotacaoPublicBySlug,
 };

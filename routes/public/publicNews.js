@@ -122,6 +122,33 @@ router.get("/cotacoes/:slug", newsPublicController.getCotacao);
 
 /**
  * @openapi
+ * /api/news/cotacoes/{slug}/history:
+ *   get:
+ *     tags:
+ *       - Kavita News (Public)
+ *     summary: Histórico de atualizações de uma cotação
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: "Quantidade de registros (máx 50)."
+ *     responses:
+ *       200:
+ *         description: Histórico retornado
+ *       404:
+ *         description: Cotação não encontrada
+ */
+router.get("/cotacoes/:slug/history", newsPublicController.getCotacaoHistory);
+
+/**
+ * @openapi
  * /api/news/posts:
  *   get:
  *     tags:
