@@ -10,6 +10,11 @@ try {
   climaSyncJob = require("../jobs/climaSyncJob");
 } catch { /* optional dependency */ }
 
+let cotacoesSyncJob;
+try {
+  cotacoesSyncJob = require("../jobs/cotacoesSyncJob");
+} catch { /* optional dependency */ }
+
 function registerShutdownHandlers(server) {
   const shutdown = async (signal) => {
     console.warn(`[${signal}] Sinal recebido. Iniciando graceful shutdown...`);
@@ -23,6 +28,9 @@ function registerShutdownHandlers(server) {
     // Stop cron jobs first (non-blocking)
     if (climaSyncJob && typeof climaSyncJob.stop === "function") {
       climaSyncJob.stop();
+    }
+    if (cotacoesSyncJob && typeof cotacoesSyncJob.stop === "function") {
+      cotacoesSyncJob.stop();
     }
 
     server.close(async () => {

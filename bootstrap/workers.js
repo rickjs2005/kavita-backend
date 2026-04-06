@@ -23,6 +23,16 @@ try {
   );
 }
 
+let cotacoesSyncJob;
+try {
+  cotacoesSyncJob = require("../jobs/cotacoesSyncJob");
+} catch (err) {
+  console.warn(
+    "⚠️ Job de sync de cotações não carregado (arquivo ausente ou erro no require):",
+    err.message
+  );
+}
+
 function startWorkers() {
   // --- Abandoned cart notifications ---
   const disableNotifs =
@@ -44,6 +54,16 @@ function startWorkers() {
     climaSyncJob.register().catch((err) => {
       console.error("⚠️ Falha ao registrar clima sync job:", err?.message || err);
     });
+  }
+
+  // --- Cotações auto-sync (cron) ---
+  if (cotacoesSyncJob && typeof cotacoesSyncJob.register === "function") {
+    try {
+      cotacoesSyncJob.register();
+      console.info("📈 Job de sync de cotações registrado");
+    } catch (err) {
+      console.error("⚠️ Falha ao registrar cotações sync job:", err?.message || err);
+    }
   }
 }
 
