@@ -158,10 +158,13 @@ async function getCotacoesSyncConfig(_req, res, next) {
       lastRunAt: null, lastStatus: null, lastError: null, lastReport: null,
     };
 
+    const configPersistable = dbConfig?.cotacoes_sync_enabled !== undefined;
+
     return response.ok(res, {
       cotacoes_sync_enabled: Boolean(dbConfig?.cotacoes_sync_enabled ?? runtimeState.enabled),
       cotacoes_sync_cron: dbConfig?.cotacoes_sync_cron || runtimeState.cronExpr || "0 */4 * * *",
       cotacoes_provider_enabled: process.env.COTACOES_PROVIDER_ENABLED === "true",
+      config_persistable: configPersistable,
       runtime: runtimeState,
     });
   } catch (error) {
@@ -179,6 +182,17 @@ async function updateCotacoesSyncConfig(req, res, next) {
     const cron = require("node-cron");
     const configRepo = require("../../repositories/newsSyncConfigRepository");
     const cotacoesSyncJob = require("../../jobs/cotacoesSyncJob");
+
+    // Check if DB supports cotações config (migration 2026040600000002)
+    const currentConfig = await configRepo.getConfig();
+    if (currentConfig && currentConfig.cotacoes_sync_enabled === undefined) {
+      return next(new AppError(
+        "Configuração de sync de cotações não disponível. Execute npm run db:migrate para aplicar a migration pendente.",
+        ERROR_CODES.SERVER_ERROR,
+        500,
+        { hint: "Migration 2026040600000002-add-cotacoes-sync-config.js pendente." }
+      ));
+    }
 
     const { cotacoes_sync_enabled, cotacoes_sync_cron } = req.body;
 
