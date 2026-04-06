@@ -259,13 +259,21 @@ async function insertCotacaoHistory({
 
 /**
  * Returns the most recent history entries for a cotação (public).
- * Only includes successful syncs (sync_status = 'ok') to avoid showing errors.
+ *
+ * Filters:
+ * - sync_status = 'ok' (exclude errors)
+ * - price IS NOT NULL (exclude empty syncs)
+ * - created_at within last 7 days (exclude pre-BRL-conversion legacy data
+ *   that was stored in USD/cents and is not comparable to current BRL values)
  */
 async function listCotacaoHistoryPublic(cotacaoId, limit = 10) {
   return query(
     `SELECT id, price, variation_day, source, observed_at, created_at
      FROM news_cotacoes_history
-     WHERE cotacao_id = ? AND sync_status = 'ok' AND price IS NOT NULL
+     WHERE cotacao_id = ?
+       AND sync_status = 'ok'
+       AND price IS NOT NULL
+       AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
      ORDER BY created_at DESC
      LIMIT ?`,
     [cotacaoId, limit],
