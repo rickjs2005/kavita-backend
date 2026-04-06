@@ -240,7 +240,13 @@ async function resolveProvider({ slug, group_key, row }) {
 
       case "cafe-arabica": {
         const r = await fetchStooqLast("KC.F");
-        r.source = "Stooq (Coffee - ICE, proxy)";
+        r.source = "Stooq (Coffee Arabica - ICE, proxy)";
+        return ok(r, { preset });
+      }
+
+      case "cafe-robusta": {
+        const r = await fetchStooqLast("RC.F");
+        r.source = "Stooq (Coffee Robusta - ICE, proxy)";
         return ok(r, { preset });
       }
 
@@ -263,7 +269,11 @@ async function resolveProvider({ slug, group_key, row }) {
       }
 
       default:
-        return err("UNKNOWN_SLUG", "Slug sem provider.", { slug, group_key, preset });
+        return err(
+          "UNKNOWN_SLUG",
+          `Slug "${slug}" não possui provider de dados. Slugs suportados: ${Object.keys(PRESETS).join(", ")}.`,
+          { slug, group_key, preset, supported: Object.keys(PRESETS) },
+        );
     }
   } catch (e) {
     return err("PROVIDER_ERROR", "Falha ao consultar provider.", {
