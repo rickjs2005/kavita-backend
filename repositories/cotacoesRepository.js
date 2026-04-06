@@ -15,42 +15,60 @@ async function queryOne(sql, params = []) {
   return rows?.[0] || null;
 }
 
-const COTACAO_SELECT = `
-  SELECT
-    id,
-    name,
-    slug,
-    group_key,
-    type,
-    price,
-    original_price,
-    original_currency,
-    exchange_rate,
-    unit,
-    variation_day,
-    market,
-    source,
-    last_update_at,
-    last_sync_status,
-    last_sync_message,
-    ativo,
-    criado_em,
-    atualizado_em
-  FROM news_cotacoes
-`;
+// ─── Column detection ────────────────────────────────────────────────────────
+// The BRL conversion columns (original_price, original_currency, exchange_rate)
+// are added by migration 2026040600000001. If the migration hasn't run yet,
+// queries must not reference them. We detect once at first use and cache.
+
+const BRL_COLS = ["original_price", "original_currency", "exchange_rate"];
+let _hasBrlCols = null; // null = not checked, true/false = checked
+
+async function hasBrlColumns() {
+  if (_hasBrlCols !== null) return _hasBrlCols;
+  try {
+    const [cols] = await db.query(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'news_cotacoes' AND COLUMN_NAME IN (?)",
+      [BRL_COLS],
+    );
+    _hasBrlCols = Array.isArray(cols) && cols.length === BRL_COLS.length;
+  } catch {
+    _hasBrlCols = false;
+  }
+  return _hasBrlCols;
+}
+
+const BASE_COLS = `
+    id, name, slug, group_key, type, price,
+    unit, variation_day, market, source,
+    last_update_at, last_sync_status, last_sync_message,
+    ativo, criado_em, atualizado_em`;
+
+function buildSelect(withBrl) {
+  if (withBrl) {
+    return `SELECT ${BASE_COLS}, original_price, original_currency, exchange_rate FROM news_cotacoes`;
+  }
+  return `SELECT ${BASE_COLS} FROM news_cotacoes`;
+}
+
+async function getCotacaoSelect() {
+  return buildSelect(await hasBrlColumns());
+}
 
 // ─── Admin / Internal ────────────────────────────────────────────────────────
 
 async function getCotacaoById(id) {
-  return queryOne(`${COTACAO_SELECT} WHERE id = ? LIMIT 1`, [id]);
+  const sel = await getCotacaoSelect();
+  return queryOne(`${sel} WHERE id = ? LIMIT 1`, [id]);
 }
 
 async function getCotacaoBySlug(slug) {
-  return queryOne(`${COTACAO_SELECT} WHERE slug = ? LIMIT 1`, [slug]);
+  const sel = await getCotacaoSelect();
+  return queryOne(`${sel} WHERE slug = ? LIMIT 1`, [slug]);
 }
 
 async function listCotacoes() {
-  return query(`${COTACAO_SELECT} ORDER BY ativo DESC, group_key ASC, type ASC, name ASC`);
+  const sel = await getCotacaoSelect();
+  return query(`${sel} ORDER BY ativo DESC, group_key ASC, type ASC, name ASC`);
 }
 
 async function cotacoesMeta() {
@@ -140,15 +158,19 @@ async function updateCotacao(id, data) {
   const fields = [];
   const params = [];
 
+  const withBrl = await hasBrlColumns();
+
   const map = {
     name: "name",
     slug: "slug",
     group_key: "group_key",
     type: "type",
     price: "price",
-    original_price: "original_price",
-    original_currency: "original_currency",
-    exchange_rate: "exchange_rate",
+    ...(withBrl ? {
+      original_price: "original_price",
+      original_currency: "original_currency",
+      exchange_rate: "exchange_rate",
+    } : {}),
     unit: "unit",
     variation_day: "variation_day",
     market: "market",
@@ -236,6 +258,7 @@ async function insertCotacaoHistory({
 // ─── Public (site, sem autenticação) ─────────────────────────────────────────
 
 async function listCotacoesPublic({ group_key } = {}) {
+  const sel = await getCotacaoSelect();
   const where = ["ativo = 1"];
   const params = [];
 
@@ -246,7 +269,7 @@ async function listCotacoesPublic({ group_key } = {}) {
 
   return query(
     `
-    ${COTACAO_SELECT}
+    ${sel}
     WHERE ${where.join(" AND ")}
     ORDER BY group_key ASC, type ASC, name ASC
     `,
@@ -255,7 +278,8 @@ async function listCotacoesPublic({ group_key } = {}) {
 }
 
 async function getCotacaoPublicBySlug(slug) {
-  return queryOne(`${COTACAO_SELECT} WHERE slug = ? AND ativo = 1 LIMIT 1`, [slug]);
+  const sel = await getCotacaoSelect();
+  return queryOne(`${sel} WHERE slug = ? AND ativo = 1 LIMIT 1`, [slug]);
 }
 
 module.exports = {
