@@ -8,7 +8,7 @@
 //   GET /api/products/search   — busca avançada (promoções, faixa de preço, filtros)
 //   GET /api/products/:id      — detalhe por ID
 //
-// NÃO contém avaliações de produto. Para avaliações: routes/public/_legacy/publicProdutos.js
+// NÃO contém avaliações de produto. Para avaliações: routes/public/publicAvaliacoes.js
 
 const express = require("express");
 const router = express.Router();

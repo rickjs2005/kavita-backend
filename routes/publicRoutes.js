@@ -33,7 +33,7 @@ load("/public/categorias", "./public/publicCategorias");
 load("/public/servicos", "./public/publicServicos");
 load("/public/especialidades", "./public/publicEspecialidades");
 load("/public/promocoes", "./public/publicPromocoes");
-load("/public/produtos", "./public/publicProdutos"); // avaliações de produtos
+load("/public/produtos", "./public/publicAvaliacoes"); // avaliações de produtos
 
 // — Configuração e visual —
 load("/config", "./public/publicShopConfig");

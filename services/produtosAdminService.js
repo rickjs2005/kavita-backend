@@ -184,9 +184,45 @@ async function updateProduct(id, body, files) {
   }
 }
 
+async function updateProductStatus(id, isActive) {
+  const affectedRows = await withTransaction(async (conn) => {
+    return repo.updateStatus(conn, id, isActive);
+  });
+
+  if (affectedRows === 0) {
+    throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
+}
+
 async function deleteProduct(id) {
   const imgs = await withTransaction(async (conn) => {
+    // 1. Verificar se produto existe
+    const product = await repo.findById(id);
+    if (!product) {
+      throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+    }
+
+    // 2. Verificar vínculos em carrinho (carrinho_itens tem ON DELETE RESTRICT)
+    const { activeCount, closedCount } = await repo.countCartReferences(conn, id);
+
+    if (activeCount > 0) {
+      throw new AppError(
+        "Este produto está em carrinhos ativos de clientes. Desative-o em vez de excluir, ou aguarde os carrinhos serem convertidos/cancelados.",
+        ERROR_CODES.CONFLICT,
+        409,
+        { activeCartItems: activeCount },
+      );
+    }
+
+    // 3. Limpar referências em carrinhos já fechados/convertidos/cancelados
+    if (closedCount > 0) {
+      await repo.removeClosedCartItems(conn, id);
+    }
+
+    // 4. Buscar imagens antes do delete (CASCADE apaga product_images)
     const images = await repo.findImagesByProductId(conn, id);
+
+    // 5. Executar o hard delete
     const affectedRows = await repo.remove(conn, id);
 
     if (affectedRows === 0) {
@@ -196,6 +232,7 @@ async function deleteProduct(id) {
     return images;
   });
 
+  // 6. Cleanup de arquivos no disco (fire-and-forget, não bloqueia resposta)
   if (imgs.length) {
     mediaService.removeMedia(imgs.map((r) => r.path)).catch((e) => {
       logger.error({ err: e, productId: id }, "Falha ao remover mídias de produto excluído");
@@ -203,4 +240,4 @@ async function deleteProduct(id) {
   }
 }
 
-module.exports = { listProducts, getProduct, createProduct, updateProduct, deleteProduct };
+module.exports = { listProducts, getProduct, createProduct, updateProduct, updateProductStatus, deleteProduct };

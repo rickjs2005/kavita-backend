@@ -8,6 +8,7 @@ const {
   CriarProdutoSchema,
   AtualizarProdutoSchema,
   ProdutoIdParamSchema,
+  ProdutoStatusSchema,
 } = require("../../schemas/requests");
 const ctrl = require("../../controllers/produtosController");
 
@@ -62,6 +63,9 @@ router.put(
   validate(AtualizarProdutoSchema),
   ctrl.update
 );
+
+// PATCH /api/admin/produtos/:id/status
+router.patch("/:id/status", verifyAdmin, validate(ProdutoIdParamSchema, "params"), validate(ProdutoStatusSchema), ctrl.updateStatus);
 
 // DELETE /api/admin/produtos/:id
 router.delete("/:id", verifyAdmin, validate(ProdutoIdParamSchema, "params"), ctrl.remove);

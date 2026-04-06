@@ -71,7 +71,7 @@ async function findProducts({ category_id, search, sort, order, page, limit }) {
   const orderDir = order === "ASC" ? "ASC" : "DESC";
   const offset = (page - 1) * limit;
 
-  const where = [];
+  const where = ["p.is_active = 1"];
   const params = [];
 
   if (category_id != null) {
@@ -85,7 +85,7 @@ async function findProducts({ category_id, search, sort, order, page, limit }) {
     params.push(like, like);
   }
 
-  const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
+  const whereSql = "WHERE " + where.join(" AND ");
 
   const [[{ total }]] = await pool.query(
     `SELECT COUNT(*) AS total FROM products p ${whereSql}`,
@@ -115,7 +115,7 @@ async function searchProducts({ q, catIds, minPrice, maxPrice, promo, sort, page
   const orderBy = SEARCH_SORT_MAP[sort] || SEARCH_SORT_MAP.newest;
   const offset = (page - 1) * limit;
 
-  const where = [];
+  const where = ["p.is_active = 1"];
   const params = [];
 
   if (q) {
@@ -187,7 +187,7 @@ async function searchProducts({ q, catIds, minPrice, maxPrice, promo, sort, page
  */
 async function findProductById(id) {
   const [rows] = await pool.query(
-    "SELECT * FROM products WHERE id = ?",
+    "SELECT * FROM products WHERE id = ? AND is_active = 1",
     [id]
   );
   return rows[0] || null;

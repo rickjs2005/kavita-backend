@@ -44,14 +44,34 @@ const update = async (req, res, next) => {
   }
 };
 
+const updateStatus = async (req, res, next) => {
+  try {
+    await svc.updateProductStatus(req.params.id, req.body.is_active);
+    return response.ok(res, null, "Status do produto atualizado.");
+  } catch (err) {
+    return next(err instanceof AppError ? err : new AppError("Erro ao atualizar status.", ERROR_CODES.SERVER_ERROR, 500));
+  }
+};
+
 const remove = async (req, res, next) => {
   // req.params.id é coercido para number pelo ProdutoIdParamSchema.
   try {
     await svc.deleteProduct(req.params.id);
     return response.noContent(res);
   } catch (err) {
-    return next(err instanceof AppError ? err : new AppError("Erro ao remover produto.", ERROR_CODES.SERVER_ERROR, 500));
+    if (err instanceof AppError) return next(err);
+
+    // Fallback: FK violation do MySQL (ER_ROW_IS_REFERENCED_2)
+    if (err.code === "ER_ROW_IS_REFERENCED_2" || err.errno === 1451) {
+      return next(new AppError(
+        "Não foi possível excluir o produto porque ele está vinculado a registros existentes (carrinhos, pedidos, etc.). Desative-o em vez de excluir.",
+        ERROR_CODES.CONFLICT,
+        409,
+      ));
+    }
+
+    return next(new AppError("Erro ao remover produto.", ERROR_CODES.SERVER_ERROR, 500));
   }
 };
 
-module.exports = { list, getById, create, update, remove };
+module.exports = { list, getById, create, update, updateStatus, remove };

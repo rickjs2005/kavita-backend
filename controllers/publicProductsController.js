@@ -7,7 +7,6 @@
 
 const { response } = require("../lib");
 const productService = require("../services/productService");
-const productRepo = require("../repositories/productPublicRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 
@@ -48,15 +47,8 @@ async function getProductById(req, res, next) {
       return next(new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
 
-    const produto = await productRepo.findProductById(id);
-    if (!produto) {
-      return next(new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404));
-    }
-
-    const imageRows = await productRepo.findProductImages([id]);
-    const images = imageRows.map((r) => r.image_url);
-
-    return response.ok(res, { ...produto, images });
+    const produto = await productService.getProductById(id);
+    return response.ok(res, produto);
   } catch (err) {
     return next(
       err instanceof AppError ? err

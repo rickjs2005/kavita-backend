@@ -24,7 +24,7 @@ async function findActiveCategories() {
       c.sort_order,
       COUNT(p.id) AS total_products
     FROM categories c
-    LEFT JOIN products p ON p.category_id = c.id
+    LEFT JOIN products p ON p.category_id = c.id AND p.is_active = 1
     WHERE c.is_active = 1
     GROUP BY c.id, c.name, c.slug, c.is_active, c.sort_order
     ORDER BY c.sort_order ASC, c.name ASC

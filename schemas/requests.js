@@ -95,6 +95,18 @@ const ProdutoIdParamSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Produtos — status (ativar/desativar)
+// ---------------------------------------------------------------------------
+
+/**
+ * Schema para PATCH /api/admin/produtos/:id/status
+ * Exige boolean explícito — rejeita 0/1.
+ */
+const ProdutoStatusSchema = z.object({
+  is_active: z.boolean({ required_error: "is_active é obrigatório.", invalid_type_error: "is_active deve ser booleano (true/false)." }),
+});
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -102,5 +114,6 @@ module.exports = {
   CriarProdutoSchema,
   AtualizarProdutoSchema,
   ProdutoIdParamSchema,
+  ProdutoStatusSchema,
   formatZodErrors,
 };

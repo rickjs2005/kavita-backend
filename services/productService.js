@@ -186,4 +186,23 @@ async function searchProducts(query) {
   return { items: products, total, page: pageNum, limit: limitNum };
 }
 
-module.exports = { listProducts, searchProducts };
+/**
+ * Returns a single product by ID with its images, or throws 404.
+ *
+ * @param {number} id  Product ID (validated by caller)
+ * @returns {object} Product with images array
+ * @throws {AppError} 404 when product not found
+ */
+async function getProductById(id) {
+  const produto = await productRepo.findProductById(id);
+  if (!produto) {
+    throw new AppError("Produto não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
+
+  const imageRows = await productRepo.findProductImages([id]);
+  const images = imageRows.map((r) => r.image_url);
+
+  return { ...produto, images };
+}
+
+module.exports = { listProducts, searchProducts, getProductById };

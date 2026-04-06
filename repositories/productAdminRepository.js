@@ -54,6 +54,22 @@ async function findAll() {
   return (rows || []).map(normalizeShippingFields);
 }
 
+/**
+ * Flips the is_active flag for a single product.
+ *
+ * @param {object} conn - Transaction connection
+ * @param {number} id
+ * @param {boolean} isActive
+ * @returns {number} affectedRows — 0 means product does not exist
+ */
+async function updateStatus(conn, id, isActive) {
+  const [result] = await conn.query(
+    `UPDATE ${PRODUCTS_TABLE} SET is_active = ? WHERE id = ?`,
+    [isActive ? 1 : 0, id]
+  );
+  return result.affectedRows;
+}
+
 async function findById(id) {
   const [rows] = await pool.query(
     `SELECT * FROM ${PRODUCTS_TABLE} WHERE id = ? LIMIT 1`,
@@ -115,6 +131,46 @@ async function update(conn, id, { name, description, priceNum, qtyNum, catIdNum,
   return result.affectedRows;
 }
 
+/**
+ * Checks whether a product has references in carrinho_itens (any cart status).
+ * Used before hard-delete to prevent FK violation (carrinho_itens has ON DELETE RESTRICT).
+ *
+ * @param {object} conn - Transaction connection
+ * @param {number} productId
+ * @returns {{ activeCount: number, closedCount: number }}
+ */
+async function countCartReferences(conn, productId) {
+  const [rows] = await conn.query(
+    `SELECT
+       SUM(CASE WHEN c.status = 'aberto' THEN 1 ELSE 0 END) AS activeCount,
+       SUM(CASE WHEN c.status != 'aberto' THEN 1 ELSE 0 END) AS closedCount
+     FROM carrinho_itens ci
+     JOIN carrinhos c ON c.id = ci.carrinho_id
+     WHERE ci.produto_id = ?`,
+    [productId]
+  );
+  return {
+    activeCount: Number(rows[0]?.activeCount ?? 0),
+    closedCount: Number(rows[0]?.closedCount ?? 0),
+  };
+}
+
+/**
+ * Removes cart item references from non-active carts (convertido, cancelado, fechado).
+ * This allows hard-delete to proceed without FK violation.
+ *
+ * @param {object} conn - Transaction connection
+ * @param {number} productId
+ */
+async function removeClosedCartItems(conn, productId) {
+  await conn.query(
+    `DELETE ci FROM carrinho_itens ci
+     JOIN carrinhos c ON c.id = ci.carrinho_id
+     WHERE ci.produto_id = ? AND c.status != 'aberto'`,
+    [productId]
+  );
+}
+
 async function remove(conn, id) {
   const [result] = await conn.query(
     `DELETE FROM ${PRODUCTS_TABLE} WHERE id = ?`,
@@ -170,6 +226,9 @@ module.exports = {
   attachImages,
   insert,
   update,
+  updateStatus,
+  countCartReferences,
+  removeClosedCartItems,
   remove,
   insertImages,
   deleteImages,
