@@ -5,15 +5,33 @@
 const logger = require("../lib/logger");
 
 const PRESETS = {
-  dolar: { name: "Dólar comercial", type: "cambio", unit: "R$", market: "BCB", source: "BCB PTAX" },
+  dolar: {
+    name: "Dólar comercial", type: "cambio", unit: "R$", market: "BCB", source: "BCB PTAX",
+    currency: "BRL", centsUnit: false, brlUnit: "R$",
+  },
 
-  "cafe-arabica": { name: "Café Arábica", type: "cafe", unit: "¢/lb", market: "ICE", source: "Stooq" },
-  "cafe-robusta": { name: "Café Robusta", type: "cafe", unit: "USD/ton", market: "ICE", source: "Stooq" },
+  "cafe-arabica": {
+    name: "Café Arábica", type: "cafe", unit: "¢/lb", market: "ICE", source: "Stooq",
+    currency: "USD", centsUnit: true, brlUnit: "R$/lb",
+  },
+  "cafe-robusta": {
+    name: "Café Robusta", type: "cafe", unit: "USD/ton", market: "ICE", source: "Stooq",
+    currency: "USD", centsUnit: false, brlUnit: "R$/ton",
+  },
 
-  soja: { name: "Soja", type: "graos", unit: "¢/bu", market: "CME", source: "Stooq" },
-  milho: { name: "Milho", type: "graos", unit: "¢/bu", market: "CME", source: "Stooq" },
+  soja: {
+    name: "Soja", type: "graos", unit: "¢/bu", market: "CME", source: "Stooq",
+    currency: "USD", centsUnit: true, brlUnit: "R$/bu",
+  },
+  milho: {
+    name: "Milho", type: "graos", unit: "¢/bu", market: "CME", source: "Stooq",
+    currency: "USD", centsUnit: true, brlUnit: "R$/bu",
+  },
 
-  "boi-gordo": { name: "Boi Gordo", type: "pecuaria", unit: "USD/cwt", market: "CME", source: "Stooq" },
+  "boi-gordo": {
+    name: "Boi Gordo", type: "pecuaria", unit: "USD/cwt", market: "CME", source: "Stooq",
+    currency: "USD", centsUnit: false, brlUnit: "R$/cwt",
+  },
 };
 
 // Log once at startup so operators know the module state without hitting sync.
@@ -285,4 +303,4 @@ async function resolveProvider({ slug, group_key, row }) {
   }
 }
 
-module.exports = { resolveProvider, PRESETS };
+module.exports = { resolveProvider, PRESETS, fetchBcbPtaxUsdBrl };
