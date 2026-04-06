@@ -9,6 +9,7 @@
 //   syncAll()        — itera todas as cotações ativas e chama syncOne
 
 const cotacoesRepo = require("../repositories/cotacoesRepository");
+const logger = require("../lib/logger");
 const { nowSql } = require("./news/newsHelpers");
 
 let cotacoesProviders = null;
@@ -102,7 +103,7 @@ async function writeCotacaoHistorySafe({
       sync_message,
     });
   } catch (e) {
-    console.error("[COTACOES][HISTORY] falha ao inserir histórico:", e?.message || e);
+    logger.error({ err: e, cotacao_id }, "[cotacoes] Falha ao inserir histórico (best-effort).");
   }
 }
 
@@ -184,7 +185,7 @@ async function syncOne(id, row) {
       last_sync_message: msg,
     });
   } catch (e) {
-    console.error("[COTACOES][SYNC] falha ao atualizar status error:", e?.message || e);
+    logger.error({ err: e, cotacaoId: id }, "[cotacoes] Falha ao atualizar status error no banco.");
   }
 
   await writeCotacaoHistorySafe({
@@ -197,7 +198,10 @@ async function syncOne(id, row) {
     sync_message: msg,
   });
 
-  console.error("[COTACOES][SYNC] provider error:", resolved?.details || resolved);
+  logger.warn(
+    { cotacaoId: id, slug: row?.slug, code: resolved?.code, details: resolved?.details },
+    "[cotacoes] Sync falhou para cotação."
+  );
 
   const updated = await cotacoesRepo.getCotacaoById(id);
   return {
@@ -240,7 +244,7 @@ async function syncAll() {
           message: provider.message,
           code: provider.code || "PROVIDER_ERROR",
         });
-        console.error("[COTACOES][SYNC-ALL] provider error:", provider.details || provider);
+        logger.warn({ cotacaoId: id, slug: row.slug, code: provider.code }, "[cotacoes] Sync-all: item falhou.");
       }
     } catch (e) {
       const msg = normalizeSyncMessage(e?.message || "Erro ao sincronizar item.");
@@ -252,7 +256,7 @@ async function syncAll() {
         message: msg,
         code: String(e?.code || "ITEM_ERROR"),
       });
-      console.error("[COTACOES][SYNC-ALL] item error:", e);
+      logger.error({ err: e, cotacaoId: id, slug: row.slug }, "[cotacoes] Sync-all: exceção ao sincronizar item.");
     }
   }
 

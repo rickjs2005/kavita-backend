@@ -2,6 +2,8 @@
 // Provider resolver para Kavita News - Cotações
 // resolveProvider({ slug, group_key, row }) -> { ok, data? } | { ok:false, code, message, details? }
 
+const logger = require("../lib/logger");
+
 const PRESETS = {
   dolar: { name: "Dólar comercial", type: "cambio", unit: "R$", market: "BCB", source: "BCB PTAX" },
 
@@ -13,6 +15,18 @@ const PRESETS = {
 
   "boi-gordo": { name: "Boi Gordo", type: "pecuaria", unit: "USD/cwt", market: "CME", source: "Stooq" },
 };
+
+// Log once at startup so operators know the module state without hitting sync.
+const _providerEnabled = process.env.COTACOES_PROVIDER_ENABLED === "true";
+if (_providerEnabled) {
+  logger.info("[cotacoes] Provider de cotações HABILITADO (COTACOES_PROVIDER_ENABLED=true).");
+} else {
+  logger.warn(
+    { envValue: process.env.COTACOES_PROVIDER_ENABLED ?? "(não definida)" },
+    "[cotacoes] Provider de cotações DESABILITADO. " +
+      "Defina COTACOES_PROVIDER_ENABLED=true no .env para habilitar sincronização de preços."
+  );
+}
 
 function err(code, message, details) {
   return { ok: false, code, message, details: details || null };
@@ -204,11 +218,16 @@ async function fetchStooqLast(symbol) {
 async function resolveProvider({ slug, group_key, row }) {
   const preset = PRESETS[slug] || null;
 
-  if (process.env.COTACOES_PROVIDER_ENABLED !== "true") {
+  if (!_providerEnabled) {
+    logger.warn(
+      { slug, group_key },
+      "[cotacoes] Sync ignorado — provider desabilitado. Defina COTACOES_PROVIDER_ENABLED=true no .env."
+    );
     return err(
       "PROVIDER_DISABLED",
-      "Provider de cotações desativado (COTACOES_PROVIDER_ENABLED=true para habilitar).",
-      { slug, group_key, preset }
+      "Sincronização de cotações desabilitada. A variável de ambiente COTACOES_PROVIDER_ENABLED não está definida como \"true\". " +
+        "Configure-a no .env do backend e reinicie o servidor.",
+      { slug, group_key, preset, envVar: "COTACOES_PROVIDER_ENABLED", envValue: process.env.COTACOES_PROVIDER_ENABLED ?? null }
     );
   }
 

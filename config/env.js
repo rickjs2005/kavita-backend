@@ -46,6 +46,15 @@ function ensureRequiredEnv() {
       console.warn(msg + " Em produção o servidor irá recusar o startup.");
     }
   }
+
+  // Aviso para módulos opcionais com gate de configuração.
+  if (process.env.COTACOES_PROVIDER_ENABLED !== "true") {
+    console.warn(
+      "⚠️  COTACOES_PROVIDER_ENABLED não está definida como \"true\". " +
+        "O módulo de cotações NÃO sincronizará preços com fontes externas. " +
+        "Defina COTACOES_PROVIDER_ENABLED=true no .env para habilitar."
+    );
+  }
 }
 
 ensureRequiredEnv();
