@@ -9,6 +9,26 @@ const heroRepo = require("../repositories/heroRepository");
 const mediaService = require("../services/mediaService");
 const { UpdateHeroSchema } = require("../schemas/heroSchemas");
 
+// ── In-memory cache (public endpoint only) ─────────────────────────────────
+// Hero data is a singleton that changes only when admin saves.
+// Caching avoids 2 SQL queries per public page view.
+
+let _cache = null;    // { data, expiresAt }
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCached() {
+  if (_cache && Date.now() < _cache.expiresAt) return _cache.data;
+  return null;
+}
+
+function setCache(data) {
+  _cache = { data, expiresAt: Date.now() + CACHE_TTL };
+}
+
+function invalidateCache() {
+  _cache = null;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function pickFile(files, field) {
@@ -60,7 +80,11 @@ const getHero = async (req, res) => {
 };
 
 const getHeroPublic = async (req, res) => {
-  const data = await getHeroBase();
+  let data = getCached();
+  if (!data) {
+    data = await getHeroBase();
+    setCache(data);
+  }
   if (typeof res.set === "function") {
     res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
   } else if (typeof res.setHeader === "function") {
@@ -141,6 +165,8 @@ const updateHero = async (req, res, next) => {
     if (oldMedia.length) {
       mediaService.enqueueOrphanCleanup(oldMedia);
     }
+
+    invalidateCache();
 
     const updated = await getHeroBase();
     return response.ok(res, { hero: updated });
