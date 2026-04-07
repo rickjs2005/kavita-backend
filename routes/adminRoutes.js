@@ -54,6 +54,7 @@ mount("/admin/servicos",        "./admin/adminServicos");
 mount("/admin/servicos/solicitacoes", "./admin/adminSolicitacoesServicos");
 mount("/admin/especialidades",  "./admin/adminEspecialidades");
 mount("/admin/drones",          "./admin/adminDrones");
+mount("/admin/mercado-do-cafe", "./admin/adminCorretoras");
 
 /* ============================================================
  * Operações de negócio

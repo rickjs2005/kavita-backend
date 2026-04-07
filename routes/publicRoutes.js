@@ -44,4 +44,7 @@ load("/public/hero-slides", "./public/publicHeroSlides");
 load("/news", "./public/publicNews");
 load("/public/drones", "./public/publicDrones");
 
+// — Mercado do Café: corretoras —
+load("/public/corretoras", "./public/publicCorretoras");
+
 module.exports = router;
