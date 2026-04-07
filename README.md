@@ -2,6 +2,8 @@
 
 API REST do projeto Kavita. Node.js + Express, MySQL, autenticação dupla por cookie HttpOnly, arquitetura em camadas em migração ativa.
 
+> **Documentação completa do projeto:** consulte [`docs/`](../docs/) na raiz do repositório para guias de onboarding, arquitetura, deploy, troubleshooting e fluxos críticos.
+
 ---
 
 ## Índice
