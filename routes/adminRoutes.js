@@ -47,6 +47,7 @@ mount("/admin/news",            "./admin/adminNews");
 // Separado de adminNews porque usa multer (ver adminNewsUpload.js)
 mount("/admin/news",            "./admin/adminNewsUpload");
 mount("/admin/site-hero",       "./admin/adminSiteHero");
+mount("/admin/hero-slides",    "./admin/adminHeroSlides");
 mount("/admin/colaboradores",   "./admin/adminColaboradores");
 mount("/admin/servicos",        "./admin/adminServicos");
 mount("/admin/servicos/solicitacoes", "./admin/adminSolicitacoesServicos");

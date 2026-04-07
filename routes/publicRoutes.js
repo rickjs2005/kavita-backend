@@ -38,6 +38,7 @@ load("/public/produtos", "./public/publicAvaliacoes"); // avaliações de produt
 // — Configuração e visual —
 load("/config", "./public/publicShopConfig");
 load("/public/site-hero", "./public/publicSiteHero");
+load("/public/hero-slides", "./public/publicHeroSlides");
 
 // — Editorial: notícias e drones —
 load("/news", "./public/publicNews");
