@@ -1,15 +1,19 @@
 "use strict";
+// controllers/siteHeroController.js
+// Pair: routes/admin/adminSiteHero.js + routes/public/publicSiteHero.js
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { response } = require("../lib");
 const heroRepo = require("../repositories/heroRepository");
 const mediaService = require("../services/mediaService");
+const { UpdateHeroSchema } = require("../schemas/heroSchemas");
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function pickFile(files, field) {
   const arr = files?.[field];
-  if (!arr || !arr.length) return null;
-  return arr[0];
+  return arr?.[0] ?? null;
 }
 
 function normalizeHref(href) {
@@ -28,7 +32,7 @@ async function ensureSingleRow() {
 async function getHeroBase() {
   await ensureSingleRow();
 
-  const r = await heroRepo.findHeroSettings() || {};
+  const r = (await heroRepo.findHeroSettings()) || {};
   return {
     hero_video_url: r.hero_video_url || "",
     hero_video_path: r.hero_video_path || "",
@@ -48,7 +52,7 @@ async function updateHeroRow(fields) {
   await heroRepo.updateHeroSettings(id, fields);
 }
 
-
+// ── Handlers ────────────────────────────────────────────────────────────────
 
 const getHero = async (req, res) => {
   const data = await getHeroBase();
@@ -57,91 +61,101 @@ const getHero = async (req, res) => {
 
 const getHeroPublic = async (req, res) => {
   const data = await getHeroBase();
+  if (typeof res.set === "function") {
+    res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
+  } else if (typeof res.setHeader === "function") {
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
+  }
   return response.ok(res, data);
 };
 
 const updateHero = async (req, res, next) => {
   try {
-    // compat: aceita os 2 nomes
-    const heroVideo =
-      pickFile(req.files, "heroVideo") ||
-      pickFile(req.files, "hero_video") ||
-      pickFile(req.files, "video");
+    // ── Validate text fields via Zod ──────────────────────────────────────
+    const parsed = UpdateHeroSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0];
+      const fields = parsed.error.issues.map((issue) => ({
+        field: issue.path.join(".") || "body",
+        message: issue.message,
+      }));
+      throw new AppError(firstIssue.message, ERROR_CODES.VALIDATION_ERROR, 400, { fields });
+    }
 
+    const { title, subtitle, button_label, button_href } = parsed.data;
+
+    // ── Validate files ────────────────────────────────────────────────────
+    const heroVideo = pickFile(req.files, "heroVideo");
     const heroImage =
       pickFile(req.files, "heroImageFallback") ||
-      pickFile(req.files, "heroImage") ||
       pickFile(req.files, "heroFallbackImage") ||
-      pickFile(req.files, "hero_image") ||
-      pickFile(req.files, "image");
+      pickFile(req.files, "heroImage");
 
-    const labelRaw = req.body?.button_label ?? req.body?.hero_button_label;
-    const hrefRaw = req.body?.button_href ?? req.body?.hero_button_href;
-    const titleRaw = req.body?.title ?? req.body?.hero_title;
-    const subtitleRaw = req.body?.subtitle ?? req.body?.hero_subtitle;
-
-    const label = String(labelRaw || "").trim();
-    const href = normalizeHref(hrefRaw);
-    const title = String(titleRaw || "").trim();
-    const subtitle = String(subtitleRaw || "").trim();
-
-    if (label && label.length > 80) {
-      throw new AppError("Label do botão muito grande.", ERROR_CODES.VALIDATION_ERROR, 400, {
-        field: "button_label",
-        max: 80,
+    if (heroVideo && !String(heroVideo.mimetype || "").startsWith("video/")) {
+      throw new AppError("Arquivo de vídeo inválido.", ERROR_CODES.VALIDATION_ERROR, 400, {
+        field: "heroVideo",
       });
     }
 
-    if (title && title.length > 255) {
-      throw new AppError("Título muito grande.", ERROR_CODES.VALIDATION_ERROR, 400, {
-        field: "title",
-        max: 255,
+    if (heroImage && !String(heroImage.mimetype || "").startsWith("image/")) {
+      throw new AppError("Arquivo de imagem inválido.", ERROR_CODES.VALIDATION_ERROR, 400, {
+        field: "heroImage",
       });
     }
 
-    if (subtitle && subtitle.length > 500) {
-      throw new AppError("Subtítulo muito grande.", ERROR_CODES.VALIDATION_ERROR, 400, {
-        field: "subtitle",
-        max: 500,
-      });
-    }
-
+    // ── Build patch ───────────────────────────────────────────────────────
     const patch = {};
+    const oldMedia = [];
 
-    if (label) patch.button_label = label;
-    if (href) patch.button_href = href;
     if (title) patch.title = title;
     if (subtitle) patch.subtitle = subtitle;
+    if (button_label) patch.button_label = button_label;
+    if (button_href) patch.button_href = normalizeHref(button_href);
+
+    // Fetch current paths before overwriting (for cleanup)
+    const current = (heroVideo || heroImage) ? await getHeroBase() : null;
 
     if (heroVideo) {
-      if (!String(heroVideo.mimetype || "").startsWith("video/")) {
-        throw new AppError("Arquivo de vídeo inválido.", ERROR_CODES.VALIDATION_ERROR, 400, {
-          field: "heroVideo",
-        });
-      }
       const [uploaded] = await mediaService.persistMedia([heroVideo], { folder: "hero" });
       patch.hero_video_path = uploaded.path;
       patch.hero_video_url = uploaded.path;
+      if (current?.hero_video_path) {
+        oldMedia.push({ path: current.hero_video_path });
+      }
     }
 
     if (heroImage) {
-      if (!String(heroImage.mimetype || "").startsWith("image/")) {
-        throw new AppError("Arquivo de imagem inválido.", ERROR_CODES.VALIDATION_ERROR, 400, {
-          field: "heroImage",
-        });
-      }
       const [uploaded] = await mediaService.persistMedia([heroImage], { folder: "hero" });
       patch.hero_image_path = uploaded.path;
       patch.hero_image_url = uploaded.path;
+      if (current?.hero_image_path) {
+        oldMedia.push({ path: current.hero_image_path });
+      }
     }
 
-    await updateHeroRow(patch);
+    if (Object.keys(patch).length > 0) {
+      await updateHeroRow(patch);
+    }
+
+    // Cleanup old media files (fire-and-forget)
+    if (oldMedia.length) {
+      mediaService.enqueueOrphanCleanup(oldMedia);
+    }
 
     const updated = await getHeroBase();
     return response.ok(res, { hero: updated });
   } catch (err) {
     console.error("[site-hero] updateHero error:", err);
-    return next(err instanceof AppError ? err : new AppError(err?.message || "Erro ao atualizar Hero.", ERROR_CODES.SERVER_ERROR, 500, err?.details || null));
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            err?.message || "Erro ao atualizar Hero.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+            err?.details || null,
+          ),
+    );
   }
 };
 
