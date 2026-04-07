@@ -70,8 +70,8 @@ const upload = multer({
   storage: storageAdapter.storage,
   fileFilter: imageFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5 MB por arquivo
-    files: 10,                  // máx 10 arquivos por requisição
+    fileSize: 100 * 1024 * 1024, // 100 MB (hero videos can be large)
+    files: 10,
   },
 });
 

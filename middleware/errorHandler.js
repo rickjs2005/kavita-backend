@@ -5,6 +5,21 @@ const logger = require("../lib/logger");
 const sentry = require("../lib/sentry");
 
 module.exports = (err, req, res, _next) => {
+  // Multer file upload errors (file too large, too many files, etc.)
+  if (err.name === "MulterError") {
+    const messages = {
+      LIMIT_FILE_SIZE: "O arquivo enviado é muito grande. Reduza o tamanho e tente novamente.",
+      LIMIT_FILE_COUNT: "Muitos arquivos enviados de uma vez.",
+      LIMIT_UNEXPECTED_FILE: "Campo de upload inesperado.",
+    };
+    return res.status(400).json({
+      ok: false,
+      code: "FILE_TOO_LARGE",
+      message: messages[err.code] || "Erro no upload do arquivo.",
+      details: { field: err.field, multerCode: err.code },
+    });
+  }
+
   // Pool esgotado: todas as conexões ocupadas e fila cheia.
   // Retorna 503 para que load balancers e clientes possam tentar outro instância.
   if (err.code === "POOL_ENQUEUELIMIT") {
