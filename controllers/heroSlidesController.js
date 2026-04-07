@@ -9,6 +9,8 @@ const repo = require("../repositories/heroSlidesRepository");
 const mediaService = require("../services/mediaService");
 const { CreateSlideSchema, UpdateSlideSchema, formatSlideErrors } = require("../schemas/heroSlidesSchemas");
 
+const MAX_SLIDES = 20;
+
 // ── Cache (public) ──────────────────────────────────────────────────────────
 
 let _cache = null;
@@ -38,20 +40,54 @@ function normalizeHref(href) {
   return `/${v}`;
 }
 
+async function processMediaUploads(files, existingSlide) {
+  const result = { fields: {}, oldMedia: [] };
+
+  const heroVideo = pickFile(files, "heroVideo");
+  const heroImage = pickFile(files, "heroImage") || pickFile(files, "heroImageFallback");
+
+  if (heroVideo) {
+    if (!String(heroVideo.mimetype || "").startsWith("video/")) {
+      throw new AppError("Arquivo de vídeo inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const [uploaded] = await mediaService.persistMedia([heroVideo], { folder: "hero" });
+    result.fields.hero_video_path = uploaded.path;
+    result.fields.hero_video_url = uploaded.path;
+    if (existingSlide?.hero_video_path) result.oldMedia.push({ path: existingSlide.hero_video_path });
+  }
+
+  if (heroImage) {
+    if (!String(heroImage.mimetype || "").startsWith("image/")) {
+      throw new AppError("Arquivo de imagem inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const [uploaded] = await mediaService.persistMedia([heroImage], { folder: "hero" });
+    result.fields.hero_image_path = uploaded.path;
+    result.fields.hero_image_url = uploaded.path;
+    if (existingSlide?.hero_image_path) result.oldMedia.push({ path: existingSlide.hero_image_path });
+  }
+
+  return result;
+}
+
 // ── Public ──────────────────────────────────────────────────────────────────
 
-const listPublicSlides = async (req, res) => {
-  let slides = getCached();
-  if (!slides) {
-    slides = await repo.findActiveSlides();
-    setCache(slides);
+const listPublicSlides = async (req, res, next) => {
+  try {
+    let slides = getCached();
+    if (!slides) {
+      slides = await repo.findActiveSlides();
+      setCache(slides);
+    }
+    if (typeof res.set === "function") {
+      res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
+    } else if (typeof res.setHeader === "function") {
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
+    }
+    return response.ok(res, slides);
+  } catch (err) {
+    console.error("[hero-slides] listPublicSlides error:", err);
+    return next(new AppError("Erro ao carregar slides.", ERROR_CODES.SERVER_ERROR, 500));
   }
-  if (typeof res.set === "function") {
-    res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
-  } else if (typeof res.setHeader === "function") {
-    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
-  }
-  return response.ok(res, slides);
 };
 
 // ── Admin ───────────────────────────────────────────────────────────────────
@@ -79,6 +115,12 @@ const getSlide = async (req, res, next) => {
 
 const createSlide = async (req, res, next) => {
   try {
+    // Enforce slide limit
+    const existing = await repo.findAllSlides(true);
+    if (existing.length >= MAX_SLIDES) {
+      throw new AppError(`Limite de ${MAX_SLIDES} slides atingido.`, ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+
     const parsed = CreateSlideSchema.safeParse(req.body || {});
     if (!parsed.success) {
       throw new AppError(parsed.error.issues[0].message, ERROR_CODES.VALIDATION_ERROR, 400, {
@@ -92,26 +134,8 @@ const createSlide = async (req, res, next) => {
       fields.button_secondary_href = normalizeHref(fields.button_secondary_href);
     }
 
-    const heroVideo = pickFile(req.files, "heroVideo");
-    const heroImage = pickFile(req.files, "heroImage") || pickFile(req.files, "heroImageFallback");
-
-    if (heroVideo) {
-      if (!String(heroVideo.mimetype || "").startsWith("video/")) {
-        throw new AppError("Arquivo de vídeo inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
-      }
-      const [uploaded] = await mediaService.persistMedia([heroVideo], { folder: "hero" });
-      fields.hero_video_path = uploaded.path;
-      fields.hero_video_url = uploaded.path;
-    }
-
-    if (heroImage) {
-      if (!String(heroImage.mimetype || "").startsWith("image/")) {
-        throw new AppError("Arquivo de imagem inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
-      }
-      const [uploaded] = await mediaService.persistMedia([heroImage], { folder: "hero" });
-      fields.hero_image_path = uploaded.path;
-      fields.hero_image_url = uploaded.path;
-    }
+    const media = await processMediaUploads(req.files, null);
+    Object.assign(fields, media.fields);
 
     const id = await repo.insertSlide(fields);
     invalidateCache();
@@ -145,33 +169,11 @@ const updateSlide = async (req, res, next) => {
       fields.button_secondary_href = normalizeHref(fields.button_secondary_href);
     }
 
-    const oldMedia = [];
-
-    const heroVideo = pickFile(req.files, "heroVideo");
-    const heroImage = pickFile(req.files, "heroImage") || pickFile(req.files, "heroImageFallback");
-
-    if (heroVideo) {
-      if (!String(heroVideo.mimetype || "").startsWith("video/")) {
-        throw new AppError("Arquivo de vídeo inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
-      }
-      const [uploaded] = await mediaService.persistMedia([heroVideo], { folder: "hero" });
-      fields.hero_video_path = uploaded.path;
-      fields.hero_video_url = uploaded.path;
-      if (existing.hero_video_path) oldMedia.push({ path: existing.hero_video_path });
-    }
-
-    if (heroImage) {
-      if (!String(heroImage.mimetype || "").startsWith("image/")) {
-        throw new AppError("Arquivo de imagem inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
-      }
-      const [uploaded] = await mediaService.persistMedia([heroImage], { folder: "hero" });
-      fields.hero_image_path = uploaded.path;
-      fields.hero_image_url = uploaded.path;
-      if (existing.hero_image_path) oldMedia.push({ path: existing.hero_image_path });
-    }
+    const media = await processMediaUploads(req.files, existing);
+    Object.assign(fields, media.fields);
 
     await repo.updateSlide(id, fields);
-    if (oldMedia.length) mediaService.enqueueOrphanCleanup(oldMedia);
+    if (media.oldMedia.length) mediaService.enqueueOrphanCleanup(media.oldMedia);
     invalidateCache();
 
     const updated = await repo.findSlideById(id);

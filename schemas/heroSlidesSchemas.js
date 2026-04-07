@@ -37,7 +37,7 @@ const CreateSlideSchema = z.object({
   ends_at: data.ends_at?.trim() || null,
 }));
 
-const UpdateSlideSchema = CreateSlideSchema;
+const UpdateSlideSchema = CreateSlideSchema; // Full schema — frontend sends all fields via FormData
 
 function formatSlideErrors(zodError) {
   return zodError.issues.map((issue) => ({

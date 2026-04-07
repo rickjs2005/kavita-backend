@@ -5,14 +5,12 @@
 const pool = require("../config/pool");
 
 async function findActiveSlides() {
-  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
   const [rows] = await pool.query(
     `SELECT * FROM hero_slides
      WHERE is_active = 1
-       AND (starts_at IS NULL OR starts_at <= ?)
-       AND (ends_at IS NULL OR ends_at > ?)
+       AND (starts_at IS NULL OR starts_at <= NOW())
+       AND (ends_at IS NULL OR ends_at > NOW())
      ORDER BY sort_order ASC, id ASC`,
-    [now, now],
   );
   return rows;
 }

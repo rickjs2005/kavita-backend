@@ -46,6 +46,7 @@ mount("/admin/cupons",              "./admin/adminCupons");
 mount("/admin/news",            "./admin/adminNews");
 // Separado de adminNews porque usa multer (ver adminNewsUpload.js)
 mount("/admin/news",            "./admin/adminNewsUpload");
+// Legacy singleton hero — kept for backward compat but superseded by hero-slides
 mount("/admin/site-hero",       "./admin/adminSiteHero");
 mount("/admin/hero-slides",    "./admin/adminHeroSlides");
 mount("/admin/colaboradores",   "./admin/adminColaboradores");
