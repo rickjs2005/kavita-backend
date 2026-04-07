@@ -14,8 +14,8 @@ API REST do projeto Kavita. Node.js + Express, MySQL, autenticação dupla por c
 - [Variáveis de ambiente](#variáveis-de-ambiente)
 - [Estrutura de pastas](#estrutura-de-pastas)
 - [Arquitetura](#arquitetura)
-- [Estado atual: projeto em transição](#estado-atual-projeto-em-transição)
-- [Módulos modernos e legados](#módulos-modernos-e-legados)
+- [Estado atual: migração em andamento](#estado-atual-migração-em-andamento)
+- [Módulos modernos e pendentes](#módulos-modernos-e-pendentes)
 - [Convenções de nomenclatura](#convenções-de-nomenclatura)
 - [Contrato de resposta da API](#contrato-de-resposta-da-api)
 - [Tratamento de erros](#tratamento-de-erros)
@@ -32,7 +32,7 @@ API REST do projeto Kavita. Node.js + Express, MySQL, autenticação dupla por c
 
 Backend de uma plataforma de e-commerce e conteúdo (drones, produtos, serviços, notícias). Expõe uma API REST sob `/api`, servida com Express. Autenticação dupla: contexto admin e contexto de usuário final, ambos via cookie HttpOnly. Upload de mídia centralizado com suporte a disco local, S3 e GCS.
 
-O projeto está em **migração arquitetural ativa**. Aproximadamente 30% dos módulos seguem o padrão moderno completo (`repository → service → controller → rota magra + Zod`). Os demais são módulos legados com SQL inline na rota. Ambos convivem em produção. Leia a seção [Estado atual: projeto em transição](#estado-atual-projeto-em-transição) antes de mexer em qualquer arquivo.
+O projeto está em **migração arquitetural ativa**. A maioria dos módulos (~75%) já segue o padrão moderno completo (`repository → service → controller → rota magra + Zod`). Módulos pendentes ainda têm SQL inline na rota mas estão sendo migrados progressivamente. Leia a seção [Estado atual: migração em andamento](#estado-atual-migração-em-andamento) antes de mexer em qualquer arquivo.
 
 ---
 
@@ -277,68 +277,66 @@ O Helmet 8 define `Cross-Origin-Resource-Policy: same-origin` por padrão. O ove
 
 ---
 
-## Estado atual: projeto em transição
+## Estado atual: migração em andamento
 
-**Este projeto está em migração arquitetural ativa.** Dois padrões coexistem no código:
+O projeto está em **migração arquitetural ativa**. A maioria dos módulos já segue o padrão moderno completo (rota magra → controller → service → repository + Zod + `lib/response.js` + `AppError`). Módulos pendentes ainda têm SQL inline na rota e validação manual, mas estão sendo migrados progressivamente.
 
-**Padrão moderno** — arquitetura em camadas completa:
-- Rota magra (sem SQL, sem validação inline)
-- Schema Zod em `schemas/`
-- Controller que usa `lib/response.js` e `AppError`
-- Service com lógica de negócio
-- Repository com queries MySQL2
+**Regra operacional:** Ao tocar qualquer módulo pendente (bug fix, nova feature), migre-o para o padrão moderno. Nunca amplie o padrão legado. O padrão canônico a seguir está descrito em [O que é padrão canônico hoje](#o-que-é-padrão-canônico-hoje).
 
-**Padrão legado** — tudo na rota:
-- SQL direto no arquivo de rota
-- Validação com `if (!campo)`
-- `res.json()` cru sem helper
-- Sem service, sem repository separado
-
-**Regra operacional:** Ao tocar qualquer arquivo legado (bug fix, nova feature), migre-o para o padrão moderno. Nunca amplie o padrão legado. O padrão canônico a seguir está descrito em [O que é padrão canônico hoje](#o-que-é-padrão-canônico-hoje).
+Progresso detalhado da migração: consulte [docs/migration-tracker.md](docs/migration-tracker.md).
 
 ---
 
-## Módulos modernos e legados
+## Módulos modernos e pendentes
 
-### Modernos (padrão completo)
+### Modernos (padrão completo) — 27+ módulos
 
 | Domínio | Rota | Controller | Service | Repository |
 |---|---|---|---|---|
 | Auth admin | `routes/auth/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
+| Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
+| Perfil usuário | `routes/auth/userProfile.js` | `controllers/userProfileController.js` | `services/userProfileService.js` | `repositories/userRepository.js` |
 | Drones (admin) | `routes/admin/adminDrones.js` | `controllers/drones/` | `services/drones/` | `repositories/dronesRepository.js` |
 | Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
-| News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js` |
-| Site Hero | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
-| Produtos (público) | `routes/public/publicProducts.js` | — | `services/productService.js` | `repositories/productPublicRepository.js` |
+| News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js`, `climaRepository.js`, `cotacoesRepository.js` |
+| News (público) | `routes/public/publicNews.js` | `controllers/newsPublicController.js` | — | (mesmos repositories de news admin) |
 | Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/productAdminRepository.js` |
+| Produtos (público) | `routes/public/publicProducts.js` | `controllers/publicProductsController.js` | `services/productService.js` | `repositories/productPublicRepository.js` |
+| Serviços (admin) | `routes/admin/adminServicos.js` | `controllers/servicosAdminController.js` | `services/servicosAdminService.js` | `repositories/servicosAdminRepository.js` |
+| Serviços (público) | `routes/public/publicServicos.js` | `controllers/servicosPublicController.js` | `services/servicosService.js` | `repositories/servicosAdminRepository.js` |
 | Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
+| Pedidos (admin) | `routes/admin/adminPedidos.js` | `controllers/adminOrdersController.js` | `services/orderService.js` | `repositories/orderRepository.js` |
+| Comunicação (admin) | `routes/admin/adminComunicacao.js` | `controllers/comunicacaoController.js` | `services/comunicacaoService.js` | `repositories/comunicacaoRepository.js` |
+| Zonas de frete (admin) | `routes/admin/adminShippingZones.js` | `controllers/shippingZonesController.js` | `services/shippingZonesService.js` | `repositories/shippingZonesRepository.js` |
 | Carrinhos (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/abandonedCartsRepository.js` |
-| Cart (usuário) | `routes/ecommerce/cart.js` | — | `services/cartService.js` | `repositories/cartRepository.js` |
+| Site Hero | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
+| Cart (usuário) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
-| Pedidos | `routes/ecommerce/pedidos.js` | — | `services/orderService.js` | `repositories/orderRepository.js` |
-| Payment | `routes/ecommerce/payment.js` | — | `services/paymentService.js` | `repositories/paymentRepository.js` |
-| Shipping | `routes/ecommerce/shipping.js` | — | `services/shippingQuoteService.js` | — |
-| Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
+| Payment | `routes/ecommerce/payment.js` | `controllers/paymentController.js` | `services/paymentService.js` | `repositories/paymentRepository.js` |
+| Shipping | `routes/ecommerce/shipping.js` | `controllers/shippingController.js` | `services/shippingQuoteService.js` | `repositories/shippingRepository.js` |
+| Favoritos | `routes/ecommerce/favorites.js` | `controllers/favoritesController.js` | `services/favoritesService.js` | `repositories/favoritesRepository.js` |
+| Stats (admin) | `routes/admin/adminStats.js` | `controllers/statsController.js` | — | `repositories/statsRepository.js` |
+| Relatórios (admin) | `routes/admin/adminRelatorios.js` | `controllers/relatoriosController.js` | — | `repositories/relatoriosRepository.js` |
+| Cupons (admin) | `routes/admin/adminCupons.js` | `controllers/cuponsController.js` | — | `repositories/cuponsRepository.js` |
+| Promoções (admin) | `routes/admin/adminMarketingPromocoes.js` | `controllers/promocoesAdminController.js` | — | `repositories/promocoesAdminRepository.js` |
+| Avaliações (público) | `routes/public/publicProdutos.js` | `controllers/avaliacoesController.js` | `services/avaliacoesService.js` | `repositories/avaliacoesRepository.js` |
 
-### Legados (migração pendente)
+### Pendentes (migração incompleta)
 
-Estes arquivos usam SQL inline na rota, validação manual e `res.json()` cru. **Não use estes arquivos como referência de implementação.**
+Estes arquivos ainda usam SQL inline na rota, validação manual ou `res.json()` direto em alguns endpoints. **Não use como referência de implementação.**
 
-| Arquivo | Tamanho | Problema |
+| Arquivo | Risco | Observação |
 |---|---|---|
-| `routes/admin/adminRoles.js` | ~472 linhas | SQL inline |
-| `routes/admin/adminComunicacao.js` | ~446 linhas | SQL inline |
-| `routes/admin/adminServicos.js` | ~405 linhas | SQL inline |
-| `routes/admin/adminMarketingPromocoes.js` | ~378 linhas | SQL inline |
-| `routes/admin/adminPedidos.js` | ~309 linhas | SQL inline |
-| `routes/admin/adminCupons.js` | ~308 linhas | SQL inline |
-| `routes/admin/adminShippingZones.js` | ~306 linhas | SQL inline |
-| `routes/admin/adminStats.js` | ~297 linhas | SQL inline |
-| `routes/public/publicServicos.js` | ~651 linhas | SQL inline |
-| `routes/public/publicProdutos.js` | ~324 linhas | SQL inline |
-| `routes/auth/userAddresses.js` | ~559 linhas | SQL inline |
-| `routes/auth/userProfile.js` | ~272 linhas | SQL inline |
-| `routes/auth/authRoutes.js` | ~103 linhas | pool direto |
+| `routes/admin/adminUsers.js` | ALTO | GET expõe CPF em plaintext |
+| `routes/admin/adminAdmins.js` | ALTO | CRUD de contas admin com bcrypt |
+| `routes/admin/adminSolicitacoesServicos.js` | MÉDIO | Side-effect de contadores |
+| `routes/admin/adminPermissions.js` | ALTO | Afeta RBAC do sistema inteiro |
+| `routes/admin/adminLogs.js` | BAIXO | Somente leitura |
+| `routes/auth/userAddresses.js` | MÉDIO | Normalização complexa de endereços |
+| `routes/ecommerce/pedidos.js` | BAIXO | Somente leitura, já usa AppError |
+| `routes/public/publicShopConfig.js` | BAIXO | 1 endpoint read-only |
+
+Consulte [docs/migration-tracker.md](docs/migration-tracker.md) para inventário detalhado e checklist de migração.
 
 ---
 
@@ -606,9 +604,16 @@ O `.sequelizerc` na raiz configura os caminhos usados pelo CLI.
 
 ### Referência de implementação
 
-Use `routes/admin/adminDrones.js` + `controllers/drones/` + `services/drones/` + `repositories/dronesRepository.js` como referência de como o padrão moderno deve ser implementado.
+| Camada | Arquivo referência |
+|--------|--------------------|
+| Rota admin | `routes/admin/adminDrones.js` |
+| Rota ecommerce | `routes/ecommerce/checkout.js` |
+| Controller CRUD | `controllers/adminOrdersController.js` |
+| Service transacional | `services/checkoutService.js` |
+| Repository | `repositories/checkoutRepository.js` |
+| Schema Zod | `schemas/checkoutSchemas.js` |
 
-**Não use** nenhum dos arquivos da tabela de módulos legados como referência.
+**Não use** nenhum dos arquivos da tabela de módulos pendentes como referência.
 
 ---
 
@@ -638,7 +643,7 @@ const { ERROR_CODES } = require("../constants/ErrorCodes");
 const { response } = require("../lib");
 const service = require("../services/produtosService");
 
-exports.list = async (req, res, next) => {
+const list = async (req, res, next) => {
   try {
     const data = await service.listar(req.query);
     return response.ok(res, data);
@@ -647,7 +652,7 @@ exports.list = async (req, res, next) => {
   }
 };
 
-exports.create = async (req, res, next) => {
+const create = async (req, res, next) => {
   try {
     const created = await service.criar(req.body, req.file);
     return response.created(res, created);
@@ -655,6 +660,8 @@ exports.create = async (req, res, next) => {
     return next(err instanceof AppError ? err : new AppError(err.message, ERROR_CODES.SERVER_ERROR, 500));
   }
 };
+
+module.exports = { list, create };
 ```
 
 ### Service
