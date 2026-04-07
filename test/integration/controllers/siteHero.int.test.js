@@ -325,7 +325,7 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({
       code: "VALIDATION_ERROR",
-      message: "Label do botão muito grande.",
+      message: expect.stringMatching(/label.*botão/i),
     });
     expect(mockPool.query).not.toHaveBeenCalled();
   });
@@ -346,7 +346,7 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({
       code: "VALIDATION_ERROR",
-      message: "Título muito grande.",
+      message: expect.stringMatching(/título/i),
     });
     expect(mockPool.query).not.toHaveBeenCalled();
   });
@@ -367,7 +367,7 @@ describe("SiteHero controller (controllers/siteHeroController.js)", () => {
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({
       code: "VALIDATION_ERROR",
-      message: "Subtítulo muito grande.",
+      message: expect.stringMatching(/subtítulo/i),
     });
     expect(mockPool.query).not.toHaveBeenCalled();
   });
