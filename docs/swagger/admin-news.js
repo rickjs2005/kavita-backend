@@ -2,183 +2,139 @@
  * @openapi
  * /api/admin/news/clima:
  *   get:
- *     tags: [Admin - News/Clima]
- *     summary: Listar estacoes de clima configuradas
+ *     tags: [Admin - Clima]
+ *     summary: Listar estacoes de clima
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Lista de estacoes }
+ *     responses: { 200: { description: Lista } }
  *   post:
- *     tags: [Admin - News/Clima]
- *     summary: Adicionar estacao de clima
+ *     tags: [Admin - Clima]
+ *     summary: Adicionar estacao
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       201: { description: Estacao criada }
- *
+ *     responses: { 201: { description: Criada } }
  * /api/admin/news/clima/config:
  *   get:
- *     tags: [Admin - News/Clima]
- *     summary: Obter configuracao de sync do clima
+ *     tags: [Admin - Clima]
+ *     summary: Obter config de sync
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Config de sync }
+ *     responses: { 200: { description: Config } }
  *   put:
- *     tags: [Admin - News/Clima]
- *     summary: Atualizar configuracao de sync do clima
+ *     tags: [Admin - Clima]
+ *     summary: Atualizar config de sync
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Config atualizada }
- *
+ *     responses: { 200: { description: Atualizado } }
  * /api/admin/news/clima/stations:
  *   get:
- *     tags: [Admin - News/Clima]
+ *     tags: [Admin - Clima]
  *     summary: Listar estacoes INMET disponiveis
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Estacoes INMET }
- *
+ *     responses: { 200: { description: Estacoes } }
  * /api/admin/news/clima/sync-all:
  *   post:
- *     tags: [Admin - News/Clima]
+ *     tags: [Admin - Clima]
  *     summary: Sincronizar todas as estacoes
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Resultado do sync }
- *
+ *     responses: { 200: { description: Resultado } }
  * /api/admin/news/clima/{id}:
  *   put:
- *     tags: [Admin - News/Clima]
+ *     tags: [Admin - Clima]
  *     summary: Atualizar estacao
  *     security: [{ BearerAuth: [] }]
- *     parameters:
- *       - { name: id, in: path, required: true, schema: { type: integer } }
- *     responses:
- *       200: { description: Atualizada }
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Atualizada } }
  *   delete:
- *     tags: [Admin - News/Clima]
+ *     tags: [Admin - Clima]
  *     summary: Remover estacao
  *     security: [{ BearerAuth: [] }]
- *     parameters:
- *       - { name: id, in: path, required: true, schema: { type: integer } }
- *     responses:
- *       204: { description: Removida }
- *
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 204: { description: Removida } }
  * /api/admin/news/clima/{id}/sync:
  *   post:
- *     tags: [Admin - News/Clima]
+ *     tags: [Admin - Clima]
  *     summary: Sincronizar estacao individual
  *     security: [{ BearerAuth: [] }]
- *     parameters:
- *       - { name: id, in: path, required: true, schema: { type: integer } }
- *     responses:
- *       200: { description: Sincronizada }
- *
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Sincronizada } }
  * /api/admin/news/cotacoes:
  *   get:
- *     tags: [Admin - News/Cotacoes]
- *     summary: Listar cotacoes configuradas
+ *     tags: [Admin - Cotacoes]
+ *     summary: Listar cotacoes
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Lista de cotacoes }
+ *     responses: { 200: { description: Lista } }
  *   post:
- *     tags: [Admin - News/Cotacoes]
+ *     tags: [Admin - Cotacoes]
  *     summary: Adicionar cotacao
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       201: { description: Cotacao criada }
- *
+ *     responses: { 201: { description: Criada } }
  * /api/admin/news/cotacoes/config:
  *   get:
- *     tags: [Admin - News/Cotacoes]
- *     summary: Obter configuracao de sync de cotacoes
+ *     tags: [Admin - Cotacoes]
+ *     summary: Obter config de sync de cotacoes
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Config de sync }
+ *     responses: { 200: { description: Config } }
  *   put:
- *     tags: [Admin - News/Cotacoes]
- *     summary: Atualizar configuracao de sync de cotacoes
+ *     tags: [Admin - Cotacoes]
+ *     summary: Atualizar config de sync
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Config atualizada }
- *
+ *     responses: { 200: { description: Atualizado } }
  * /api/admin/news/cotacoes/meta:
  *   get:
- *     tags: [Admin - News/Cotacoes]
- *     summary: Metadados de providers de cotacoes
+ *     tags: [Admin - Cotacoes]
+ *     summary: Metadados de providers
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Metadados }
- *
+ *     responses: { 200: { description: Meta } }
  * /api/admin/news/cotacoes/sync-all:
  *   post:
- *     tags: [Admin - News/Cotacoes]
- *     summary: Sincronizar todas as cotacoes
+ *     tags: [Admin - Cotacoes]
+ *     summary: Sincronizar todas
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Resultado do sync }
- *
+ *     responses: { 200: { description: Resultado } }
  * /api/admin/news/cotacoes/{id}:
  *   put:
- *     tags: [Admin - News/Cotacoes]
+ *     tags: [Admin - Cotacoes]
  *     summary: Atualizar cotacao
  *     security: [{ BearerAuth: [] }]
- *     parameters:
- *       - { name: id, in: path, required: true, schema: { type: integer } }
- *     responses:
- *       200: { description: Atualizada }
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Atualizada } }
  *   delete:
- *     tags: [Admin - News/Cotacoes]
+ *     tags: [Admin - Cotacoes]
  *     summary: Remover cotacao
  *     security: [{ BearerAuth: [] }]
- *     parameters:
- *       - { name: id, in: path, required: true, schema: { type: integer } }
- *     responses:
- *       204: { description: Removida }
- *
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 204: { description: Removida } }
  * /api/admin/news/cotacoes/{id}/sync:
  *   post:
- *     tags: [Admin - News/Cotacoes]
+ *     tags: [Admin - Cotacoes]
  *     summary: Sincronizar cotacao individual
  *     security: [{ BearerAuth: [] }]
- *     parameters:
- *       - { name: id, in: path, required: true, schema: { type: integer } }
- *     responses:
- *       200: { description: Sincronizada }
- *
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Sincronizada } }
  * /api/admin/news/posts:
  *   get:
- *     tags: [Admin - News/Posts]
- *     summary: Listar posts de noticias
+ *     tags: [Admin - Posts]
+ *     summary: Listar posts
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       200: { description: Lista de posts }
+ *     responses: { 200: { description: Lista } }
  *   post:
- *     tags: [Admin - News/Posts]
+ *     tags: [Admin - Posts]
  *     summary: Criar post
  *     security: [{ BearerAuth: [] }]
- *     responses:
- *       201: { description: Post criado }
- *
+ *     responses: { 201: { description: Criado } }
  * /api/admin/news/posts/{id}:
  *   put:
- *     tags: [Admin - News/Posts]
+ *     tags: [Admin - Posts]
  *     summary: Atualizar post
  *     security: [{ BearerAuth: [] }]
- *     parameters:
- *       - { name: id, in: path, required: true, schema: { type: integer } }
- *     responses:
- *       200: { description: Atualizado }
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Atualizado } }
  *   delete:
- *     tags: [Admin - News/Posts]
+ *     tags: [Admin - Posts]
  *     summary: Excluir post
  *     security: [{ BearerAuth: [] }]
- *     parameters:
- *       - { name: id, in: path, required: true, schema: { type: integer } }
- *     responses:
- *       204: { description: Removido }
- *
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 204: { description: Removido } }
  * /api/admin/news/upload/cover:
  *   post:
- *     tags: [Admin - News/Posts]
+ *     tags: [Admin - Posts]
  *     summary: Upload de capa para post
  *     security: [{ BearerAuth: [] }]
  *     requestBody:
@@ -188,6 +144,5 @@
  *             type: object
  *             properties:
  *               file: { type: string, format: binary }
- *     responses:
- *       200: { description: Capa enviada }
+ *     responses: { 200: { description: Capa enviada } }
  */
