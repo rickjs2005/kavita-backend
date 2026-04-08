@@ -26,6 +26,7 @@ const ERROR_CODES = {
 
   // Regras de negócio
   STOCK_LIMIT: "STOCK_LIMIT",
+  UNPROCESSABLE_ENTITY: "UNPROCESSABLE_ENTITY",
 
   // News/Clima/Cotações (geocoding/provider)
   GEOCODING_ERROR: "GEOCODING_ERROR",

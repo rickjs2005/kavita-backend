@@ -246,9 +246,37 @@ middleware/errorHandler.js (captura qualquer AppError ou erro não tratado)
 Response HTTP { ok: true/false, data?, code?, message?, meta? }
 ```
 
+### Cross-cutting concerns
+
+```
+                        ┌─────────────────────────────────────────┐
+                        │              server.js                  │
+                        │  CORS → Helmet → requestLogger →        │
+                        │  cookieParser → rateLimiter →            │
+                        │  /api routes → errorHandler              │
+                        └─────────────┬───────────────────────────┘
+                                      │
+              ┌───────────────────────┼───────────────────────┐
+              │                       │                       │
+     publicRoutes.js          authIndex.js            adminRoutes.js
+     (sem auth)          (authenticateToken       (verifyAdmin +
+                          + validateCSRF)          validateCSRF +
+                                                  requirePermission)
+              │                       │                       │
+              └───────────┬───────────┴───────────┬───────────┘
+                          │                       │
+                   validate(zodSchema)      mediaService.upload
+                          │                       │
+                     Controller ──→ Service ──→ Repository
+                          │                       │
+                     response.ok()           pool.query()
+                     response.created()
+                     next(AppError)
+```
+
 ### Roteamento centralizado
 
-**Todas as rotas são montadas em `routes/index.js`.** Nunca adicione `app.use()` diretamente em `server.js` para novas rotas.
+**Todas as rotas sao montadas em `routes/index.js`.** Nunca adicione `app.use()` diretamente em `server.js` para novas rotas.
 
 O `loadRoute()` em `routes/index.js` envolve cada `require()` em try/catch:
 - Em produção: falha de carregamento de módulo lança erro e impede o servidor de subir.

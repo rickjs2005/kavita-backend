@@ -1,10 +1,10 @@
 # Plano de Documentacao Swagger — kavita-backend
 
-> **Tipo:** Plano de execucao e inventario. Este nao e a documentacao final da API — e o backlog de cobertura Swagger.
+> **Estado atual (2026-04-08):** cobertura Swagger atingiu ~96% (~176 de ~183 endpoints) via arquivos dedicados em `docs/swagger/`. O inventario abaixo e historico — grande parte dos endpoints listados como "sem doc" ja foi documentada.
 >
-> **Proposito:** Elevar a cobertura Swagger para 100%. Cada exemplo neste arquivo e pronto para copiar e colar na rota correspondente.
+> **Tipo:** Inventario historico e colecao de exemplos copy-paste. Nao e o retrato exato do estado atual da API.
 >
-> _Ultima auditoria: 2026-03-27. Modulos criados apos esta data (corretoras, hero-slides, especialidades) nao estao inventariados aqui._
+> _Auditoria original: 2026-03-27. Modulos criados apos esta data (corretoras, hero-slides, especialidades) foram documentados diretamente em `docs/swagger/` sem passar por este inventario._
 
 ---
 

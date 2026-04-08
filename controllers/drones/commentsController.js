@@ -32,7 +32,7 @@ async function approveComment(req, res, next) {
   } catch (e) {
     console.error("[drones/admin] approveComment error:", e);
     if (e?.code === "STATUS_UNSUPPORTED") {
-      return next(new AppError("STATUS não suportado nesta instância.", "UNPROCESSABLE_ENTITY", 422));
+      return next(new AppError("STATUS não suportado nesta instância.", ERROR_CODES.UNPROCESSABLE_ENTITY, 422));
     }
     return next(e instanceof AppError ? e : new AppError("Erro ao aprovar comentário.", ERROR_CODES.SERVER_ERROR, 500));
   }
@@ -50,7 +50,7 @@ async function rejectComment(req, res, next) {
   } catch (e) {
     console.error("[drones/admin] rejectComment error:", e);
     if (e?.code === "STATUS_UNSUPPORTED") {
-      return next(new AppError("STATUS não suportado nesta instância.", "UNPROCESSABLE_ENTITY", 422));
+      return next(new AppError("STATUS não suportado nesta instância.", ERROR_CODES.UNPROCESSABLE_ENTITY, 422));
     }
     return next(e instanceof AppError ? e : new AppError("Erro ao reprovar comentário.", ERROR_CODES.SERVER_ERROR, 500));
   }

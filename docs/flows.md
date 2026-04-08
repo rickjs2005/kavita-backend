@@ -350,3 +350,173 @@ Auth: authenticateToken + validateCSRF
   }
 }
 ```
+
+---
+
+## 6. Autenticacao — login de usuario
+
+### Endpoint
+
+```
+POST /api/login
+Sem auth. Rate limited + account lockout.
+```
+
+### Fluxo
+
+```
+1. Valida email + senha
+2. Verifica account lockout (Redis + in-memory fallback)
+3. Busca usuario no banco por email
+4. Compara senha com bcrypt
+5. Gera JWT com { id, tokenVersion }
+6. Define cookie auth_token (HttpOnly, maxAge alinhado ao JWT)
+7. Retorna dados basicos do usuario
+```
+
+### Request
+
+```json
+{
+  "email": "usuario@email.com",
+  "senha": "minhasenha123"
+}
+```
+
+### Response — sucesso (200)
+
+```json
+{
+  "ok": true,
+  "data": {
+    "user": { "id": 1, "nome": "Joao", "email": "usuario@email.com" }
+  },
+  "message": "Login bem-sucedido!"
+}
+```
+
+Cookie definido: `auth_token` (HttpOnly, secure em prod, sameSite strict em prod / lax em dev). Validade alinhada ao JWT (default 7d).
+
+### Erros
+
+| HTTP | Codigo | Causa |
+|------|--------|-------|
+| 401 | `AUTH_ERROR` | Credenciais invalidas |
+| 429 | `AUTH_ERROR` | Conta bloqueada por tentativas |
+
+---
+
+## 7. Autenticacao — login admin (com MFA)
+
+### Endpoint
+
+```
+POST /api/admin/login
+POST /api/admin/login/mfa
+Sem auth. Rate limited + account lockout.
+```
+
+### Fluxo sem MFA
+
+```
+1. Valida email + senha
+2. Verifica account lockout
+3. Busca admin por email + verifica senha bcrypt
+4. Se admin NAO tem MFA ativo:
+   - Gera JWT com { id, tokenVersion, role, permissions }
+   - Define cookie adminToken (HttpOnly, maxAge 2h)
+   - Retorna dados do admin com permissoes
+```
+
+### Fluxo com MFA
+
+```
+1-3. Igual ao fluxo sem MFA
+4. Se admin TEM MFA ativo (mfa_active && mfa_secret):
+   - Cria challenge com ID unico, IP-bound, expiracao
+   - Retorna { mfaRequired: true, challengeId }
+5. Frontend envia POST /api/admin/login/mfa com { challengeId, code }
+6. Valida: challenge existe, nao expirou, IP confere
+7. Valida codigo TOTP via speakeasy (window: 1)
+8. Se valido: gera JWT + define cookie + retorna admin
+```
+
+### Request — login inicial
+
+```json
+{
+  "email": "admin@kavita.com",
+  "senha": "senhaadmin"
+}
+```
+
+### Response — sem MFA (200)
+
+```json
+{
+  "ok": true,
+  "data": {
+    "admin": {
+      "id": 1,
+      "email": "admin@kavita.com",
+      "nome": "Admin",
+      "role": "master",
+      "role_id": 1,
+      "permissions": ["pedidos.ver", "config.editar"]
+    }
+  },
+  "message": "Login realizado com sucesso."
+}
+```
+
+Cookie definido: `adminToken` (HttpOnly, secure em prod, sameSite lax, maxAge 2h).
+
+### Response — MFA requerido (200)
+
+```json
+{
+  "ok": true,
+  "data": {
+    "mfaRequired": true,
+    "challengeId": "uuid-do-challenge"
+  }
+}
+```
+
+### Request — MFA step 2
+
+```json
+{
+  "challengeId": "uuid-do-challenge",
+  "code": "123456"
+}
+```
+
+### Response — MFA validado (200)
+
+Mesma resposta do login sem MFA (admin com permissoes + cookie).
+
+### Erros
+
+| HTTP | Codigo | Causa |
+|------|--------|-------|
+| 400 | `VALIDATION_ERROR` | Email/senha ausentes, challengeId/code ausentes |
+| 401 | `AUTH_ERROR` | Credenciais invalidas, challenge invalido/expirado, codigo MFA errado |
+| 429 | `AUTH_ERROR` | Conta bloqueada |
+
+### Logout admin
+
+```
+POST /api/admin/logout
+Auth: verifyAdmin
+```
+
+Incrementa `tokenVersion` no banco — invalida todos os tokens ativos imediatamente. Limpa cookie `adminToken`.
+
+### Sessao e cookies
+
+| Cookie | Contexto | HttpOnly | Validade | Revogacao |
+|--------|----------|----------|----------|-----------|
+| `auth_token` | Usuario | Sim | 7d (alinhado ao JWT) | tokenVersion no banco |
+| `adminToken` | Admin | Sim | 2h | tokenVersion no banco |
+| `csrf_token` | Ambos | Nao (JS legivel) | 2h | Renovar via GET /api/csrf-token |

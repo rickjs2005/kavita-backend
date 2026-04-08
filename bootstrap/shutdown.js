@@ -4,6 +4,7 @@
 // Graceful shutdown handler: drains active connections, closes DB pool.
 
 const pool = require("../config/pool");
+const redis = require("../lib/redis");
 
 let climaSyncJob;
 try {
@@ -41,6 +42,15 @@ function registerShutdownHandlers(server) {
         console.info("[shutdown] Pool MySQL encerrado.");
       } catch (err) {
         console.error("[shutdown] Erro ao encerrar pool MySQL:", err.message);
+      }
+
+      if (redis.client) {
+        try {
+          await redis.client.quit();
+          console.info("[shutdown] Redis encerrado.");
+        } catch (err) {
+          console.error("[shutdown] Erro ao encerrar Redis:", err.message);
+        }
       }
 
       console.info("[shutdown] Processo encerrado com sucesso.");

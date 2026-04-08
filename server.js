@@ -4,6 +4,24 @@ require("dotenv").config();
 // No-op if SENTRY_DSN is not set.
 require("./lib/sentry").init();
 
+// ---------------------------------------------------------------------------
+// Uncaught error handlers — log + capture before the process dies.
+// Must be registered early, before any async work starts.
+// ---------------------------------------------------------------------------
+const _logger = require("./lib/logger");
+const _sentry = require("./lib/sentry");
+
+process.on("uncaughtException", (err) => {
+  _logger.error({ err }, "uncaught exception — exiting");
+  _sentry.captureException(err);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  _logger.error({ err: reason }, "unhandled rejection");
+  _sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)));
+});
+
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
