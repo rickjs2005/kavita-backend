@@ -90,8 +90,6 @@ Aplicado em: avaliacoes, news (title/excerpt/content), perfil de usuario.
 
 | Lacuna | Impacto | Prioridade |
 |--------|---------|-----------|
-| Permissoes nao semeadas no banco | `requirePermission` retorna 403 para roles sem seed | Alta |
 | Magic bytes validation nao aplicada em todos os uploads | Apenas adminServicos e adminConfigUpload usam | Media |
 | `requirePermission` nao expandido para todos os modulos | Categorias, drones, news, cupons sem permissao granular | Media |
 | Audit log incompleto | `admin_logs` existe mas nem todos os endpoints chamam `logAdmin()` | Baixa |
-| Sem handlers `uncaughtException`/`unhandledRejection` | Crash sem captura Sentry | Alta |
