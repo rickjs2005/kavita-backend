@@ -106,7 +106,7 @@ async function login(req, res, next) {
       return next(new AppError(err.message, ERROR_CODES.AUTH_ERROR, 429));
     }
     rateLimit.fail();
-    console.error("❌ Erro no login do admin:", err);
+    logger.error({ err }, "admin login error");
     return next(new AppError("Erro interno no servidor ao fazer login.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
@@ -135,7 +135,7 @@ async function loginMfa(req, res, next) {
   }
 
   if (!speakeasy) {
-    console.error("❌ speakeasy não instalado — MFA não pode ser validado");
+    logger.error("speakeasy not installed — MFA validation unavailable");
     return next(new AppError("Erro interno ao validar MFA.", ERROR_CODES.SERVER_ERROR, 500));
   }
 
@@ -215,7 +215,7 @@ async function getMe(req, res, next) {
       permissions,
     });
   } catch (err) {
-    console.error("❌ Erro ao carregar perfil do admin (/me):", err);
+    logger.error({ err }, "admin /me profile load error");
     return next(new AppError("Erro interno ao carregar perfil do admin.", ERROR_CODES.SERVER_ERROR, 500));
   }
 }
@@ -227,11 +227,7 @@ async function logout(req, res) {
     try {
       await authAdminService.incrementTokenVersion(adminId);
     } catch (err) {
-      console.warn(
-        "⚠️ Não foi possível incrementar tokenVersion para admin:",
-        adminId,
-        err
-      );
+      logger.warn({ err, adminId }, "failed to increment tokenVersion on logout");
     }
   }
 

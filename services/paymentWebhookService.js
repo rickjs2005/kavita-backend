@@ -6,6 +6,7 @@ const { getMPClient } = require("../config/mercadopago");
 const { withTransaction } = require("../lib/withTransaction");
 const repo = require("../repositories/paymentRepository");
 const orderRepo = require("../repositories/orderRepository");
+const logger = require("../lib/logger");
 
 // ---------------------------------------------------------------------------
 // Status mapping
@@ -112,11 +113,7 @@ async function handleWebhookEvent({
       const paymentClient = new Payment(getMPClient());
       payment = await paymentClient.get({ id: dataId });
     } catch (mpErr) {
-      console.error("[payment/webhook] erro ao consultar API do MP:", {
-        dataId,
-        message: mpErr.message,
-        status: mpErr.status ?? null,
-      });
+      logger.error({ err: mpErr, dataId }, "MP API error fetching payment status");
       // Rethrow como erro transitório marcado — o controller decidirá o status HTTP
       const transient = new Error(`MP API error: ${mpErr.message}`);
       transient.transient = true;
@@ -126,7 +123,7 @@ async function handleWebhookEvent({
     const pedidoId = payment.metadata?.pedidoId;
 
     if (!pedidoId) {
-      console.warn("[payment/webhook] pagamento sem metadata.pedidoId", dataId);
+      logger.warn({ dataId }, "payment missing metadata.pedidoId — ignored");
       await repo.markWebhookEventIgnored(conn, dbEventId);
       return "ignored";
     }
@@ -142,9 +139,7 @@ async function handleWebhookEvent({
     const currentStatus = pedidoRow[0]?.[0]?.status_pagamento || "pendente";
 
     if (!isStatusTransitionSafe(currentStatus, novoStatus)) {
-      console.warn("[payment/webhook] transição bloqueada:", {
-        pedidoId, currentStatus, novoStatus, dataId,
-      });
+      logger.warn({ pedidoId, currentStatus, novoStatus, dataId }, "status transition blocked");
       await repo.markWebhookEventProcessed(conn, dbEventId, `blocked:${currentStatus}->${novoStatus}`);
       return "processed";
     }

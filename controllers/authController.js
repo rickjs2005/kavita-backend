@@ -10,6 +10,7 @@ const userRepo = require("../repositories/userRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { response } = require("../lib");
+const logger = require("../lib/logger");
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -93,11 +94,7 @@ const login = async (req, res, next) => {
     if (error.locked) {
       return next(new AppError(error.message, ERROR_CODES.AUTH_ERROR, 429));
     }
-    console.error("❌ Erro no login do usuário:", {
-      message: error.message,
-      stack: process.env.NODE_ENV !== "production" ? error.stack : undefined,
-      url: req.originalUrl,
-    });
+    logger.error({ err: error, url: req.originalUrl }, "user login error");
     return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
   }
 };
@@ -127,7 +124,7 @@ const register = async (req, res, next) => {
 
     return response.created(res, null, "Conta criada com sucesso! Faça login para continuar.");
   } catch (error) {
-    console.error("❌ Erro no registro do usuário:", error);
+    logger.error({ err: error }, "user register error");
     return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
   }
 };
@@ -142,7 +139,7 @@ const logout = async (req, res, next) => {
     res.clearCookie("auth_token", getAuthCookieOptions());
     return response.ok(res, null, "Logout bem-sucedido!");
   } catch (error) {
-    console.error("❌ Erro no logout do usuário:", error);
+    logger.error({ err: error }, "user logout error");
     return next(new AppError("Erro no servidor ao fazer logout.", ERROR_CODES.SERVER_ERROR, 500));
   }
 };
@@ -175,7 +172,7 @@ const forgotPassword = async (req, res, next) => {
     return response.ok(res, null, "Se este e-mail estiver cadastrado, enviaremos um link para redefinir a senha.");
   } catch (error) {
     req.rateLimit?.fail?.();
-    console.error("❌ Erro no esqueceu-senha:", error);
+    logger.error({ err: error }, "forgot-password error");
     return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
   }
 };
@@ -205,7 +202,7 @@ const resetPassword = async (req, res, next) => {
     return response.ok(res, null, "Senha redefinida com sucesso!");
   } catch (error) {
     req.rateLimit?.fail?.();
-    console.error("❌ Erro no reset de senha:", error);
+    logger.error({ err: error }, "reset-password error");
     return next(new AppError("Erro no servidor. Tente novamente mais tarde.", ERROR_CODES.SERVER_ERROR, 500));
   }
 };

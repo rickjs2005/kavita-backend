@@ -10,6 +10,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { response } = require("../lib");
 const sentry = require("../lib/sentry");
+const logger = require("../lib/logger");
 const paymentService = require("../services/paymentService");
 const { handleWebhookEvent } = require("../services/paymentWebhookService");
 
@@ -113,15 +114,7 @@ const startPayment = async (req, res, next) => {
     return response.ok(res, result);
   } catch (err) {
     if (!(err instanceof AppError)) {
-      console.error("[payment/start] erro bruto:", err);
-      if (err?.message || err?.status || err?.error) {
-        console.error("[payment/start] detalhes:", {
-          message: err.message,
-          error: err.error,
-          status: err.status,
-          cause: err.cause ?? null,
-        });
-      }
+      logger.error({ err, pedidoId: pedidoIdNum }, "payment start error");
     }
     return next(
       err instanceof AppError
@@ -148,7 +141,7 @@ const handleWebhook = async (req, res) => {
     const eventId = String(req.body?.id ?? "");
 
     if (!eventId) {
-      console.warn("[payment/webhook] payload sem id de notificação");
+      logger.warn("webhook payload missing notification id");
       return res.status(200).json({ ok: true });
     }
 
@@ -164,7 +157,7 @@ const handleWebhook = async (req, res) => {
       .status(200)
       .json({ ok: true, ...(outcome === "idempotent" ? { idempotent: true } : {}) });
   } catch (err) {
-    console.error("[payment/webhook] erro:", err.message, err?.stack);
+    logger.error({ err, eventId: String(req.body?.id ?? "") }, "webhook processing error");
 
     // Always report webhook errors to Sentry — payment failures are critical.
     sentry.captureException(err, {
