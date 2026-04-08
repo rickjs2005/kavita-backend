@@ -1,27 +1,30 @@
-# Plano de Documentação Swagger — kavita-backend
+# Plano de Documentacao Swagger — kavita-backend
 
-> **Propósito:** Elevar a cobertura Swagger de ~67% para 100% de forma ordenada e segura.
-> Cada exemplo neste arquivo é pronto para copiar e colar na rota correspondente.
+> **Tipo:** Plano de execucao e inventario. Este nao e a documentacao final da API — e o backlog de cobertura Swagger.
 >
-> _Última atualização: 2026-03-27_
+> **Proposito:** Elevar a cobertura Swagger para 100%. Cada exemplo neste arquivo e pronto para copiar e colar na rota correspondente.
+>
+> _Ultima auditoria: 2026-03-27. Modulos criados apos esta data (corretoras, hero-slides, especialidades) nao estao inventariados aqui._
 
 ---
 
-## Índice
+## Indice
 
-1. [Inventário de endpoints sem documentação](#1-inventário-de-endpoints-sem-documentação)
-2. [Classificação por prioridade](#2-classificação-por-prioridade)
-3. [Padrão obrigatório](#3-padrão-obrigatório)
-4. [Ordem de execução](#4-ordem-de-execução)
-5. [Exemplos prontos — módulo a módulo](#5-exemplos-prontos--módulo-a-módulo)
+1. [Inventario de endpoints sem documentacao](#1-inventário-de-endpoints-sem-documentação)
+2. [Classificacao por prioridade](#2-classificação-por-prioridade)
+3. [Padrao obrigatorio](#3-padrão-obrigatório)
+4. [Ordem de execucao](#4-ordem-de-execução)
+5. [Exemplos prontos — modulo a modulo](#5-exemplos-prontos--módulo-a-módulo)
 
 ---
 
-## 1. Inventário de endpoints sem documentação
+## 1. Inventario de endpoints sem documentacao
 
 > Fonte: auditoria em 27/03/2026 de todos os arquivos em `routes/**/*.js`.
 > Swagger configurado em `docs/swagger.js` — varre `./routes/**/*.js`.
-> Total geral: ~180 endpoints · Documentados: ~120 · **Sem doc: ~60**
+> Total geral: ~180 endpoints. Documentados: ~120. **Sem doc: ~60.**
+>
+> **Nota:** modulos adicionados apos 2026-03-27 (corretoras, hero-slides, especialidades) precisam de auditoria separada.
 
 ### Admin
 

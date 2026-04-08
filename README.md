@@ -1,38 +1,36 @@
 # Kavita Backend
 
-API REST do projeto Kavita. Node.js + Express, MySQL, autenticação dupla por cookie HttpOnly, arquitetura em camadas em migração ativa.
-
-> **Documentação completa do projeto:** consulte [`docs/`](../docs/) na raiz do repositório para guias de onboarding, arquitetura, deploy, troubleshooting e fluxos críticos.
+API REST do projeto Kavita. Node.js + Express, MySQL, autenticacao dupla por cookie HttpOnly, arquitetura em camadas.
 
 ---
 
 ## Índice
 
-- [Visão geral](#visão-geral)
+- [Visao geral](#visao-geral)
 - [Stack](#stack)
 - [Setup local](#setup-local)
-- [Variáveis de ambiente](#variáveis-de-ambiente)
+- [Variaveis de ambiente](#variaveis-de-ambiente)
 - [Estrutura de pastas](#estrutura-de-pastas)
 - [Arquitetura](#arquitetura)
-- [Estado atual: migração em andamento](#estado-atual-migração-em-andamento)
-- [Módulos modernos e pendentes](#módulos-modernos-e-pendentes)
-- [Convenções de nomenclatura](#convenções-de-nomenclatura)
+- [Modulos](#modulos)
+- [Convencoes](#convencoes)
 - [Contrato de resposta da API](#contrato-de-resposta-da-api)
 - [Tratamento de erros](#tratamento-de-erros)
-- [Autenticação](#autenticação)
-- [Uploads e mídia](#uploads-e-mídia)
+- [Autenticacao](#autenticacao)
+- [Uploads e midia](#uploads-e-midia)
 - [Testes](#testes)
 - [Migrations e banco de dados](#migrations-e-banco-de-dados)
-- [Como contribuir sem ampliar dívida técnica](#como-contribuir-sem-ampliar-dívida-técnica)
-- [O que é padrão canônico hoje](#o-que-é-padrão-canônico-hoje)
+- [Como contribuir](#como-contribuir)
+- [Padrao canonico](#padrao-canonico)
+- [Documentacao complementar](#documentacao-complementar)
 
 ---
 
-## Visão geral
+## Visao geral
 
-Backend de uma plataforma de e-commerce e conteúdo (drones, produtos, serviços, notícias). Expõe uma API REST sob `/api`, servida com Express. Autenticação dupla: contexto admin e contexto de usuário final, ambos via cookie HttpOnly. Upload de mídia centralizado com suporte a disco local, S3 e GCS.
+Backend de uma plataforma de e-commerce e conteudo (drones, produtos, servicos, noticias). Expoe uma API REST sob `/api`, servida com Express. Autenticacao dupla: contexto admin e contexto de usuario final, ambos via cookie HttpOnly. Upload de midia centralizado com suporte a disco local, S3 e GCS.
 
-O projeto está em **migração arquitetural ativa**. A maioria dos módulos (~75%) já segue o padrão moderno completo (`repository → service → controller → rota magra + Zod`). Módulos pendentes ainda têm SQL inline na rota mas estão sendo migrados progressivamente. Leia a seção [Estado atual: migração em andamento](#estado-atual-migração-em-andamento) antes de mexer em qualquer arquivo.
+Todos os modulos seguem o padrao moderno: rota magra -> controller -> service -> repository + Zod + `lib/response.js` + `AppError`.
 
 ---
 
@@ -277,70 +275,59 @@ O Helmet 8 define `Cross-Origin-Resource-Policy: same-origin` por padrão. O ove
 
 ---
 
-## Estado atual: migração em andamento
+## Modulos
 
-O projeto está em **migração arquitetural ativa**. A maioria dos módulos já segue o padrão moderno completo (rota magra → controller → service → repository + Zod + `lib/response.js` + `AppError`). Módulos pendentes ainda têm SQL inline na rota e validação manual, mas estão sendo migrados progressivamente.
+Todos os modulos seguem o padrao moderno. Historico de migracao: [docs/migration-tracker.md](docs/migration-tracker.md).
 
-**Regra operacional:** Ao tocar qualquer módulo pendente (bug fix, nova feature), migre-o para o padrão moderno. Nunca amplie o padrão legado. O padrão canônico a seguir está descrito em [O que é padrão canônico hoje](#o-que-é-padrão-canônico-hoje).
-
-Progresso detalhado da migração: consulte [docs/migration-tracker.md](docs/migration-tracker.md).
-
----
-
-## Módulos modernos e pendentes
-
-### Modernos (padrão completo) — 27+ módulos
-
-| Domínio | Rota | Controller | Service | Repository |
+| Dominio | Rota | Controller | Service | Repository |
 |---|---|---|---|---|
 | Auth admin | `routes/auth/adminLogin.js` | `controllers/admin/authAdminController.js` | `services/authAdminService.js` | — |
-| Auth usuário | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
-| Perfil usuário | `routes/auth/userProfile.js` | `controllers/userProfileController.js` | `services/userProfileService.js` | `repositories/userRepository.js` |
+| Auth usuario | `routes/auth/login.js` | `controllers/authController.js` | — | `repositories/userRepository.js` |
+| Perfil usuario | `routes/auth/userProfile.js` | `controllers/userProfileController.js` | `services/userProfileService.js` | `repositories/userRepository.js` |
+| Enderecos | `routes/auth/userAddresses.js` | `controllers/userAddressController.js` | `services/userAddressService.js` | `repositories/addressRepository.js` |
 | Drones (admin) | `routes/admin/adminDrones.js` | `controllers/drones/` | `services/drones/` | `repositories/dronesRepository.js` |
-| Drones (público) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
+| Drones (publico) | `routes/public/publicDrones.js` | `controllers/dronesPublicController.js` | `services/dronesService.js` | `repositories/dronesRepository.js` |
 | News (admin) | `routes/admin/adminNews.js` | `controllers/news/` | — | `repositories/postsRepository.js`, `climaRepository.js`, `cotacoesRepository.js` |
-| News (público) | `routes/public/publicNews.js` | `controllers/newsPublicController.js` | — | (mesmos repositories de news admin) |
+| News (publico) | `routes/public/publicNews.js` | `controllers/newsPublicController.js` | — | (mesmos repositories) |
 | Produtos (admin) | `routes/admin/adminProdutos.js` | `controllers/produtosController.js` | `services/produtosAdminService.js` | `repositories/productAdminRepository.js` |
-| Produtos (público) | `routes/public/publicProducts.js` | `controllers/publicProductsController.js` | `services/productService.js` | `repositories/productPublicRepository.js` |
-| Serviços (admin) | `routes/admin/adminServicos.js` | `controllers/servicosAdminController.js` | `services/servicosAdminService.js` | `repositories/servicosAdminRepository.js` |
-| Serviços (público) | `routes/public/publicServicos.js` | `controllers/servicosPublicController.js` | `services/servicosService.js` | `repositories/servicosAdminRepository.js` |
+| Produtos (publico) | `routes/public/publicProducts.js` | `controllers/publicProductsController.js` | `services/productService.js` | `repositories/productPublicRepository.js` |
+| Servicos (admin) | `routes/admin/adminServicos.js` | `controllers/servicosAdminController.js` | `services/servicosAdminService.js` | `repositories/servicosAdminRepository.js` |
+| Servicos (publico) | `routes/public/publicServicos.js` | `controllers/servicosPublicController.js` | `services/servicosService.js` | `repositories/servicosRepository.js` |
 | Config (admin) | `routes/admin/adminConfig.js` | `controllers/configController.js` | `services/configAdminService.js` | `repositories/configRepository.js` |
 | Pedidos (admin) | `routes/admin/adminPedidos.js` | `controllers/adminOrdersController.js` | `services/orderService.js` | `repositories/orderRepository.js` |
-| Comunicação (admin) | `routes/admin/adminComunicacao.js` | `controllers/comunicacaoController.js` | `services/comunicacaoService.js` | `repositories/comunicacaoRepository.js` |
-| Zonas de frete (admin) | `routes/admin/adminShippingZones.js` | `controllers/shippingZonesController.js` | `services/shippingZonesService.js` | `repositories/shippingZonesRepository.js` |
+| Pedidos (usuario) | `routes/ecommerce/pedidos.js` | `controllers/pedidosUserController.js` | — | `repositories/pedidosUserRepository.js` |
+| Comunicacao (admin) | `routes/admin/adminComunicacao.js` | `controllers/comunicacaoController.js` | `services/comunicacaoService.js` | `repositories/comunicacaoRepository.js` |
+| Zonas de frete | `routes/admin/adminShippingZones.js` | `controllers/shippingZonesController.js` | `services/shippingZonesService.js` | `repositories/shippingZonesRepository.js` |
 | Carrinhos (admin) | `routes/admin/adminCarts.js` | `controllers/cartsController.js` | `services/cartsAdminService.js` | `repositories/abandonedCartsRepository.js` |
-| Site Hero | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
-| Cart (usuário) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
+| Hero (admin) | `routes/admin/adminSiteHero.js` | `controllers/siteHeroController.js` | — | `repositories/heroRepository.js` |
+| Hero slides | `routes/admin/adminHeroSlides.js` | `controllers/heroSlidesController.js` | — | `repositories/heroSlidesRepository.js` |
+| Cart (usuario) | `routes/ecommerce/cart.js` | `controllers/cartController.js` | `services/cartService.js` | `repositories/cartRepository.js` |
 | Checkout | `routes/ecommerce/checkout.js` | `controllers/checkoutController.js` | `services/checkoutService.js` | `repositories/checkoutRepository.js` |
 | Payment | `routes/ecommerce/payment.js` | `controllers/paymentController.js` | `services/paymentService.js` | `repositories/paymentRepository.js` |
 | Shipping | `routes/ecommerce/shipping.js` | `controllers/shippingController.js` | `services/shippingQuoteService.js` | `repositories/shippingRepository.js` |
 | Favoritos | `routes/ecommerce/favorites.js` | `controllers/favoritesController.js` | `services/favoritesService.js` | `repositories/favoritesRepository.js` |
 | Stats (admin) | `routes/admin/adminStats.js` | `controllers/statsController.js` | — | `repositories/statsRepository.js` |
-| Relatórios (admin) | `routes/admin/adminRelatorios.js` | `controllers/relatoriosController.js` | — | `repositories/relatoriosRepository.js` |
+| Relatorios (admin) | `routes/admin/adminRelatorios.js` | `controllers/relatoriosController.js` | — | `repositories/relatoriosRepository.js` |
 | Cupons (admin) | `routes/admin/adminCupons.js` | `controllers/cuponsController.js` | — | `repositories/cuponsRepository.js` |
-| Promoções (admin) | `routes/admin/adminMarketingPromocoes.js` | `controllers/promocoesAdminController.js` | — | `repositories/promocoesAdminRepository.js` |
-| Avaliações (público) | `routes/public/publicProdutos.js` | `controllers/avaliacoesController.js` | `services/avaliacoesService.js` | `repositories/avaliacoesRepository.js` |
-
-### Pendentes (migração incompleta)
-
-Estes arquivos ainda usam SQL inline na rota, validação manual ou `res.json()` direto em alguns endpoints. **Não use como referência de implementação.**
-
-| Arquivo | Risco | Observação |
-|---|---|---|
-| `routes/admin/adminUsers.js` | ALTO | GET expõe CPF em plaintext |
-| `routes/admin/adminAdmins.js` | ALTO | CRUD de contas admin com bcrypt |
-| `routes/admin/adminSolicitacoesServicos.js` | MÉDIO | Side-effect de contadores |
-| `routes/admin/adminPermissions.js` | ALTO | Afeta RBAC do sistema inteiro |
-| `routes/admin/adminLogs.js` | BAIXO | Somente leitura |
-| `routes/auth/userAddresses.js` | MÉDIO | Normalização complexa de endereços |
-| `routes/ecommerce/pedidos.js` | BAIXO | Somente leitura, já usa AppError |
-| `routes/public/publicShopConfig.js` | BAIXO | 1 endpoint read-only |
-
-Consulte [docs/migration-tracker.md](docs/migration-tracker.md) para inventário detalhado e checklist de migração.
+| Promocoes (admin) | `routes/admin/adminMarketingPromocoes.js` | `controllers/promocoesAdminController.js` | — | `repositories/promocoesAdminRepository.js` |
+| Avaliacoes (publico) | `routes/public/publicAvaliacoes.js` | `controllers/avaliacoesController.js` | `services/avaliacoesService.js` | `repositories/avaliacoesRepository.js` |
+| Admins (admin) | `routes/admin/adminAdmins.js` | `controllers/adminAdminsController.js` | — | `repositories/adminAdminsRepository.js` |
+| Users (admin) | `routes/admin/adminUsers.js` | `controllers/adminUsersController.js` | — | `repositories/adminUsersRepository.js` |
+| Permissions | `routes/admin/adminPermissions.js` | `controllers/permissionsController.js` | — | `repositories/permissionsRepository.js` |
+| Roles (admin) | `routes/admin/adminRoles.js` | `controllers/rolesController.js` | `services/rolesAdminService.js` | `repositories/rolesRepository.js` |
+| Logs (admin) | `routes/admin/adminLogs.js` | `controllers/logsController.js` | — | `repositories/logsRepository.js` |
+| Categorias (admin) | `routes/admin/adminCategorias.js` | `controllers/categoriasController.js` | `services/categoriasAdminService.js` | `repositories/categoriasRepository.js` |
+| Categorias (publico) | `routes/public/publicCategorias.js` | `controllers/categoriasPublicController.js` | — | `repositories/categoriasRepository.js` |
+| Colaboradores | `routes/admin/adminColaboradores.js` | `controllers/colaboradoresController.js` | `services/colaboradoresAdminService.js` | `repositories/colaboradoresRepository.js` |
+| Especialidades | `routes/admin/adminEspecialidades.js` | `controllers/especialidadesController.js` | — | `repositories/especialidadesRepository.js` |
+| Solicitacoes | `routes/admin/adminSolicitacoesServicos.js` | `controllers/solicitacoesController.js` | — | `repositories/solicitacoesRepository.js` |
+| Shop config (publico) | `routes/public/publicShopConfig.js` | `controllers/shopConfigPublicController.js` | — | `repositories/configRepository.js` |
+| Corretoras (admin) | `routes/admin/adminCorretoras.js` | `controllers/corretorasAdminController.js` | `services/corretorasService.js` | `repositories/corretorasAdminRepository.js` |
+| Corretoras (publico) | `routes/public/publicCorretoras.js` | `controllers/corretorasPublicController.js` | — | `repositories/corretorasPublicRepository.js` |
 
 ---
 
-## Convenções de nomenclatura
+## Convencoes
 
 | Camada | Padrão | Exemplos |
 |---|---|---|
@@ -393,9 +380,7 @@ response.paginated(res, { items, total, page, limit }); // 200 + meta
 response.badRequest(res, message, details);         // 400 (preferir AppError)
 ```
 
-> **Aliases deprecated:** `sendSuccess`, `sendCreated`, `sendPaginated` ainda existem por compatibilidade. Não use em código novo.
-
-### Mapeamento HTTP → código de erro
+### Mapeamento HTTP -> codigo de erro
 
 | HTTP | `ERROR_CODES` | Quando usar |
 |---|---|---|
@@ -586,23 +571,17 @@ O `.sequelizerc` na raiz configura os caminhos usados pelo CLI.
 
 ---
 
-## Como contribuir sem ampliar dívida técnica
+## Como contribuir
 
 ### Regras para qualquer arquivo novo ou modificado
 
-1. **Respostas de sucesso** → sempre `lib/response.js`. Nunca `res.json({ ... })` cru.
-2. **Erros** → sempre `next(new AppError(message, ERROR_CODES.XXX, status))`. Nunca `res.status(4xx).json(...)` inline.
-3. **Validação de entrada** → schema Zod em `schemas/` + middleware `validate(schema)` na rota. Nunca `if (!campo)` inline.
-4. **Acesso a banco** → repository separado. Nunca `pool.query()` direto no arquivo de rota ou controller.
-5. **Códigos de erro** → constantes de `constants/ErrorCodes.js`. Nunca strings literais.
+1. **Respostas** -> sempre `lib/response.js`. Nunca `res.json()` cru.
+2. **Erros** -> sempre `next(new AppError(message, ERROR_CODES.XXX, status))`. Nunca `res.status(4xx).json()` inline.
+3. **Validacao** -> schema Zod em `schemas/` + middleware `validate(schema)`. Nunca `if (!campo)` inline.
+4. **Banco** -> repository separado. Nunca `pool.query()` em rota ou controller.
+5. **Codigos de erro** -> constantes de `constants/ErrorCodes.js`. Nunca strings literais.
 
-### Ao tocar um módulo legado
-
-- Migre o arquivo inteiro para o padrão moderno na mesma PR se possível.
-- Se a migração for grande demais para a PR atual, abra uma issue com o arquivo e tamanho.
-- Nunca corrija um bug num módulo legado e saia sem ao menos criar um schema Zod para a rota afetada.
-
-### Referência de implementação
+### Referencia de implementacao
 
 | Camada | Arquivo referência |
 |--------|--------------------|
@@ -613,11 +592,9 @@ O `.sequelizerc` na raiz configura os caminhos usados pelo CLI.
 | Repository | `repositories/checkoutRepository.js` |
 | Schema Zod | `schemas/checkoutSchemas.js` |
 
-**Não use** nenhum dos arquivos da tabela de módulos pendentes como referência.
-
 ---
 
-## O que é padrão canônico hoje
+## Padrao canonico
 
 ### Rota (magra)
 
@@ -726,3 +703,17 @@ function formatZodErrors(zodError) {
 
 module.exports = { CriarProdutoSchema, formatZodErrors };
 ```
+
+---
+
+## Documentacao complementar
+
+| Documento | Conteudo |
+|-----------|---------|
+| [docs/api-response.md](docs/api-response.md) | Contrato de resposta da API, helpers, exemplos |
+| [docs/decisions.md](docs/decisions.md) | ADRs — decisoes arquiteturais com contexto e consequencias |
+| [docs/migration-tracker.md](docs/migration-tracker.md) | Historico da migracao arquitetural |
+| [docs/observability.md](docs/observability.md) | Health check, logging estruturado, plano de migracao |
+| [docs/swagger-plan.md](docs/swagger-plan.md) | Inventario de cobertura Swagger e plano de execucao |
+| [BACKEND_SECURITY_ALIGNMENT.md](BACKEND_SECURITY_ALIGNMENT.md) | Protecoes de seguranca ativas e pendencias |
+| [CLAUDE.md](CLAUDE.md) | Instrucoes operacionais para IA/agentes |
