@@ -34,7 +34,6 @@ Todos os modulos atendem aos criterios abaixo:
 
 | Arquivo | Desvio | Severidade |
 |---------|--------|------------|
-| `routes/admin/adminNewsUpload.js` | Handler inline (~31 linhas) com logica de negocio. Pendente extracao para controller. | Baixa |
 | `routes/utils/uploadsCheck.js` | Handler inline com `res.json()` direto. Utilitario de infra, nao dominio. | Baixa |
 | `routes/ecommerce/payment.js` | Mount hibrido: monta rotas admin dentro do contexto ecommerce. Controller correto. | Baixa |
 | `routes/public/publicProdutos.js` | Wrapper deprecated que re-exporta `publicAvaliacoes.js`. Pode ser removido. | Baixa |
