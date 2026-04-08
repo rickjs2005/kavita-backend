@@ -61,12 +61,12 @@ const UPLOADS_DIR = path.resolve(__dirname, "uploads");
 
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  console.info(`📁 Diretório de uploads criado: ${UPLOADS_DIR}`);
+  _logger.info({ path: UPLOADS_DIR }, "uploads directory created");
 } else {
-  console.info(`📁 Diretório de uploads OK: ${UPLOADS_DIR}`);
+  _logger.debug({ path: UPLOADS_DIR }, "uploads directory exists");
 }
 
-console.info("🌐 CORS - ORIGENS PERMITIDAS:", corsConfig.ALLOWED_ORIGINS);
+_logger.info({ origins: corsConfig.ALLOWED_ORIGINS }, "CORS allowed origins");
 
 /* ============================
  * CORS
@@ -119,11 +119,10 @@ if (process.env.NODE_ENV !== "production") {
       const rel = decoded.replace(/^\/uploads\/?/i, "");
       const diskPath = path.resolve(UPLOADS_DIR, String(rel).trim());
       const isInsideUploads = diskPath === UPLOADS_DIR || diskPath.startsWith(UPLOADS_DIR + path.sep);
-      console.info("[uploads-debug] arquivo não servido pelo express.static:", {
-        method: req.method, raw, decoded, rel, diskPath, isInsideUploads,
-      });
+      _logger.debug({ method: req.method, raw, decoded, rel, diskPath, isInsideUploads },
+        "uploads-debug: file not served by express.static");
     } catch (err) {
-      console.warn("[uploads-debug] erro ao processar caminho:", err.message);
+      _logger.warn({ err }, "uploads-debug: path processing error");
     }
     next();
   });
@@ -240,7 +239,7 @@ if (process.env.NODE_ENV !== "production") {
 app.use("/api", requestTimeout(30_000)); // 30s timeout para rotas de API
 app.get("/api/csrf-token", issueCsrfToken);
 app.use("/api", apiRoutes);
-console.info("✅ Sistema de rotas centralizado carregado em /api");
+_logger.info("API routes loaded on /api");
 
 /* ============================
  * Swagger — disabled in production to prevent API documentation leak
@@ -265,17 +264,12 @@ if (process.env.NODE_ENV !== "test") {
   const PORT = process.env.PORT || 5000;
 
   const server = app.listen(PORT, () => {
-    console.info(`✅ Server rodando em http://localhost:${PORT}`);
-    console.info(`📚 Swagger em: http://localhost:${PORT}/docs`);
-    console.info(`🌐 APP_URL configurada: ${config.appUrl}`);
-    console.info(`🖼️  Uploads servidos em: http://localhost:${PORT}/uploads (dir: ${UPLOADS_DIR})`);
+    _logger.info({ port: PORT, env: process.env.NODE_ENV, appUrl: config.appUrl }, "server started");
 
     if (redis.ready) {
-      console.info("[rateLimiter] Store Redis-backed ativo — contadores compartilhados entre instâncias.");
+      _logger.info("rate limiter: Redis-backed store active");
     } else {
-      console.warn(
-        "⚠️ [rateLimiter] Redis indisponível — fallback para store in-memory (Map por processo)."
-      );
+      _logger.warn("rate limiter: Redis unavailable — using in-memory fallback");
     }
 
     startWorkers();

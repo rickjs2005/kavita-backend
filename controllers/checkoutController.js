@@ -5,6 +5,7 @@ const { normalizeFormaPagamento } = require("../services/paymentService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { response } = require("../lib");
+const logger = require("../lib/logger");
 
 // ---------------------------------------------------------------------------
 // Controller
@@ -78,7 +79,7 @@ async function create(req, res, next) {
       nota_fiscal_aviso: "Nota fiscal será entregue junto com o produto.",
     }, "Pedido criado com sucesso");
   } catch (err) {
-    console.error("[checkout] Erro geral no checkout:", err);
+    logger.error({ err }, "checkout create error");
     return next(
       err instanceof AppError
         ? err
@@ -125,7 +126,7 @@ async function previewCoupon(req, res, next) {
       cupom: result.cupom,
     }, "Cupom aplicado com sucesso.");
   } catch (err) {
-    console.error("[checkout] Erro em /preview-cupom:", err);
+    logger.error({ err }, "checkout preview-cupom error");
     return next(
       err instanceof AppError
         ? err

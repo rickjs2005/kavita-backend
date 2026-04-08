@@ -5,6 +5,7 @@
 
 const pool = require("../config/pool");
 const redis = require("../lib/redis");
+const logger = require("../lib/logger");
 
 let climaSyncJob;
 try {
@@ -18,10 +19,10 @@ try {
 
 function registerShutdownHandlers(server) {
   const shutdown = async (signal) => {
-    console.warn(`[${signal}] Sinal recebido. Iniciando graceful shutdown...`);
+    logger.info({ signal }, "graceful shutdown initiated");
 
     const forceExit = setTimeout(() => {
-      console.error("[shutdown] Timeout de 30s atingido. Forçando saída.");
+      logger.error("shutdown timeout (30s) — forcing exit");
       process.exit(1);
     }, 30_000);
     forceExit.unref();
@@ -35,25 +36,25 @@ function registerShutdownHandlers(server) {
     }
 
     server.close(async () => {
-      console.info("[shutdown] Servidor HTTP encerrado.");
+      logger.info("HTTP server closed");
 
       try {
         await pool.end();
-        console.info("[shutdown] Pool MySQL encerrado.");
+        logger.info("MySQL pool closed");
       } catch (err) {
-        console.error("[shutdown] Erro ao encerrar pool MySQL:", err.message);
+        logger.error({ err }, "MySQL pool close error");
       }
 
       if (redis.client) {
         try {
           await redis.client.quit();
-          console.info("[shutdown] Redis encerrado.");
+          logger.info("Redis closed");
         } catch (err) {
-          console.error("[shutdown] Erro ao encerrar Redis:", err.message);
+          logger.error({ err }, "Redis close error");
         }
       }
 
-      console.info("[shutdown] Processo encerrado com sucesso.");
+      logger.info("shutdown complete");
       process.exit(0);
     });
   };

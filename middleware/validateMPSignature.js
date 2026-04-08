@@ -2,6 +2,7 @@
 "use strict";
 
 const crypto = require("crypto");
+const logger = require("../lib/logger");
 
 /**
  * Middleware: validates Mercado Pago webhook signature (Layer 1 security).
@@ -22,12 +23,12 @@ function validateMPSignature(req, res, next) {
   const unauthorized = () => res.status(401).json({ ok: false });
 
   if (!signatureHeader) {
-    console.warn("[validateMPSignature] x-signature ausente");
+    logger.warn("webhook: x-signature header missing");
     return unauthorized();
   }
 
   if (!secret) {
-    console.error("[validateMPSignature] MP_WEBHOOK_SECRET não configurado — rejeitando webhook (fail-closed)");
+    logger.error("webhook: MP_WEBHOOK_SECRET not configured — rejecting (fail-closed)");
     // Fail-closed: sem segredo configurado, não processamos webhooks em nenhum ambiente.
     // Retornar 200 (fail-open) em produção permitiria aceitar webhooks sem validação.
     return unauthorized();
@@ -46,7 +47,7 @@ function validateMPSignature(req, res, next) {
   const v1 = parts.v1;
 
   if (!ts || !v1) {
-    console.warn("[validateMPSignature] formato de assinatura inválido:", signatureHeader);
+    logger.warn("webhook: invalid signature format");
     return unauthorized();
   }
 
@@ -64,7 +65,7 @@ function validateMPSignature(req, res, next) {
   const bufB = Buffer.from(v1, "utf8");
 
   if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
-    console.warn("[validateMPSignature] assinatura inválida para manifest:", manifest);
+    logger.warn("webhook: signature mismatch");
     return unauthorized();
   }
 

@@ -48,6 +48,20 @@ Redis e opcional (app tem fallback in-memory). Docker HEALTHCHECK usa este endpo
 |---------|-----|
 | `middleware/errorHandler.js` | `logger.error` (5xx) e `logger.warn` (4xx) com requestId |
 | `lib/redis.js` | `logger.info` e `logger.warn` para eventos de conexao |
+| `controllers/authController.js` | Erros de login/register/logout/reset |
+| `controllers/admin/authAdminController.js` | Erros de login admin/MFA/logout |
+| `controllers/paymentController.js` | Erros de payment start/webhook |
+| `controllers/checkoutController.js` | Erros de checkout/preview |
+| `services/checkoutService.js` | Pipeline de checkout (erros e side effects) |
+| `services/orderService.js` | Notificacoes de pedido |
+| `services/paymentWebhookService.js` | Status transitions e erros MP API |
+| `middleware/validateMPSignature.js` | Validacao de assinatura webhook |
+| `middleware/verifyAdmin.js` | Validacao de token admin |
+| `server.js` | Startup, CORS, rate limiter, uploads debug |
+| `bootstrap/shutdown.js` | Graceful shutdown (HTTP, MySQL, Redis) |
+| `bootstrap/workers.js` | Startup de workers e jobs |
+| `jobs/climaSyncJob.js` | Lifecycle do sync de clima |
+| `workers/abandonedCartNotificationsWorker.js` | Erros e startup do worker |
 
 ### Onde ainda usa console.log/error/warn
 
@@ -120,19 +134,26 @@ logger.error({ err: e }, "modulo: descricao");
 - [x] `middleware/errorHandler.js` → `logger.error/warn`
 - [x] `lib/redis.js` → `logger.info/warn`
 
-### Fase 2 — Proxima
+### Fase 2 — Concluida
 
-- [ ] `server.js` startup — 12 calls → `logger.info` + remover emojis
-- [ ] `middleware/verifyAdmin.js` — 3 calls
-- [ ] `middleware/validateMPSignature.js` — 4 calls
-- [ ] Adicionar handlers `uncaughtException`/`unhandledRejection`
+- [x] `server.js` startup — 12 calls migrados + emojis removidos
+- [x] `middleware/verifyAdmin.js` — 3 calls
+- [x] `middleware/validateMPSignature.js` — 4 calls
+- [x] Handlers `uncaughtException`/`unhandledRejection` adicionados
+- [x] `controllers/authController.js` — 5 calls
+- [x] `controllers/admin/authAdminController.js` — 4 calls
+- [x] `controllers/paymentController.js` — 4 calls
+- [x] `controllers/checkoutController.js` — 2 calls
+- [x] `services/checkoutService.js` — 7 calls
+- [x] `services/orderService.js` — 2 calls
+- [x] `services/paymentWebhookService.js` — 3 calls
+- [x] `bootstrap/shutdown.js` — 8 calls
+- [x] `bootstrap/workers.js` — 8 calls
+- [x] `jobs/climaSyncJob.js` — 9 calls
+- [x] `workers/abandonedCartNotificationsWorker.js` — 3 calls
 
-### Fase 3 — Por modulo
+### Fase 3 — Proxima
 
-- [ ] Controllers criticos: auth (5), payment (4), checkout (2), drones (30+)
-- [ ] Services criticos: checkoutService (7), comunicacaoService (8), orderService (2)
-
-### Fase 4 — Completa
-
-- [ ] Jobs e workers: climaSyncJob (9), bootstrap/workers (8)
-- [ ] Demais services e controllers restantes
+- [ ] Controllers de conteudo: drones (30+), news (24), heroSlides (3)
+- [ ] Services de conteudo: comunicacaoService (8), colaboradoresAdminService (3)
+- [ ] Demais controllers e services restantes (~20 arquivos, ~50 calls)

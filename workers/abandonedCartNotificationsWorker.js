@@ -2,6 +2,7 @@
 
 const pool = require("../config/pool");
 const mailService = require("../services/mailService");
+const logger = require("../lib/logger");
 
 /* ======================================================
  * ENV
@@ -207,11 +208,11 @@ async function processEmails() {
           [msg, r.notification_id]
         );
 
-        console.error("[Worker] erro ao enviar email:", msg);
+        logger.error({ err: msg }, "abandoned-cart-worker: email send error");
       }
     }
   } catch (err) {
-    console.error("[Worker] erro geral:", err);
+    logger.error({ err }, "abandoned-cart-worker: tick error");
   } finally {
     try {
       await conn.query("SELECT RELEASE_LOCK('abandoned_cart_notif_worker')");
@@ -227,8 +228,9 @@ async function processEmails() {
 function startAbandonedCartNotificationsWorker() {
   const ms = Math.max(10, INTERVAL_SECONDS) * 1000;
 
-  console.log(
-    `[Worker] Carrinho abandonado (EMAIL) rodando a cada ${INTERVAL_SECONDS}s`
+  logger.info(
+    { intervalSeconds: INTERVAL_SECONDS },
+    "abandoned-cart-worker: started"
   );
 
   processEmails().catch(() => {});

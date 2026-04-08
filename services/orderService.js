@@ -6,6 +6,7 @@ const { withTransaction } = require("../lib/withTransaction");
 const orderRepo = require("../repositories/orderRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const logger = require("../lib/logger");
 // ---------------------------------------------------------------------------
 // Allowed status transitions — single source of truth for this domain.
 // ---------------------------------------------------------------------------
@@ -78,10 +79,7 @@ async function updatePaymentStatus(pedidoId, newStatus) {
     try {
       await dispararEventoComunicacao("pagamento_aprovado", Number(pedidoId));
     } catch (err) {
-      console.error(
-        "[orderService] Erro ao disparar comunicação de pagamento aprovado:",
-        err
-      );
+      logger.warn({ err, pedidoId }, "order: payment approved notification failed");
     }
   }
 
@@ -143,10 +141,7 @@ async function updateDeliveryStatus(pedidoId, newStatus) {
     try {
       await dispararEventoComunicacao("pedido_enviado", Number(pedidoId));
     } catch (err) {
-      console.error(
-        "[orderService] Erro ao disparar comunicação de pedido enviado:",
-        err
-      );
+      logger.warn({ err, pedidoId }, "order: shipped notification failed");
     }
   }
 

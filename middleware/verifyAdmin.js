@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const authAdminService = require("../services/authAdminService");
+const logger = require("../lib/logger");
 
 const SECRET_KEY = process.env.JWT_SECRET;
 
@@ -14,7 +15,7 @@ const SECRET_KEY = process.env.JWT_SECRET;
  */
 async function verifyAdmin(req, _res, next) {
   if (!SECRET_KEY) {
-    console.error("JWT_SECRET não definido no .env");
+    logger.error("JWT_SECRET not configured");
     return next(
       new AppError(
         "Erro de configuração de autenticação.",
@@ -45,7 +46,7 @@ async function verifyAdmin(req, _res, next) {
   try {
     decoded = jwt.verify(token, SECRET_KEY);
   } catch (err) {
-    console.warn("verifyAdmin: token inválido:", err.message);
+    logger.warn({ err }, "verifyAdmin: invalid token");
     return next(
       new AppError(
         "Token inválido ou expirado.",
@@ -111,7 +112,7 @@ async function verifyAdmin(req, _res, next) {
 
     return next();
   } catch (err) {
-    console.error("Erro ao validar admin no banco:", err.message);
+    logger.error({ err }, "verifyAdmin: DB validation error");
     return next(
       new AppError(
         "Erro ao validar admin no banco.",

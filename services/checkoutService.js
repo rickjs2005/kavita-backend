@@ -8,6 +8,7 @@ const orderRepo = require("../repositories/orderRepository");
 const couponService = require("./couponService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
+const logger = require("../lib/logger");
 
 // ---------------------------------------------------------------------------
 // Stock operations — exported for backward compatibility.
@@ -156,7 +157,7 @@ async function applyCouponIfPresent(conn, cupomCodigo, subtotal) {
     };
   } catch (err) {
     if (err instanceof AppError) throw err;
-    console.error("[checkoutService] Erro ao aplicar cupom:", err);
+    logger.error({ err }, "checkout: coupon apply error");
     throw new AppError(
       "Erro ao aplicar o cupom de desconto.",
       ERROR_CODES.SERVER_ERROR,
@@ -173,7 +174,7 @@ async function postCommitSideEffects(pedidoId, userId) {
   try {
     await checkoutNotificationService.notifyOrderCreated(pedidoId);
   } catch (err) {
-    console.error("[checkoutService] Erro ao disparar comunicação:", err);
+    logger.warn({ err }, "checkout: notification dispatch failed (non-blocking)");
   }
 
   // Close open cart — outside transaction.
@@ -182,7 +183,7 @@ async function postCommitSideEffects(pedidoId, userId) {
   try {
     await cartRepo.convertCart(userId);
   } catch (err) {
-    console.error("[checkoutService] Erro ao fechar carrinho:", err);
+    logger.warn({ err }, "checkout: cart close failed (non-blocking)");
   }
 }
 
@@ -249,7 +250,7 @@ async function create(userId, body) {
     try {
       await checkoutRepo.updateUserInfo(connection, userId, { nome, telefone, cpf });
     } catch (err) {
-      console.error("[checkoutService] Erro ao atualizar dados do usuário:", err);
+      logger.warn({ err }, "checkout: user info update failed (non-blocking)");
     }
 
     /* 2) Find open cart — non-blocking (used later to mark as recovered) */
@@ -257,7 +258,7 @@ async function create(userId, body) {
     try {
       carrinhoAberto = await checkoutRepo.findOpenCartId(connection, userId);
     } catch (err) {
-      console.error("[checkoutService] Erro ao buscar carrinho aberto:", err);
+      logger.warn({ err }, "checkout: open cart lookup failed (non-blocking)");
     }
 
     /* 3) Deduplication — same products + coupon within 2 min = idempotent */
@@ -305,7 +306,7 @@ async function create(userId, body) {
         await checkoutRepo.markAbandonedCartRecovered(connection, carrinhoAberto.id);
       }
     } catch (err) {
-      console.error("[checkoutService] Erro ao marcar carrinho como recuperado:", err);
+      logger.warn({ err }, "checkout: mark cart recovered failed (non-blocking)");
     }
 
     /* 10) Commit */
@@ -327,7 +328,7 @@ async function create(userId, body) {
       try {
         await connection.rollback();
       } catch (rb) {
-        console.error("[checkoutService] Erro ao dar rollback:", rb);
+        logger.error({ err: rb }, "checkout: rollback failed");
       }
     }
     throw err;

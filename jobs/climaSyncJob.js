@@ -10,8 +10,9 @@
 
 const cron = require("node-cron");
 const { syncAll } = require("../services/climaSyncService");
+const logger = require("../lib/logger");
 
-const TAG = "[clima-sync]";
+const TAG = "clima-sync";
 
 let _task = null;
 let _running = false;
@@ -57,7 +58,7 @@ async function loadConfig() {
  */
 async function tick() {
   if (_running) {
-    console.warn(`${TAG} job anterior ainda em execucao, pulando tick`);
+    logger.warn(`${TAG}: previous run still active — skipping tick`);
     return;
   }
 
@@ -65,7 +66,7 @@ async function tick() {
   _state.lastRunAt = new Date().toISOString();
 
   try {
-    console.info(`${TAG} iniciando sync automatico...`);
+    logger.info(`${TAG}: starting auto sync`);
     const report = await syncAll();
 
     _state.lastReport = {
@@ -86,17 +87,17 @@ async function tick() {
       _state.lastError = "Todas as cidades falharam";
     }
 
-    console.info(`${TAG} concluido`, _state.lastReport);
+    logger.info({ report: _state.lastReport }, `${TAG}: sync complete`);
 
     if (report.failed > 0) {
       const failures = report.results.filter((r) => !r.ok);
-      console.warn(`${TAG} falhas:`, failures);
+      logger.warn({ failures }, `${TAG}: partial failures`);
     }
   } catch (err) {
     _state.lastStatus = "error";
     _state.lastError = err?.message || "Erro inesperado";
     _state.lastReport = null;
-    console.error(`${TAG} erro inesperado:`, err?.message || err);
+    logger.error({ err }, `${TAG}: unexpected error`);
   } finally {
     _running = false;
   }
@@ -112,12 +113,12 @@ async function register() {
   _state.cronExpr = cfg.cronExpr;
 
   if (!cfg.enabled) {
-    console.info(`${TAG} desabilitado (modo manual)`);
+    logger.info(`${TAG}: disabled (manual mode)`);
     return;
   }
 
   if (!cron.validate(cfg.cronExpr)) {
-    console.error(`${TAG} expressao cron invalida: "${cfg.cronExpr}"`);
+    logger.error({ cronExpr: cfg.cronExpr }, `${TAG}: invalid cron expression`);
     return;
   }
 
@@ -127,7 +128,7 @@ async function register() {
     timezone: "America/Sao_Paulo",
   });
 
-  console.info(`${TAG} agendado: "${cfg.cronExpr}" (timezone: America/Sao_Paulo)`);
+  logger.info({ cronExpr: cfg.cronExpr }, `${TAG}: scheduled`);
 }
 
 /**
@@ -138,7 +139,7 @@ function stop() {
     _task.stop();
     _task = null;
     _cronExpr = null;
-    console.info(`${TAG} parado`);
+    logger.info(`${TAG}: stopped`);
   }
 }
 

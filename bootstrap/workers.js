@@ -3,63 +3,51 @@
 // bootstrap/workers.js
 // Starts background workers and scheduled jobs after the HTTP server is listening.
 
+const logger = require("../lib/logger");
+
 let startAbandonedCartNotificationsWorker;
 try {
   ({ startAbandonedCartNotificationsWorker } = require("../workers/abandonedCartNotificationsWorker"));
 } catch (err) {
-  console.warn(
-    "⚠️ Worker de notificações não carregado (arquivo ausente ou erro no require):",
-    err.message
-  );
+  logger.warn({ err }, "abandoned cart worker not loaded");
 }
 
 let climaSyncJob;
 try {
   climaSyncJob = require("../jobs/climaSyncJob");
 } catch (err) {
-  console.warn(
-    "⚠️ Job de sync do clima não carregado (arquivo ausente ou erro no require):",
-    err.message
-  );
+  logger.warn({ err }, "clima sync job not loaded");
 }
 
 let cotacoesSyncJob;
 try {
   cotacoesSyncJob = require("../jobs/cotacoesSyncJob");
 } catch (err) {
-  console.warn(
-    "⚠️ Job de sync de cotações não carregado (arquivo ausente ou erro no require):",
-    err.message
-  );
+  logger.warn({ err }, "cotacoes sync job not loaded");
 }
 
 function startWorkers() {
-  // --- Abandoned cart notifications ---
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
 
   if (disableNotifs) {
-    console.warn("🚫 Notificações automáticas DESABILITADAS (DISABLE_NOTIFICATIONS=true)");
+    logger.info("abandoned cart notifications disabled (DISABLE_NOTIFICATIONS=true)");
   } else if (typeof startAbandonedCartNotificationsWorker === "function") {
     startAbandonedCartNotificationsWorker();
-    console.info("📨 Worker de notificações de carrinho abandonado iniciado");
+    logger.info("abandoned cart notification worker started");
   } else {
-    console.warn(
-      "⚠️ Worker de notificações NÃO iniciado (função startAbandonedCartNotificationsWorker indisponível)."
-    );
+    logger.warn("abandoned cart worker unavailable — skipped");
   }
 
-  // --- Clima auto-sync (cron) ---
   if (climaSyncJob && typeof climaSyncJob.register === "function") {
     climaSyncJob.register().catch((err) => {
-      console.error("⚠️ Falha ao registrar clima sync job:", err?.message || err);
+      logger.error({ err }, "clima sync job registration failed");
     });
   }
 
-  // --- Cotações auto-sync (cron) ---
   if (cotacoesSyncJob && typeof cotacoesSyncJob.register === "function") {
     cotacoesSyncJob.register().catch((err) => {
-      console.error("⚠️ Falha ao registrar cotações sync job:", err?.message || err);
+      logger.error({ err }, "cotacoes sync job registration failed");
     });
   }
 }
