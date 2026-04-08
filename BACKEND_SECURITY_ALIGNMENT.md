@@ -1,56 +1,39 @@
-# Backend Security Alignment
+# Security Reference — kavita-backend
 
-> Registro de auditoria de seguranca e estado atual das protecoes do backend.
+> Controles de seguranca ativos, cobertura e lacunas conhecidas.
+> Para decisoes arquiteturais detalhadas, consulte [docs/decisions.md](docs/decisions.md) (ADR-003 a ADR-005).
+> Para operacao e resposta a incidentes, consulte [docs/runbook.md](docs/runbook.md).
 >
 > _Ultima atualizacao: 2026-04-08_
 
 ---
 
-## 1. Protecoes ativas
+## Autenticacao
 
-### Upload seguro (`services/mediaService.js`)
+| Controle | Implementacao | Arquivo |
+|----------|--------------|---------|
+| JWT em cookie HttpOnly | Dois contextos isolados: admin (2h) e usuario (7d) | `middleware/verifyAdmin.js`, `middleware/authenticateToken.js` |
+| Revogacao de sessao | `tokenVersion` — incrementar no banco invalida todos os tokens | Coluna `tokenVersion` em `admins` e `usuarios` |
+| MFA (admin) | TOTP via speakeasy — desafio com `challengeId` e rate limit | `controllers/admin/authAdminController.js` |
+| Account lockout | Bloqueio progressivo apos tentativas falhas | `security/accountLockout.js` |
+| Permissoes do banco, nunca do JWT | `verifyAdmin` carrega permissoes do banco/cache em cada request | `middleware/verifyAdmin.js` linhas 96-101 |
 
-- Whitelist explicita de MIME types: JPEG, PNG, WEBP, GIF
-- SVG bloqueado (vetor de XSS)
-- Limites multer: 5MB por arquivo, maximo 10 arquivos
-- Videos: apenas MP4, WEBM, OGG (campos `heroVideo` e `media`)
-- Magic bytes validation disponivel em `utils/fileValidation.js`
+## CSRF
 
-### Sanitizacao XSS (`utils/sanitize.js`)
+| Controle | Implementacao | Arquivo |
+|----------|--------------|---------|
+| Double-submit cookie | Token em cookie (`httpOnly: false`) + header `x-csrf-token` | `middleware/csrfProtection.js` |
+| Timing-safe comparison | `crypto.timingSafeEqual()` | `middleware/csrfProtection.js` |
+| GET/HEAD/OPTIONS isentos | Metodos seguros nao exigem CSRF | `middleware/csrfProtection.js` |
 
-- `stripHtml(str)` — remove todas as tags HTML
-- `escapeHtml(str)` — escapa entidades HTML
-- `sanitizeRichText(str)` — remove vetores perigosos mantendo formatacao basica (usa `sanitize-html`)
-- `sanitizeText(str, maxLen)` — stripHtml + truncagem
+## RBAC
 
-Aplicado em: avaliacoes, news (title/excerpt/content), perfil de usuario.
+| Controle | Implementacao | Arquivo |
+|----------|--------------|---------|
+| `requirePermission` middleware | Verifica permissao granular por rota | `middleware/requirePermission.js` |
+| Bypass para role `master` | Superuser nao precisa de permissao individual | `middleware/requirePermission.js` |
 
-### Validacao de entrada
-
-- Zod schemas em `schemas/` para todas as rotas com body
-- Middleware `validate.js` aplica schemas como middleware de rota
-- Validacao de comprimento nos campos de perfil de usuario
-
-### Autenticacao e autorizacao
-
-- JWT em cookie HttpOnly com contextos separados (admin 2h, usuario 7d)
-- CSRF double-submit cookie com `crypto.timingSafeEqual()`
-- `tokenVersion` para revogacao real de sessao
-- `requirePermission` com bypass para role `master`
-- Permissoes carregadas do banco/Redis em cada request (nunca do JWT)
-
-### Rate limiting
-
-- Global: `middleware/adaptiveRateLimiter.js` com Redis + fallback in-memory
-- Especifico: login, admin login, MFA, forgot-password, reset-password, logout, comentarios drones
-- Account lockout via `security/accountLockout.js`
-
-### Error handling
-
-- `middleware/errorHandler.js` nunca vaza stack trace em producao
-- Logging estruturado via Pino + captura Sentry para 5xx
-
-### Permissoes aplicadas
+Rotas com permissao aplicada:
 
 | Rota | Permissao |
 |------|-----------|
@@ -60,50 +43,55 @@ Aplicado em: avaliacoes, news (title/excerpt/content), perfil de usuario.
 | `/admin/users` | `usuarios.ver` |
 | `/admin/pedidos` | `pedidos.ver` |
 
+## Upload e midia
+
+| Controle | Implementacao | Arquivo |
+|----------|--------------|---------|
+| Whitelist MIME | JPEG, PNG, WEBP, GIF. SVG bloqueado | `services/mediaService.js` |
+| Limites de tamanho | 5MB/arquivo, max 10 arquivos | `services/mediaService.js` (multer config) |
+| Magic bytes validation | Validacao pos-upload disponivel | `utils/fileValidation.js` |
+| Videos | Apenas MP4, WEBM, OGG | `services/mediaService.js` |
+
+## Sanitizacao XSS
+
+| Controle | Implementacao | Arquivo |
+|----------|--------------|---------|
+| `stripHtml` | Remove todas as tags HTML | `utils/sanitize.js` |
+| `sanitizeRichText` | Remove vetores perigosos, preserva formatacao | `utils/sanitize.js` (usa `sanitize-html`) |
+| `sanitizeText` | stripHtml + truncagem por comprimento | `utils/sanitize.js` |
+
+Aplicado em: avaliacoes, news (title/excerpt/content), perfil de usuario.
+
+## Validacao de entrada
+
+| Controle | Implementacao | Arquivo |
+|----------|--------------|---------|
+| Zod schemas | Todas as rotas com body (POST/PUT/PATCH) | `schemas/*.js` |
+| Middleware de validacao | Factory `validate(schema)` | `middleware/validate.js` |
+
+## Rate limiting
+
+| Controle | Implementacao | Arquivo |
+|----------|--------------|---------|
+| Global | Adaptive rate limiter com Redis + fallback in-memory | `middleware/adaptiveRateLimiter.js` |
+| Especifico por endpoint | Login, admin login, MFA, forgot-password, reset-password, logout, comentarios | Aplicado nas rotas |
+
+## Error handling
+
+| Controle | Implementacao | Arquivo |
+|----------|--------------|---------|
+| Sem stack trace em producao | Mensagem generica para 5xx | `middleware/errorHandler.js` |
+| Logging estruturado | Pino com requestId para erros | `middleware/errorHandler.js` |
+| Sentry | Captura automatica de 5xx (opcional via `SENTRY_DSN`) | `lib/sentry.js` |
+
 ---
 
-## 2. Pendencias
+## Lacunas conhecidas
 
-### Backend
-
-- [ ] Semear permissoes no banco (`relatorios.ver`, `config.editar`, `usuarios.ver`, `pedidos.ver`) e vincular aos roles
-- [ ] Expandir magic bytes validation para todos os modulos com upload (atualmente so adminServicos e adminConfigUpload usam)
-- [ ] Expandir `requirePermission` para demais modulos admin (categorias, drones, news, cupons)
-
-### Frontend
-
-- [ ] Tratar `403 Permissao insuficiente` em areas admin para admins nao-master
-- [ ] Tratar `400` com `errors[]` em forgot-password e reset-password
-- [ ] Confirmar compatibilidade do rich text apos sanitizacao no editor de noticias
-
-### Decisoes de produto
-
-- [ ] GIF: manter ou bloquear? (mantido na whitelist por ora)
-- [ ] Audit log expandido: quais acoes admin devem gerar log auditavel?
-- [ ] Avaliacoes publicas: requer login ou manter anonimo?
-
----
-
-## 3. Checklist de seguranca
-
-### Concluido
-
-- [x] Upload: whitelist MIME explicita + SVG bloqueado
-- [x] Upload: limites de tamanho no multer
-- [x] Sanitizacao XSS em comentarios, noticias e perfil
-- [x] `sanitize-html` instalado e em uso
-- [x] Bypass master em `requirePermission`
-- [x] Schema validation Zod em todas as rotas com body
-- [x] `requirePermission` em rotas sensiveis (relatorios, config, users, pedidos)
-- [x] Error handler: sem stack trace em producao
-- [x] CSRF double-submit cookie
-- [x] JWT HttpOnly com contextos separados
-- [x] Rate limiting global + especifico
-- [x] `tokenVersion` para revogacao de sessao
-
-### Pendente
-
-- [ ] Semear permissoes no banco
-- [ ] Magic bytes validation em todos os uploads
-- [ ] Audit log expandido
-- [ ] `requirePermission` em mais modulos admin
+| Lacuna | Impacto | Prioridade |
+|--------|---------|-----------|
+| Permissoes nao semeadas no banco | `requirePermission` retorna 403 para roles sem seed | Alta |
+| Magic bytes validation nao aplicada em todos os uploads | Apenas adminServicos e adminConfigUpload usam | Media |
+| `requirePermission` nao expandido para todos os modulos | Categorias, drones, news, cupons sem permissao granular | Media |
+| Audit log incompleto | `admin_logs` existe mas nem todos os endpoints chamam `logAdmin()` | Baixa |
+| Sem handlers `uncaughtException`/`unhandledRejection` | Crash sem captura Sentry | Alta |

@@ -708,12 +708,24 @@ module.exports = { CriarProdutoSchema, formatZodErrors };
 
 ## Documentacao complementar
 
+### Caminho de leitura recomendado para dev novo
+
+1. Este README (visao geral, setup, arquitetura, convencoes)
+2. [docs/flows.md](docs/flows.md) — fluxos criticos (checkout, pagamento, webhook, cancelamento)
+3. [docs/decisions.md](docs/decisions.md) — por que as coisas sao como sao (ADRs)
+4. [docs/api-response.md](docs/api-response.md) — contrato de resposta da API
+5. [BACKEND_SECURITY_ALIGNMENT.md](BACKEND_SECURITY_ALIGNMENT.md) — controles de seguranca
+
+### Referencia completa
+
 | Documento | Conteudo |
 |-----------|---------|
+| [docs/flows.md](docs/flows.md) | Checkout, pagamento, webhook, cancelamento — sequencias, protecoes, request/response |
+| [docs/runbook.md](docs/runbook.md) | Operacao em producao — diagnostico, deploy, seguranca operacional |
 | [docs/api-response.md](docs/api-response.md) | Contrato de resposta da API, helpers, exemplos |
 | [docs/decisions.md](docs/decisions.md) | ADRs — decisoes arquiteturais com contexto e consequencias |
-| [docs/migration-tracker.md](docs/migration-tracker.md) | Historico da migracao arquitetural |
-| [docs/observability.md](docs/observability.md) | Health check, logging estruturado, plano de migracao |
+| [docs/observability.md](docs/observability.md) | Health check, estado do logging, lacunas e roadmap |
+| [docs/migration-tracker.md](docs/migration-tracker.md) | Historico da migracao arquitetural (100% concluida) |
 | [docs/swagger-plan.md](docs/swagger-plan.md) | Inventario de cobertura Swagger e plano de execucao |
-| [BACKEND_SECURITY_ALIGNMENT.md](BACKEND_SECURITY_ALIGNMENT.md) | Protecoes de seguranca ativas e pendencias |
+| [BACKEND_SECURITY_ALIGNMENT.md](BACKEND_SECURITY_ALIGNMENT.md) | Controles de seguranca, cobertura e lacunas |
 | [CLAUDE.md](CLAUDE.md) | Instrucoes operacionais para IA/agentes |
