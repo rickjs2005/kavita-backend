@@ -8,6 +8,9 @@ const repo = require("../repositories/contatoRepository");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { sanitizeText } = require("../utils/sanitize");
+const { sendTransactionalEmail } = require("./mailService");
+const confirmacaoContatoEmail = require("../templates/email/confirmacaoContato");
+const logger = require("../lib/logger");
 
 const MAX_PER_HOUR = 3;
 
@@ -28,14 +31,29 @@ async function createMensagem({ nome, email, telefone, assunto, mensagem, ip }) 
     }
   }
 
+  const cleanNome = sanitizeText(nome, 150);
+  const cleanEmail = sanitizeText(email, 255);
+  const cleanAssunto = sanitizeText(assunto, 200);
+
   const { insertId } = await repo.create({
-    nome: sanitizeText(nome, 150),
-    email: sanitizeText(email, 255),
+    nome: cleanNome,
+    email: cleanEmail,
     telefone: telefone ? sanitizeText(telefone, 30) : "",
-    assunto: sanitizeText(assunto, 200),
+    assunto: cleanAssunto,
     mensagem: sanitizeText(mensagem, 5000),
     ip,
   });
+
+  // Email de confirmacao — fire-and-forget, nunca bloqueia a resposta
+  try {
+    const { subject, html, text } = confirmacaoContatoEmail({
+      nome: cleanNome,
+      assunto: cleanAssunto,
+    });
+    await sendTransactionalEmail(cleanEmail, subject, html, text);
+  } catch (err) {
+    logger.error("[contatoService] Falha ao enviar email de confirmacao:", err.message);
+  }
 
   return { id: insertId };
 }
