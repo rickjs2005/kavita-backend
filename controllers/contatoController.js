@@ -40,4 +40,42 @@ const trackEvent = async (req, res, next) => {
   }
 };
 
-module.exports = { createMensagem, trackEvent };
+const MIN_MESSAGES_FOR_METRICS = 5;
+
+const getMetrics = async (_req, res, next) => {
+  try {
+    const row = await repo.getPublicMetrics();
+    const total = Number(row.total) || 0;
+
+    // Nao exibe metricas com poucos dados — evita "100% com 1 msg"
+    if (total < MIN_MESSAGES_FOR_METRICS) {
+      return response.ok(res, null);
+    }
+
+    const respondidas = Number(row.respondidas) || 0;
+    const avgMinutes = row.avg_response_minutes != null
+      ? Math.round(Number(row.avg_response_minutes))
+      : null;
+
+    const taxaResposta = Math.round((respondidas / total) * 100);
+
+    let tempoMedio = null;
+    if (avgMinutes != null && avgMinutes > 0) {
+      tempoMedio = avgMinutes < 60
+        ? `${avgMinutes}min`
+        : avgMinutes < 1440
+          ? `${Math.round(avgMinutes / 60)}h`
+          : `${Math.round(avgMinutes / 1440)}d`;
+    }
+
+    return response.ok(res, {
+      total_mensagens: total,
+      taxa_resposta: taxaResposta,
+      tempo_medio: tempoMedio,
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+module.exports = { createMensagem, trackEvent, getMetrics };

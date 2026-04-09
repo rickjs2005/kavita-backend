@@ -160,6 +160,27 @@ async function getAnalytics(days = 30) {
   return { topTopics, topSearches, eventCounts };
 }
 
+/**
+ * Metricas publicas de atendimento calculadas a partir de dados reais.
+ * Retorna taxa de resposta e tempo medio de resposta em horas.
+ * Minimo de 5 mensagens para exibir metricas (evita dados insignificantes).
+ */
+async function getPublicMetrics() {
+  const [rows] = await pool.query(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN status IN ('respondida','arquivada') THEN 1 ELSE 0 END) AS respondidas,
+       AVG(
+         CASE WHEN status = 'respondida' AND updated_at > created_at
+           THEN TIMESTAMPDIFF(MINUTE, created_at, updated_at)
+           ELSE NULL
+         END
+       ) AS avg_response_minutes
+     FROM mensagens_contato`
+  );
+  return rows[0];
+}
+
 module.exports = {
   create,
   countByIpSince,
@@ -170,4 +191,5 @@ module.exports = {
   countByStatus,
   insertEvent,
   getAnalytics,
+  getPublicMetrics,
 };

@@ -12,5 +12,6 @@ const { ContatoBodySchema, ContatoEventSchema } = require("../../schemas/contato
 
 router.post("/", validate(ContatoBodySchema), ctrl.createMensagem);
 router.post("/event", validate(ContatoEventSchema), ctrl.trackEvent);
+router.get("/metrics", ctrl.getMetrics);
 
 module.exports = router;
