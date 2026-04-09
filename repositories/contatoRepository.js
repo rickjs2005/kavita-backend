@@ -33,4 +33,81 @@ async function countByIpSince(ip, hours = 1) {
   return rows[0].total;
 }
 
-module.exports = { create, countByIpSince };
+/**
+ * Lista todas as mensagens de contato com filtros opcionais.
+ */
+async function findAll({ status, limit = 50, offset = 0 } = {}) {
+  let where = "1=1";
+  const params = [];
+
+  if (status) {
+    where += " AND status = ?";
+    params.push(status);
+  }
+
+  const countSql = `SELECT COUNT(*) AS total FROM mensagens_contato WHERE ${where}`;
+  const dataSql = `
+    SELECT id, nome, email, telefone, assunto, mensagem, status, ip, created_at, updated_at
+    FROM mensagens_contato
+    WHERE ${where}
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?`;
+
+  const [countRows] = await pool.query(countSql, params);
+  const [rows] = await pool.query(dataSql, [...params, limit, offset]);
+
+  return { rows, total: countRows[0].total };
+}
+
+/**
+ * Busca uma mensagem por ID.
+ */
+async function findById(id) {
+  const [rows] = await pool.query(
+    "SELECT * FROM mensagens_contato WHERE id = ?",
+    [id]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Atualiza o status de uma mensagem.
+ */
+async function updateStatus(id, status) {
+  const [result] = await pool.query(
+    "UPDATE mensagens_contato SET status = ? WHERE id = ?",
+    [status, id]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Remove uma mensagem.
+ */
+async function deleteById(id) {
+  const [result] = await pool.query(
+    "DELETE FROM mensagens_contato WHERE id = ?",
+    [id]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Conta mensagens agrupadas por status.
+ */
+async function countByStatus() {
+  const [rows] = await pool.query(
+    "SELECT status, COUNT(*) AS total FROM mensagens_contato GROUP BY status"
+  );
+  return rows;
+}
+
+module.exports = {
+  create,
+  countByIpSince,
+  findAll,
+  findById,
+  updateStatus,
+  deleteById,
+  countByStatus,
+};
