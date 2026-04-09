@@ -7,6 +7,7 @@
 // Endpoints:
 //   GET    /           → listMensagens
 //   GET    /stats      → getStats
+//   GET    /analytics  → getAnalytics
 //   GET    /:id        → getMensagem
 //   PATCH  /:id/status → updateStatus
 //   DELETE /:id        → deleteMensagem
@@ -22,6 +23,7 @@ const {
 
 router.get("/", validate(ContatoListQuerySchema, "query"), ctrl.listMensagens);
 router.get("/stats", ctrl.getStats);
+router.get("/analytics", ctrl.getAnalytics);
 router.get("/:id", validate(ContatoIdParamSchema, "params"), ctrl.getMensagem);
 router.patch(
   "/:id/status",

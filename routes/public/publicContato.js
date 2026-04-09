@@ -8,8 +8,9 @@
 const router = require("express").Router();
 const { validate } = require("../../middleware/validate");
 const ctrl = require("../../controllers/contatoController");
-const { ContatoBodySchema } = require("../../schemas/contatoSchemas");
+const { ContatoBodySchema, ContatoEventSchema } = require("../../schemas/contatoSchemas");
 
 router.post("/", validate(ContatoBodySchema), ctrl.createMensagem);
+router.post("/event", validate(ContatoEventSchema), ctrl.trackEvent);
 
 module.exports = router;

@@ -8,6 +8,7 @@
 //   POST /api/public/contato → { ok: true, data: { id }, message } (201)
 
 const svc = require("../services/contatoService");
+const repo = require("../repositories/contatoRepository");
 const { response } = require("../lib");
 
 const createMensagem = async (req, res, next) => {
@@ -29,4 +30,14 @@ const createMensagem = async (req, res, next) => {
   }
 };
 
-module.exports = { createMensagem };
+const trackEvent = async (req, res, next) => {
+  try {
+    const { event, value } = req.body;
+    await repo.insertEvent(event, value);
+    return response.ok(res);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+module.exports = { createMensagem, trackEvent };

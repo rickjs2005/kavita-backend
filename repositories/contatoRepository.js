@@ -102,6 +102,64 @@ async function countByStatus() {
   return rows;
 }
 
+/* ── Analytics ──────────────────────────────────────────────────── */
+
+const VALID_EVENTS = new Set([
+  "faq_topic_view",
+  "faq_search",
+  "form_start",
+  "whatsapp_hero_click",
+]);
+
+/**
+ * Registra um evento de analytics.
+ */
+async function insertEvent(eventType, eventValue) {
+  if (!VALID_EVENTS.has(eventType)) return;
+  await pool.query(
+    "INSERT INTO contato_analytics (event_type, event_value) VALUES (?, ?)",
+    [eventType, (eventValue || "").slice(0, 255) || null]
+  );
+}
+
+/**
+ * Retorna contagens agregadas de analytics para o admin.
+ * @param {number} days — janela de dias para agregar
+ */
+async function getAnalytics(days = 30) {
+  const [topTopics] = await pool.query(
+    `SELECT event_value AS topic, COUNT(*) AS views
+     FROM contato_analytics
+     WHERE event_type = 'faq_topic_view'
+       AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+     GROUP BY event_value
+     ORDER BY views DESC
+     LIMIT 20`,
+    [days]
+  );
+
+  const [topSearches] = await pool.query(
+    `SELECT event_value AS term, COUNT(*) AS searches
+     FROM contato_analytics
+     WHERE event_type = 'faq_search'
+       AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+     GROUP BY event_value
+     ORDER BY searches DESC
+     LIMIT 20`,
+    [days]
+  );
+
+  const [eventCounts] = await pool.query(
+    `SELECT event_type, COUNT(*) AS total
+     FROM contato_analytics
+     WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+     GROUP BY event_type`,
+    [days]
+  );
+
+  return { topTopics, topSearches, eventCounts };
+}
+
 module.exports = {
   create,
   countByIpSince,
@@ -110,4 +168,6 @@ module.exports = {
   updateStatus,
   deleteById,
   countByStatus,
+  insertEvent,
+  getAnalytics,
 };

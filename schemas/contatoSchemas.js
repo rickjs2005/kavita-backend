@@ -75,9 +75,33 @@ const ContatoListQuerySchema = z.preprocess(
   })
 );
 
+// ---------------------------------------------------------------------------
+// Analytics schemas
+// ---------------------------------------------------------------------------
+
+const ContatoEventSchema = z.object({
+  event: z.enum(["faq_topic_view", "faq_search", "form_start", "whatsapp_hero_click"], {
+    required_error: "event e obrigatorio.",
+  }),
+  value: z.string().trim().max(255).optional().default(""),
+});
+
+const ContatoAnalyticsQuerySchema = z.preprocess(
+  (raw) => {
+    const q = raw && typeof raw === "object" ? raw : {};
+    const rawDays = parseInt(q.days ?? "30", 10);
+    return {
+      days: Math.min(Math.max(!Number.isNaN(rawDays) ? rawDays : 30, 1), 365),
+    };
+  },
+  z.object({ days: z.number().int().min(1).max(365) })
+);
+
 module.exports = {
   ContatoBodySchema,
   ContatoIdParamSchema,
   ContatoUpdateStatusSchema,
   ContatoListQuerySchema,
+  ContatoEventSchema,
+  ContatoAnalyticsQuerySchema,
 };

@@ -110,4 +110,18 @@ const deleteMensagem = async (req, res, next) => {
   }
 };
 
-module.exports = { listMensagens, getStats, getMensagem, updateStatus, deleteMensagem };
+const getAnalytics = async (req, res, next) => {
+  try {
+    const days = parseInt(req.query.days ?? "30", 10) || 30;
+    const data = await repo.getAnalytics(Math.min(Math.max(days, 1), 365));
+    return response.ok(res, data);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao obter analytics.", ERROR_CODES.SERVER_ERROR, 500)
+    );
+  }
+};
+
+module.exports = { listMensagens, getStats, getMensagem, updateStatus, deleteMensagem, getAnalytics };
