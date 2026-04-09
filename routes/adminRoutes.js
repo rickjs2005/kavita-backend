@@ -78,6 +78,7 @@ mount("/admin/shipping",          "./admin/adminShippingZones");
  * ============================================================ */
 
 mount("/admin/comunicacao",         "./admin/adminComunicacao");
+mount("/admin/support-config",     "./admin/adminSupportConfig");
 mount("/admin/contato-mensagens",  "./admin/adminContatoMensagens");
 mount("/admin/users",        "./admin/adminUsers",       requirePermission("usuarios.ver"));
 mount("/admin/admins",       "./admin/adminAdmins");

@@ -49,5 +49,6 @@ load("/public/corretoras", "./public/publicCorretoras");
 
 // — Contato público —
 load("/public/contato", "./public/publicContato");
+load("/public/support-config", "./public/publicSupportConfig");
 
 module.exports = router;
