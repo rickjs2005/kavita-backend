@@ -47,4 +47,7 @@ load("/public/drones", "./public/publicDrones");
 // — Mercado do Café: corretoras —
 load("/public/corretoras", "./public/publicCorretoras");
 
+// — Contato público —
+load("/public/contato", "./public/publicContato");
+
 module.exports = router;
