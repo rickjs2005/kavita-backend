@@ -19,7 +19,7 @@ const {
   rejectSubmissionSchema,
 } = require("../../schemas/corretorasSchemas");
 const {
-  createCorretoraUserSchema,
+  inviteCorretoraUserSchema,
 } = require("../../schemas/corretoraAuthSchemas");
 
 // ─── Corretoras CRUD ────────────────────────────────────────────────────────
@@ -53,11 +53,14 @@ router.patch(
   ctrl.toggleFeatured
 );
 
-// Provisionamento do usuário de login da corretora (Fase 2)
+// Convite de primeiro acesso da corretora (Fase 2 / Bloco A).
+// Cria o usuário em estado pendente (password_hash NULL) e envia
+// e-mail com link de primeiro acesso. Idempotente: reenviar para uma
+// corretora com convite pendente apenas gera um novo token e reenvia.
 router.post(
-  "/corretoras/:id/users",
-  validate(createCorretoraUserSchema),
-  ctrl.createCorretoraUser
+  "/corretoras/:id/users/invite",
+  validate(inviteCorretoraUserSchema),
+  ctrl.inviteCorretoraUser
 );
 
 // ─── Submissions ────────────────────────────────────────────────────────────

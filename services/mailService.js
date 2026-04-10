@@ -34,6 +34,52 @@ async function sendResetPasswordEmail(toEmail, token) {
 }
 
 /**
+ * Envia o e-mail de primeiro acesso (convite) para uma corretora que
+ * acabou de ganhar acesso pelo admin. Copy diferente do reset — dá
+ * boas-vindas e instrui sobre o que fazer.
+ *
+ * O link aponta para /painel/corretora/primeiro-acesso?token=XXX.
+ * Internamente, o token é o mesmo formato do reset (scope
+ * corretora_user), só com TTL mais longo (7 dias vs 1h).
+ */
+async function sendCorretoraInviteEmail(toEmail, token, corretoraName) {
+  const link = `${config.appUrl.replace(/\/$/, "")}/painel/corretora/primeiro-acesso?token=${token}`;
+  const safeName = corretoraName || "sua corretora";
+
+  await transporter.sendMail({
+    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+    to: toEmail,
+    subject: "Bem-vinda ao Mercado do Café — defina sua senha",
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px;">
+        <h2 style="color:#15803d;margin:0 0 12px;">☕ Bem-vinda ao Mercado do Café</h2>
+        <p>Seu acesso ao painel da <strong>${safeName}</strong> foi criado no Kavita.</p>
+        <p>Clique no botão abaixo para definir sua senha e entrar pela primeira vez. O link expira em <strong>7 dias</strong>.</p>
+        <p style="margin:24px 0;">
+          <a href="${link}"
+             style="display:inline-block;background:#15803d;color:white;
+                    padding:12px 24px;border-radius:8px;text-decoration:none;
+                    font-weight:600;">
+            Definir minha senha
+          </a>
+        </p>
+        <p style="color:#71717a;font-size:13px;">
+          Depois de definir a senha, você poderá acessar o painel a qualquer
+          momento em <strong>${config.appUrl.replace(/\/$/, "")}/painel/corretora/login</strong>.
+        </p>
+        <p style="color:#71717a;font-size:12px;margin-top:24px;">
+          Se você não estava esperando este e-mail, ignore esta mensagem —
+          nenhuma conta foi ativada sem sua confirmação.
+        </p>
+        <p style="color:#a1a1aa;font-size:11px;word-break:break-all;margin-top:16px;">
+          Link direto: ${link}
+        </p>
+      </div>
+    `,
+  });
+}
+
+/**
  * Envia o e-mail de redefinição de senha para usuário de corretora.
  * Link aponta para o painel da corretora, não para a loja.
  */
@@ -89,5 +135,6 @@ async function sendTransactionalEmail(to, subject, html, text = null) {
 module.exports = {
   sendResetPasswordEmail,
   sendCorretoraResetPasswordEmail,
+  sendCorretoraInviteEmail,
   sendTransactionalEmail,
 };

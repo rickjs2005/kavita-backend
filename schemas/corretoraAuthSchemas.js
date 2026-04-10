@@ -148,11 +148,14 @@ const listLeadsQuerySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Provisionamento de usuário pelo admin
-// POST /api/admin/mercado-do-cafe/corretoras/:id/users
+// Convite de primeiro acesso pelo admin
+// POST /api/admin/mercado-do-cafe/corretoras/:id/users/invite
+//
+// Não recebe senha: o admin só informa nome e e-mail. A corretora define
+// a senha ao usar o link de primeiro acesso enviado por e-mail.
 // ---------------------------------------------------------------------------
 
-const createCorretoraUserSchema = z.object({
+const inviteCorretoraUserSchema = z.object({
   nome: z
     .string({ required_error: "Nome é obrigatório." })
     .min(3, "Nome deve ter pelo menos 3 caracteres.")
@@ -163,10 +166,6 @@ const createCorretoraUserSchema = z.object({
     .email("E-mail inválido.")
     .max(200)
     .transform((v) => v.trim().toLowerCase()),
-  senha: z
-    .string({ required_error: "Senha é obrigatória." })
-    .min(8, "Senha deve ter pelo menos 8 caracteres.")
-    .max(200),
 });
 
 // ---------------------------------------------------------------------------
@@ -198,7 +197,7 @@ module.exports = {
   createLeadSchema,
   updateLeadSchema,
   listLeadsQuerySchema,
-  createCorretoraUserSchema,
+  inviteCorretoraUserSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
 };

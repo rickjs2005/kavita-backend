@@ -52,6 +52,24 @@ async function countByCorretoraId(corretoraId) {
   return Number(rows[0]?.total || 0);
 }
 
+/**
+ * Retorna o primeiro (e único, por regra de negócio atual) usuário de
+ * uma corretora, ou null. Usado pelo fluxo de convite para detectar
+ * se a corretora já tem conta criada ou pendente.
+ */
+async function findByCorretoraId(corretoraId) {
+  const [rows] = await pool.query(
+    `SELECT cu.*, c.status AS corretora_status, c.name AS corretora_name, c.slug AS corretora_slug
+     FROM corretora_users cu
+     JOIN corretoras c ON c.id = cu.corretora_id
+     WHERE cu.corretora_id = ?
+     ORDER BY cu.id ASC
+     LIMIT 1`,
+    [corretoraId]
+  );
+  return rows[0] ?? null;
+}
+
 async function create({ corretora_id, nome, email, password_hash }) {
   const [result] = await pool.query(
     `INSERT INTO corretora_users (corretora_id, nome, email, password_hash)
@@ -59,6 +77,32 @@ async function create({ corretora_id, nome, email, password_hash }) {
     [corretora_id, nome, email, password_hash]
   );
   return result.insertId;
+}
+
+/**
+ * Cria um usuário de corretora em estado "convite pendente":
+ * password_hash é gravado como NULL. A corretora define a senha
+ * ao usar o link de primeiro acesso enviado por e-mail.
+ */
+async function createPending({ corretora_id, nome, email }) {
+  const [result] = await pool.query(
+    `INSERT INTO corretora_users (corretora_id, nome, email, password_hash)
+     VALUES (?, ?, ?, NULL)`,
+    [corretora_id, nome, email]
+  );
+  return result.insertId;
+}
+
+/**
+ * Atualiza apenas nome e e-mail (usado quando admin corrige dados de
+ * um convite pendente antes de reenviar). Não toca password_hash.
+ */
+async function updateContactFields(id, { nome, email }) {
+  const [result] = await pool.query(
+    `UPDATE corretora_users SET nome = ?, email = ? WHERE id = ?`,
+    [nome, email, id]
+  );
+  return result.affectedRows;
 }
 
 async function updateLastLogin(id) {
@@ -78,8 +122,11 @@ async function incrementTokenVersion(id) {
 module.exports = {
   findByEmail,
   findById,
+  findByCorretoraId,
   countByCorretoraId,
   create,
+  createPending,
+  updateContactFields,
   updateLastLogin,
   incrementTokenVersion,
   updatePasswordAndBumpTokenVersion,

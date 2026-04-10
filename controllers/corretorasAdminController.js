@@ -245,56 +245,48 @@ const rejectSubmission = async (req, res, next) => {
 };
 
 /**
- * POST /api/admin/mercado-do-cafe/corretoras/:id/users
- * Provisiona o primeiro usuário de login para uma corretora (Fase 2).
- * Body validado por validate(createCorretoraUserSchema).
+ * POST /api/admin/mercado-do-cafe/corretoras/:id/users/invite
+ * Cria ou reenvia convite de primeiro acesso para a corretora.
+ * Body validado por validate(inviteCorretoraUserSchema).
+ *
+ * Fluxos cobertos (idempotente):
+ *   - primeira vez: cria usuário pendente + envia e-mail
+ *   - reenviar: revoga tokens antigos + envia novo e-mail
+ *   - conta já ativa: 409 com guidance para usar reset
+ *
+ * Toda a lógica fica no service (corretoraAuthService.inviteCorretoraUser);
+ * este controller só extrai dados de req e chama o service.
  */
-const createCorretoraUser = async (req, res, next) => {
+const inviteCorretoraUser = async (req, res, next) => {
   try {
     const corretoraId = Number(req.params.id);
-    const corretora = await adminRepo.findById(corretoraId);
-
-    if (!corretora) {
-      return next(
-        new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404)
-      );
-    }
-    if (corretora.status !== "active") {
-      return next(
-        new AppError(
-          "Apenas corretoras ativas podem ter usuários.",
-          ERROR_CODES.VALIDATION_ERROR,
-          400
-        )
-      );
-    }
-
-    const user = await corretoraAuthService.createFirstUserForCorretora(
+    const result = await corretoraAuthService.inviteCorretoraUser(
       corretoraId,
-      req.body
+      req.body,
+      { adminId: req.admin?.id }
     );
 
-    logger.info(
-      {
-        adminId: req.admin?.id ?? null,
-        corretoraId,
-        corretoraUserId: user.id,
-        email: user.email,
-      },
-      "corretora.user.provisioned"
-    );
+    const msg = result.resent
+      ? "Convite reenviado. A corretora receberá um novo e-mail de primeiro acesso."
+      : "Convite enviado. A corretora receberá um e-mail com o link de primeiro acesso.";
 
     return response.created(
       res,
-      user,
-      "Usuário da corretora criado com sucesso."
+      {
+        id: result.id,
+        corretora_id: result.corretora_id,
+        nome: result.nome,
+        email: result.email,
+        resent: result.resent,
+      },
+      msg
     );
   } catch (err) {
     return next(
       err instanceof AppError
         ? err
         : new AppError(
-            "Erro ao criar usuário da corretora.",
+            "Erro ao enviar convite.",
             ERROR_CODES.SERVER_ERROR,
             500
           )
@@ -323,7 +315,7 @@ module.exports = {
   updateCorretora,
   toggleStatus,
   toggleFeatured,
-  createCorretoraUser,
+  inviteCorretoraUser,
   listSubmissions,
   getSubmissionById,
   approveSubmission,

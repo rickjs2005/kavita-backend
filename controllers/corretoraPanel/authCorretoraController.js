@@ -71,6 +71,24 @@ async function login(req, res, next) {
       );
     }
 
+    // Conta com convite pendente: existe row mas ainda não definiu senha.
+    // Login fica bloqueado até que a corretora use o link de primeiro
+    // acesso enviado por e-mail (ou "Esqueci minha senha" para recuperar).
+    if (authService.isPendingFirstAccess(user)) {
+      rateLimit.fail();
+      logger.warn(
+        { userId: user.id, corretoraId: user.corretora_id, ip: req.ip },
+        "corretora.login.blocked: pending_first_access"
+      );
+      return next(
+        new AppError(
+          "Sua conta ainda não tem senha definida. Verifique o e-mail de primeiro acesso ou use 'Esqueci minha senha'.",
+          ERROR_CODES.AUTH_ERROR,
+          401
+        )
+      );
+    }
+
     const ok = await authService.verifyPassword(senha, user.password_hash);
     if (!ok) {
       rateLimit.fail();
