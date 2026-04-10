@@ -8,6 +8,7 @@ const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const authService = require("../../services/corretoraAuthService");
+const analyticsService = require("../../services/analyticsService");
 const logger = require("../../lib/logger");
 
 const COOKIE_NAME = "corretoraToken";
@@ -70,6 +71,15 @@ async function login(req, res, next) {
       { userId: user.id, corretoraId: user.corretora_id },
       "corretora login ok"
     );
+
+    analyticsService.track({
+      name: "corretora_login",
+      actorType: "corretora_user",
+      actorId: user.id,
+      corretoraId: user.corretora_id,
+      props: { email: user.email },
+      req,
+    });
 
     return response.ok(
       res,

@@ -9,6 +9,7 @@ const ERROR_CODES = require("../constants/ErrorCodes");
 const leadsRepo = require("../repositories/corretoraLeadsRepository");
 const publicCorretorasRepo = require("../repositories/corretorasPublicRepository");
 const mailService = require("./mailService");
+const analyticsService = require("./analyticsService");
 const logger = require("../lib/logger");
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,22 @@ async function createLeadFromPublic({ slug, data, meta }) {
       { err, corretora_id: corretora.id, leadId },
       "corretoraLeads: falha ao notificar novo lead"
     );
+  });
+
+  analyticsService.track({
+    name: "lead_created",
+    actorType: "anonymous",
+    corretoraId: corretora.id,
+    props: {
+      lead_id: leadId,
+      cidade: data.cidade ?? null,
+      has_message: Boolean(data.mensagem),
+    },
+    // req não está disponível aqui — passamos IP/UA inline via "req-shim"
+    req: {
+      ip: meta?.ip,
+      get: (h) => (h === "user-agent" ? meta?.userAgent : null),
+    },
   });
 
   return { id: leadId, corretora_id: corretora.id };
@@ -123,7 +140,7 @@ async function getSummary(corretoraId) {
   return leadsRepo.summary(corretoraId);
 }
 
-async function updateLead(leadId, corretoraId, data) {
+async function updateLead(leadId, corretoraId, data, actor = {}) {
   const current = await leadsRepo.findByIdForCorretora(leadId, corretoraId);
   if (!current) {
     throw new AppError("Lead não encontrado.", ERROR_CODES.NOT_FOUND, 404);
@@ -136,6 +153,22 @@ async function updateLead(leadId, corretoraId, data) {
       ERROR_CODES.VALIDATION_ERROR,
       400
     );
+  }
+
+  // Só emite lead_status_updated quando realmente houve mudança de status.
+  // Mudanças apenas de nota_interna não poluem o funil.
+  if (data.status && data.status !== current.status) {
+    analyticsService.track({
+      name: "lead_status_updated",
+      actorType: "corretora_user",
+      actorId: actor.userId ?? null,
+      corretoraId,
+      props: {
+        lead_id: leadId,
+        from_status: current.status,
+        to_status: data.status,
+      },
+    });
   }
 
   return leadsRepo.findByIdForCorretora(leadId, corretoraId);

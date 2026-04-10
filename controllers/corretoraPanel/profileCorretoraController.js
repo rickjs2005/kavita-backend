@@ -8,6 +8,7 @@ const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const adminRepo = require("../../repositories/corretorasAdminRepository");
+const analyticsService = require("../../services/analyticsService");
 
 /**
  * GET /api/corretora/profile
@@ -71,6 +72,16 @@ async function updateMyProfile(req, res, next) {
 
     await adminRepo.update(corretoraId, data);
     const updated = await adminRepo.findById(corretoraId);
+
+    analyticsService.track({
+      name: "profile_updated",
+      actorType: "corretora_user",
+      actorId: req.corretoraUser.id,
+      corretoraId,
+      props: { fields_changed: Object.keys(data) },
+      req,
+    });
+
     return response.ok(res, updated, "Perfil atualizado.");
   } catch (err) {
     return next(

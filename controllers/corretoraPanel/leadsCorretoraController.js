@@ -70,7 +70,8 @@ async function updateLead(req, res, next) {
     const updated = await leadsService.updateLead(
       leadId,
       req.corretoraUser.corretora_id,
-      req.body
+      req.body,
+      { userId: req.corretoraUser.id }
     );
     return response.ok(res, updated, "Lead atualizado.");
   } catch (err) {
