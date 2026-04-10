@@ -45,6 +45,25 @@ async function forgotPassword(req, res, next) {
     // também está ativa. Em qualquer outro caso devolvemos a mesma
     // resposta para o atacante não distinguir.
     if (!user || !user.is_active || user.corretora_status !== "active") {
+      // Log o motivo real internamente — fora da resposta HTTP, seguro.
+      // Útil para debugar "a corretora disse que pediu reset e nunca
+      // recebeu o e-mail": aqui você vê se é user_not_found, user_inactive
+      // ou corretora_inactive.
+      const reason = !user
+        ? "user_not_found"
+        : !user.is_active
+          ? "user_inactive"
+          : "corretora_inactive";
+      logger.info(
+        {
+          email,
+          ip: req.ip,
+          reason,
+          userId: user?.id ?? null,
+          corretoraId: user?.corretora_id ?? null,
+        },
+        "corretora.forgot_password.skipped"
+      );
       rateLimit.reset();
       return genericOk();
     }

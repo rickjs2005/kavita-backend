@@ -34,8 +34,23 @@ async function login(req, res, next) {
   try {
     const user = await authService.findUserByEmail(email);
 
-    if (!user || !user.is_active) {
+    if (!user) {
       rateLimit.fail();
+      logger.warn(
+        { email, ip: req.ip },
+        "corretora.login.failed: user_not_found"
+      );
+      return next(
+        new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401)
+      );
+    }
+
+    if (!user.is_active) {
+      rateLimit.fail();
+      logger.warn(
+        { userId: user.id, email, ip: req.ip },
+        "corretora.login.blocked: user_inactive"
+      );
       return next(
         new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401)
       );
@@ -43,6 +58,10 @@ async function login(req, res, next) {
 
     if (user.corretora_status !== "active") {
       rateLimit.fail();
+      logger.warn(
+        { userId: user.id, corretoraId: user.corretora_id, ip: req.ip },
+        "corretora.login.blocked: corretora_inactive"
+      );
       return next(
         new AppError(
           "Corretora inativa. Entre em contato com o administrador.",
@@ -55,6 +74,10 @@ async function login(req, res, next) {
     const ok = await authService.verifyPassword(senha, user.password_hash);
     if (!ok) {
       rateLimit.fail();
+      logger.warn(
+        { userId: user.id, email, ip: req.ip },
+        "corretora.login.failed: wrong_password"
+      );
       return next(
         new AppError("Credenciais inválidas.", ERROR_CODES.AUTH_ERROR, 401)
       );
@@ -68,8 +91,8 @@ async function login(req, res, next) {
     res.cookie(COOKIE_NAME, token, getCookieOptions());
 
     logger.info(
-      { userId: user.id, corretoraId: user.corretora_id },
-      "corretora login ok"
+      { userId: user.id, corretoraId: user.corretora_id, ip: req.ip },
+      "corretora.login.ok"
     );
 
     analyticsService.track({

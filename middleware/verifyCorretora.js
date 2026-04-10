@@ -51,16 +51,28 @@ async function verifyCorretora(req, _res, next) {
   try {
     const user = await authService.findUserById(decoded.id);
     if (!user) {
+      logger.warn(
+        { userId: decoded.id, ip: req.ip },
+        "verifyCorretora.rejected: user_not_found"
+      );
       return next(
         new AppError("Usuário não encontrado.", ERROR_CODES.AUTH_ERROR, 401)
       );
     }
     if (!user.is_active) {
+      logger.warn(
+        { userId: user.id, corretoraId: user.corretora_id, ip: req.ip },
+        "verifyCorretora.rejected: user_inactive"
+      );
       return next(
         new AppError("Usuário inativo.", ERROR_CODES.AUTH_ERROR, 401)
       );
     }
     if (user.corretora_status !== "active") {
+      logger.warn(
+        { userId: user.id, corretoraId: user.corretora_id, ip: req.ip },
+        "verifyCorretora.rejected: corretora_inactive"
+      );
       return next(
         new AppError(
           "Corretora inativa. Entre em contato com o administrador.",
@@ -73,6 +85,10 @@ async function verifyCorretora(req, _res, next) {
     const dbVersion = user.token_version ?? 0;
     const jwtVersion = decoded.tokenVersion ?? 0;
     if (jwtVersion !== dbVersion) {
+      logger.warn(
+        { userId: user.id, corretoraId: user.corretora_id, ip: req.ip },
+        "verifyCorretora.rejected: token_version_mismatch"
+      );
       return next(
         new AppError(
           "Sessão inválida. Faça login novamente.",

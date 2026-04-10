@@ -5,6 +5,7 @@
 "use strict";
 
 const { response } = require("../lib");
+const logger = require("../lib/logger");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const adminRepo = require("../repositories/corretorasAdminRepository");
@@ -272,6 +273,17 @@ const createCorretoraUser = async (req, res, next) => {
       corretoraId,
       req.body
     );
+
+    logger.info(
+      {
+        adminId: req.admin?.id ?? null,
+        corretoraId,
+        corretoraUserId: user.id,
+        email: user.email,
+      },
+      "corretora.user.provisioned"
+    );
+
     return response.created(
       res,
       user,

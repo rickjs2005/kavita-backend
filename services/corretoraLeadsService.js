@@ -40,12 +40,30 @@ async function createLeadFromPublic({ slug, data, meta }) {
     user_agent: meta?.userAgent,
   });
 
+  logger.info(
+    {
+      leadId,
+      corretoraId: corretora.id,
+      corretoraSlug: slug,
+      hasMessage: Boolean(data.mensagem),
+      hasCidade: Boolean(data.cidade),
+      ip: meta?.ip,
+    },
+    "corretora.lead.created"
+  );
+
   // Notificação fire-and-forget — nunca falha a criação do lead por causa
   // de um problema de e-mail.
   notifyCorretoraOfNewLead(corretora, { id: leadId, ...data }).catch((err) => {
     logger.warn(
-      { err, corretora_id: corretora.id, leadId },
-      "corretoraLeads: falha ao notificar novo lead"
+      {
+        err: err?.message ?? String(err),
+        errCode: err?.code,
+        corretoraId: corretora.id,
+        corretoraEmail: corretora.email,
+        leadId,
+      },
+      "corretora.lead.email_failed"
     );
   });
 
@@ -143,6 +161,12 @@ async function getSummary(corretoraId) {
 async function updateLead(leadId, corretoraId, data, actor = {}) {
   const current = await leadsRepo.findByIdForCorretora(leadId, corretoraId);
   if (!current) {
+    // Sinal importante: pode ser bug de UI (lead deletado/stale) OU
+    // tentativa de acessar lead de outra corretora. Worth a warn.
+    logger.warn(
+      { leadId, corretoraId, actorId: actor.userId ?? null },
+      "corretora.lead.update_not_found"
+    );
     throw new AppError("Lead não encontrado.", ERROR_CODES.NOT_FOUND, 404);
   }
 
@@ -158,6 +182,16 @@ async function updateLead(leadId, corretoraId, data, actor = {}) {
   // Só emite lead_status_updated quando realmente houve mudança de status.
   // Mudanças apenas de nota_interna não poluem o funil.
   if (data.status && data.status !== current.status) {
+    logger.info(
+      {
+        leadId,
+        corretoraId,
+        actorId: actor.userId ?? null,
+        fromStatus: current.status,
+        toStatus: data.status,
+      },
+      "corretora.lead.status_changed"
+    );
     analyticsService.track({
       name: "lead_status_updated",
       actorType: "corretora_user",
