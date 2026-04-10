@@ -127,10 +127,37 @@ const baseFields = {
 
 // ---------------------------------------------------------------------------
 // Public submission schema (POST /api/public/corretoras/submit)
+//
+// A partir do fluxo "senha no cadastro", o form público agora exige:
+//   - email (é usado como login da corretora, não mais opcional)
+//   - senha + senha_confirmacao (a corretora define no signup)
+//
+// A regra "pelo menos um canal de contato" permanece, mas como email
+// passou a ser obrigatório, ela é satisfeita automaticamente.
 // ---------------------------------------------------------------------------
 
 const submitCorretoraSchema = z
-  .object(baseFields)
+  .object({
+    ...baseFields,
+    // Override: email deixa de ser opcional e vira chave de login.
+    email: z
+      .string({ required_error: "E-mail é obrigatório." })
+      .email("E-mail inválido.")
+      .max(200, "E-mail deve ter no máximo 200 caracteres.")
+      .transform((v) => v.trim().toLowerCase()),
+    senha: z
+      .string({ required_error: "Senha é obrigatória." })
+      .min(8, "Senha deve ter pelo menos 8 caracteres.")
+      .max(200, "Senha deve ter no máximo 200 caracteres."),
+    senha_confirmacao: z
+      .string({ required_error: "Confirmação de senha é obrigatória." })
+      .min(8, "Confirmação deve ter pelo menos 8 caracteres.")
+      .max(200),
+  })
+  .refine((data) => data.senha === data.senha_confirmacao, {
+    message: "As senhas não coincidem.",
+    path: ["senha_confirmacao"],
+  })
   .refine(atLeastOneContact, {
     message: AT_LEAST_ONE_CONTACT_MSG,
     path: ["_contacts"],

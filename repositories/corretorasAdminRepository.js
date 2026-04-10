@@ -157,7 +157,7 @@ async function createSubmission(data) {
   const fields = [
     "name", "contact_name", "description", "logo_path",
     "city", "state", "region", "phone", "whatsapp", "email",
-    "website", "instagram", "facebook",
+    "website", "instagram", "facebook", "password_hash",
   ];
   const placeholders = fields.map(() => "?").join(", ");
   const values = fields.map((f) => data[f] ?? null);
@@ -165,6 +165,32 @@ async function createSubmission(data) {
   const sql = `INSERT INTO corretora_submissions (${fields.join(", ")}) VALUES (${placeholders})`;
   const [result] = await pool.query(sql, values);
   return result.insertId;
+}
+
+/**
+ * Higiene: zera password_hash de uma submission. Usado ao rejeitar
+ * uma submissão para não guardar hash de pessoa que nunca virou
+ * corretora.
+ */
+async function clearSubmissionPassword(id) {
+  await pool.query(
+    "UPDATE corretora_submissions SET password_hash = NULL WHERE id = ?",
+    [id]
+  );
+}
+
+/**
+ * Verifica se há submission pendente com o mesmo e-mail. Usado no
+ * fluxo de signup para evitar dois cadastros duplicados na fila.
+ */
+async function findPendingSubmissionByEmail(email) {
+  const [rows] = await pool.query(
+    `SELECT id, email, status FROM corretora_submissions
+     WHERE email = ? AND status = 'pending'
+     LIMIT 1`,
+    [email]
+  );
+  return rows[0] ?? null;
 }
 
 async function approveSubmission(id, { reviewed_by, corretora_id }) {
@@ -211,4 +237,6 @@ module.exports = {
   approveSubmission,
   rejectSubmission,
   countPending,
+  clearSubmissionPassword,
+  findPendingSubmissionByEmail,
 };

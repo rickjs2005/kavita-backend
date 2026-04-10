@@ -34,6 +34,51 @@ async function sendResetPasswordEmail(toEmail, token) {
 }
 
 /**
+ * Envia o e-mail de "sua conta foi aprovada" para corretoras que
+ * passaram pelo fluxo novo (senha no cadastro). A corretora já
+ * definiu a senha no form público — esse e-mail apenas confirma
+ * que a análise foi concluída e o acesso já está liberado.
+ *
+ * Diferente de sendCorretoraInviteEmail, NÃO contém link de
+ * definir senha — a senha já existe. Só tem CTA "Entrar no painel".
+ */
+async function sendCorretoraApprovedEmail(toEmail, corretoraName) {
+  const loginUrl = `${config.appUrl.replace(/\/$/, "")}/painel/corretora/login`;
+  const safeName = corretoraName || "sua corretora";
+
+  await transporter.sendMail({
+    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+    to: toEmail,
+    subject: "Seu cadastro foi aprovado — bem-vinda ao Mercado do Café",
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px;">
+        <h2 style="color:#15803d;margin:0 0 12px;">☕ Cadastro aprovado</h2>
+        <p>Boas notícias! A <strong>${safeName}</strong> foi aprovada e já aparece na vitrine pública do Mercado do Café.</p>
+        <p>Seu acesso ao painel privado também está pronto. Use o e-mail deste cadastro e a senha que você definiu no formulário para entrar.</p>
+        <p style="margin:24px 0;">
+          <a href="${loginUrl}"
+             style="display:inline-block;background:#15803d;color:white;
+                    padding:12px 24px;border-radius:8px;text-decoration:none;
+                    font-weight:600;">
+            Entrar no painel
+          </a>
+        </p>
+        <p style="color:#71717a;font-size:13px;">
+          No painel você gerencia os contatos recebidos de produtores, atualiza
+          seu perfil público e acompanha sua atividade.
+        </p>
+        <p style="color:#71717a;font-size:12px;margin-top:24px;">
+          Esqueceu a senha que criou? Use a opção "Esqueci minha senha" na tela de login.
+        </p>
+        <p style="color:#a1a1aa;font-size:11px;word-break:break-all;margin-top:16px;">
+          Link direto: ${loginUrl}
+        </p>
+      </div>
+    `,
+  });
+}
+
+/**
  * Envia o e-mail de primeiro acesso (convite) para uma corretora que
  * acabou de ganhar acesso pelo admin. Copy diferente do reset — dá
  * boas-vindas e instrui sobre o que fazer.
@@ -136,5 +181,6 @@ module.exports = {
   sendResetPasswordEmail,
   sendCorretoraResetPasswordEmail,
   sendCorretoraInviteEmail,
+  sendCorretoraApprovedEmail,
   sendTransactionalEmail,
 };
