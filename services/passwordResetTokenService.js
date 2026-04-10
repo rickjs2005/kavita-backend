@@ -8,19 +8,27 @@
  * 2026022420502106-create-settings-tables-3977c29bbf.js — este serviço
  * assume que ela já existe.
  *
+ * A coluna `scope` foi adicionada pela migration
+ * 2026041000000003-add-scope-to-password-reset-tokens.js e permite
+ * separar namespaces de user_id entre usuários comuns e corretora_users.
+ *
+ * Todas as funções aceitam um `scope` opcional com default `"user"`,
+ * mantendo retrocompatibilidade com chamadas existentes.
+ *
  * Interface pública:
- *   generateToken()                          → string (hex 64 chars)
- *   storeToken(userId, token, expiresAt)     → Promise<tokenHash>
- *   findValidToken(token)                    → Promise<row | null>
- *   revokeToken(id)                          → Promise<void>
- *   revokeAllForUser(userId)                 → Promise<void>
- *   purgeExpired()                           → Promise<void>
+ *   generateToken()                                         → string
+ *   storeToken(userId, token, expiresAt, scope?)            → Promise<hash>
+ *   findValidToken(token, scope?)                           → Promise<row|null>
+ *   revokeToken(id)                                         → Promise<void>
+ *   revokeAllForUser(userId, scope?)                        → Promise<void>
+ *   purgeExpired()                                          → Promise<void>
  */
 
 const crypto = require("crypto");
 const pool = require("../config/pool");
 
 const TABLE_NAME = "password_reset_tokens";
+const DEFAULT_SCOPE = "user";
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -30,27 +38,35 @@ function generateToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-async function revokeAllForUser(userId) {
+async function revokeAllForUser(userId, scope = DEFAULT_SCOPE) {
   await pool.execute(
-    `UPDATE ${TABLE_NAME} SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL`,
-    [userId]
+    `UPDATE ${TABLE_NAME}
+       SET revoked_at = NOW()
+     WHERE user_id = ? AND scope = ? AND revoked_at IS NULL`,
+    [userId, scope]
   );
 }
 
-async function storeToken(userId, token, expiresAt) {
+async function storeToken(userId, token, expiresAt, scope = DEFAULT_SCOPE) {
   const tokenHash = hashToken(token);
   await pool.execute(
-    `INSERT INTO ${TABLE_NAME} (user_id, token_hash, expires_at) VALUES (?, ?, ?)`,
-    [userId, tokenHash, expiresAt]
+    `INSERT INTO ${TABLE_NAME} (user_id, scope, token_hash, expires_at)
+     VALUES (?, ?, ?, ?)`,
+    [userId, scope, tokenHash, expiresAt]
   );
   return tokenHash;
 }
 
-async function findValidToken(token) {
+async function findValidToken(token, scope = DEFAULT_SCOPE) {
   const tokenHash = hashToken(token);
   const [rows] = await pool.execute(
-    `SELECT * FROM ${TABLE_NAME} WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > NOW() LIMIT 1`,
-    [tokenHash]
+    `SELECT * FROM ${TABLE_NAME}
+     WHERE token_hash = ?
+       AND scope = ?
+       AND revoked_at IS NULL
+       AND expires_at > NOW()
+     LIMIT 1`,
+    [tokenHash, scope]
   );
   return rows[0] || null;
 }

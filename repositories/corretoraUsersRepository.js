@@ -17,6 +17,21 @@ async function findByEmail(email) {
   return rows[0] ?? null;
 }
 
+/**
+ * Atualiza a senha de um corretora_user e incrementa token_version
+ * na mesma query — invalida sessões ativas imediatamente após o reset.
+ */
+async function updatePasswordAndBumpTokenVersion(id, passwordHash) {
+  const [result] = await pool.query(
+    `UPDATE corretora_users
+       SET password_hash = ?,
+           token_version = token_version + 1
+     WHERE id = ?`,
+    [passwordHash, id]
+  );
+  return result.affectedRows;
+}
+
 async function findById(id) {
   const [rows] = await pool.query(
     `SELECT cu.*, c.status AS corretora_status, c.name AS corretora_name, c.slug AS corretora_slug
@@ -67,4 +82,5 @@ module.exports = {
   create,
   updateLastLogin,
   incrementTokenVersion,
+  updatePasswordAndBumpTokenVersion,
 };

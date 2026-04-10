@@ -34,6 +34,41 @@ async function sendResetPasswordEmail(toEmail, token) {
 }
 
 /**
+ * Envia o e-mail de redefinição de senha para usuário de corretora.
+ * Link aponta para o painel da corretora, não para a loja.
+ */
+async function sendCorretoraResetPasswordEmail(toEmail, token) {
+  const resetLink = `${config.appUrl.replace(/\/$/, "")}/painel/corretora/resetar-senha?token=${token}`;
+
+  await transporter.sendMail({
+    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+    to: toEmail,
+    subject: "Redefinir senha do painel da corretora",
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px;">
+        <h2 style="color:#15803d;margin:0 0 12px;">☕ Redefinir senha</h2>
+        <p>Você solicitou a redefinição de senha do seu painel no Mercado do Café.</p>
+        <p>Clique no botão abaixo para criar uma nova senha. O link expira em 1 hora.</p>
+        <p style="margin:20px 0;">
+          <a href="${resetLink}"
+             style="display:inline-block;background:#15803d;color:white;
+                    padding:10px 20px;border-radius:8px;text-decoration:none;
+                    font-weight:600;">
+            Criar nova senha
+          </a>
+        </p>
+        <p style="color:#71717a;font-size:12px;">
+          Se você não solicitou isso, ignore este e-mail — nenhuma alteração será feita.
+        </p>
+        <p style="color:#71717a;font-size:12px;word-break:break-all;">
+          Link direto: ${resetLink}
+        </p>
+      </div>
+    `,
+  });
+}
+
+/**
  * Envia e-mails transacionais (confirmação, comprovante, envio, notificações…)
  * @param {string} to
  * @param {string} subject
@@ -53,5 +88,6 @@ async function sendTransactionalEmail(to, subject, html, text = null) {
 
 module.exports = {
   sendResetPasswordEmail,
+  sendCorretoraResetPasswordEmail,
   sendTransactionalEmail,
 };

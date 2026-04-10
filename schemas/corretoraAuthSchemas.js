@@ -169,6 +169,29 @@ const createCorretoraUserSchema = z.object({
     .max(200),
 });
 
+// ---------------------------------------------------------------------------
+// Recuperação de senha (POST /api/corretora/forgot-password e /reset-password)
+// ---------------------------------------------------------------------------
+
+const forgotPasswordSchema = z.object({
+  email: z
+    .string({ required_error: "E-mail é obrigatório." })
+    .email("E-mail inválido.")
+    .max(200)
+    .transform((v) => v.trim().toLowerCase()),
+});
+
+const resetPasswordSchema = z.object({
+  token: z
+    .string({ required_error: "Token é obrigatório." })
+    .min(32, "Token inválido.")
+    .max(128, "Token inválido."),
+  senha: z
+    .string({ required_error: "Nova senha é obrigatória." })
+    .min(8, "Senha deve ter pelo menos 8 caracteres.")
+    .max(200),
+});
+
 module.exports = {
   corretoraLoginSchema,
   updateProfileSchema,
@@ -176,4 +199,6 @@ module.exports = {
   updateLeadSchema,
   listLeadsQuerySchema,
   createCorretoraUserSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 };
