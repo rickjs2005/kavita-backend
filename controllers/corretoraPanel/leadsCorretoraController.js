@@ -22,7 +22,17 @@ async function listMine(req, res, next) {
       req.corretoraUser.corretora_id,
       q
     );
-    return response.paginated(res, result);
+    // Retornamos o payload de paginação dentro de `data` (e não via
+    // response.paginated) porque o apiClient do frontend faz unwrap
+    // do envelope e descarta o `meta`. Colocando items+total+pages
+    // dentro de data, o cliente recebe o objeto completo.
+    return response.ok(res, {
+      items: result.items,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      pages: Math.max(1, Math.ceil(result.total / result.limit)),
+    });
   } catch (err) {
     return next(
       new AppError("Erro ao listar leads.", ERROR_CODES.SERVER_ERROR, 500)
