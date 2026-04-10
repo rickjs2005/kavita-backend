@@ -9,6 +9,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const adminRepo = require("../repositories/corretorasAdminRepository");
 const corretorasService = require("../services/corretorasService");
+const corretoraAuthService = require("../services/corretoraAuthService");
 const mediaService = require("../services/mediaService");
 const {
   listAdminQuerySchema,
@@ -243,6 +244,53 @@ const rejectSubmission = async (req, res, next) => {
 };
 
 /**
+ * POST /api/admin/mercado-do-cafe/corretoras/:id/users
+ * Provisiona o primeiro usuário de login para uma corretora (Fase 2).
+ * Body validado por validate(createCorretoraUserSchema).
+ */
+const createCorretoraUser = async (req, res, next) => {
+  try {
+    const corretoraId = Number(req.params.id);
+    const corretora = await adminRepo.findById(corretoraId);
+
+    if (!corretora) {
+      return next(
+        new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404)
+      );
+    }
+    if (corretora.status !== "active") {
+      return next(
+        new AppError(
+          "Apenas corretoras ativas podem ter usuários.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
+    }
+
+    const user = await corretoraAuthService.createFirstUserForCorretora(
+      corretoraId,
+      req.body
+    );
+    return response.created(
+      res,
+      user,
+      "Usuário da corretora criado com sucesso."
+    );
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao criar usuário da corretora.",
+            ERROR_CODES.SERVER_ERROR,
+            500
+          )
+    );
+  }
+};
+
+/**
  * GET /api/admin/corretora-submissions/pending-count
  */
 const getPendingCount = async (req, res, next) => {
@@ -263,6 +311,7 @@ module.exports = {
   updateCorretora,
   toggleStatus,
   toggleFeatured,
+  createCorretoraUser,
   listSubmissions,
   getSubmissionById,
   approveSubmission,

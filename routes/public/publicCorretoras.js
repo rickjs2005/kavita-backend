@@ -8,10 +8,19 @@ const express = require("express");
 const router = express.Router();
 
 const ctrl = require("../../controllers/corretorasPublicController");
+const leadsCtrl = require("../../controllers/corretorasLeadsPublicController");
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
 const { validate } = require("../../middleware/validate");
 const { submitCorretoraSchema } = require("../../schemas/corretorasSchemas");
+const { createLeadSchema } = require("../../schemas/corretoraAuthSchemas");
+const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
+
+// Rate-limit por IP para captura de leads — evita spam massivo.
+// Usa o schedule default do adaptiveRateLimiter.
+const leadsRateLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => `corretora_lead:${req.ip}`,
+});
 
 // Listagem pública de corretoras ativas
 router.get("/", ctrl.listCorretoras);
@@ -25,6 +34,14 @@ router.post(
   upload.single("logo"),
   validate(submitCorretoraSchema),
   ctrl.submitCorretora
+);
+
+// Captura de lead (Fase 2) — rate-limited, sem CSRF (rota pública anônima)
+router.post(
+  "/:slug/leads",
+  leadsRateLimiter,
+  validate(createLeadSchema),
+  leadsCtrl.submitLead
 );
 
 // Detalhe por slug (deve vir depois das rotas nomeadas)

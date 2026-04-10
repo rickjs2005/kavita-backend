@@ -23,6 +23,9 @@ const load = (path, mod) => loadRoute(router, path, mod);
 load("/login", "./auth/login");
 load("/admin", "./auth/adminLogin");
 
+// Login/logout/me da corretora — mesmo contrato do admin (cookie HttpOnly)
+load("/corretora", "./auth/corretoraAuth");
+
 // Registro, forgot/reset password, logout, csrf-token (usuário)
 load("/", "./auth/authRoutes");
 

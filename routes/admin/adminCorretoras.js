@@ -18,6 +18,9 @@ const {
   featuredSchema,
   rejectSubmissionSchema,
 } = require("../../schemas/corretorasSchemas");
+const {
+  createCorretoraUserSchema,
+} = require("../../schemas/corretoraAuthSchemas");
 
 // ─── Corretoras CRUD ────────────────────────────────────────────────────────
 
@@ -48,6 +51,13 @@ router.patch(
   "/corretoras/:id/featured",
   validate(featuredSchema),
   ctrl.toggleFeatured
+);
+
+// Provisionamento do usuário de login da corretora (Fase 2)
+router.post(
+  "/corretoras/:id/users",
+  validate(createCorretoraUserSchema),
+  ctrl.createCorretoraUser
 );
 
 // ─── Submissions ────────────────────────────────────────────────────────────
