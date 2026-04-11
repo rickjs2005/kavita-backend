@@ -51,4 +51,7 @@ load("/public/corretoras", "./public/publicCorretoras");
 load("/public/contato", "./public/publicContato");
 load("/public/support-config", "./public/publicSupportConfig");
 
+// — Consulta de CEP (proxy para ViaCEP) —
+load("/public/cep", "./public/publicCep");
+
 module.exports = router;
