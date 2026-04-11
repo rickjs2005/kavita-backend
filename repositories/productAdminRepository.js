@@ -26,6 +26,7 @@ const IMAGE_COL = "image";
 const CATEGORY_COL = "category_id";
 const SHIPPING_FREE_COL = "shipping_free";
 const SHIPPING_FREE_FROM_QTY_COL = "shipping_free_from_qty";
+const SHIPPING_PRAZO_DIAS_COL = "shipping_prazo_dias";
 
 // ---------------------------------------------------------------------------
 // Helpers internos
@@ -35,11 +36,14 @@ function normalizeShippingFields(row) {
   if (!row) return row;
   const sf = row[SHIPPING_FREE_COL];
   const sfq = row[SHIPPING_FREE_FROM_QTY_COL];
+  const spd = row[SHIPPING_PRAZO_DIAS_COL];
   return {
     ...row,
     [SHIPPING_FREE_COL]: sf === null || sf === undefined ? 0 : Number(sf) ? 1 : 0,
     [SHIPPING_FREE_FROM_QTY_COL]:
       sfq === null || sfq === undefined || sfq === "" ? null : Number(sfq),
+    [SHIPPING_PRAZO_DIAS_COL]:
+      spd === null || spd === undefined || spd === "" ? null : Number(spd),
   };
 }
 
@@ -102,19 +106,19 @@ async function findImagesByProductId(db, productId) {
 // Mutations (usam connection para rodar dentro de transações)
 // ---------------------------------------------------------------------------
 
-async function insert(conn, { name, description, priceNum, qtyNum, catIdNum, shippingFreeBool, shippingFreeFromQty }) {
+async function insert(conn, { name, description, priceNum, qtyNum, catIdNum, shippingFreeBool, shippingFreeFromQty, shippingPrazoDias }) {
   const [result] = await conn.query(
     `INSERT INTO ${PRODUCTS_TABLE} (
       name, description, price, quantity, ${CATEGORY_COL}, ${IMAGE_COL},
-      ${SHIPPING_FREE_COL}, ${SHIPPING_FREE_FROM_QTY_COL}
+      ${SHIPPING_FREE_COL}, ${SHIPPING_FREE_FROM_QTY_COL}, ${SHIPPING_PRAZO_DIAS_COL}
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name, description || null, priceNum, qtyNum, catIdNum, null, shippingFreeBool ? 1 : 0, shippingFreeFromQty]
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name, description || null, priceNum, qtyNum, catIdNum, null, shippingFreeBool ? 1 : 0, shippingFreeFromQty, shippingPrazoDias ?? null]
   );
   return result.insertId;
 }
 
-async function update(conn, id, { name, description, priceNum, qtyNum, catIdNum, shippingFreeBool, shippingFreeFromQty }) {
+async function update(conn, id, { name, description, priceNum, qtyNum, catIdNum, shippingFreeBool, shippingFreeFromQty, shippingPrazoDias }) {
   const [result] = await conn.query(
     `UPDATE ${PRODUCTS_TABLE}
      SET
@@ -124,9 +128,10 @@ async function update(conn, id, { name, description, priceNum, qtyNum, catIdNum,
        quantity = ?,
        ${CATEGORY_COL} = ?,
        ${SHIPPING_FREE_COL} = ?,
-       ${SHIPPING_FREE_FROM_QTY_COL} = ?
+       ${SHIPPING_FREE_FROM_QTY_COL} = ?,
+       ${SHIPPING_PRAZO_DIAS_COL} = ?
      WHERE id = ?`,
-    [name, description || null, priceNum, qtyNum, catIdNum, shippingFreeBool ? 1 : 0, shippingFreeFromQty, id]
+    [name, description || null, priceNum, qtyNum, catIdNum, shippingFreeBool ? 1 : 0, shippingFreeFromQty, shippingPrazoDias ?? null, id]
   );
   return result.affectedRows;
 }

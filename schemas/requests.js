@@ -60,6 +60,10 @@ const ProdutoBaseSchema = z.object({
 
   // Quantidade mínima para frete grátis — parseNullablePositiveInt no handler
   shippingFreeFromQtyStr: z.string().optional().default(""),
+
+  // Prazo de entrega próprio do produto (em dias) — parseNullablePositiveInt
+  // no handler. Se vazio/zero, cai no prazo padrão da região (shippingQuoteService).
+  shippingPrazoDiasStr: z.string().optional().default(""),
 });
 
 /**

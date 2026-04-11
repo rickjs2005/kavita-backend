@@ -328,6 +328,37 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
       expect(mockConn.release).toHaveBeenCalledTimes(1);
       expect(mediaServiceMock.enqueueOrphanCleanup).toHaveBeenCalledTimes(1);
     });
+
+    // Regressão: shipping_prazo_dias era silenciosamente dropado pelo
+    // Zod (schema sem o campo) e pelo service (destructure sem a chave).
+    // Esta suite garante que o valor enviado pelo admin chega no SQL.
+    test("201: persiste shipping_prazo_dias no INSERT quando fornecido", async () => {
+      const { app, mockConn } = setupModuleWithMocks();
+      mockConn.query.mockResolvedValue([{ insertId: 77 }]);
+
+      const res = await request(app)
+        .post("/api/admin/produtos")
+        .send({ ...CREATE_BODY, shippingPrazoDiasStr: "5" });
+
+      expect(res.status).toBe(201);
+      // Último argumento ? do INSERT = shippingPrazoDias (5)
+      const insertCall = mockConn.query.mock.calls[0];
+      const sqlArgs = insertCall[1];
+      expect(sqlArgs[sqlArgs.length - 1]).toBe(5);
+    });
+
+    test("201: shipping_prazo_dias ausente persiste NULL (cai no prazo da região)", async () => {
+      const { app, mockConn } = setupModuleWithMocks();
+      mockConn.query.mockResolvedValue([{ insertId: 78 }]);
+
+      const res = await request(app)
+        .post("/api/admin/produtos")
+        .send(CREATE_BODY); // sem shippingPrazoDiasStr
+
+      expect(res.status).toBe(201);
+      const sqlArgs = mockConn.query.mock.calls[0][1];
+      expect(sqlArgs[sqlArgs.length - 1]).toBeNull();
+    });
   });
 
   /* ------------------------------------------------------------------ */

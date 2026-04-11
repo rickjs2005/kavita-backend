@@ -60,7 +60,16 @@ function rawFileTargets(files = []) {
 
 /** Valida e converte os campos numéricos comuns a create/update. */
 function parseAndValidateProductFields(data) {
-  const { name, description, price, quantity, category_id, shippingFree, shippingFreeFromQtyStr } = data;
+  const {
+    name,
+    description,
+    price,
+    quantity,
+    category_id,
+    shippingFree,
+    shippingFreeFromQtyStr,
+    shippingPrazoDiasStr,
+  } = data;
 
   const priceNum = parseMoneyBR(price);
   const qtyNum = toInt(quantity, -1);
@@ -69,6 +78,8 @@ function parseAndValidateProductFields(data) {
   const shippingFreeFromQty = shippingFreeBool
     ? parseNullablePositiveInt(shippingFreeFromQtyStr)
     : null;
+  // Prazo próprio do produto — NULL quando não informado (cai no prazo da região).
+  const shippingPrazoDias = parseNullablePositiveInt(shippingPrazoDiasStr);
 
   if (!name.trim())
     throw new AppError("Nome é obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400);
@@ -87,6 +98,7 @@ function parseAndValidateProductFields(data) {
     catIdNum,
     shippingFreeBool,
     shippingFreeFromQty,
+    shippingPrazoDias,
   };
 }
 
