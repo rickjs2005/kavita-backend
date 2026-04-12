@@ -6,6 +6,7 @@ const checkoutRepo = require("../repositories/checkoutRepository");
 const cartRepo = require("../repositories/cartRepository");
 const orderRepo = require("../repositories/orderRepository");
 const couponService = require("./couponService");
+const { normalizeFormaPagamento } = require("./paymentService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const logger = require("../lib/logger");
@@ -274,7 +275,7 @@ async function create(userId, body) {
     const pedidoId = await checkoutRepo.createOrder(connection, {
       userId,
       enderecoStr: JSON.stringify(endereco || {}),
-      formaPagamento,
+      formaPagamento: normalizeFormaPagamento(formaPagamento) || formaPagamento,
       cupomNorm,
     });
 
