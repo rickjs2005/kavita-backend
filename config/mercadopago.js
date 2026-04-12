@@ -11,9 +11,13 @@ let _client = null;
 
 function getMPClient() {
   if (!_client) {
-    _client = new MercadoPagoConfig({
-      accessToken: process.env.MP_ACCESS_TOKEN,
-    });
+    const accessToken = process.env.MP_ACCESS_TOKEN;
+    if (!accessToken) {
+      throw new Error(
+        "MP_ACCESS_TOKEN não configurado. Pagamentos via Mercado Pago estão indisponíveis."
+      );
+    }
+    _client = new MercadoPagoConfig({ accessToken });
   }
   return _client;
 }

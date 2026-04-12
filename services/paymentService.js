@@ -44,7 +44,7 @@ function normalizeFormaPagamento(raw) {
  * Monta o body da Preference do Mercado Pago para um pedido.
  */
 function buildPreferenceBody({ total, pedidoId, formaPagamento }) {
-  const appUrl = process.env.APP_URL;
+  const appUrl = (process.env.APP_URL || "").replace(/\/+$/, "");
   const tipo = normalizeFormaPagamento(formaPagamento);
 
   const body = {

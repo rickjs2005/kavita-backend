@@ -15,6 +15,7 @@ const REQUIRED_VARS = [
 // Variáveis obrigatórias APENAS em produção.
 // Em desenvolvimento, ausência gera aviso (não erro) para não bloquear setup local.
 const REQUIRED_IN_PRODUCTION = [
+  "MP_ACCESS_TOKEN",        // sem isso payment/start falha — não inicia pagamentos
   "MP_WEBHOOK_SECRET",      // sem isso o webhook falha fechado (401) — não processa pagamentos
   "CPF_ENCRYPTION_KEY",     // sem isso CPFs ficam em plaintext — risco LGPD
 ];
