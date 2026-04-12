@@ -1,6 +1,8 @@
 // middleware/csrfProtection.js
 // Double-submit cookie strategy for CSRF protection
 const crypto = require("crypto");
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 const CSRF_COOKIE = "csrf_token";
 const CSRF_HEADER = "x-csrf-token";
@@ -42,7 +44,7 @@ function validateCSRF(req, res, next) {
   const headerToken = req.headers && req.headers[CSRF_HEADER];
 
   if (!cookieToken || !headerToken) {
-    return res.status(403).json({ message: "CSRF token ausente." });
+    return next(new AppError("CSRF token ausente.", ERROR_CODES.FORBIDDEN, 403));
   }
 
   // Constant-time comparison to prevent timing attacks
@@ -53,7 +55,7 @@ function validateCSRF(req, res, next) {
     cookieBuf.length !== headerBuf.length ||
     !crypto.timingSafeEqual(cookieBuf, headerBuf)
   ) {
-    return res.status(403).json({ message: "CSRF token inválido." });
+    return next(new AppError("CSRF token inválido.", ERROR_CODES.FORBIDDEN, 403));
   }
 
   return next();
