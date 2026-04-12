@@ -122,6 +122,7 @@ const checkoutBodySchema = z.preprocess(
 
       cupom_codigo: z.string().trim().nullish(),
       nome: z.string().trim().optional(),
+      email: z.string().trim().email("Formato de e-mail inválido.").optional().or(z.literal("")),
       cpf: z.string().trim().optional(),
       telefone: z.string().trim().optional(),
     })
