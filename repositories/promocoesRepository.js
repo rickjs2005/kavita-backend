@@ -49,6 +49,8 @@ const BASE_SQL = `
   LEFT JOIN product_images pi ON pi.product_id = p.id
   WHERE
     d.is_active = 1
+    AND p.is_active = 1
+    AND p.quantity > 0
     AND (d.start_at IS NULL OR d.start_at <= NOW())
     AND (d.end_at   IS NULL OR d.end_at   >= NOW())
 `;
