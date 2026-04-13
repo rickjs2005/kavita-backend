@@ -97,6 +97,10 @@ const { updateOcorrenciaSchema } = require("../../schemas/pedidoOcorrenciasSchem
  */
 router.get("/", controller.listOrders);
 
+// --- Ocorrências (antes de /:id para evitar conflito de rota) ---
+router.get("/ocorrencias", controller.listOcorrencias);
+router.put("/ocorrencias/:ocorrenciaId", validate(updateOcorrenciaSchema), controller.updateOcorrencia);
+
 /**
  * @openapi
  * /api/admin/pedidos/{id}:
@@ -186,9 +190,5 @@ router.put("/:id/pagamento", validate(updatePaymentStatusSchema), controller.upd
  *       500: { description: Erro interno }
  */
 router.put("/:id/entrega", validate(updateDeliveryStatusSchema), controller.updateDeliveryStatus);
-
-// --- Ocorrências ---
-router.get("/ocorrencias", controller.listOcorrencias);
-router.put("/ocorrencias/:ocorrenciaId", validate(updateOcorrenciaSchema), controller.updateOcorrencia);
 
 module.exports = router;
