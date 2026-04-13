@@ -166,6 +166,7 @@ async function listOcorrencias(req, res, next) {
       status: r.status,
       resposta_admin: r.resposta_admin ?? null,
       taxa_extra: Number(r.taxa_extra ?? 0),
+      admin_id: r.admin_id ?? null,
       created_at: r.created_at,
       updated_at: r.updated_at,
       pedido_endereco: r.pedido_endereco ?? null,
