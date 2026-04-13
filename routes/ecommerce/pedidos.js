@@ -9,7 +9,11 @@ const express = require("express");
 const router = express.Router();
 const authenticateToken = require("../../middleware/authenticateToken");
 const { validate } = require("../../middleware/validate");
-const { createOcorrenciaSchema, replyOcorrenciaSchema } = require("../../schemas/pedidoOcorrenciasSchemas");
+const {
+  createOcorrenciaSchema,
+  replyOcorrenciaSchema,
+  feedbackOcorrenciaSchema,
+} = require("../../schemas/pedidoOcorrenciasSchemas");
 const ctrl = require("../../controllers/pedidosUserController");
 
 router.use(authenticateToken);
@@ -25,5 +29,8 @@ router.post("/:id/ocorrencias", validate(createOcorrenciaSchema), ctrl.createOco
 
 // PUT /api/pedidos/:id/ocorrencias/:ocorrenciaId/resposta — cliente responde ocorrência
 router.put("/:id/ocorrencias/:ocorrenciaId/resposta", validate(replyOcorrenciaSchema), ctrl.replyOcorrencia);
+
+// POST /api/pedidos/:id/ocorrencias/:ocorrenciaId/feedback — feedback pós-resolução
+router.post("/:id/ocorrencias/:ocorrenciaId/feedback", validate(feedbackOcorrenciaSchema), ctrl.submitFeedback);
 
 module.exports = router;

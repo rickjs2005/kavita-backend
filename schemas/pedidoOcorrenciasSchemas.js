@@ -66,4 +66,22 @@ const replyOcorrenciaSchema = z.object({
     .optional(),
 });
 
-module.exports = { createOcorrenciaSchema, updateOcorrenciaSchema, replyOcorrenciaSchema };
+const feedbackOcorrenciaSchema = z.object({
+  nota: z
+    .number()
+    .int()
+    .min(1, "Nota mínima é 1.")
+    .max(5, "Nota máxima é 5."),
+  comentario: z
+    .string()
+    .max(1000, "Comentário deve ter no máximo 1000 caracteres.")
+    .optional()
+    .default(""),
+});
+
+module.exports = {
+  createOcorrenciaSchema,
+  updateOcorrenciaSchema,
+  replyOcorrenciaSchema,
+  feedbackOcorrenciaSchema,
+};

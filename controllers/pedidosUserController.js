@@ -11,6 +11,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/pedidosUserRepository");
 const ocorrenciasRepo = require("../repositories/pedidoOcorrenciasRepository");
+const feedbackRepo = require("../repositories/ocorrenciaFeedbackRepository");
 const { dispararEventoComunicacao } = require("../services/comunicacaoService");
 const logger = require("../lib/logger");
 
@@ -66,10 +67,21 @@ const getPedidoById = async (req, res, next) => {
       return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
     }
 
-    const [itens, ocorrencias] = await Promise.all([
+    const [itens, ocorrenciasRaw] = await Promise.all([
       repo.findItemsByPedidoId(pedidoId),
       ocorrenciasRepo.findByPedidoId(pedidoId),
     ]);
+
+    // Buscar feedbacks em paralelo para cada ocorrência concluída
+    const ocorrencias = await Promise.all(
+      ocorrenciasRaw.map(async (o) => {
+        if (o.status === "resolvida" || o.status === "rejeitada") {
+          const fb = await feedbackRepo.findByOcorrenciaId(o.id);
+          return { ...o, feedback_nota: fb?.nota ?? null };
+        }
+        return { ...o, feedback_nota: null };
+      })
+    );
 
     const subtotalItens = n(pedido.subtotal_itens);
     const totalComDesc  = n(pedido.total_com_desconto);
@@ -106,6 +118,7 @@ const getPedidoById = async (req, res, next) => {
         status: o.status,
         resposta_admin: o.resposta_admin ?? null,
         taxa_extra: n(o.taxa_extra),
+        feedback_nota: o.feedback_nota ?? null,
         created_at: o.created_at,
         updated_at: o.updated_at,
       })),
@@ -245,4 +258,53 @@ const replyOcorrencia = async (req, res, next) => {
   }
 };
 
-module.exports = { listPedidos, getPedidoById, createOcorrencia, replyOcorrencia };
+const submitFeedback = async (req, res, next) => {
+  try {
+    const usuarioId = req.user?.id;
+    if (!usuarioId) {
+      return next(new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
+    }
+
+    const ocorrenciaId = Number(String(req.params.ocorrenciaId).replace(/\D/g, ""));
+    if (!ocorrenciaId) {
+      return next(new AppError("ID da ocorrência inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+
+    const oc = await ocorrenciasRepo.findByIdAndUserId(ocorrenciaId, usuarioId);
+    if (!oc) {
+      return next(new AppError("Ocorrência não encontrada.", ERROR_CODES.NOT_FOUND, 404));
+    }
+
+    if (oc.status !== "resolvida" && oc.status !== "rejeitada") {
+      return next(
+        new AppError("Feedback disponível apenas para ocorrências concluídas.", ERROR_CODES.CONFLICT, 409)
+      );
+    }
+
+    // Impedir duplicata (UNIQUE KEY no banco também garante)
+    const existing = await feedbackRepo.findByOcorrenciaId(ocorrenciaId);
+    if (existing) {
+      return next(
+        new AppError("Você já enviou feedback para esta ocorrência.", ERROR_CODES.CONFLICT, 409)
+      );
+    }
+
+    const { nota, comentario } = req.body;
+
+    await feedbackRepo.create({
+      ocorrenciaId,
+      usuarioId,
+      nota,
+      comentario,
+    });
+
+    return response.created(res, null, "Feedback enviado com sucesso.");
+  } catch (err) {
+    return next(
+      err instanceof AppError ? err
+        : new AppError("Erro ao enviar feedback.", ERROR_CODES.SERVER_ERROR, 500)
+    );
+  }
+};
+
+module.exports = { listPedidos, getPedidoById, createOcorrencia, replyOcorrencia, submitFeedback };
