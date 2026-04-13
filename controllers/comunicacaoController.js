@@ -30,6 +30,41 @@ const TEMPLATE_DEFINITIONS = [
     descricao: "Atualização quando o pedido sai para entrega.",
     canais: ["email", "whatsapp"],
   },
+  {
+    id: "ocorrencia_confirmacao",
+    nome: "Confirmar recebimento da solicitação",
+    descricao: "Informa que a solicitação de correção de endereço foi recebida.",
+    canais: ["email", "whatsapp"],
+    categoria: "ocorrencia",
+  },
+  {
+    id: "ocorrencia_solicitar_dados",
+    nome: "Solicitar dados do endereço",
+    descricao: "Pede ao cliente os dados corretos de entrega.",
+    canais: ["email", "whatsapp"],
+    categoria: "ocorrencia",
+  },
+  {
+    id: "ocorrencia_taxa_extra",
+    nome: "Informar possível taxa extra",
+    descricao: "Avisa que a alteração pode gerar custo adicional.",
+    canais: ["email", "whatsapp"],
+    categoria: "ocorrencia",
+  },
+  {
+    id: "ocorrencia_correcao_concluida",
+    nome: "Correção de endereço concluída",
+    descricao: "Confirma que o endereço foi corrigido com sucesso.",
+    canais: ["email", "whatsapp"],
+    categoria: "ocorrencia",
+  },
+  {
+    id: "ocorrencia_resolvida",
+    nome: "Ocorrência resolvida",
+    descricao: "Notifica que a solicitação foi resolvida.",
+    canais: ["email", "whatsapp"],
+    categoria: "ocorrencia",
+  },
 ];
 
 // ---------------------------------------------------------------------------

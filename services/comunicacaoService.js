@@ -18,15 +18,25 @@ const logger = require("../lib/logger");
 // ---------------------------------------------------------------------------
 
 const emailTemplates = {
-  confirmacao_pedido: require("../templates/email/confirmacaoPedido"),
-  pagamento_aprovado: require("../templates/email/pagamentoAprovado"),
-  pedido_enviado:     require("../templates/email/pedidoEnviado"),
+  confirmacao_pedido:            require("../templates/email/confirmacaoPedido"),
+  pagamento_aprovado:            require("../templates/email/pagamentoAprovado"),
+  pedido_enviado:                require("../templates/email/pedidoEnviado"),
+  ocorrencia_confirmacao:        require("../templates/email/ocorrenciaConfirmacao"),
+  ocorrencia_solicitar_dados:    require("../templates/email/ocorrenciaSolicitarDados"),
+  ocorrencia_taxa_extra:         require("../templates/email/ocorrenciaTaxaExtra"),
+  ocorrencia_correcao_concluida: require("../templates/email/ocorrenciaCorrecaoConcluida"),
+  ocorrencia_resolvida:          require("../templates/email/ocorrenciaResolvida"),
 };
 
 const whatsappTemplates = {
-  confirmacao_pedido: require("../templates/whatsapp/confirmacaoPedido"),
-  pagamento_aprovado: require("../templates/whatsapp/pagamentoAprovado"),
-  pedido_enviado:     require("../templates/whatsapp/pedidoEnviado"),
+  confirmacao_pedido:            require("../templates/whatsapp/confirmacaoPedido"),
+  pagamento_aprovado:            require("../templates/whatsapp/pagamentoAprovado"),
+  pedido_enviado:                require("../templates/whatsapp/pedidoEnviado"),
+  ocorrencia_confirmacao:        require("../templates/whatsapp/ocorrenciaConfirmacao"),
+  ocorrencia_solicitar_dados:    require("../templates/whatsapp/ocorrenciaSolicitarDados"),
+  ocorrencia_taxa_extra:         require("../templates/whatsapp/ocorrenciaTaxaExtra"),
+  ocorrencia_correcao_concluida: require("../templates/whatsapp/ocorrenciaCorrecaoConcluida"),
+  ocorrencia_resolvida:          require("../templates/whatsapp/ocorrenciaResolvida"),
 };
 
 // Mapa de tipoEvento → templateId (usado por dispararEventoComunicacao)

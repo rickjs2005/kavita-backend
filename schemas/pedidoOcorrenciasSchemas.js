@@ -29,9 +29,9 @@ const createOcorrenciaSchema = z.object({
 });
 
 const updateOcorrenciaSchema = z.object({
-  status: z.enum(["em_analise", "resolvida", "rejeitada"], {
+  status: z.enum(["em_analise", "aguardando_retorno", "resolvida", "rejeitada"], {
     errorMap: () => ({
-      message: "Status inválido. Use: em_analise, resolvida ou rejeitada.",
+      message: "Status inválido. Use: em_analise, aguardando_retorno, resolvida ou rejeitada.",
     }),
   }),
   resposta_admin: z

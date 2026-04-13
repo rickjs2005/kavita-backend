@@ -4,7 +4,16 @@
 
 const { z } = require("zod");
 
-const TEMPLATE_IDS = ["confirmacao_pedido", "pagamento_aprovado", "pedido_enviado"];
+const TEMPLATE_IDS = [
+  "confirmacao_pedido",
+  "pagamento_aprovado",
+  "pedido_enviado",
+  "ocorrencia_confirmacao",
+  "ocorrencia_solicitar_dados",
+  "ocorrencia_taxa_extra",
+  "ocorrencia_correcao_concluida",
+  "ocorrencia_resolvida",
+];
 
 const templateField = z.enum(TEMPLATE_IDS, {
   errorMap: () => ({
