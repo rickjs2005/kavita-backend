@@ -121,6 +121,18 @@ async function setDeliveryStatus(db, pedidoId, newStatus) {
   return result.affectedRows;
 }
 
+/**
+ * Updates the endereco (JSON) for an order.
+ * @returns {number} affectedRows
+ */
+async function setOrderAddress(pedidoId, serializedAddress) {
+  const [result] = await pool.query(
+    "UPDATE pedidos SET endereco = ? WHERE id = ?",
+    [serializedAddress, pedidoId]
+  );
+  return result.affectedRows;
+}
+
 // ---------------------------------------------------------------------------
 // Transactional — MUST be called inside an open transaction.
 // ---------------------------------------------------------------------------
@@ -200,6 +212,7 @@ module.exports = {
   findOrderItemsById,
   setPaymentStatus,
   setDeliveryStatus,
+  setOrderAddress,
   lockOrderForUpdate,
   restoreStock,
   restoreStockOnFailure,

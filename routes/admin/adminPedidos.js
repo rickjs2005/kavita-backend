@@ -17,6 +17,7 @@ const { validate } = require("../../middleware/validate");
 const {
   updatePaymentStatusSchema,
   updateDeliveryStatusSchema,
+  updateOrderAddressSchema,
 } = require("../../schemas/ordersSchemas");
 const { updateOcorrenciaSchema } = require("../../schemas/pedidoOcorrenciasSchemas");
 
@@ -190,5 +191,6 @@ router.put("/:id/pagamento", validate(updatePaymentStatusSchema), controller.upd
  *       500: { description: Erro interno }
  */
 router.put("/:id/entrega", validate(updateDeliveryStatusSchema), controller.updateDeliveryStatus);
+router.put("/:id/endereco", validate(updateOrderAddressSchema), controller.updateOrderAddress);
 
 module.exports = router;

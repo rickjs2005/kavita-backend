@@ -141,6 +141,23 @@ async function updateDeliveryStatus(req, res, next) {
   }
 }
 
+async function updateOrderAddress(req, res, next) {
+  try {
+    const result = await orderService.updateOrderAddress(req.params.id, req.body);
+    if (!result.found) {
+      return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
+    }
+    return response.ok(res, null, "Endereço atualizado com sucesso.");
+  } catch (err) {
+    if (err instanceof AppError) return next(err);
+    // serializeAddress lança Error genérico para validação
+    if (err.message && err.message.includes("obrigatório")) {
+      return next(new AppError(err.message, ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    return next(new AppError("Erro ao atualizar endereço.", ERROR_CODES.SERVER_ERROR, 500));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Ocorrências
 // ---------------------------------------------------------------------------
@@ -233,6 +250,7 @@ module.exports = {
   getOrderById,
   updatePaymentStatus,
   updateDeliveryStatus,
+  updateOrderAddress,
   listOcorrencias,
   updateOcorrencia,
 };

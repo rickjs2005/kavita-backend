@@ -152,11 +152,33 @@ async function updateDeliveryStatus(pedidoId, newStatus) {
 // Exports
 // ---------------------------------------------------------------------------
 
+/**
+ * Atualiza o endereço de um pedido.
+ * Valida e serializa via utils/address antes de persistir.
+ *
+ * @param {number|string} pedidoId
+ * @param {object}        addressInput — objeto com cep, rua, numero, etc.
+ * @returns {{ found: boolean, serialized: string }}
+ */
+async function updateOrderAddress(pedidoId, addressInput) {
+  const { serializeAddress } = require("../utils/address");
+
+  // serializeAddress normaliza + valida campos obrigatórios + retorna JSON string.
+  // Lança Error se faltar campo obrigatório ou CEP inválido.
+  const serialized = serializeAddress(addressInput);
+
+  const affectedRows = await orderRepo.setOrderAddress(pedidoId, serialized);
+  if (affectedRows === 0) return { found: false, serialized };
+
+  return { found: true, serialized };
+}
+
 module.exports = {
   listOrders,
   getOrderById,
   updatePaymentStatus,
   updateDeliveryStatus,
+  updateOrderAddress,
   ALLOWED_PAYMENT_STATUSES,
   ALLOWED_DELIVERY_STATUSES,
 };

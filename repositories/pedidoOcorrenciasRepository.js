@@ -90,12 +90,12 @@ async function findAllAdmin() {
  * Admin atualiza status/resposta de uma ocorrência.
  * Registra admin_id para auditoria.
  */
-async function updateByAdmin(id, { status, respostaAdmin, taxaExtra, adminId }) {
+async function updateByAdmin(id, { status, respostaAdmin, taxaExtra, adminId, enderecoCorrigido }) {
   const [result] = await pool.query(
     `UPDATE pedido_ocorrencias
-     SET status = ?, resposta_admin = ?, taxa_extra = ?, admin_id = ?
+     SET status = ?, resposta_admin = ?, taxa_extra = ?, admin_id = ?, endereco_corrigido = ?
      WHERE id = ?`,
-    [status, respostaAdmin || null, taxaExtra ?? null, adminId ?? null, id]
+    [status, respostaAdmin || null, taxaExtra ?? null, adminId ?? null, enderecoCorrigido ?? null, id]
   );
   return result.affectedRows > 0;
 }
