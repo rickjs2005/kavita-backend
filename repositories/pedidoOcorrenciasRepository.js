@@ -111,11 +111,84 @@ async function findById(id) {
   return row ?? null;
 }
 
+/**
+ * Lista paginada com filtros server-side (visão admin).
+ */
+async function findAllAdminPaginated({ page = 1, limit = 20, status, motivo } = {}) {
+  const where = [];
+  const params = [];
+
+  if (status) { where.push("oc.status = ?"); params.push(status); }
+  if (motivo) { where.push("oc.motivo = ?"); params.push(motivo); }
+
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const offset = (page - 1) * limit;
+
+  const [[{ total }]] = await pool.query(
+    `SELECT COUNT(*) AS total FROM pedido_ocorrencias oc ${whereSql}`,
+    params
+  );
+
+  const [rows] = await pool.query(
+    `SELECT
+       oc.id, oc.pedido_id, oc.usuario_id,
+       u.nome AS usuario_nome, u.email AS usuario_email, u.telefone AS usuario_telefone,
+       oc.tipo, oc.motivo, oc.observacao, oc.status, oc.resposta_admin,
+       COALESCE(oc.taxa_extra, 0) AS taxa_extra, oc.admin_id,
+       oc.created_at, oc.updated_at,
+       p.endereco AS pedido_endereco, p.status_pagamento AS pedido_status_pagamento,
+       p.status_entrega AS pedido_status_entrega, p.forma_pagamento AS pedido_forma_pagamento,
+       (p.total + COALESCE(p.shipping_price, 0)) AS pedido_total, p.data_pedido AS pedido_data
+     FROM pedido_ocorrencias oc
+     JOIN usuarios u ON u.id = oc.usuario_id
+     JOIN pedidos  p ON p.id = oc.pedido_id
+     ${whereSql}
+     ORDER BY
+       FIELD(oc.status, 'aberta', 'em_analise', 'aguardando_retorno', 'resolvida', 'rejeitada'),
+       oc.created_at DESC
+     LIMIT ? OFFSET ?`,
+    [...params, limit, offset]
+  );
+
+  return { rows, total: Number(total) };
+}
+
+/**
+ * Conta ocorrências criadas pelo usuário nos últimos N minutos.
+ * Usado para rate limiting.
+ */
+async function countRecentByUserId(usuarioId, minutes) {
+  const [[row]] = await pool.query(
+    `SELECT COUNT(*) AS total FROM pedido_ocorrencias
+     WHERE usuario_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)`,
+    [usuarioId, minutes]
+  );
+  return Number(row.total);
+}
+
+/**
+ * Contagem de ocorrências pendentes agrupada por status.
+ */
+async function countByStatus() {
+  const [rows] = await pool.query(
+    `SELECT status, COUNT(*) AS total
+     FROM pedido_ocorrencias
+     WHERE status IN ('aberta', 'em_analise', 'aguardando_retorno')
+     GROUP BY status`
+  );
+  const counts = { aberta: 0, em_analise: 0, aguardando_retorno: 0 };
+  for (const r of rows) counts[r.status] = Number(r.total);
+  return counts;
+}
+
 module.exports = {
   create,
   findOpenByPedidoAndTipo,
   findByPedidoId,
   findAllAdmin,
+  findAllAdminPaginated,
   updateByAdmin,
   findById,
+  countRecentByUserId,
+  countByStatus,
 };

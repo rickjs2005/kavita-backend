@@ -167,9 +167,29 @@ const ocorrenciasRepo = require("../repositories/pedidoOcorrenciasRepository");
 const { dispararEventoComunicacao } = require("../services/comunicacaoService");
 const logger = require("../lib/logger");
 
+async function countOcorrencias(_req, res, next) {
+  try {
+    const counts = await ocorrenciasRepo.countByStatus();
+    return response.ok(res, counts);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao contar ocorrências.", ERROR_CODES.SERVER_ERROR, 500)
+    );
+  }
+}
+
 async function listOcorrencias(req, res, next) {
   try {
-    const rows = await ocorrenciasRepo.findAllAdmin();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const status = req.query.status || undefined;
+    const motivo = req.query.motivo || undefined;
+
+    const { rows, total } = await ocorrenciasRepo.findAllAdminPaginated({
+      page, limit, status, motivo,
+    });
 
     const data = rows.map((r) => ({
       id: r.id,
@@ -195,7 +215,7 @@ async function listOcorrencias(req, res, next) {
       pedido_data: r.pedido_data,
     }));
 
-    return response.ok(res, data);
+    return response.paginated(res, { items: data, total, page, limit });
   } catch (err) {
     return next(
       err instanceof AppError
@@ -252,6 +272,7 @@ module.exports = {
   updatePaymentStatus,
   updateDeliveryStatus,
   updateOrderAddress,
+  countOcorrencias,
   listOcorrencias,
   updateOcorrencia,
 };

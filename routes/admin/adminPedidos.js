@@ -100,6 +100,7 @@ router.get("/", controller.listOrders);
 
 // --- Ocorrências (antes de /:id para evitar conflito de rota) ---
 router.get("/ocorrencias", controller.listOcorrencias);
+router.get("/ocorrencias/count", controller.countOcorrencias);
 router.put("/ocorrencias/:ocorrenciaId", validate(updateOcorrenciaSchema), controller.updateOcorrencia);
 
 /**

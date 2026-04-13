@@ -129,6 +129,18 @@ const createOcorrencia = async (req, res, next) => {
       return next(new AppError("ID do pedido inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
     }
 
+    // Rate limit: max 5 ocorrências por usuário a cada 15 minutos.
+    const recentes = await ocorrenciasRepo.countRecentByUserId(usuarioId, 15);
+    if (recentes >= 5) {
+      return next(
+        new AppError(
+          "Limite de solicitações atingido. Tente novamente em 15 minutos.",
+          ERROR_CODES.RATE_LIMIT,
+          429
+        )
+      );
+    }
+
     // Garante que o pedido pertence ao usuário.
     const pedido = await repo.findByIdAndUserId(pedidoId, usuarioId);
     if (!pedido) {
