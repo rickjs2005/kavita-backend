@@ -70,9 +70,13 @@ const getTopProdutos = async (req, res, next) => {
 // GET /api/admin/stats/alertas
 // ---------------------------------------------------------------------------
 
-const getAlertas = async (_req, res, _next) => {
-  // Placeholder — evolve with real rules/queries as needed
-  response.ok(res, []);
+const getAlertas = async (_req, res, next) => {
+  try {
+    const data = await statsRepo.getAlertas();
+    response.ok(res, data);
+  } catch (err) {
+    next(err);
+  }
 };
 
 // ---------------------------------------------------------------------------
