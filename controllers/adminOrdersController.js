@@ -149,8 +149,32 @@ const ocorrenciasRepo = require("../repositories/pedidoOcorrenciasRepository");
 
 async function listOcorrencias(req, res, next) {
   try {
-    const rows = await ocorrenciasRepo.findAllOpen();
-    return response.ok(res, rows);
+    const rows = await ocorrenciasRepo.findAllAdmin();
+
+    const data = rows.map((r) => ({
+      id: r.id,
+      pedido_id: r.pedido_id,
+      usuario_id: r.usuario_id,
+      usuario_nome: r.usuario_nome,
+      usuario_email: r.usuario_email,
+      usuario_telefone: r.usuario_telefone ?? null,
+      tipo: r.tipo,
+      motivo: r.motivo,
+      observacao: r.observacao ?? null,
+      status: r.status,
+      resposta_admin: r.resposta_admin ?? null,
+      taxa_extra: Number(r.taxa_extra ?? 0),
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      pedido_endereco: r.pedido_endereco ?? null,
+      pedido_status_pagamento: r.pedido_status_pagamento,
+      pedido_status_entrega: r.pedido_status_entrega,
+      pedido_forma_pagamento: r.pedido_forma_pagamento,
+      pedido_total: Number(r.pedido_total ?? 0),
+      pedido_data: r.pedido_data,
+    }));
+
+    return response.ok(res, data);
   } catch (err) {
     return next(
       err instanceof AppError

@@ -48,18 +48,38 @@ async function findByPedidoId(pedidoId) {
 }
 
 /**
- * Lista todas as ocorrências abertas/em_analise (visão admin).
+ * Lista todas as ocorrências com dados do pedido e cliente (visão admin).
+ * Traz todas, independente do status, ordenadas por mais recentes primeiro.
  */
-async function findAllOpen() {
+async function findAllAdmin() {
   const [rows] = await pool.query(
-    `SELECT oc.id, oc.pedido_id, oc.usuario_id, u.nome AS usuario_nome,
-            u.email AS usuario_email, oc.tipo, oc.motivo, oc.observacao,
-            oc.status, oc.resposta_admin, COALESCE(oc.taxa_extra, 0) AS taxa_extra,
-            oc.created_at, oc.updated_at
+    `SELECT
+       oc.id,
+       oc.pedido_id,
+       oc.usuario_id,
+       u.nome             AS usuario_nome,
+       u.email            AS usuario_email,
+       u.telefone         AS usuario_telefone,
+       oc.tipo,
+       oc.motivo,
+       oc.observacao,
+       oc.status,
+       oc.resposta_admin,
+       COALESCE(oc.taxa_extra, 0) AS taxa_extra,
+       oc.created_at,
+       oc.updated_at,
+       p.endereco         AS pedido_endereco,
+       p.status_pagamento AS pedido_status_pagamento,
+       p.status_entrega   AS pedido_status_entrega,
+       p.forma_pagamento  AS pedido_forma_pagamento,
+       (p.total + COALESCE(p.shipping_price, 0)) AS pedido_total,
+       p.data_pedido       AS pedido_data
      FROM pedido_ocorrencias oc
      JOIN usuarios u ON u.id = oc.usuario_id
-     WHERE oc.status IN ('aberta', 'em_analise')
-     ORDER BY oc.created_at ASC`
+     JOIN pedidos  p ON p.id = oc.pedido_id
+     ORDER BY
+       FIELD(oc.status, 'aberta', 'em_analise', 'resolvida', 'rejeitada'),
+       oc.created_at DESC`
   );
   return rows;
 }
@@ -92,7 +112,7 @@ module.exports = {
   create,
   findOpenByPedidoAndTipo,
   findByPedidoId,
-  findAllOpen,
+  findAllAdmin,
   updateByAdmin,
   findById,
 };
