@@ -102,6 +102,7 @@ const getPedidoById = async (req, res, next) => {
         id: o.id,
         motivo: o.motivo,
         observacao: o.observacao ?? null,
+        resposta_cliente: o.resposta_cliente ?? null,
         status: o.status,
         resposta_admin: o.resposta_admin ?? null,
         taxa_extra: n(o.taxa_extra),
@@ -196,4 +197,52 @@ const createOcorrencia = async (req, res, next) => {
   }
 };
 
-module.exports = { listPedidos, getPedidoById, createOcorrencia };
+const replyOcorrencia = async (req, res, next) => {
+  try {
+    const usuarioId = req.user?.id;
+    if (!usuarioId) {
+      return next(new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
+    }
+
+    const ocorrenciaId = Number(String(req.params.ocorrenciaId).replace(/\D/g, ""));
+    if (!ocorrenciaId) {
+      return next(new AppError("ID da ocorrência inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+
+    // Ownership: só o dono pode responder.
+    const oc = await ocorrenciasRepo.findByIdAndUserId(ocorrenciaId, usuarioId);
+    if (!oc) {
+      return next(new AppError("Ocorrência não encontrada.", ERROR_CODES.NOT_FOUND, 404));
+    }
+
+    if (oc.status !== "aguardando_retorno") {
+      return next(
+        new AppError(
+          "Esta ocorrência não está aguardando seu retorno.",
+          ERROR_CODES.CONFLICT,
+          409
+        )
+      );
+    }
+
+    const { resposta_cliente, endereco_sugerido } = req.body;
+
+    const updated = await ocorrenciasRepo.replyByClient(ocorrenciaId, {
+      respostaCliente: resposta_cliente,
+      enderecoSugerido: endereco_sugerido || null,
+    });
+
+    if (!updated) {
+      return next(new AppError("Não foi possível registrar a resposta.", ERROR_CODES.SERVER_ERROR, 500));
+    }
+
+    return response.ok(res, null, "Resposta enviada com sucesso.");
+  } catch (err) {
+    return next(
+      err instanceof AppError ? err
+        : new AppError("Erro ao responder ocorrência.", ERROR_CODES.SERVER_ERROR, 500)
+    );
+  }
+};
+
+module.exports = { listPedidos, getPedidoById, createOcorrencia, replyOcorrencia };

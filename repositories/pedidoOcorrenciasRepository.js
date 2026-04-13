@@ -39,7 +39,8 @@ async function findOpenByPedidoAndTipo(pedidoId, tipo) {
  */
 async function findByPedidoId(pedidoId) {
   const [rows] = await pool.query(
-    `SELECT id, tipo, motivo, observacao, status, resposta_admin,
+    `SELECT id, tipo, motivo, observacao, resposta_cliente, endereco_sugerido,
+            status, resposta_admin,
             COALESCE(taxa_extra, 0) AS taxa_extra, created_at, updated_at
      FROM pedido_ocorrencias
      WHERE pedido_id = ?
@@ -84,6 +85,31 @@ async function findAllAdmin() {
        oc.created_at DESC`
   );
   return rows;
+}
+
+/**
+ * Cliente responde uma ocorrência em aguardando_retorno.
+ * Salva resposta + endereço sugerido e muda status para em_analise.
+ */
+async function replyByClient(id, { respostaCliente, enderecoSugerido }) {
+  const [result] = await pool.query(
+    `UPDATE pedido_ocorrencias
+     SET resposta_cliente = ?, endereco_sugerido = ?, status = 'em_analise'
+     WHERE id = ? AND status = 'aguardando_retorno'`,
+    [respostaCliente, enderecoSugerido ? JSON.stringify(enderecoSugerido) : null, id]
+  );
+  return result.affectedRows > 0;
+}
+
+/**
+ * Busca ocorrência por id e usuario_id (ownership check para o cliente).
+ */
+async function findByIdAndUserId(id, usuarioId) {
+  const [[row]] = await pool.query(
+    `SELECT * FROM pedido_ocorrencias WHERE id = ? AND usuario_id = ?`,
+    [id, usuarioId]
+  );
+  return row ?? null;
 }
 
 /**
@@ -187,6 +213,8 @@ module.exports = {
   findByPedidoId,
   findAllAdmin,
   findAllAdminPaginated,
+  replyByClient,
+  findByIdAndUserId,
   updateByAdmin,
   findById,
   countRecentByUserId,

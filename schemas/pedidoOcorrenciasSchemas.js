@@ -47,4 +47,23 @@ const updateOcorrenciaSchema = z.object({
     .default(null),
 });
 
-module.exports = { createOcorrenciaSchema, updateOcorrenciaSchema };
+const replyOcorrenciaSchema = z.object({
+  resposta_cliente: z
+    .string()
+    .min(1, "Informe sua resposta.")
+    .max(1000, "Resposta deve ter no máximo 1000 caracteres."),
+  endereco_sugerido: z
+    .object({
+      cep: z.string().regex(/^\d{8}$/, "CEP deve conter 8 dígitos."),
+      rua: z.string().min(1, "Rua é obrigatório."),
+      numero: z.string().min(1, "Número é obrigatório."),
+      bairro: z.string().min(1, "Bairro é obrigatório."),
+      cidade: z.string().min(1, "Cidade é obrigatório."),
+      estado: z.string().length(2, "Estado deve ter 2 caracteres."),
+      complemento: z.string().optional().default(""),
+      ponto_referencia: z.string().optional().default(""),
+    })
+    .optional(),
+});
+
+module.exports = { createOcorrenciaSchema, updateOcorrenciaSchema, replyOcorrenciaSchema };
