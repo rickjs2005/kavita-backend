@@ -365,6 +365,10 @@ async function getModulesStatus() {
     [[corretorasPendingRow]],
     [[msgNovasRow]],
     [[msgTotalRow]],
+    [[ocorrenciasAbertasRow]],
+    [[ocorrenciasTotalRow]],
+    [[carrinhosAbandonadosRow]],
+    [[carrinhosAtivosRow]],
   ] = await Promise.all([
     // Hero: active slides
     pool.query(
@@ -422,6 +426,26 @@ async function getModulesStatus() {
     pool.query(
       "SELECT COUNT(*) AS total FROM mensagens_contato"
     ),
+    // Ocorrências: abertas (não resolvidas)
+    pool.query(
+      "SELECT COUNT(*) AS total FROM pedido_ocorrencias WHERE status IN ('aberta', 'em_analise', 'aguardando_retorno')"
+    ),
+    // Ocorrências: total
+    pool.query(
+      "SELECT COUNT(*) AS total FROM pedido_ocorrencias"
+    ),
+    // Carrinhos: abandonados (abertos > 24h)
+    pool.query(
+      `SELECT COUNT(*) AS total FROM carrinhos
+       WHERE status = 'aberto'
+         AND updated_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+    ),
+    // Carrinhos: ativos (abertos < 24h)
+    pool.query(
+      `SELECT COUNT(*) AS total FROM carrinhos
+       WHERE status = 'aberto'
+         AND updated_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+    ),
   ]);
 
   return {
@@ -453,6 +477,14 @@ async function getModulesStatus() {
     mensagens: {
       naoLidas: Number(msgNovasRow.total || 0),
       total: Number(msgTotalRow.total || 0),
+    },
+    ocorrencias: {
+      abertas: Number(ocorrenciasAbertasRow.total || 0),
+      total: Number(ocorrenciasTotalRow.total || 0),
+    },
+    carrinhos: {
+      abandonados: Number(carrinhosAbandonadosRow.total || 0),
+      ativos: Number(carrinhosAtivosRow.total || 0),
     },
   };
 }
