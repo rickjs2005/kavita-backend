@@ -2,7 +2,7 @@
 // controllers/pedidosUserController.js
 //
 // Pedidos do usuário autenticado (leitura).
-// Migrado de routes/ecommerce/_legacy/pedidos.js.
+// Usa valores persistidos no banco — nunca recalcula totais em JS.
 
 const { response } = require("../lib");
 const AppError = require("../errors/AppError");
@@ -45,23 +45,16 @@ const getPedidoById = async (req, res, next) => {
 
     const itens = await repo.findItemsByPedidoId(pedidoId);
 
-    const shippingPrice = Number(pedido.shipping_price || 0);
-    const totalProdutos = Number(pedido.total_produtos || 0);
-
-    // totalProdutos = subtotal já com desconto (sem frete)
-    // subtotal bruto dos itens (sem desconto)
-    const subtotalItens = itens.reduce(
-      (acc, i) => acc + Number(i.preco) * Number(i.quantidade), 0
-    );
-    const desconto = subtotalItens > totalProdutos
-      ? +(subtotalItens - totalProdutos).toFixed(2)
-      : 0;
+    // Valores vindos do banco (DECIMAL) — sem recalcular em JS.
+    const subtotalItens  = Number(pedido.subtotal_itens || 0);
+    const totalComDesc   = Number(pedido.total_com_desconto || 0);
+    const shippingPrice  = Number(pedido.shipping_price || 0);
+    const desconto       = +(Math.max(subtotalItens - totalComDesc, 0)).toFixed(2);
 
     return response.ok(res, {
       id: pedido.id,
       usuario_id: pedido.usuario_id,
       forma_pagamento: pedido.forma_pagamento,
-      status: pedido.status,
       status_pagamento: pedido.status_pagamento ?? null,
       status_entrega: pedido.status_entrega ?? null,
       data_pedido: pedido.data_pedido,
@@ -71,7 +64,7 @@ const getPedidoById = async (req, res, next) => {
       desconto,
       shipping_price: shippingPrice,
       shipping_prazo_dias: pedido.shipping_prazo_dias ?? null,
-      total: totalProdutos + shippingPrice,
+      total: totalComDesc + shippingPrice,
       itens: itens.map((i) => ({
         id: i.id,
         produto_id: i.produto_id,
