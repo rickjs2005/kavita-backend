@@ -34,14 +34,14 @@ module.exports = {
         `CREATE TABLE \`cupom_usos\` (
           \`id\` int unsigned NOT NULL AUTO_INCREMENT,
           \`cupom_id\` int unsigned NOT NULL,
-          \`usuario_id\` int unsigned NOT NULL,
-          \`pedido_id\` int unsigned NOT NULL,
+          \`usuario_id\` int NOT NULL,
+          \`pedido_id\` int NOT NULL,
           \`created_at\` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (\`id\`),
           KEY \`idx_cupom_usos_cupom_usuario\` (\`cupom_id\`, \`usuario_id\`),
           KEY \`idx_cupom_usos_pedido\` (\`pedido_id\`),
           CONSTRAINT \`fk_cupom_usos_cupom\` FOREIGN KEY (\`cupom_id\`) REFERENCES \`cupons\` (\`id\`) ON DELETE CASCADE,
-          CONSTRAINT \`fk_cupom_usos_usuario\` FOREIGN KEY (\`usuario_id\`) REFERENCES \`users\` (\`id\`) ON DELETE CASCADE,
+          CONSTRAINT \`fk_cupom_usos_usuario\` FOREIGN KEY (\`usuario_id\`) REFERENCES \`usuarios\` (\`id\`) ON DELETE CASCADE,
           CONSTRAINT \`fk_cupom_usos_pedido\` FOREIGN KEY (\`pedido_id\`) REFERENCES \`pedidos\` (\`id\`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;`,
         { transaction: t },
