@@ -2,12 +2,17 @@
 // controllers/pedidosUserController.js
 //
 // Pedidos do usuário autenticado (leitura).
-// Usa valores persistidos no banco — nunca recalcula totais em JS.
+// Todos os valores DECIMAL são convertidos com Number() antes de enviar,
+// porque mysql2 retorna DECIMAL como string e o frontend pode interpretar
+// incorretamente (ex.: "13000.00" com toNumber que assume formato BR).
 
 const { response } = require("../lib");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/pedidosUserRepository");
+
+/** Converte valor DECIMAL (string do mysql2) para number JS. */
+const n = (v) => Number(v ?? 0);
 
 const listPedidos = async (req, res, next) => {
   try {
@@ -16,7 +21,22 @@ const listPedidos = async (req, res, next) => {
       return next(new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
     }
 
-    const pedidos = await repo.findByUserId(usuarioId);
+    const rows = await repo.findByUserId(usuarioId);
+
+    // Normaliza DECIMAL→number para evitar que o frontend receba strings.
+    const pedidos = rows.map((r) => ({
+      id: r.id,
+      usuario_id: r.usuario_id,
+      forma_pagamento: r.forma_pagamento,
+      status_pagamento: r.status_pagamento,
+      status_entrega: r.status_entrega,
+      data_pedido: r.data_pedido,
+      cupom_codigo: r.cupom_codigo ?? null,
+      shipping_price: n(r.shipping_price),
+      total: n(r.total),
+      qtd_itens: n(r.qtd_itens),
+    }));
+
     return response.ok(res, pedidos);
   } catch (err) {
     return next(
@@ -45,11 +65,10 @@ const getPedidoById = async (req, res, next) => {
 
     const itens = await repo.findItemsByPedidoId(pedidoId);
 
-    // Valores vindos do banco (DECIMAL) — sem recalcular em JS.
-    const subtotalItens  = Number(pedido.subtotal_itens || 0);
-    const totalComDesc   = Number(pedido.total_com_desconto || 0);
-    const shippingPrice  = Number(pedido.shipping_price || 0);
-    const desconto       = +(Math.max(subtotalItens - totalComDesc, 0)).toFixed(2);
+    const subtotalItens = n(pedido.subtotal_itens);
+    const totalComDesc  = n(pedido.total_com_desconto);
+    const shippingPrice = n(pedido.shipping_price);
+    const desconto      = +(Math.max(subtotalItens - totalComDesc, 0)).toFixed(2);
 
     return response.ok(res, {
       id: pedido.id,
@@ -69,8 +88,8 @@ const getPedidoById = async (req, res, next) => {
         id: i.id,
         produto_id: i.produto_id,
         nome: i.nome,
-        preco: Number(i.preco),
-        quantidade: i.quantidade,
+        preco: n(i.preco),
+        quantidade: n(i.quantidade),
         imagem: i.imagem,
       })),
     });
