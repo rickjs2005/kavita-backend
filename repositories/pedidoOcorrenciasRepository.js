@@ -65,8 +65,11 @@ async function findAllAdmin() {
        oc.tipo,
        oc.motivo,
        oc.observacao,
+       oc.resposta_cliente,
+       oc.endereco_sugerido,
        oc.status,
        oc.resposta_admin,
+       oc.endereco_corrigido,
        COALESCE(oc.taxa_extra, 0) AS taxa_extra,
        oc.admin_id,
        oc.created_at,
@@ -76,7 +79,9 @@ async function findAllAdmin() {
        p.status_entrega   AS pedido_status_entrega,
        p.forma_pagamento  AS pedido_forma_pagamento,
        (p.total + COALESCE(p.shipping_price, 0)) AS pedido_total,
-       p.data_pedido       AS pedido_data
+       p.data_pedido       AS pedido_data,
+       (SELECT fb.nota FROM ocorrencia_feedbacks fb WHERE fb.ocorrencia_id = oc.id LIMIT 1) AS feedback_nota,
+       (SELECT fb.comentario FROM ocorrencia_feedbacks fb WHERE fb.ocorrencia_id = oc.id LIMIT 1) AS feedback_comentario
      FROM pedido_ocorrencias oc
      JOIN usuarios u ON u.id = oc.usuario_id
      JOIN pedidos  p ON p.id = oc.pedido_id
@@ -159,12 +164,16 @@ async function findAllAdminPaginated({ page = 1, limit = 20, status, motivo } = 
     `SELECT
        oc.id, oc.pedido_id, oc.usuario_id,
        u.nome AS usuario_nome, u.email AS usuario_email, u.telefone AS usuario_telefone,
-       oc.tipo, oc.motivo, oc.observacao, oc.status, oc.resposta_admin,
+       oc.tipo, oc.motivo, oc.observacao,
+       oc.resposta_cliente, oc.endereco_sugerido,
+       oc.status, oc.resposta_admin, oc.endereco_corrigido,
        COALESCE(oc.taxa_extra, 0) AS taxa_extra, oc.admin_id,
        oc.created_at, oc.updated_at,
        p.endereco AS pedido_endereco, p.status_pagamento AS pedido_status_pagamento,
        p.status_entrega AS pedido_status_entrega, p.forma_pagamento AS pedido_forma_pagamento,
-       (p.total + COALESCE(p.shipping_price, 0)) AS pedido_total, p.data_pedido AS pedido_data
+       (p.total + COALESCE(p.shipping_price, 0)) AS pedido_total, p.data_pedido AS pedido_data,
+       (SELECT fb.nota FROM ocorrencia_feedbacks fb WHERE fb.ocorrencia_id = oc.id LIMIT 1) AS feedback_nota,
+       (SELECT fb.comentario FROM ocorrencia_feedbacks fb WHERE fb.ocorrencia_id = oc.id LIMIT 1) AS feedback_comentario
      FROM pedido_ocorrencias oc
      JOIN usuarios u ON u.id = oc.usuario_id
      JOIN pedidos  p ON p.id = oc.pedido_id

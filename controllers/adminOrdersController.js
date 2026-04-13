@@ -201,10 +201,15 @@ async function listOcorrencias(req, res, next) {
       tipo: r.tipo,
       motivo: r.motivo,
       observacao: r.observacao ?? null,
+      resposta_cliente: r.resposta_cliente ?? null,
+      endereco_sugerido: r.endereco_sugerido ?? null,
       status: r.status,
       resposta_admin: r.resposta_admin ?? null,
+      endereco_corrigido: r.endereco_corrigido ?? null,
       taxa_extra: Number(r.taxa_extra ?? 0),
       admin_id: r.admin_id ?? null,
+      feedback_nota: r.feedback_nota ? Number(r.feedback_nota) : null,
+      feedback_comentario: r.feedback_comentario ?? null,
       created_at: r.created_at,
       updated_at: r.updated_at,
       pedido_endereco: r.pedido_endereco ?? null,
@@ -247,12 +252,18 @@ async function updateOcorrencia(req, res, next) {
       adminId,
     });
 
-    // Auto-notificar cliente quando resolvida ou rejeitada.
-    if (status === "resolvida" || status === "rejeitada") {
+    // Auto-notificar cliente por email conforme transição de status.
+    const eventMap = {
+      aguardando_retorno: "ocorrencia_aguardando_retorno",
+      resolvida: "ocorrencia_resolvida",
+      rejeitada: "ocorrencia_resolvida",
+    };
+    const evento = eventMap[status];
+    if (evento) {
       try {
-        await dispararEventoComunicacao("ocorrencia_resolvida", existing.pedido_id);
+        await dispararEventoComunicacao(evento, existing.pedido_id);
       } catch (err) {
-        logger.warn({ err, id }, "ocorrencia: resolution notification failed");
+        logger.warn({ err, id, status }, "ocorrencia: status notification failed");
       }
     }
 

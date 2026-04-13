@@ -44,8 +44,9 @@ const EVENTO_TEMPLATE = {
   pedido_criado:        "confirmacao_pedido",
   pagamento_aprovado:   "pagamento_aprovado",
   pedido_enviado:       "pedido_enviado",
-  ocorrencia_criada:    "ocorrencia_confirmacao",
-  ocorrencia_resolvida: "ocorrencia_resolvida",
+  ocorrencia_criada:             "ocorrencia_confirmacao",
+  ocorrencia_aguardando_retorno: "ocorrencia_solicitar_dados",
+  ocorrencia_resolvida:          "ocorrencia_resolvida",
 };
 
 // ---------------------------------------------------------------------------
