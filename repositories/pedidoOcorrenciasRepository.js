@@ -20,12 +20,13 @@ async function create({ pedidoId, usuarioId, tipo, motivo, observacao }) {
 }
 
 /**
- * Verifica se já existe ocorrência aberta do mesmo tipo para o pedido.
+ * Verifica se já existe ocorrência em andamento do mesmo tipo para o pedido.
+ * Inclui aguardando_retorno — cliente não pode abrir outra enquanto há pendência.
  */
 async function findOpenByPedidoAndTipo(pedidoId, tipo) {
   const [[row]] = await pool.query(
     `SELECT id, status FROM pedido_ocorrencias
-     WHERE pedido_id = ? AND tipo = ? AND status IN ('aberta', 'em_analise')
+     WHERE pedido_id = ? AND tipo = ? AND status IN ('aberta', 'em_analise', 'aguardando_retorno')
      LIMIT 1`,
     [pedidoId, tipo]
   );
@@ -34,6 +35,7 @@ async function findOpenByPedidoAndTipo(pedidoId, tipo) {
 
 /**
  * Busca ocorrências de um pedido (visão do cliente).
+ * Retorna status, resposta do admin e datas.
  */
 async function findByPedidoId(pedidoId) {
   const [rows] = await pool.query(
@@ -49,7 +51,6 @@ async function findByPedidoId(pedidoId) {
 
 /**
  * Lista todas as ocorrências com dados do pedido e cliente (visão admin).
- * Traz todas, independente do status, ordenadas por mais recentes primeiro.
  */
 async function findAllAdmin() {
   const [rows] = await pool.query(
@@ -66,6 +67,7 @@ async function findAllAdmin() {
        oc.status,
        oc.resposta_admin,
        COALESCE(oc.taxa_extra, 0) AS taxa_extra,
+       oc.admin_id,
        oc.created_at,
        oc.updated_at,
        p.endereco         AS pedido_endereco,
@@ -78,7 +80,7 @@ async function findAllAdmin() {
      JOIN usuarios u ON u.id = oc.usuario_id
      JOIN pedidos  p ON p.id = oc.pedido_id
      ORDER BY
-       FIELD(oc.status, 'aberta', 'em_analise', 'resolvida', 'rejeitada'),
+       FIELD(oc.status, 'aberta', 'em_analise', 'aguardando_retorno', 'resolvida', 'rejeitada'),
        oc.created_at DESC`
   );
   return rows;
@@ -86,13 +88,14 @@ async function findAllAdmin() {
 
 /**
  * Admin atualiza status/resposta de uma ocorrência.
+ * Registra admin_id para auditoria.
  */
-async function updateByAdmin(id, { status, respostaAdmin, taxaExtra }) {
+async function updateByAdmin(id, { status, respostaAdmin, taxaExtra, adminId }) {
   const [result] = await pool.query(
     `UPDATE pedido_ocorrencias
-     SET status = ?, resposta_admin = ?, taxa_extra = ?
+     SET status = ?, resposta_admin = ?, taxa_extra = ?, admin_id = ?
      WHERE id = ?`,
-    [status, respostaAdmin || null, taxaExtra ?? null, id]
+    [status, respostaAdmin || null, taxaExtra ?? null, adminId ?? null, id]
   );
   return result.affectedRows > 0;
 }

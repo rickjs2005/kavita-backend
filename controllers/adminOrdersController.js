@@ -146,6 +146,8 @@ async function updateDeliveryStatus(req, res, next) {
 // ---------------------------------------------------------------------------
 
 const ocorrenciasRepo = require("../repositories/pedidoOcorrenciasRepository");
+const { dispararEventoComunicacao } = require("../services/comunicacaoService");
+const logger = require("../lib/logger");
 
 async function listOcorrencias(req, res, next) {
   try {
@@ -197,12 +199,23 @@ async function updateOcorrencia(req, res, next) {
     }
 
     const { status, resposta_admin, taxa_extra } = req.body;
+    const adminId = req.admin?.id ?? null;
 
     await ocorrenciasRepo.updateByAdmin(id, {
       status,
       respostaAdmin: resposta_admin,
       taxaExtra: taxa_extra,
+      adminId,
     });
+
+    // Auto-notificar cliente quando resolvida ou rejeitada.
+    if (status === "resolvida" || status === "rejeitada") {
+      try {
+        await dispararEventoComunicacao("ocorrencia_resolvida", existing.pedido_id);
+      } catch (err) {
+        logger.warn({ err, id }, "ocorrencia: resolution notification failed");
+      }
+    }
 
     return response.ok(res, null, "Ocorrência atualizada com sucesso.");
   } catch (err) {

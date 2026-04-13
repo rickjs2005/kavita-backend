@@ -41,9 +41,11 @@ const whatsappTemplates = {
 
 // Mapa de tipoEvento → templateId (usado por dispararEventoComunicacao)
 const EVENTO_TEMPLATE = {
-  pedido_criado:      "confirmacao_pedido",
-  pagamento_aprovado: "pagamento_aprovado",
-  pedido_enviado:     "pedido_enviado",
+  pedido_criado:        "confirmacao_pedido",
+  pagamento_aprovado:   "pagamento_aprovado",
+  pedido_enviado:       "pedido_enviado",
+  ocorrencia_criada:    "ocorrencia_confirmacao",
+  ocorrencia_resolvida: "ocorrencia_resolvida",
 };
 
 // ---------------------------------------------------------------------------

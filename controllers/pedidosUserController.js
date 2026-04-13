@@ -11,6 +11,8 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/pedidosUserRepository");
 const ocorrenciasRepo = require("../repositories/pedidoOcorrenciasRepository");
+const { dispararEventoComunicacao } = require("../services/comunicacaoService");
+const logger = require("../lib/logger");
 
 /** Converte valor DECIMAL (string do mysql2) para number JS. */
 const n = (v) => Number(v ?? 0);
@@ -64,7 +66,10 @@ const getPedidoById = async (req, res, next) => {
       return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
     }
 
-    const itens = await repo.findItemsByPedidoId(pedidoId);
+    const [itens, ocorrencias] = await Promise.all([
+      repo.findItemsByPedidoId(pedidoId),
+      ocorrenciasRepo.findByPedidoId(pedidoId),
+    ]);
 
     const subtotalItens = n(pedido.subtotal_itens);
     const totalComDesc  = n(pedido.total_com_desconto);
@@ -92,6 +97,16 @@ const getPedidoById = async (req, res, next) => {
         preco: n(i.preco),
         quantidade: n(i.quantidade),
         imagem: i.imagem,
+      })),
+      ocorrencias: ocorrencias.map((o) => ({
+        id: o.id,
+        motivo: o.motivo,
+        observacao: o.observacao ?? null,
+        status: o.status,
+        resposta_admin: o.resposta_admin ?? null,
+        taxa_extra: n(o.taxa_extra),
+        created_at: o.created_at,
+        updated_at: o.updated_at,
       })),
     });
   } catch (err) {
@@ -141,6 +156,13 @@ const createOcorrencia = async (req, res, next) => {
       motivo,
       observacao,
     });
+
+    // Auto-notificar cliente com confirmação (fire-and-forget).
+    try {
+      await dispararEventoComunicacao("ocorrencia_criada", pedidoId);
+    } catch (err) {
+      logger.warn({ err, pedidoId }, "ocorrencia: confirmacao notification failed");
+    }
 
     return response.created(res, { id }, "Solicitação registrada com sucesso.");
   } catch (err) {
