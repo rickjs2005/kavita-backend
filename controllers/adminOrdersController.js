@@ -245,6 +245,17 @@ async function updateOcorrencia(req, res, next) {
     const { status, resposta_admin, taxa_extra } = req.body;
     const adminId = req.admin?.id ?? null;
 
+    // Exigir resposta_admin ao solicitar retorno do cliente.
+    if (status === "aguardando_retorno" && (!resposta_admin || !resposta_admin.trim())) {
+      return next(
+        new AppError(
+          "Informe uma mensagem para o cliente ao solicitar retorno.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400
+        )
+      );
+    }
+
     await ocorrenciasRepo.updateByAdmin(id, {
       status,
       respostaAdmin: resposta_admin,

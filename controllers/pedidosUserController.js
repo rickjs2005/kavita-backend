@@ -161,6 +161,18 @@ const createOcorrencia = async (req, res, next) => {
       return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
     }
 
+    // Impede ocorrência em pedidos já finalizados.
+    const statusBloqueados = ["entregue", "cancelado"];
+    if (statusBloqueados.includes(pedido.status_entrega)) {
+      return next(
+        new AppError(
+          "Não é possível abrir solicitação para pedidos já finalizados.",
+          ERROR_CODES.CONFLICT,
+          409
+        )
+      );
+    }
+
     // Impede duplicata de ocorrência aberta do mesmo tipo.
     const existente = await ocorrenciasRepo.findOpenByPedidoAndTipo(pedidoId, "endereco_incorreto");
     if (existente) {
