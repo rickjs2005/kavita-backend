@@ -149,12 +149,23 @@ const createOcorrencia = async (req, res, next) => {
 
     const { motivo, observacao } = req.body;
 
+    // Se houver ocorrência anterior resolvida/rejeitada do mesmo tipo,
+    // enriquece a observação com referência para rastreabilidade.
+    let observacaoFinal = observacao;
+    const todas = await ocorrenciasRepo.findByPedidoId(pedidoId);
+    const anterior = todas.find(
+      (o) => ["resolvida", "rejeitada"].includes(o.status)
+    );
+    if (anterior) {
+      observacaoFinal = `[Reabertura - ocorrência anterior #${anterior.id}] ${observacao ?? ""}`;
+    }
+
     const id = await ocorrenciasRepo.create({
       pedidoId,
       usuarioId,
       tipo: "endereco_incorreto",
       motivo,
-      observacao,
+      observacao: observacaoFinal,
     });
 
     // Auto-notificar cliente com confirmação (fire-and-forget).
