@@ -10,6 +10,7 @@ const { response } = require("../lib");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/pedidosUserRepository");
+const ocorrenciasRepo = require("../repositories/pedidoOcorrenciasRepository");
 
 /** Converte valor DECIMAL (string do mysql2) para number JS. */
 const n = (v) => Number(v ?? 0);
@@ -101,4 +102,53 @@ const getPedidoById = async (req, res, next) => {
   }
 };
 
-module.exports = { listPedidos, getPedidoById };
+const createOcorrencia = async (req, res, next) => {
+  try {
+    const usuarioId = req.user?.id;
+    if (!usuarioId) {
+      return next(new AppError("Usuário não autenticado.", ERROR_CODES.AUTH_ERROR, 401));
+    }
+
+    const pedidoId = Number(String(req.params.id).replace(/\D/g, ""));
+    if (!pedidoId) {
+      return next(new AppError("ID do pedido inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+
+    // Garante que o pedido pertence ao usuário.
+    const pedido = await repo.findByIdAndUserId(pedidoId, usuarioId);
+    if (!pedido) {
+      return next(new AppError("Pedido não encontrado.", ERROR_CODES.NOT_FOUND, 404));
+    }
+
+    // Impede duplicata de ocorrência aberta do mesmo tipo.
+    const existente = await ocorrenciasRepo.findOpenByPedidoAndTipo(pedidoId, "endereco_incorreto");
+    if (existente) {
+      return next(
+        new AppError(
+          "Já existe uma solicitação em aberto para este pedido.",
+          ERROR_CODES.CONFLICT,
+          409
+        )
+      );
+    }
+
+    const { motivo, observacao } = req.body;
+
+    const id = await ocorrenciasRepo.create({
+      pedidoId,
+      usuarioId,
+      tipo: "endereco_incorreto",
+      motivo,
+      observacao,
+    });
+
+    return response.created(res, { id }, "Solicitação registrada com sucesso.");
+  } catch (err) {
+    return next(
+      err instanceof AppError ? err
+        : new AppError("Erro ao registrar ocorrência.", ERROR_CODES.SERVER_ERROR, 500)
+    );
+  }
+};
+
+module.exports = { listPedidos, getPedidoById, createOcorrencia };

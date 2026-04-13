@@ -141,4 +141,60 @@ async function updateDeliveryStatus(req, res, next) {
   }
 }
 
-module.exports = { listOrders, getOrderById, updatePaymentStatus, updateDeliveryStatus };
+// ---------------------------------------------------------------------------
+// Ocorrências
+// ---------------------------------------------------------------------------
+
+const ocorrenciasRepo = require("../repositories/pedidoOcorrenciasRepository");
+
+async function listOcorrencias(req, res, next) {
+  try {
+    const rows = await ocorrenciasRepo.findAllOpen();
+    return response.ok(res, rows);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao buscar ocorrências.", ERROR_CODES.SERVER_ERROR, 500)
+    );
+  }
+}
+
+async function updateOcorrencia(req, res, next) {
+  try {
+    const id = Number(req.params.ocorrenciaId);
+    if (!id) {
+      return next(new AppError("ID da ocorrência inválido.", ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+
+    const existing = await ocorrenciasRepo.findById(id);
+    if (!existing) {
+      return next(new AppError("Ocorrência não encontrada.", ERROR_CODES.NOT_FOUND, 404));
+    }
+
+    const { status, resposta_admin, taxa_extra } = req.body;
+
+    await ocorrenciasRepo.updateByAdmin(id, {
+      status,
+      respostaAdmin: resposta_admin,
+      taxaExtra: taxa_extra,
+    });
+
+    return response.ok(res, null, "Ocorrência atualizada com sucesso.");
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao atualizar ocorrência.", ERROR_CODES.SERVER_ERROR, 500)
+    );
+  }
+}
+
+module.exports = {
+  listOrders,
+  getOrderById,
+  updatePaymentStatus,
+  updateDeliveryStatus,
+  listOcorrencias,
+  updateOcorrencia,
+};
