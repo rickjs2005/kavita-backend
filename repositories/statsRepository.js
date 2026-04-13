@@ -351,6 +351,8 @@ async function getAlertas() {
 
 async function getModulesStatus() {
   const [
+    [[heroActiveRow]],
+    [[heroInactiveRow]],
     [[newsRow]],
     [[newsDraftRow]],
     [[climaRow]],
@@ -362,6 +364,14 @@ async function getModulesStatus() {
     [[corretorasRow]],
     [[corretorasPendingRow]],
   ] = await Promise.all([
+    // Hero: active slides
+    pool.query(
+      "SELECT COUNT(*) AS total FROM hero_slides WHERE is_active = 1"
+    ),
+    // Hero: inactive slides
+    pool.query(
+      "SELECT COUNT(*) AS total FROM hero_slides WHERE is_active = 0"
+    ),
     // News: published posts
     pool.query(
       "SELECT COUNT(*) AS total FROM news_posts WHERE status = 'published' AND ativo = 1"
@@ -405,6 +415,10 @@ async function getModulesStatus() {
   ]);
 
   return {
+    hero: {
+      ativos: Number(heroActiveRow.total || 0),
+      inativos: Number(heroInactiveRow.total || 0),
+    },
     news: {
       publicados: Number(newsRow.total || 0),
       rascunhos: Number(newsDraftRow.total || 0),
