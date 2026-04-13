@@ -44,6 +44,11 @@ try {
 
 load("/payment", "./ecommerce/payment");
 
-load("/pedidos", "./ecommerce/pedidos");
+try {
+  const pedidosRoutes = require("./ecommerce/pedidos");
+  router.use("/pedidos", validateCSRF, pedidosRoutes);
+} catch (err) {
+  handleRouteLoadError("./ecommerce/pedidos", err);
+}
 
 module.exports = router;
