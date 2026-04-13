@@ -80,6 +80,19 @@ const getAlertas = async (_req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
+// GET /api/admin/stats/modulos-status
+// ---------------------------------------------------------------------------
+
+const getModulesStatus = async (_req, res, next) => {
+  try {
+    const data = await statsRepo.getModulesStatus();
+    response.ok(res, data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -88,4 +101,5 @@ module.exports = {
   getVendas,
   getTopProdutos,
   getAlertas,
+  getModulesStatus,
 };

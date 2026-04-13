@@ -276,7 +276,157 @@ async function getAlertas() {
     });
   }
 
+  // 8. Open incidents without response > 24h
+  const [[openIncidentsRow]] = await pool.query(
+    `SELECT COUNT(*) AS total FROM pedido_ocorrencias
+     WHERE status IN ('aberta', 'em_analise')
+       AND created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+  );
+  const openIncidents = Number(openIncidentsRow.total || 0);
+  if (openIncidents > 0) {
+    alertas.push({
+      id: String(idCounter++),
+      nivel: "warning",
+      tipo: "sistema",
+      titulo: `${openIncidents} ocorrência(s) sem resposta há mais de 24h`,
+      mensagem: "Clientes aguardando resolução de problemas com pedidos.",
+      link: "/admin/ocorrencias",
+      link_label: "Ver ocorrências",
+    });
+  }
+
+  // 9. Unread contact messages
+  const [[unreadMessagesRow]] = await pool.query(
+    "SELECT COUNT(*) AS total FROM mensagens_contato WHERE status = 'nova'"
+  );
+  const unreadMessages = Number(unreadMessagesRow.total || 0);
+  if (unreadMessages > 0) {
+    alertas.push({
+      id: String(idCounter++),
+      nivel: unreadMessages >= 5 ? "warning" : "info",
+      tipo: "sistema",
+      titulo: `${unreadMessages} mensagem(ns) de contato não lida(s)`,
+      mensagem: "Mensagens do formulário de contato aguardando leitura.",
+      link: "/admin/contato-mensagens",
+      link_label: "Ver mensagens",
+    });
+  }
+
+  // 10. Pending service verifications
+  const [[pendingServicesRow]] = await pool.query(
+    "SELECT COUNT(*) AS total FROM colaboradores WHERE verificado = 0"
+  );
+  const pendingServices = Number(pendingServicesRow.total || 0);
+  if (pendingServices > 0) {
+    alertas.push({
+      id: String(idCounter++),
+      nivel: "info",
+      tipo: "sistema",
+      titulo: `${pendingServices} serviço(s) aguardando verificação`,
+      mensagem: "Prestadores de serviço pendentes de aprovação.",
+      link: "/admin/servicos",
+      link_label: "Ver serviços",
+    });
+  }
+
+  // 11. Pending coffee broker submissions
+  const [[pendingBrokersRow]] = await pool.query(
+    "SELECT COUNT(*) AS total FROM corretora_submissions WHERE status = 'pending'"
+  );
+  const pendingBrokers = Number(pendingBrokersRow.total || 0);
+  if (pendingBrokers > 0) {
+    alertas.push({
+      id: String(idCounter++),
+      nivel: "info",
+      tipo: "sistema",
+      titulo: `${pendingBrokers} solicitação(ões) de corretora pendente(s)`,
+      mensagem: "Novas corretoras de café aguardando aprovação.",
+      link: "/admin/mercado-do-cafe",
+      link_label: "Ver solicitações",
+    });
+  }
+
   return alertas;
+}
+
+async function getModulesStatus() {
+  const [
+    [[newsRow]],
+    [[newsDraftRow]],
+    [[climaRow]],
+    [[climaLastSync]],
+    [[cotacoesRow]],
+    [[cotacoesLastRow]],
+    [[dronesModelsRow]],
+    [[dronesPendingRow]],
+    [[corretorasRow]],
+    [[corretorasPendingRow]],
+  ] = await Promise.all([
+    // News: published posts
+    pool.query(
+      "SELECT COUNT(*) AS total FROM news_posts WHERE status = 'published' AND ativo = 1"
+    ),
+    // News: draft posts
+    pool.query(
+      "SELECT COUNT(*) AS total FROM news_posts WHERE status = 'draft'"
+    ),
+    // Clima: active cities
+    pool.query(
+      "SELECT COUNT(*) AS total FROM news_clima WHERE ativo = 1"
+    ),
+    // Clima: last sync
+    pool.query(
+      "SELECT MAX(last_update_at) AS last_sync FROM news_clima WHERE ativo = 1"
+    ),
+    // Cotações: active quotes
+    pool.query(
+      "SELECT COUNT(*) AS total FROM news_cotacoes WHERE ativo = 1"
+    ),
+    // Cotações: last update
+    pool.query(
+      "SELECT MAX(last_update_at) AS last_update, MIN(last_sync_status) AS worst_status FROM news_cotacoes WHERE ativo = 1"
+    ),
+    // Drones: active models
+    pool.query(
+      "SELECT COUNT(*) AS total FROM drone_models WHERE is_active = 1"
+    ),
+    // Drones: pending comments
+    pool.query(
+      "SELECT COUNT(*) AS total FROM drone_comments WHERE status = 'PENDENTE'"
+    ),
+    // Corretoras: active
+    pool.query(
+      "SELECT COUNT(*) AS total FROM corretoras WHERE status = 'active'"
+    ),
+    // Corretoras: pending submissions
+    pool.query(
+      "SELECT COUNT(*) AS total FROM corretora_submissions WHERE status = 'pending'"
+    ),
+  ]);
+
+  return {
+    news: {
+      publicados: Number(newsRow.total || 0),
+      rascunhos: Number(newsDraftRow.total || 0),
+    },
+    clima: {
+      cidadesAtivas: Number(climaRow.total || 0),
+      ultimaSync: climaLastSync.last_sync || null,
+    },
+    cotacoes: {
+      ativas: Number(cotacoesRow.total || 0),
+      ultimaAtualizacao: cotacoesLastRow.last_update || null,
+      statusSync: cotacoesLastRow.worst_status || null,
+    },
+    drones: {
+      modelos: Number(dronesModelsRow.total || 0),
+      comentariosPendentes: Number(dronesPendingRow.total || 0),
+    },
+    mercadoCafe: {
+      corretorasAtivas: Number(corretorasRow.total || 0),
+      solicitacoesPendentes: Number(corretorasPendingRow.total || 0),
+    },
+  };
 }
 
 module.exports = {
@@ -284,4 +434,5 @@ module.exports = {
   getSalesSeries,
   getTopProducts,
   getAlertas,
+  getModulesStatus,
 };

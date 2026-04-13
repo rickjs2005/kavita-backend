@@ -13,5 +13,6 @@ router.get("/resumo", ctrl.getResumo);
 router.get("/vendas", validate(vendasQuerySchema, "query"), ctrl.getVendas);
 router.get("/produtos-mais-vendidos", validate(topProdutosQuerySchema, "query"), ctrl.getTopProdutos);
 router.get("/alertas", ctrl.getAlertas);
+router.get("/modulos-status", ctrl.getModulesStatus);
 
 module.exports = router;
