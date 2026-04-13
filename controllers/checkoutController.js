@@ -118,7 +118,8 @@ async function previewCoupon(req, res, next) {
   }
 
   try {
-    const result = await checkoutService.previewCoupon({ codigo, produtos });
+    const userId = req.user?.id || null;
+    const result = await checkoutService.previewCoupon({ codigo, produtos, userId });
     return response.ok(res, {
       desconto: result.desconto,
       total_original: result.total_original,

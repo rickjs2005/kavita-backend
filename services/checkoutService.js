@@ -141,15 +141,22 @@ async function buildPricingMaps(conn, produtos) {
 /**
  * Validates and applies a coupon to the subtotal.
  * Returns discount info or zeroed defaults if no coupon was provided.
+ *
+ * @param {object} conn
+ * @param {string|null} cupomCodigo
+ * @param {number} subtotal
+ * @param {number} userId       — para limite por usuário
+ * @param {number} pedidoId     — para registrar uso
+ * @param {number[]} productIds — para validar restrições
  */
-async function applyCouponIfPresent(conn, cupomCodigo, subtotal) {
+async function applyCouponIfPresent(conn, cupomCodigo, subtotal, userId, pedidoId, productIds) {
   if (!cupomCodigo || !String(cupomCodigo).trim()) {
     return { totalFinal: subtotal, descontoTotal: 0, cupomAplicado: null };
   }
 
   try {
     const { desconto, cupomAplicado } = await couponService.applyCoupon(
-      conn, cupomCodigo, subtotal
+      conn, cupomCodigo, subtotal, userId, pedidoId, productIds
     );
     return {
       totalFinal: subtotal - desconto,
@@ -288,8 +295,9 @@ async function create(userId, body) {
     );
 
     /* 7) Apply coupon (optional) */
+    const productIds = produtos.map((p) => Number(p.id));
     const { totalFinal, descontoTotal, cupomAplicado } = await applyCouponIfPresent(
-      connection, cupom_codigo, subtotal
+      connection, cupom_codigo, subtotal, userId, pedidoId, productIds
     );
 
     /* 8) Persist final total + shipping */
@@ -353,10 +361,10 @@ async function create(userId, body) {
  * Calculates the discount for a coupon without creating an order.
  * Uses the same pricing rules and validation logic as the real checkout.
  *
- * @param {{ codigo: string, produtos: Array<{ id: number, quantidade: number }> }} params
+ * @param {{ codigo: string, produtos: Array<{ id: number, quantidade: number }>, userId?: number }} params
  * @returns {{ desconto: number, total_original: number, total_com_desconto: number, cupom: object }}
  */
-async function previewCoupon({ codigo, produtos }) {
+async function previewCoupon({ codigo, produtos, userId }) {
   const codigoNorm = String(codigo).trim();
 
   const items = (Array.isArray(produtos) ? produtos : []).filter(
@@ -409,7 +417,10 @@ async function previewCoupon({ codigo, produtos }) {
     );
   }
 
-  const { desconto, cupomAplicado } = couponService.validateCouponRules(cupom, subtotal);
+  // Usa previewCoupon que valida regras puras + restrições + limite por usuário
+  const { desconto, cupomAplicado } = await couponService.previewCoupon(
+    pool, cupom, subtotal, ids, userId || null
+  );
 
   return {
     desconto,

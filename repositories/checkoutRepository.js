@@ -185,7 +185,7 @@ async function getProductPrices(dbOrConn, ids) {
  */
 async function findCouponByCode(dbOrConn, codigo) {
   const [rows] = await dbOrConn.query(
-    `SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, ativo
+    `SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, max_usos_por_usuario, ativo
        FROM cupons
       WHERE codigo = ?
       LIMIT 1`,
@@ -203,7 +203,7 @@ async function findCouponByCode(dbOrConn, codigo) {
  */
 async function lockCoupon(conn, codigo) {
   const [rows] = await conn.query(
-    `SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, ativo
+    `SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, max_usos_por_usuario, ativo
        FROM cupons
       WHERE codigo = ?
       LIMIT 1
@@ -224,6 +224,70 @@ async function incrementCouponUsage(conn, couponId) {
     "UPDATE cupons SET usos = usos + 1 WHERE id = ?",
     [couponId]
   );
+}
+
+/**
+ * Counts how many times a user has used a specific coupon.
+ *
+ * @param {object} conn  MySQL2 connection (inside a transaction)
+ * @param {number} couponId
+ * @param {number} userId
+ * @returns {number}
+ */
+async function countCouponUsageByUser(conn, couponId, userId) {
+  const [rows] = await conn.query(
+    "SELECT COUNT(*) AS cnt FROM cupom_usos WHERE cupom_id = ? AND usuario_id = ?",
+    [couponId, userId]
+  );
+  return Number(rows[0]?.cnt || 0);
+}
+
+/**
+ * Records a coupon usage for a user/order.
+ *
+ * @param {object} conn
+ * @param {number} couponId
+ * @param {number} userId
+ * @param {number} pedidoId
+ */
+async function recordCouponUsage(conn, couponId, userId, pedidoId) {
+  await conn.query(
+    "INSERT INTO cupom_usos (cupom_id, usuario_id, pedido_id) VALUES (?, ?, ?)",
+    [couponId, userId, pedidoId]
+  );
+}
+
+/**
+ * Returns coupon restrictions (category or product) for a given coupon.
+ * If no restrictions exist, the coupon applies to all products.
+ *
+ * @param {object} dbOrConn  MySQL2 pool or connection
+ * @param {number} couponId
+ * @returns {object[]}  Rows with { tipo, target_id }
+ */
+async function getCouponRestrictions(dbOrConn, couponId) {
+  const [rows] = await dbOrConn.query(
+    "SELECT tipo, target_id FROM cupom_restricoes WHERE cupom_id = ?",
+    [couponId]
+  );
+  return rows;
+}
+
+/**
+ * Returns category IDs for the given product IDs.
+ * Uses the product_categories join table.
+ *
+ * @param {object} dbOrConn  MySQL2 pool or connection
+ * @param {number[]} productIds
+ * @returns {object[]}  Rows with { product_id, category_id }
+ */
+async function getProductCategories(dbOrConn, productIds) {
+  if (!productIds.length) return [];
+  const [rows] = await dbOrConn.query(
+    "SELECT product_id, category_id FROM product_categories WHERE product_id IN (?)",
+    [productIds]
+  );
+  return rows;
 }
 
 /**
@@ -345,6 +409,10 @@ module.exports = {
   findCouponByCode,
   lockCoupon,
   incrementCouponUsage,
+  countCouponUsageByUser,
+  recordCouponUsage,
+  getCouponRestrictions,
+  getProductCategories,
   updateOrderTotal,
   updateOrderShipping,
   markAbandonedCartRecovered,
