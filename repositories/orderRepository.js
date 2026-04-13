@@ -21,7 +21,11 @@ const ORDER_SELECT = `
     p.status_entrega,
     p.total,
     COALESCE(p.shipping_price, 0) AS shipping_price,
-    p.data_pedido
+    p.data_pedido,
+    (SELECT COUNT(*) FROM pedido_ocorrencias oc
+     WHERE oc.pedido_id = p.id
+       AND oc.status IN ('aberta','em_analise','aguardando_retorno')
+    ) AS ocorrencias_abertas
   FROM pedidos p
   JOIN usuarios u ON p.usuario_id = u.id
 `;

@@ -63,6 +63,7 @@ function formatOrder(row, itens) {
     total: Number(row.total ?? 0) + Number(row.shipping_price ?? 0),
     shipping_price: Number(row.shipping_price ?? 0),
     data_pedido: row.data_pedido,
+    ocorrencias_abertas: Number(row.ocorrencias_abertas ?? 0),
     itens: itens.map((i) => ({
       produto: i.produto_nome,
       quantidade: i.quantidade,
