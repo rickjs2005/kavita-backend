@@ -363,6 +363,8 @@ async function getModulesStatus() {
     [[dronesPendingRow]],
     [[corretorasRow]],
     [[corretorasPendingRow]],
+    [[msgNovasRow]],
+    [[msgTotalRow]],
   ] = await Promise.all([
     // Hero: active slides
     pool.query(
@@ -412,6 +414,14 @@ async function getModulesStatus() {
     pool.query(
       "SELECT COUNT(*) AS total FROM corretora_submissions WHERE status = 'pending'"
     ),
+    // Mensagens de contato: novas (não lidas)
+    pool.query(
+      "SELECT COUNT(*) AS total FROM mensagens_contato WHERE status = 'nova'"
+    ),
+    // Mensagens de contato: total
+    pool.query(
+      "SELECT COUNT(*) AS total FROM mensagens_contato"
+    ),
   ]);
 
   return {
@@ -439,6 +449,10 @@ async function getModulesStatus() {
     mercadoCafe: {
       corretorasAtivas: Number(corretorasRow.total || 0),
       solicitacoesPendentes: Number(corretorasPendingRow.total || 0),
+    },
+    mensagens: {
+      naoLidas: Number(msgNovasRow.total || 0),
+      total: Number(msgTotalRow.total || 0),
     },
   };
 }
