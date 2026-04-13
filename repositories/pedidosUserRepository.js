@@ -10,7 +10,7 @@ const pool = require("../config/pool");
 
 /**
  * Lista pedidos de um usuário, ordenados por data desc.
- * Retorna total = subtotal + frete.
+ * Retorna total = subtotal (já com desconto) + frete.
  */
 async function findByUserId(usuarioId) {
   const [rows] = await pool.query(
@@ -20,8 +20,13 @@ async function findByUserId(usuarioId) {
        p.forma_pagamento,
        p.status,
        p.status_pagamento,
+       p.status_entrega,
        p.data_pedido,
-       (p.total + COALESCE(p.shipping_price, 0)) AS total
+       p.cupom_codigo,
+       p.total                                   AS subtotal_com_desconto,
+       COALESCE(p.shipping_price, 0)             AS shipping_price,
+       (p.total + COALESCE(p.shipping_price, 0)) AS total,
+       (SELECT COUNT(*) FROM pedidos_produtos pp WHERE pp.pedido_id = p.id) AS qtd_itens
      FROM pedidos p
      WHERE p.usuario_id = ?
      ORDER BY p.data_pedido DESC`,
@@ -42,10 +47,13 @@ async function findByIdAndUserId(pedidoId, usuarioId) {
        p.forma_pagamento,
        p.status,
        p.status_pagamento,
+       p.status_entrega,
        p.data_pedido,
        p.endereco,
-       p.total AS total_produtos,
-       COALESCE(p.shipping_price, 0) AS shipping_price
+       p.cupom_codigo,
+       p.total                       AS total_produtos,
+       COALESCE(p.shipping_price, 0) AS shipping_price,
+       p.shipping_prazo_dias
      FROM pedidos p
      WHERE p.id = ? AND p.usuario_id = ?`,
     [pedidoId, usuarioId]

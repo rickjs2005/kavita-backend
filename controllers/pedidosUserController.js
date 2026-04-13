@@ -48,16 +48,30 @@ const getPedidoById = async (req, res, next) => {
     const shippingPrice = Number(pedido.shipping_price || 0);
     const totalProdutos = Number(pedido.total_produtos || 0);
 
+    // totalProdutos = subtotal já com desconto (sem frete)
+    // subtotal bruto dos itens (sem desconto)
+    const subtotalItens = itens.reduce(
+      (acc, i) => acc + Number(i.preco) * Number(i.quantidade), 0
+    );
+    const desconto = subtotalItens > totalProdutos
+      ? +(subtotalItens - totalProdutos).toFixed(2)
+      : 0;
+
     return response.ok(res, {
       id: pedido.id,
       usuario_id: pedido.usuario_id,
       forma_pagamento: pedido.forma_pagamento,
       status: pedido.status,
       status_pagamento: pedido.status_pagamento ?? null,
+      status_entrega: pedido.status_entrega ?? null,
       data_pedido: pedido.data_pedido,
       endereco: pedido.endereco ?? null,
-      total: totalProdutos + shippingPrice,
+      cupom_codigo: pedido.cupom_codigo ?? null,
+      subtotal: subtotalItens,
+      desconto,
       shipping_price: shippingPrice,
+      shipping_prazo_dias: pedido.shipping_prazo_dias ?? null,
+      total: totalProdutos + shippingPrice,
       itens: itens.map((i) => ({
         id: i.id,
         produto_id: i.produto_id,
