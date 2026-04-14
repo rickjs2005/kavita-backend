@@ -17,6 +17,7 @@ router.use(require("./publicRoutes"));
 router.use(require("./authIndex"));
 router.use(require("./ecommerceRoutes"));
 router.use(require("./corretoraPanelRoutes"));
+router.use(require("./producerRoutes"));
 router.use(require("./adminRoutes"));
 
 module.exports = router;
