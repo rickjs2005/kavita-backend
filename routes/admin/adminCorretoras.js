@@ -9,6 +9,7 @@ const router = express.Router();
 
 const ctrl = require("../../controllers/corretorasAdminController");
 const regionalStats = require("../../controllers/corretoraRegionalStatsController");
+const reviewsAdmin = require("../../controllers/corretoraReviewsAdminController");
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
 const { validate } = require("../../middleware/validate");
@@ -22,6 +23,10 @@ const {
 const {
   inviteCorretoraUserSchema,
 } = require("../../schemas/corretoraAuthSchemas");
+const {
+  moderateReviewSchema,
+  listReviewsAdminQuerySchema,
+} = require("../../schemas/corretoraReviewsSchemas");
 
 // ─── Corretoras CRUD ────────────────────────────────────────────────────────
 
@@ -89,5 +94,18 @@ router.get(
 );
 router.get("/stats/leads-pendurados", regionalStats.getLeadsPendurados);
 router.get("/stats/cidade/:cidade", regionalStats.getCidadeSnapshot);
+
+// ─── Reviews — moderação (Sprint 4) ─────────────────────────────────────────
+router.get("/reviews/pending-count", reviewsAdmin.getPendingCount);
+router.get(
+  "/reviews",
+  validate(listReviewsAdminQuerySchema, "query"),
+  reviewsAdmin.listReviews,
+);
+router.post(
+  "/reviews/:id/moderate",
+  validate(moderateReviewSchema),
+  reviewsAdmin.moderateReview,
+);
 
 module.exports = router;

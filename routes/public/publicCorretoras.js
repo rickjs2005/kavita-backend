@@ -9,11 +9,13 @@ const router = express.Router();
 
 const ctrl = require("../../controllers/corretorasPublicController");
 const leadsCtrl = require("../../controllers/corretorasLeadsPublicController");
+const reviewsCtrl = require("../../controllers/corretoraReviewsPublicController");
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
 const { validate } = require("../../middleware/validate");
 const { submitCorretoraSchema } = require("../../schemas/corretorasSchemas");
 const { createLeadSchema } = require("../../schemas/corretoraAuthSchemas");
+const { createReviewSchema } = require("../../schemas/corretoraReviewsSchemas");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
 const verifyTurnstile = require("../../middleware/verifyTurnstile");
 
@@ -45,6 +47,24 @@ router.post(
   verifyTurnstile,
   validate(createLeadSchema),
   leadsCtrl.submitLead
+);
+
+// ─── Reviews públicas (Sprint 4) ──────────────────────────────────
+// Rate-limiter próprio para reviews (previne spam de avaliações).
+const reviewsRateLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => `corretora_review:${req.ip}`,
+});
+
+// Listagem pública (só approved) — GET, sem rate-limit.
+router.get("/:slug/reviews", reviewsCtrl.listPublicReviews);
+
+// Submissão de nova review — rate-limit + Turnstile + validação.
+router.post(
+  "/:slug/reviews",
+  reviewsRateLimiter,
+  verifyTurnstile,
+  validate(createReviewSchema),
+  reviewsCtrl.submitReview,
 );
 
 // Detalhe por slug (deve vir depois das rotas nomeadas)
