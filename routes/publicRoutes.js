@@ -55,4 +55,7 @@ load("/public/support-config", "./public/publicSupportConfig");
 // — Consulta de CEP (proxy para ViaCEP) —
 load("/public/cep", "./public/publicCep");
 
+// — Gestão de preferência de email (unsubscribe por HMAC) —
+load("/public/email", "./public/publicEmail");
+
 module.exports = router;

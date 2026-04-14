@@ -26,6 +26,13 @@ try {
   logger.warn({ err }, "cotacoes sync job not loaded");
 }
 
+let leadFollowupJob;
+try {
+  leadFollowupJob = require("../jobs/leadFollowupJob");
+} catch (err) {
+  logger.warn({ err }, "lead follow-up job not loaded");
+}
+
 function startWorkers() {
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
@@ -48,6 +55,12 @@ function startWorkers() {
   if (cotacoesSyncJob && typeof cotacoesSyncJob.register === "function") {
     cotacoesSyncJob.register().catch((err) => {
       logger.error({ err }, "cotacoes sync job registration failed");
+    });
+  }
+
+  if (leadFollowupJob && typeof leadFollowupJob.register === "function") {
+    leadFollowupJob.register().catch((err) => {
+      logger.error({ err }, "lead follow-up job registration failed");
     });
   }
 }
