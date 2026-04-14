@@ -148,10 +148,37 @@ async function getCidadeSnapshot(req, res, next) {
   }
 }
 
+/**
+ * GET /api/admin/mercado-do-cafe/stats/corretora/:id
+ * Dossiê completo da corretora para drill-down do admin.
+ */
+async function getCorretoraDossie(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const daysBack = parseDaysBack(req.query);
+    const data = await repo.getCorretoraDossie(id, { daysBack });
+    response.ok(res, data);
+  } catch (err) {
+    next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao carregar dossiê da corretora.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
 module.exports = {
   getRegionalKpis,
   getLeadsPorCidade,
   getCorretorasPerformance,
   getLeadsPendurados,
   getCidadeSnapshot,
+  getCorretoraDossie,
 };

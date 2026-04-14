@@ -233,10 +233,118 @@ async function getCidadeSnapshot(cidadeNome, { daysBack = 30 } = {}) {
   };
 }
 
+/**
+ * Dossiê completo de uma corretora para o drill-down do admin.
+ * Combina perfil, stats de leads, SLA, reviews e ranking na região.
+ * Sem expor conteúdo privado dos leads (nome, telefone, mensagem).
+ */
+async function getCorretoraDossie(corretoraId, { daysBack = 90 } = {}) {
+  const [[leadStats]] = await pool.query(
+    `
+    SELECT
+      COUNT(*) AS leads_total,
+      SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) AS leads_novos,
+      SUM(CASE WHEN status = 'contacted' THEN 1 ELSE 0 END) AS leads_contatados,
+      SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS leads_fechados,
+      SUM(CASE WHEN status = 'lost' THEN 1 ELSE 0 END) AS leads_perdidos,
+      SUM(CASE WHEN volume_range IN ('200_500', '500_mais') THEN 1 ELSE 0 END) AS leads_alta_prioridade,
+      AVG(first_response_seconds) AS sla_medio_segundos,
+      MIN(first_response_seconds) AS sla_min_segundos,
+      MAX(first_response_seconds) AS sla_max_segundos,
+      SUM(CASE WHEN status = 'new' AND first_response_at IS NULL
+               AND created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)
+          THEN 1 ELSE 0 END) AS leads_sem_resposta_24h,
+      MAX(created_at) AS ultimo_lead_em
+    FROM corretora_leads
+    WHERE corretora_id = ?
+      AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+    `,
+    [corretoraId, daysBack],
+  );
+
+  const [leadsPorCidadeDaCorretora] = await pool.query(
+    `
+    SELECT
+      cidade,
+      COUNT(*) AS total,
+      SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS fechados
+    FROM corretora_leads
+    WHERE corretora_id = ?
+      AND cidade IS NOT NULL AND cidade != ''
+      AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+    GROUP BY cidade
+    ORDER BY total DESC
+    LIMIT 10
+    `,
+    [corretoraId, daysBack],
+  );
+
+  const [[reviewStats]] = await pool.query(
+    `
+    SELECT
+      COUNT(*) AS total,
+      AVG(rating) AS average,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
+      SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected
+    FROM corretora_reviews
+    WHERE corretora_id = ?
+    `,
+    [corretoraId],
+  );
+
+  const total = Number(leadStats.leads_total || 0);
+  const fechados = Number(leadStats.leads_fechados || 0);
+  const taxaConversao = total > 0 ? (fechados / total) * 100 : null;
+
+  return {
+    leads: {
+      total,
+      novos: Number(leadStats.leads_novos || 0),
+      contatados: Number(leadStats.leads_contatados || 0),
+      fechados,
+      perdidos: Number(leadStats.leads_perdidos || 0),
+      alta_prioridade: Number(leadStats.leads_alta_prioridade || 0),
+      sem_resposta_24h: Number(leadStats.leads_sem_resposta_24h || 0),
+      ultimo_lead_em: leadStats.ultimo_lead_em,
+      taxa_conversao_pct:
+        taxaConversao !== null ? Math.round(taxaConversao * 10) / 10 : null,
+    },
+    sla: {
+      medio_segundos: leadStats.sla_medio_segundos
+        ? Math.round(Number(leadStats.sla_medio_segundos))
+        : null,
+      min_segundos: leadStats.sla_min_segundos
+        ? Math.round(Number(leadStats.sla_min_segundos))
+        : null,
+      max_segundos: leadStats.sla_max_segundos
+        ? Math.round(Number(leadStats.sla_max_segundos))
+        : null,
+    },
+    leads_por_cidade: leadsPorCidadeDaCorretora.map((r) => ({
+      cidade: r.cidade,
+      total: Number(r.total),
+      fechados: Number(r.fechados),
+    })),
+    reviews: {
+      total: Number(reviewStats.total || 0),
+      pending: Number(reviewStats.pending || 0),
+      approved: Number(reviewStats.approved || 0),
+      rejected: Number(reviewStats.rejected || 0),
+      average:
+        reviewStats.approved && Number(reviewStats.approved) > 0 && reviewStats.average
+          ? Math.round(Number(reviewStats.average) * 10) / 10
+          : null,
+    },
+    days_back: daysBack,
+  };
+}
+
 module.exports = {
   getRegionalKpis,
   getLeadsPorCidade,
   getCorretorasPerformance,
   getLeadsPendurados,
   getCidadeSnapshot,
+  getCorretoraDossie,
 };
