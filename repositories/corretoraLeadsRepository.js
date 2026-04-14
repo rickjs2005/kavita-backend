@@ -118,6 +118,29 @@ async function markFirstResponse(leadId, corretoraId, responseSeconds) {
   return result.affectedRows;
 }
 
+/**
+ * Lista TODOS os leads da corretora sem paginação — uso exclusivo
+ * para export CSV. Limite superior hard de 10k para evitar
+ * memory issue em casos extremos.
+ */
+async function listAllForExport(corretoraId, { status } = {}) {
+  const where = ["corretora_id = ?"];
+  const params = [corretoraId];
+  if (status) {
+    where.push("status = ?");
+    params.push(status);
+  }
+  const [rows] = await pool.query(
+    `SELECT *
+     FROM corretora_leads
+     WHERE ${where.join(" AND ")}
+     ORDER BY created_at DESC
+     LIMIT 10000`,
+    params,
+  );
+  return rows;
+}
+
 async function summary(corretoraId) {
   const [rows] = await pool.query(
     `SELECT status, COUNT(*) AS total
@@ -140,6 +163,7 @@ module.exports = {
   create,
   findByIdForCorretora,
   list,
+  listAllForExport,
   update,
   markFirstResponse,
   summary,

@@ -13,6 +13,7 @@ const ctrl = require("../../controllers/corretoraPanel/leadsCorretoraController"
 
 router.get("/", ctrl.listMine);
 router.get("/summary", ctrl.getSummary);
+router.get("/export", ctrl.exportLeads);
 router.patch("/:id", validate(updateLeadSchema), ctrl.updateLead);
 
 module.exports = router;
