@@ -166,6 +166,7 @@ async function getMe(req, res, next) {
       id: u.id,
       nome: u.nome,
       email: u.email,
+      role: u.role,
       corretora_id: u.corretora_id,
       corretora_name: u.corretora_name,
       corretora_slug: u.corretora_slug,

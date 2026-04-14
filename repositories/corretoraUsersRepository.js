@@ -70,11 +70,11 @@ async function findByCorretoraId(corretoraId) {
   return rows[0] ?? null;
 }
 
-async function create({ corretora_id, nome, email, password_hash }) {
+async function create({ corretora_id, nome, email, password_hash, role }) {
   const [result] = await pool.query(
-    `INSERT INTO corretora_users (corretora_id, nome, email, password_hash)
-     VALUES (?, ?, ?, ?)`,
-    [corretora_id, nome, email, password_hash]
+    `INSERT INTO corretora_users (corretora_id, nome, email, password_hash, role)
+     VALUES (?, ?, ?, ?, ?)`,
+    [corretora_id, nome, email, password_hash, role ?? "owner"],
   );
   return result.insertId;
 }
@@ -84,13 +84,83 @@ async function create({ corretora_id, nome, email, password_hash }) {
  * password_hash é gravado como NULL. A corretora define a senha
  * ao usar o link de primeiro acesso enviado por e-mail.
  */
-async function createPending({ corretora_id, nome, email }) {
+async function createPending({ corretora_id, nome, email, role }) {
   const [result] = await pool.query(
-    `INSERT INTO corretora_users (corretora_id, nome, email, password_hash)
-     VALUES (?, ?, ?, NULL)`,
-    [corretora_id, nome, email]
+    `INSERT INTO corretora_users (corretora_id, nome, email, password_hash, role)
+     VALUES (?, ?, ?, NULL, ?)`,
+    [corretora_id, nome, email, role ?? "owner"],
   );
   return result.insertId;
+}
+
+// ─── Multi-usuário (Sprint 6A) ──────────────────────────────────────────────
+
+/** Lista toda a equipe de uma corretora (usada no painel de Equipe). */
+async function listTeamByCorretoraId(corretoraId) {
+  const [rows] = await pool.query(
+    `SELECT
+       id, nome, email, role, is_active, last_login_at,
+       password_hash IS NOT NULL AS activated,
+       created_at, updated_at
+     FROM corretora_users
+     WHERE corretora_id = ?
+     ORDER BY
+       CASE role
+         WHEN 'owner' THEN 0
+         WHEN 'manager' THEN 1
+         WHEN 'sales' THEN 2
+         WHEN 'viewer' THEN 3
+         ELSE 4
+       END,
+       created_at ASC`,
+    [corretoraId],
+  );
+  return rows.map((r) => ({
+    ...r,
+    activated: Boolean(r.activated),
+    is_active: Boolean(r.is_active),
+  }));
+}
+
+async function countOwnersByCorretoraId(corretoraId) {
+  const [[row]] = await pool.query(
+    `SELECT COUNT(*) AS total
+     FROM corretora_users
+     WHERE corretora_id = ? AND role = 'owner' AND is_active = 1`,
+    [corretoraId],
+  );
+  return Number(row.total || 0);
+}
+
+/** Atualiza role. Controller deve garantir que nunca reduza o último owner. */
+async function updateRole(id, corretoraId, role) {
+  const [result] = await pool.query(
+    `UPDATE corretora_users SET role = ? WHERE id = ? AND corretora_id = ?`,
+    [role, id, corretoraId],
+  );
+  return result.affectedRows;
+}
+
+/** Desativa um usuário (remove acesso sem perder auditoria). */
+async function deactivate(id, corretoraId) {
+  const [result] = await pool.query(
+    `UPDATE corretora_users
+       SET is_active = 0,
+           token_version = token_version + 1
+     WHERE id = ? AND corretora_id = ?`,
+    [id, corretoraId],
+  );
+  return result.affectedRows;
+}
+
+async function findByIdInCorretora(id, corretoraId) {
+  const [[row]] = await pool.query(
+    `SELECT * FROM corretora_users
+     WHERE id = ? AND corretora_id = ?
+     LIMIT 1`,
+    [id, corretoraId],
+  );
+  return row ?? null;
 }
 
 /**
@@ -123,10 +193,15 @@ module.exports = {
   findByEmail,
   findById,
   findByCorretoraId,
+  findByIdInCorretora,
   countByCorretoraId,
+  countOwnersByCorretoraId,
+  listTeamByCorretoraId,
   create,
   createPending,
   updateContactFields,
+  updateRole,
+  deactivate,
   updateLastLogin,
   incrementTokenVersion,
   updatePasswordAndBumpTokenVersion,

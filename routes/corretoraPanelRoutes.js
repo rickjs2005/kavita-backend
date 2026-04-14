@@ -23,5 +23,6 @@ function mount(path, moduleName) {
 
 mount("/corretora/profile", "./corretoraPanel/corretoraProfile");
 mount("/corretora/leads", "./corretoraPanel/corretoraLeads");
+mount("/corretora/team", "./corretoraPanel/corretoraTeam");
 
 module.exports = router;

@@ -8,12 +8,18 @@ const express = require("express");
 const router = express.Router();
 
 const { validate } = require("../../middleware/validate");
+const { requireCapability } = require("../../lib/corretoraPermissions");
 const { updateLeadSchema } = require("../../schemas/corretoraAuthSchemas");
 const ctrl = require("../../controllers/corretoraPanel/leadsCorretoraController");
 
-router.get("/", ctrl.listMine);
-router.get("/summary", ctrl.getSummary);
-router.get("/export", ctrl.exportLeads);
-router.patch("/:id", validate(updateLeadSchema), ctrl.updateLead);
+router.get("/", requireCapability("leads.view"), ctrl.listMine);
+router.get("/summary", requireCapability("leads.view"), ctrl.getSummary);
+router.get("/export", requireCapability("leads.export"), ctrl.exportLeads);
+router.patch(
+  "/:id",
+  requireCapability("leads.update"),
+  validate(updateLeadSchema),
+  ctrl.updateLead,
+);
 
 module.exports = router;

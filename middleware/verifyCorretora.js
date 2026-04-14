@@ -103,6 +103,9 @@ async function verifyCorretora(req, _res, next) {
       corretora_id: user.corretora_id,
       nome: user.nome,
       email: user.email,
+      // Sprint 6A: role do usuário na corretora. Default owner para
+      // compat com registros criados antes da migration.
+      role: user.role ?? "owner",
       corretora_name: user.corretora_name,
       corretora_slug: user.corretora_slug,
     };
