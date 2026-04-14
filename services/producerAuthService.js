@@ -147,14 +147,66 @@ async function consumeMagicLink({ token }) {
 
   // Revoga este token específico (uso único).
   await tokenService.revokeToken(row.id);
+
+  // Lote 4 — welcome email no primeiro login.
+  const isFirstLogin = !user.last_login_at;
+
   await producerRepo.touchLastLogin(user.id);
 
   const fresh = await producerRepo.findById(user.id);
   const token_jwt = buildJwt(fresh);
 
-  logger.info({ producerId: user.id }, "producer.auth.login");
+  logger.info(
+    { producerId: user.id, firstLogin: isFirstLogin },
+    "producer.auth.login",
+  );
+
+  if (isFirstLogin) {
+    sendWelcomeEmail({ email: user.email }).catch((err) => {
+      logger.warn(
+        { err: err?.message ?? String(err), producerId: user.id },
+        "producer.welcome_email_failed",
+      );
+    });
+  }
 
   return { user: sanitizeUser(fresh), jwt: token_jwt };
+}
+
+async function sendWelcomeEmail({ email }) {
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "") || "";
+  const subject = "Bem-vindo(a) ao Kavita · Mercado do Café";
+  const html = `
+    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 540px;">
+      <h2 style="color:#b45309;margin:0 0 12px;">☕ Bem-vindo(a) à Kavita</h2>
+      <p>Sua conta está pronta. A partir de agora, você pode:</p>
+      <ul style="color:#3f3f46;line-height:1.7;">
+        <li><strong>Favoritar corretoras</strong> para acompanhar depois.</li>
+        <li><strong>Ver seu histórico</strong> de contatos enviados — basta preencher seu telefone no perfil.</li>
+        <li><strong>Navegar pelas cidades</strong> da Zona da Mata Mineira.</li>
+      </ul>
+      <p>
+        <a href="${appUrl}/painel/produtor" style="display:inline-block;background:#b45309;color:white;
+                  padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
+          Abrir meu painel
+        </a>
+      </p>
+      <p style="color:#71717a;font-size:12px;margin-top:16px;">
+        Dúvida? Responda este e-mail.
+      </p>
+      <p style="color:#71717a;font-size:12px;margin-top:24px;">
+        Kavita · Mercado do Café · Zona da Mata Mineira
+      </p>
+    </div>
+  `;
+  const text = [
+    "Bem-vindo(a) ao Kavita · Mercado do Café",
+    "",
+    `Acesse seu painel: ${appUrl}/painel/produtor`,
+    "",
+    "Favorite corretoras, veja histórico e navegue por cidade.",
+  ].join("\n");
+  await mailService.sendTransactionalEmail(email, subject, html, text);
 }
 
 /**
