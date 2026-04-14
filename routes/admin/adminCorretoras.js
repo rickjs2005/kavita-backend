@@ -8,6 +8,7 @@ const express = require("express");
 const router = express.Router();
 
 const ctrl = require("../../controllers/corretorasAdminController");
+const regionalStats = require("../../controllers/corretoraRegionalStatsController");
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
 const { validate } = require("../../middleware/validate");
@@ -76,5 +77,17 @@ router.post(
   validate(rejectSubmissionSchema),
   ctrl.rejectSubmission
 );
+
+// ─── Dashboard regional (Sprint 3) ──────────────────────────────────────────
+// Read-only aggregates. Admin pode monitorar SLA, ranking e saúde
+// operacional do módulo na Zona da Mata.
+router.get("/stats/regional", regionalStats.getRegionalKpis);
+router.get("/stats/leads-por-cidade", regionalStats.getLeadsPorCidade);
+router.get(
+  "/stats/corretoras-performance",
+  regionalStats.getCorretorasPerformance,
+);
+router.get("/stats/leads-pendurados", regionalStats.getLeadsPendurados);
+router.get("/stats/cidade/:cidade", regionalStats.getCidadeSnapshot);
 
 module.exports = router;

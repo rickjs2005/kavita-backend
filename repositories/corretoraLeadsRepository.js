@@ -102,6 +102,22 @@ async function update(id, corretoraId, data) {
   return result.affectedRows;
 }
 
+/**
+ * Marca o timestamp do primeiro response do lead + grava duração em
+ * segundos. Usado para SLA tracking (Sprint 3). Só deve ser chamado
+ * quando first_response_at ainda for NULL (guard no service).
+ */
+async function markFirstResponse(leadId, corretoraId, responseSeconds) {
+  const [result] = await pool.query(
+    `UPDATE corretora_leads
+       SET first_response_at = NOW(),
+           first_response_seconds = ?
+     WHERE id = ? AND corretora_id = ? AND first_response_at IS NULL`,
+    [responseSeconds, leadId, corretoraId],
+  );
+  return result.affectedRows;
+}
+
 async function summary(corretoraId) {
   const [rows] = await pool.query(
     `SELECT status, COUNT(*) AS total
@@ -125,5 +141,6 @@ module.exports = {
   findByIdForCorretora,
   list,
   update,
+  markFirstResponse,
   summary,
 };

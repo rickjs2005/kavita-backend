@@ -272,6 +272,41 @@ async function updateLead(leadId, corretoraId, data, actor = {}) {
         to_status: data.status,
       },
     });
+
+    // ─── SLA tracking (Sprint 3) ──────────────────────────────────
+    // Grava o 1º response quando lead SAI DE "new" pela primeira vez.
+    // Guard: first_response_at NULL (nunca foi respondido antes).
+    // Motivo: correções de status posteriores não devem sobrescrever
+    // o SLA real do primeiro atendimento.
+    if (current.status === "new" && !current.first_response_at) {
+      const responseSeconds = Math.max(
+        0,
+        Math.floor(
+          (Date.now() - new Date(current.created_at).getTime()) / 1000,
+        ),
+      );
+      try {
+        await leadsRepo.markFirstResponse(
+          leadId,
+          corretoraId,
+          responseSeconds,
+        );
+        logger.info(
+          { leadId, corretoraId, responseSeconds },
+          "corretora.lead.first_response_tracked",
+        );
+      } catch (err) {
+        // Erro no tracking de SLA não deve falhar o update principal.
+        logger.warn(
+          {
+            err: err?.message ?? String(err),
+            leadId,
+            corretoraId,
+          },
+          "corretora.lead.first_response_tracking_failed",
+        );
+      }
+    }
   }
 
   return leadsRepo.findByIdForCorretora(leadId, corretoraId);
