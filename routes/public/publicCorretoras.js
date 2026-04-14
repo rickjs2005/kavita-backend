@@ -67,6 +67,15 @@ router.post(
   reviewsCtrl.submitReview,
 );
 
+// Sprint 7 — Confirmação pública de "lote vendido" pelo produtor.
+// Rate-limit reusado do leadsRateLimiter (mesma família de risco).
+// Token é HMAC, então auth é o próprio path.
+router.post(
+  "/lote-vendido/:id/:token",
+  leadsRateLimiter,
+  leadsCtrl.confirmLoteVendido,
+);
+
 // Detalhe por slug (deve vir depois das rotas nomeadas)
 router.get("/:slug", ctrl.getBySlug);
 

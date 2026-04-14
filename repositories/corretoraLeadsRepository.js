@@ -10,34 +10,41 @@ async function create({
   corretora_id,
   nome,
   telefone,
+  telefone_normalizado,
   cidade,
   mensagem,
   objetivo,
   tipo_cafe,
   volume_range,
   canal_preferido,
+  corrego_localidade,
+  safra_tipo,
   source_ip,
   user_agent,
 }) {
   const [result] = await pool.query(
     `INSERT INTO corretora_leads
-       (corretora_id, nome, telefone, cidade, mensagem,
-        objetivo, tipo_cafe, volume_range, canal_preferido,
+       (corretora_id, nome, telefone, telefone_normalizado,
+        cidade, mensagem, objetivo, tipo_cafe, volume_range,
+        canal_preferido, corrego_localidade, safra_tipo,
         source_ip, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       corretora_id,
       nome,
       telefone,
+      telefone_normalizado ?? null,
       cidade ?? null,
       mensagem ?? null,
       objetivo ?? null,
       tipo_cafe ?? null,
       volume_range ?? null,
       canal_preferido ?? null,
+      corrego_localidade ?? null,
+      safra_tipo ?? null,
       source_ip ?? null,
       user_agent ?? null,
-    ]
+    ],
   );
   return result.insertId;
 }
@@ -81,7 +88,7 @@ async function list({ corretoraId, status, page, limit }) {
 }
 
 async function update(id, corretoraId, data) {
-  const allowed = ["status", "nota_interna"];
+  const allowed = ["status", "nota_interna", "amostra_status"];
   const sets = [];
   const values = [];
 
@@ -141,6 +148,80 @@ async function listAllForExport(corretoraId, { status } = {}) {
   return rows;
 }
 
+/**
+ * Sprint 7 — Busca lead por id sem filtro de corretora (uso público
+ * pela rota de confirmação de lote vendido). Usado APENAS após
+ * validação de token HMAC.
+ */
+async function findByIdRaw(id) {
+  const [[row]] = await pool.query(
+    "SELECT * FROM corretora_leads WHERE id = ? LIMIT 1",
+    [id],
+  );
+  return row ?? null;
+}
+
+/**
+ * Broadcast de "lote vendido": marca lote_disponivel = 0 em TODOS os
+ * leads ativos com mesmo telefone_normalizado. Retorna lista das
+ * corretoras afetadas para criar notificações.
+ */
+async function broadcastLoteVendido(telefoneNormalizado) {
+  if (!telefoneNormalizado) return [];
+
+  // 1. Identifica leads alvos antes do update (precisa de corretora_id
+  //    pra notificar).
+  const [targets] = await pool.query(
+    `SELECT id, corretora_id, nome, cidade
+     FROM corretora_leads
+     WHERE telefone_normalizado = ? AND lote_disponivel = 1`,
+    [telefoneNormalizado],
+  );
+
+  if (targets.length === 0) return [];
+
+  // 2. Marca todos.
+  await pool.query(
+    `UPDATE corretora_leads
+       SET lote_disponivel = 0
+     WHERE telefone_normalizado = ? AND lote_disponivel = 1`,
+    [telefoneNormalizado],
+  );
+
+  return targets;
+}
+
+/**
+ * Sprint 7 — Top córregos com mais leads na janela. Usado pelo
+ * widget admin "Mapa de córregos ativos".
+ */
+async function getTopCorregos({ daysBack = 7, limit = 5 } = {}) {
+  const [rows] = await pool.query(
+    `SELECT
+       corrego_localidade AS corrego,
+       COUNT(*) AS total,
+       SUM(CASE WHEN volume_range IN ('200_500', '500_mais') THEN 1 ELSE 0 END) AS alta_prioridade,
+       COUNT(DISTINCT corretora_id) AS corretoras_atingidas,
+       MAX(created_at) AS ultimo_lead
+     FROM corretora_leads
+     WHERE corrego_localidade IS NOT NULL
+       AND corrego_localidade != ''
+       AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+     GROUP BY corrego_localidade
+     ORDER BY total DESC, alta_prioridade DESC
+     LIMIT ?`,
+    [daysBack, limit],
+  );
+
+  return rows.map((r) => ({
+    corrego: r.corrego,
+    total: Number(r.total),
+    alta_prioridade: Number(r.alta_prioridade),
+    corretoras_atingidas: Number(r.corretoras_atingidas),
+    ultimo_lead: r.ultimo_lead,
+  }));
+}
+
 async function summary(corretoraId) {
   const [rows] = await pool.query(
     `SELECT status, COUNT(*) AS total
@@ -162,9 +243,12 @@ async function summary(corretoraId) {
 module.exports = {
   create,
   findByIdForCorretora,
+  findByIdRaw,
   list,
   listAllForExport,
   update,
   markFirstResponse,
+  broadcastLoteVendido,
+  getTopCorregos,
   summary,
 };

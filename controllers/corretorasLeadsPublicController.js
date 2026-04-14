@@ -44,4 +44,46 @@ async function submitLead(req, res, next) {
   }
 }
 
-module.exports = { submitLead };
+/**
+ * POST /api/public/leads/:id/lote-vendido/:token
+ *
+ * Sprint 7 — Produtor confirma "já vendi para outra pessoa".
+ * Sem auth (link único enviado ao produtor pela corretora). Token
+ * HMAC valida posse legítima do link.
+ */
+async function confirmLoteVendido(req, res, next) {
+  try {
+    const leadId = Number(req.params.id);
+    const token = String(req.params.token || "");
+    if (!Number.isInteger(leadId) || leadId <= 0) {
+      throw new AppError(
+        "Link inválido.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      );
+    }
+    const result = await leadsService.confirmLoteVendidoFromPublic({
+      leadId,
+      token,
+    });
+    return response.ok(
+      res,
+      result,
+      result.already_marked
+        ? "Lote já estava marcado como vendido."
+        : `Confirmação registrada. ${result.affected_count} corretora(s) notificada(s).`,
+    );
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao confirmar.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+module.exports = { submitLead, confirmLoteVendido };

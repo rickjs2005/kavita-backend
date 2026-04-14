@@ -174,6 +174,17 @@ const createLeadSchema = z.object({
     .enum(["whatsapp", "ligacao", "email"])
     .optional()
     .nullable(),
+  // Sprint 7 — Operação física / hiper-localidade
+  corrego_localidade: z
+    .string()
+    .max(120, "Máximo 120 caracteres.")
+    .optional()
+    .nullable()
+    .transform(trimOrNull),
+  safra_tipo: z
+    .enum(["atual", "remanescente"])
+    .optional()
+    .nullable(),
 });
 
 // ---------------------------------------------------------------------------
@@ -190,10 +201,18 @@ const updateLeadSchema = z
       .optional()
       .nullable()
       .transform(trimOrNull),
+    // Sprint 7 — fluxo de amostra física
+    amostra_status: z
+      .enum(["nao_entregue", "prometida", "recebida", "laudada"])
+      .optional(),
   })
-  .refine((data) => data.status !== undefined || "nota_interna" in data, {
-    message: "Informe status ou nota_interna.",
-  });
+  .refine(
+    (data) =>
+      data.status !== undefined ||
+      "nota_interna" in data ||
+      data.amostra_status !== undefined,
+    { message: "Informe status, nota_interna ou amostra_status." },
+  );
 
 // ---------------------------------------------------------------------------
 // Listagem de leads pela corretora

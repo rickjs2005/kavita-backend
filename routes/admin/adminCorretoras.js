@@ -95,6 +95,7 @@ router.get(
 router.get("/stats/leads-pendurados", regionalStats.getLeadsPendurados);
 router.get("/stats/cidade/:cidade", regionalStats.getCidadeSnapshot);
 router.get("/stats/corretora/:id", regionalStats.getCorretoraDossie);
+router.get("/stats/corregos-ativos", regionalStats.getCorregosAtivos);
 
 // ─── Reviews — moderação (Sprint 4) ─────────────────────────────────────────
 router.get("/reviews/pending-count", reviewsAdmin.getPendingCount);

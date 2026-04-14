@@ -149,6 +149,31 @@ async function getCidadeSnapshot(req, res, next) {
 }
 
 /**
+ * GET /api/admin/mercado-do-cafe/stats/corregos-ativos
+ * Sprint 7 — Top córregos por volume de leads na janela
+ * (default 7 dias). Insumo do widget "Córregos ativos" no admin.
+ */
+async function getCorregosAtivos(req, res, next) {
+  try {
+    const daysBack = Math.max(1, Math.min(90, Number(req.query.days) || 7));
+    const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 5));
+    const leadsRepo = require("../repositories/corretoraLeadsRepository");
+    const data = await leadsRepo.getTopCorregos({ daysBack, limit });
+    response.ok(res, { days_back: daysBack, items: data });
+  } catch (err) {
+    next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao carregar córregos ativos.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+/**
  * GET /api/admin/mercado-do-cafe/stats/corretora/:id
  * Dossiê completo da corretora para drill-down do admin.
  */
@@ -181,4 +206,5 @@ module.exports = {
   getLeadsPendurados,
   getCidadeSnapshot,
   getCorretoraDossie,
+  getCorregosAtivos,
 };
