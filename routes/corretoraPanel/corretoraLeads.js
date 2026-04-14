@@ -9,12 +9,18 @@ const router = express.Router();
 
 const { validate } = require("../../middleware/validate");
 const { requireCapability } = require("../../lib/corretoraPermissions");
+const { requirePlanCapability } = require("../../services/planService");
 const { updateLeadSchema } = require("../../schemas/corretoraAuthSchemas");
 const ctrl = require("../../controllers/corretoraPanel/leadsCorretoraController");
 
 router.get("/", requireCapability("leads.view"), ctrl.listMine);
 router.get("/summary", requireCapability("leads.view"), ctrl.getSummary);
-router.get("/export", requireCapability("leads.export"), ctrl.exportLeads);
+router.get(
+  "/export",
+  requireCapability("leads.export"),
+  requirePlanCapability("leads_export"),
+  ctrl.exportLeads,
+);
 router.patch(
   "/:id",
   requireCapability("leads.update"),

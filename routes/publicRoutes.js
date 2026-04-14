@@ -46,6 +46,7 @@ load("/public/drones", "./public/publicDrones");
 
 // — Mercado do Café: corretoras —
 load("/public/corretoras", "./public/publicCorretoras");
+load("/public/plans", "./public/publicPlans");
 
 // — Contato público —
 load("/public/contato", "./public/publicContato");
