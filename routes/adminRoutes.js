@@ -56,6 +56,7 @@ mount("/admin/especialidades",  "./admin/adminEspecialidades");
 mount("/admin/drones",          "./admin/adminDrones");
 mount("/admin/mercado-do-cafe", "./admin/adminCorretoras");
 mount("/admin/monetization", "./admin/adminPlans");
+mount("/admin/audit", "./admin/adminAudit");
 
 /* ============================================================
  * Operações de negócio

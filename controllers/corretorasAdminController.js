@@ -127,7 +127,16 @@ const updateCorretora = async (req, res, next) => {
  */
 const toggleStatus = async (req, res, next) => {
   try {
-    await corretorasService.toggleStatus(Number(req.params.id), req.body.status);
+    const targetId = Number(req.params.id);
+    await corretorasService.toggleStatus(targetId, req.body.status);
+    // Audit (fire-and-forget)
+    require("../services/adminAuditService").record({
+      req,
+      action: "corretora.status_changed",
+      targetType: "corretora",
+      targetId,
+      meta: { to: req.body.status },
+    });
     return response.ok(res, null, "Status atualizado.");
   } catch (err) {
     return next(
@@ -144,10 +153,15 @@ const toggleStatus = async (req, res, next) => {
  */
 const toggleFeatured = async (req, res, next) => {
   try {
-    await corretorasService.toggleFeatured(
-      Number(req.params.id),
-      req.body.is_featured
-    );
+    const targetId = Number(req.params.id);
+    await corretorasService.toggleFeatured(targetId, req.body.is_featured);
+    require("../services/adminAuditService").record({
+      req,
+      action: "corretora.featured_changed",
+      targetType: "corretora",
+      targetId,
+      meta: { featured: Boolean(req.body.is_featured) },
+    });
     return response.ok(res, null, "Destaque atualizado.");
   } catch (err) {
     return next(
@@ -206,10 +220,20 @@ const getSubmissionById = async (req, res, next) => {
  */
 const approveSubmission = async (req, res, next) => {
   try {
+    const submissionId = Number(req.params.id);
     const result = await corretorasService.approveSubmission(
-      Number(req.params.id),
-      req.admin?.id
+      submissionId,
+      req.admin?.id,
     );
+    if (!result.already_approved) {
+      require("../services/adminAuditService").record({
+        req,
+        action: "corretora.approved",
+        targetType: "submission",
+        targetId: submissionId,
+        meta: { corretora_id: result.corretora_id },
+      });
+    }
     const msg = result.already_approved
       ? "Solicitação já havia sido aprovada."
       : "Corretora aprovada e publicada.";
@@ -229,11 +253,19 @@ const approveSubmission = async (req, res, next) => {
  */
 const rejectSubmission = async (req, res, next) => {
   try {
+    const submissionId = Number(req.params.id);
     await corretorasService.rejectSubmission(
-      Number(req.params.id),
+      submissionId,
       req.admin?.id,
-      req.body.reason
+      req.body.reason,
     );
+    require("../services/adminAuditService").record({
+      req,
+      action: "corretora.rejected",
+      targetType: "submission",
+      targetId: submissionId,
+      meta: { reason: req.body.reason },
+    });
     return response.ok(res, null, "Solicitação rejeitada.");
   } catch (err) {
     return next(

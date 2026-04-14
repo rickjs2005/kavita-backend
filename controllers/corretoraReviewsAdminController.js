@@ -75,6 +75,18 @@ async function moderateReview(req, res, next) {
       reviewed_by: req.admin?.id ?? null,
     });
 
+    require("../services/adminAuditService").record({
+      req,
+      action: "review.moderated",
+      targetType: "review",
+      targetId: id,
+      meta: {
+        decision: req.body.action,
+        reason: req.body.rejection_reason ?? null,
+        corretora_id: result?.corretora_id,
+      },
+    });
+
     response.ok(res, result, "Avaliação moderada com sucesso.");
   } catch (err) {
     next(

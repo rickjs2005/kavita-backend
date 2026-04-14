@@ -101,6 +101,13 @@ async function assignPlanToCorretora(req, res, next) {
         meta: { assigned_by_admin_id: req.admin?.id ?? null, ...req.body.meta },
       },
     });
+    require("../../services/adminAuditService").record({
+      req,
+      action: "plan.assigned",
+      targetType: "corretora",
+      targetId: corretoraId,
+      meta: { plan_id: planId },
+    });
     response.ok(res, result, "Plano atribuído.");
   } catch (err) {
     next(err);
