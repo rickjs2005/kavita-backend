@@ -8,6 +8,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const leadsRepo = require("../repositories/corretoraLeadsRepository");
 const publicCorretorasRepo = require("../repositories/corretorasPublicRepository");
+const notificationsRepo = require("../repositories/corretoraNotificationsRepository");
 const mailService = require("./mailService");
 const analyticsService = require("./analyticsService");
 const logger = require("../lib/logger");
@@ -72,6 +73,30 @@ async function createLeadFromPublic({ slug, data, meta }) {
       "corretora.lead.email_failed"
     );
   });
+
+  // In-panel notification (Sprint 6B) — fire-and-forget como email.
+  // Pertence à corretora, toda a equipe vê; marcação de leitura é
+  // por-usuário via tabela corretora_notification_reads.
+  const isHighPriority =
+    data.volume_range === "200_500" || data.volume_range === "500_mais";
+  const cityPart = data.cidade ? ` · ${data.cidade}` : "";
+  notificationsRepo
+    .create({
+      corretora_id: corretora.id,
+      type: "lead.new",
+      title: isHighPriority
+        ? `Novo lead alta prioridade${cityPart}`
+        : `Novo lead${cityPart}`,
+      body: `${data.nome} ${data.volume_range ? `· ${data.volume_range.replace("_", "–")} sacas` : ""}`.trim(),
+      link: "/painel/corretora/leads",
+      meta: { lead_id: leadId, nome: data.nome, cidade: data.cidade ?? null },
+    })
+    .catch((err) => {
+      logger.warn(
+        { err: err?.message ?? String(err), corretoraId: corretora.id, leadId },
+        "corretora.lead.notification_failed",
+      );
+    });
 
   analyticsService.track({
     name: "lead_created",
