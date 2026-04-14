@@ -36,6 +36,10 @@ async function createLeadFromPublic({ slug, data, meta }) {
     telefone: data.telefone,
     cidade: data.cidade,
     mensagem: data.mensagem,
+    objetivo: data.objetivo,
+    tipo_cafe: data.tipo_cafe,
+    volume_range: data.volume_range,
+    canal_preferido: data.canal_preferido,
     source_ip: meta?.ip,
     user_agent: meta?.userAgent,
   });
@@ -47,6 +51,8 @@ async function createLeadFromPublic({ slug, data, meta }) {
       corretoraSlug: slug,
       hasMessage: Boolean(data.mensagem),
       hasCidade: Boolean(data.cidade),
+      objetivo: data.objetivo ?? null,
+      volumeRange: data.volume_range ?? null,
       ip: meta?.ip,
     },
     "corretora.lead.created"
@@ -86,13 +92,71 @@ async function createLeadFromPublic({ slug, data, meta }) {
   return { id: leadId, corretora_id: corretora.id };
 }
 
+// Labels human-readable dos enums qualificados — sincronizados com
+// o catálogo em kavita-frontend/src/lib/regioes.ts (fonte única lá).
+const LABEL_OBJETIVO = {
+  vender: "Vender café",
+  comprar: "Comprar café",
+  cotacao: "Consultar cotação",
+  outro: "Outro assunto",
+};
+const LABEL_TIPO_CAFE = {
+  arabica_comum: "Arábica comum",
+  arabica_especial: "Arábica especial",
+  natural: "Natural",
+  cereja_descascado: "Cereja descascado",
+  ainda_nao_sei: "Ainda não sei",
+};
+const LABEL_VOLUME = {
+  ate_50: "Até 50 sacas",
+  "50_200": "50 a 200 sacas",
+  "200_500": "200 a 500 sacas",
+  "500_mais": "Mais de 500 sacas",
+};
+const LABEL_CANAL = {
+  whatsapp: "WhatsApp",
+  ligacao: "Ligação",
+  email: "E-mail",
+};
+
 async function notifyCorretoraOfNewLead(corretora, lead) {
   if (!corretora?.email) return; // nada para notificar
 
-  const subject = `Novo contato recebido — ${lead.nome}`;
+  // Identifica "prioridade" para destacar leads com volume alto.
+  const isHighPriority =
+    lead.volume_range === "200_500" || lead.volume_range === "500_mais";
+  const priorityBadge = isHighPriority
+    ? `<span style="background:#b45309;color:white;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Alta prioridade</span>`
+    : "";
+
+  const subject = isHighPriority
+    ? `[Alta prioridade] Novo contato — ${lead.nome}`
+    : `Novo contato recebido — ${lead.nome}`;
+
+  const qualFields = [
+    lead.objetivo && { label: "Objetivo", value: LABEL_OBJETIVO[lead.objetivo] },
+    lead.tipo_cafe && { label: "Tipo de café", value: LABEL_TIPO_CAFE[lead.tipo_cafe] },
+    lead.volume_range && { label: "Volume estimado", value: LABEL_VOLUME[lead.volume_range] },
+    lead.canal_preferido && { label: "Prefere", value: LABEL_CANAL[lead.canal_preferido] },
+  ].filter(Boolean);
+
+  const qualHtml = qualFields.length
+    ? `<div style="margin:12px 0;padding-top:12px;border-top:1px solid #e4e4e7;">
+         ${qualFields
+           .map(
+             (f) =>
+               `<p style="margin:4px 0"><strong>${escapeHtml(f.label)}:</strong> ${escapeHtml(f.value)}</p>`,
+           )
+           .join("")}
+       </div>`
+    : "";
+
   const html = `
     <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px;">
-      <h2 style="color:#15803d;margin:0 0 12px;">☕ Novo contato no Mercado do Café</h2>
+      <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px;">
+        <h2 style="color:#15803d;margin:0;">☕ Novo contato no Mercado do Café</h2>
+        ${priorityBadge}
+      </div>
       <p>Olá ${escapeHtml(corretora.contact_name || corretora.name)},</p>
       <p>Um produtor entrou em contato com a <strong>${escapeHtml(corretora.name)}</strong>
          pela sua página no Kavita:</p>
@@ -100,6 +164,7 @@ async function notifyCorretoraOfNewLead(corretora, lead) {
         <p style="margin:4px 0"><strong>Nome:</strong> ${escapeHtml(lead.nome)}</p>
         <p style="margin:4px 0"><strong>Telefone:</strong> ${escapeHtml(lead.telefone)}</p>
         ${lead.cidade ? `<p style="margin:4px 0"><strong>Cidade:</strong> ${escapeHtml(lead.cidade)}</p>` : ""}
+        ${qualHtml}
         ${lead.mensagem ? `<p style="margin:12px 0 4px"><strong>Mensagem:</strong><br/>${escapeHtml(lead.mensagem)}</p>` : ""}
       </div>
       <p>Acesse seu painel para responder e atualizar o status:</p>
@@ -115,18 +180,22 @@ async function notifyCorretoraOfNewLead(corretora, lead) {
       </p>
     </div>
   `;
-  const text = [
-    `Novo contato para ${corretora.name}`,
+
+  const textLines = [
+    `Novo contato para ${corretora.name}${isHighPriority ? " [ALTA PRIORIDADE]" : ""}`,
     ``,
     `Nome: ${lead.nome}`,
     `Telefone: ${lead.telefone}`,
     lead.cidade ? `Cidade: ${lead.cidade}` : null,
+    lead.objetivo ? `Objetivo: ${LABEL_OBJETIVO[lead.objetivo]}` : null,
+    lead.tipo_cafe ? `Tipo de café: ${LABEL_TIPO_CAFE[lead.tipo_cafe]}` : null,
+    lead.volume_range ? `Volume estimado: ${LABEL_VOLUME[lead.volume_range]}` : null,
+    lead.canal_preferido ? `Prefere contato por: ${LABEL_CANAL[lead.canal_preferido]}` : null,
     lead.mensagem ? `Mensagem: ${lead.mensagem}` : null,
     ``,
     `Responder pelo painel: ${process.env.APP_URL || ""}/painel/corretora/leads`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ];
+  const text = textLines.filter(Boolean).join("\n");
 
   await mailService.sendTransactionalEmail(corretora.email, subject, html, text);
 }

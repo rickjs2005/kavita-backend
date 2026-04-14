@@ -54,6 +54,13 @@ async function updateMyProfile(req, res, next) {
       "website",
       "instagram",
       "facebook",
+      // Regional (Sprint 2) — corretora edita para se apresentar melhor.
+      // Campos institucionais (name, city, state, logo) seguem admin-only.
+      "cidades_atendidas",
+      "tipos_cafe",
+      "perfil_compra",
+      "horario_atendimento",
+      "anos_atuacao",
     ];
 
     const data = {};

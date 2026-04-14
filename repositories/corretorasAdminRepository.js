@@ -58,15 +58,33 @@ async function findBySlug(slug) {
   return rows[0] ?? null;
 }
 
+// Campos JSON precisam ser serializados antes do INSERT/UPDATE. Lista
+// centralizada para facilitar manutenção.
+const JSON_FIELDS = ["cidades_atendidas", "tipos_cafe"];
+
+function serializeJsonFields(data) {
+  const out = { ...data };
+  for (const field of JSON_FIELDS) {
+    if (out[field] !== undefined && out[field] !== null) {
+      out[field] = JSON.stringify(out[field]);
+    }
+  }
+  return out;
+}
+
 async function create(data) {
   const fields = [
     "name", "slug", "contact_name", "description", "logo_path",
     "city", "state", "region", "phone", "whatsapp", "email",
     "website", "instagram", "facebook", "status", "is_featured",
     "sort_order", "submission_id", "created_by",
+    // Regional (Sprint 2)
+    "cidades_atendidas", "tipos_cafe", "perfil_compra",
+    "horario_atendimento", "anos_atuacao", "foto_responsavel_path",
   ];
+  const payload = serializeJsonFields(data);
   const placeholders = fields.map(() => "?").join(", ");
-  const values = fields.map((f) => data[f] ?? null);
+  const values = fields.map((f) => payload[f] ?? null);
 
   const sql = `INSERT INTO corretoras (${fields.join(", ")}) VALUES (${placeholders})`;
   const [result] = await pool.query(sql, values);
@@ -79,14 +97,18 @@ async function update(id, data) {
     "city", "state", "region", "phone", "whatsapp", "email",
     "website", "instagram", "facebook", "status", "is_featured",
     "sort_order",
+    // Regional (Sprint 2)
+    "cidades_atendidas", "tipos_cafe", "perfil_compra",
+    "horario_atendimento", "anos_atuacao", "foto_responsavel_path",
   ];
 
+  const payload = serializeJsonFields(data);
   const sets = [];
   const values = [];
   for (const key of allowed) {
-    if (data[key] !== undefined) {
+    if (payload[key] !== undefined) {
       sets.push(`${key} = ?`);
-      values.push(data[key]);
+      values.push(payload[key]);
     }
   }
 

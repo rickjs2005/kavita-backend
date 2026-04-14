@@ -123,6 +123,45 @@ const baseFields = {
     .optional()
     .nullable()
     .transform(trimOrNull),
+
+  // ─── Regionalização (Sprint 2) ─────────────────────────────────────
+  // JSON arrays de slugs (strings curtas). Validação mínima: cada item
+  // precisa ser string. O catálogo de slugs vive no frontend — aqui
+  // aceitamos flexibilidade para evitar duplicação de catálogo.
+  cidades_atendidas: z
+    .array(z.string().min(1).max(80))
+    .max(30, "Máximo de 30 cidades atendidas.")
+    .optional()
+    .nullable(),
+  tipos_cafe: z
+    .array(
+      z.enum([
+        "arabica_comum",
+        "arabica_especial",
+        "natural",
+        "cereja_descascado",
+      ]),
+    )
+    .max(10)
+    .optional()
+    .nullable(),
+  perfil_compra: z
+    .enum(["compra", "venda", "ambos"])
+    .optional()
+    .nullable(),
+  horario_atendimento: z
+    .string()
+    .max(120)
+    .optional()
+    .nullable()
+    .transform(trimOrNull),
+  anos_atuacao: z
+    .coerce.number()
+    .int()
+    .min(0, "Anos de atuação deve ser zero ou positivo.")
+    .max(120, "Valor implausível.")
+    .optional()
+    .nullable(),
 };
 
 // ---------------------------------------------------------------------------
