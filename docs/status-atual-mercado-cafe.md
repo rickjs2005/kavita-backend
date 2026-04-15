@@ -1,7 +1,14 @@
 # Status Atual — Mercado do Café
 
-Fotografia do módulo em **2026-04-13**. O que já está pronto, o que é débito
-técnico consciente e o que ainda falta para escalar.
+Fotografia do módulo em **2026-04-13** (atualizada em 2026-04-15). O que já
+está pronto, o que é débito técnico consciente e o que ainda falta para
+escalar.
+
+> **Update 2026-04-15:** consolidação pós-auditoria. Transações adicionadas
+> em operações críticas (approve/reject/invite/assign-plan/moderate-review),
+> UI admin de planos criada, uso vs limite do plano exposto no painel da
+> corretora, backup MySQL e rate limit em rotas de email. Detalhes em
+> [`melhorias-2026-04-15.md`](./melhorias-2026-04-15.md).
 
 ---
 

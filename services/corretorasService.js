@@ -12,6 +12,7 @@ const usersRepo = require("../repositories/corretoraUsersRepository");
 const corretoraAuthService = require("./corretoraAuthService");
 const mailService = require("./mailService");
 const logger = require("../lib/logger");
+const { withTransaction } = require("../lib/withTransaction");
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -30,14 +31,15 @@ function slugify(str = "") {
 
 /**
  * Generates a unique slug. Appends -2, -3, etc. if already taken.
+ * Accepts optional `conn` to reuse a transaction.
  */
-async function uniqueSlug(base, excludeId) {
+async function uniqueSlug(base, excludeId, conn) {
   let slug = slugify(base);
   let suffix = 1;
   let candidate = slug;
 
   while (true) {
-    const existing = await adminRepo.findBySlug(candidate);
+    const existing = await adminRepo.findBySlug(candidate, conn);
     if (!existing || (excludeId && existing.id === excludeId)) {
       return candidate;
     }
@@ -165,17 +167,16 @@ async function createSubmission(data) {
 }
 
 async function approveSubmission(submissionId, adminId) {
-  const sub = await adminRepo.findSubmissionById(submissionId);
-  if (!sub) {
+  // Pré-checagens fora da transação (leituras simples). Evita abrir
+  // conexão à toa para casos idempotentes ou inválidos.
+  const preSub = await adminRepo.findSubmissionById(submissionId);
+  if (!preSub) {
     throw new AppError("Solicitação não encontrada.", ERROR_CODES.NOT_FOUND, 404);
   }
-
-  if (sub.status === "approved") {
-    // Idempotent — return existing corretora
-    return { corretora_id: sub.corretora_id, already_approved: true };
+  if (preSub.status === "approved") {
+    return { corretora_id: preSub.corretora_id, already_approved: true };
   }
-
-  if (sub.status === "rejected") {
+  if (preSub.status === "rejected") {
     throw new AppError(
       "Não é possível aprovar uma solicitação já rejeitada.",
       ERROR_CODES.CONFLICT,
@@ -183,86 +184,119 @@ async function approveSubmission(submissionId, adminId) {
     );
   }
 
-  // Create corretora from submission data
-  const slug = await uniqueSlug(sub.name);
-  const corretoraId = await adminRepo.create({
-    name: sub.name,
-    slug,
-    contact_name: sub.contact_name,
-    description: sub.description,
-    logo_path: sub.logo_path,
-    city: sub.city,
-    state: sub.state,
-    region: sub.region,
-    phone: sub.phone,
-    whatsapp: sub.whatsapp,
-    email: sub.email,
-    website: sub.website,
-    instagram: sub.instagram,
-    facebook: sub.facebook,
-    status: "active",
-    is_featured: 0,
-    sort_order: 0,
-    submission_id: sub.id,
-    created_by: adminId,
-  });
-
-  // Mark submission as approved
-  await adminRepo.approveSubmission(submissionId, {
-    reviewed_by: adminId,
-    corretora_id: corretoraId,
-  });
-
-  // Se a submissão trouxe senha (fluxo novo), criamos o usuário
-  // imediatamente com o hash já persistido e mandamos o e-mail de
-  // "aprovada, pode entrar". Se NÃO trouxe senha (submission antiga,
-  // fluxo legacy), seguimos o comportamento anterior — admin ainda
-  // precisa clicar "Criar acesso" para disparar o convite.
-  let autoUserCreated = false;
-  if (sub.password_hash && sub.email) {
-    // Revalida unicidade do e-mail no momento da aprovação: pode ter
-    // virado conta de outra corretora entre o submit e o approve.
-    const emailTaken = await usersRepo.findByEmail(sub.email);
-    if (emailTaken) {
-      logger.warn(
-        { submissionId, email: sub.email },
-        "corretora.approve.email_taken"
-      );
-      // Não bloqueia a aprovação da corretora em si — o admin pode
-      // depois criar acesso manualmente com um e-mail diferente.
-    } else {
-      const userId = await usersRepo.create({
-        corretora_id: corretoraId,
-        nome: sub.contact_name,
-        email: sub.email,
-        password_hash: sub.password_hash,
-      });
-
-      // E-mail de boas-vindas "aprovada, já pode entrar".
-      // Síncrono: se falhar, logamos e seguimos — a conta foi criada
-      // com sucesso e a corretora pode usar "Esqueci minha senha"
-      // para recuperar o acesso no pior caso.
-      try {
-        await mailService.sendCorretoraApprovedEmail(
-          sub.email,
-          sub.name
-        );
-      } catch (err) {
-        logger.warn(
-          { err, submissionId, corretoraId, userId },
-          "corretora.approve.welcome_email_failed"
-        );
-      }
-
-      autoUserCreated = true;
-      logger.info(
-        { adminId, submissionId, corretoraId, userId, email: sub.email },
-        "corretora.approve.user_auto_created"
-      );
+  // Transação: INSERT corretora + UPDATE submission + (opcional) INSERT user.
+  // Se qualquer passo falhar, tudo volta — evita corretora criada sem
+  // submission marcada como aprovada ou vice-versa.
+  const txResult = await withTransaction(async (conn) => {
+    const sub = await adminRepo.findSubmissionById(submissionId, conn);
+    if (!sub || sub.status !== "pending") {
+      // Outra transação aprovou/rejeitou em paralelo — sai do tx sem
+      // efeito e deixa a camada externa reconsultar.
+      return { raceCondition: true, sub };
     }
+
+    const slug = await uniqueSlug(sub.name, undefined, conn);
+    const corretoraId = await adminRepo.create(
+      {
+        name: sub.name,
+        slug,
+        contact_name: sub.contact_name,
+        description: sub.description,
+        logo_path: sub.logo_path,
+        city: sub.city,
+        state: sub.state,
+        region: sub.region,
+        phone: sub.phone,
+        whatsapp: sub.whatsapp,
+        email: sub.email,
+        website: sub.website,
+        instagram: sub.instagram,
+        facebook: sub.facebook,
+        status: "active",
+        is_featured: 0,
+        sort_order: 0,
+        submission_id: sub.id,
+        created_by: adminId,
+      },
+      conn
+    );
+
+    await adminRepo.approveSubmission(
+      submissionId,
+      { reviewed_by: adminId, corretora_id: corretoraId },
+      conn
+    );
+
+    let autoUserCreated = false;
+    let autoUserId = null;
+    if (sub.password_hash && sub.email) {
+      const emailTaken = await usersRepo.findByEmail(sub.email, conn);
+      if (!emailTaken) {
+        autoUserId = await usersRepo.create(
+          {
+            corretora_id: corretoraId,
+            nome: sub.contact_name,
+            email: sub.email,
+            password_hash: sub.password_hash,
+          },
+          conn
+        );
+        autoUserCreated = true;
+      }
+    }
+
+    return {
+      corretoraId,
+      autoUserCreated,
+      autoUserId,
+      email: sub.email,
+      name: sub.name,
+      submissionId,
+    };
+  });
+
+  if (txResult.raceCondition) {
+    // Recursão segura: reconsulta estado e responde idempotente.
+    return approveSubmission(submissionId, adminId);
   }
 
-  return { corretora_id: corretoraId, auto_user_created: autoUserCreated };
+  // Efeitos colaterais (email) ficam FORA da transação: email não
+  // pode ser "desfeito" em rollback. Logging de casos degradados.
+  if (preSub.password_hash && preSub.email && !txResult.autoUserCreated) {
+    logger.warn(
+      { submissionId, email: preSub.email },
+      "corretora.approve.email_taken"
+    );
+  }
+
+  if (txResult.autoUserCreated) {
+    try {
+      await mailService.sendCorretoraApprovedEmail(
+        txResult.email,
+        txResult.name
+      );
+    } catch (err) {
+      logger.warn(
+        { err, submissionId, corretoraId: txResult.corretoraId, userId: txResult.autoUserId },
+        "corretora.approve.welcome_email_failed"
+      );
+    }
+    logger.info(
+      {
+        adminId,
+        submissionId,
+        corretoraId: txResult.corretoraId,
+        userId: txResult.autoUserId,
+        email: txResult.email,
+      },
+      "corretora.approve.user_auto_created"
+    );
+  }
+
+  return {
+    corretora_id: txResult.corretoraId,
+    auto_user_created: txResult.autoUserCreated,
+  };
 }
 
 async function rejectSubmission(submissionId, adminId, reason) {
@@ -279,22 +313,17 @@ async function rejectSubmission(submissionId, adminId, reason) {
     );
   }
 
-  await adminRepo.rejectSubmission(submissionId, {
-    reviewed_by: adminId,
-    rejection_reason: reason,
-  });
-
-  // Higiene: não guardar hash de senha de pessoa que nunca virou
-  // corretora. Se a rejeição falhar em limpar o hash, não é bloqueador
-  // mas merece warn para alertar.
-  try {
-    await adminRepo.clearSubmissionPassword(submissionId);
-  } catch (err) {
-    logger.warn(
-      { err, submissionId },
-      "corretora.reject.clear_password_failed"
+  // Transação: UPDATE status + UPDATE clearPassword devem ser atômicos.
+  // Se limpeza de password falhar, rollback deixa a submission pendente
+  // novamente — admin pode tentar de novo.
+  await withTransaction(async (conn) => {
+    await adminRepo.rejectSubmission(
+      submissionId,
+      { reviewed_by: adminId, rejection_reason: reason },
+      conn
     );
-  }
+    await adminRepo.clearSubmissionPassword(submissionId, conn);
+  });
 }
 
 module.exports = {

@@ -15,6 +15,15 @@ const { response } = require("../../lib");
 const { verifyUnsubToken } = require("../../lib/unsubscribeTokens");
 const emailSuppressionsRepo = require("../../repositories/emailSuppressionsRepository");
 const logger = require("../../lib/logger");
+const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
+
+// Rate limit por IP nas rotas de unsubscribe/resubscribe.
+// Defesa em profundidade — o HMAC já barra acessos sem token válido,
+// mas sem RL um atacante pode usar estas rotas como oráculo/amplificador
+// (tentar tokens ou forçar escrita em massa via bounce back).
+const emailRateLimit = createAdaptiveRateLimiter({
+  keyGenerator: (req) => `email_pref:${req.ip}`,
+});
 
 function validate(req) {
   const email = String(req.query.email || req.body.email || "").trim().toLowerCase();
@@ -31,7 +40,7 @@ function validate(req) {
 
 // One-click unsubscribe — GET é intencional para funcionar direto do clique
 // do cliente de email (List-Unsubscribe-Post seria ideal futuramente).
-router.get("/unsubscribe", async (req, res, next) => {
+router.get("/unsubscribe", emailRateLimit, async (req, res, next) => {
   try {
     const { email, scope } = validate(req);
     await emailSuppressionsRepo.suppress({
@@ -47,7 +56,7 @@ router.get("/unsubscribe", async (req, res, next) => {
   }
 });
 
-router.post("/resubscribe", async (req, res, next) => {
+router.post("/resubscribe", emailRateLimit, async (req, res, next) => {
   try {
     const { email, scope } = validate(req);
     await emailSuppressionsRepo.unsuppress({ email, scope });

@@ -3,9 +3,9 @@
 
 const pool = require("../config/pool");
 
-async function getCurrentForCorretora(corretoraId) {
+async function getCurrentForCorretora(corretoraId, conn = pool) {
   // Pega o subscription ativo mais recente.
-  const [[row]] = await pool.query(
+  const [[row]] = await conn.query(
     `SELECT s.*, p.slug AS plan_slug, p.name AS plan_name,
             p.capabilities AS plan_capabilities, p.price_cents AS plan_price_cents
      FROM corretora_subscriptions s
@@ -44,8 +44,8 @@ async function listForCorretora(corretoraId) {
  * Cria nova subscription. Caller (service) é responsável por cancelar
  * a anterior antes — mantemos o repo simples.
  */
-async function create(data) {
-  const [result] = await pool.query(
+async function create(data, conn = pool) {
+  const [result] = await conn.query(
     `INSERT INTO corretora_subscriptions
        (corretora_id, plan_id, status,
         current_period_start, current_period_end,
@@ -66,8 +66,8 @@ async function create(data) {
   return result.insertId;
 }
 
-async function cancelActiveForCorretora(corretoraId) {
-  await pool.query(
+async function cancelActiveForCorretora(corretoraId, conn = pool) {
+  await conn.query(
     `UPDATE corretora_subscriptions
        SET status = 'canceled', canceled_at = NOW()
      WHERE corretora_id = ? AND status IN ('active','trialing','past_due')`,

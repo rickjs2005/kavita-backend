@@ -39,8 +39,8 @@ async function listAll() {
   return rows.map(normalizePlan);
 }
 
-async function findById(id) {
-  const [[row]] = await pool.query("SELECT * FROM plans WHERE id = ? LIMIT 1", [
+async function findById(id, conn = pool) {
+  const [[row]] = await conn.query("SELECT * FROM plans WHERE id = ? LIMIT 1", [
     id,
   ]);
   return normalizePlan(row);

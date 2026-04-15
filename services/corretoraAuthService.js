@@ -13,6 +13,7 @@ const adminRepo = require("../repositories/corretorasAdminRepository");
 const resetTokens = require("./passwordResetTokenService");
 const mailService = require("./mailService");
 const logger = require("../lib/logger");
+const { withTransaction } = require("../lib/withTransaction");
 
 const BCRYPT_ROUNDS = 12;
 const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
@@ -90,6 +91,7 @@ function isPendingFirstAccess(user) {
  * corretora nesse service.
  */
 async function inviteCorretoraUser(corretoraId, { nome, email }, { adminId } = {}) {
+  // Pré-checagens (leituras) fora da transação
   const corretora = await adminRepo.findById(corretoraId);
   if (!corretora) {
     throw new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404);
@@ -102,79 +104,88 @@ async function inviteCorretoraUser(corretoraId, { nome, email }, { adminId } = {
     );
   }
 
-  const existingForCorretora = await usersRepo.findByCorretoraId(corretoraId);
+  const token = resetTokens.generateToken();
+  const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_MS);
 
-  let userId;
-  let resent = false;
+  // Transação: (criar/atualizar user pendente) + (revogar tokens anteriores)
+  // + (gravar novo token) precisam ser atômicos. Se o INSERT do token
+  // falhar após o INSERT do user, rollback deixa base limpa em vez de
+  // user órfão sem token.
+  const txResult = await withTransaction(async (conn) => {
+    const existingForCorretora = await usersRepo.findByCorretoraId(
+      corretoraId,
+      conn
+    );
 
-  if (existingForCorretora) {
-    // Conta já ativa — admin deve usar "resetar senha" no lugar de convite.
-    if (!isPendingFirstAccess(existingForCorretora)) {
-      throw new AppError(
-        "Esta corretora já possui conta ativa. Use 'Resetar senha' para enviar um link de redefinição.",
-        ERROR_CODES.CONFLICT,
-        409
-      );
-    }
+    let userId;
+    let resent = false;
 
-    // Convite pendente — verificar se e-mail novo não colide com outra conta
-    if (existingForCorretora.email !== email) {
-      const emailOwner = await usersRepo.findByEmail(email);
-      if (emailOwner && emailOwner.id !== existingForCorretora.id) {
+    if (existingForCorretora) {
+      if (!isPendingFirstAccess(existingForCorretora)) {
+        throw new AppError(
+          "Esta corretora já possui conta ativa. Use 'Resetar senha' para enviar um link de redefinição.",
+          ERROR_CODES.CONFLICT,
+          409
+        );
+      }
+
+      if (existingForCorretora.email !== email) {
+        const emailOwner = await usersRepo.findByEmail(email, conn);
+        if (emailOwner && emailOwner.id !== existingForCorretora.id) {
+          throw new AppError(
+            "Já existe um usuário com este e-mail.",
+            ERROR_CODES.CONFLICT,
+            409
+          );
+        }
+      }
+
+      if (
+        existingForCorretora.email !== email ||
+        existingForCorretora.nome !== nome
+      ) {
+        await usersRepo.updateContactFields(
+          existingForCorretora.id,
+          { nome, email },
+          conn
+        );
+      }
+
+      userId = existingForCorretora.id;
+      resent = true;
+    } else {
+      const emailOwner = await usersRepo.findByEmail(email, conn);
+      if (emailOwner) {
         throw new AppError(
           "Já existe um usuário com este e-mail.",
           ERROR_CODES.CONFLICT,
           409
         );
       }
-    }
-
-    // Atualiza nome/e-mail se mudaram
-    if (
-      existingForCorretora.email !== email ||
-      existingForCorretora.nome !== nome
-    ) {
-      await usersRepo.updateContactFields(existingForCorretora.id, {
-        nome,
-        email,
-      });
-    }
-
-    userId = existingForCorretora.id;
-    resent = true;
-  } else {
-    // Nenhum usuário ainda — cria pendente
-    const emailOwner = await usersRepo.findByEmail(email);
-    if (emailOwner) {
-      throw new AppError(
-        "Já existe um usuário com este e-mail.",
-        ERROR_CODES.CONFLICT,
-        409
+      userId = await usersRepo.createPending(
+        { corretora_id: corretoraId, nome, email },
+        conn
       );
     }
 
-    userId = await usersRepo.createPending({
-      corretora_id: corretoraId,
-      nome,
-      email,
-    });
-  }
+    await resetTokens.revokeAllForUser(userId, RESET_TOKEN_SCOPE, conn);
+    await resetTokens.storeToken(
+      userId,
+      token,
+      expiresAt,
+      RESET_TOKEN_SCOPE,
+      conn
+    );
 
-  // Gera token de primeiro acesso (TTL 7d). Revoga tokens antigos
-  // para garantir que só o link mais recente funcione.
-  const token = resetTokens.generateToken();
-  const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_MS);
+    return { userId, resent };
+  });
 
-  await resetTokens.revokeAllForUser(userId, RESET_TOKEN_SCOPE);
-  await resetTokens.storeToken(userId, token, expiresAt, RESET_TOKEN_SCOPE);
-
-  // Envio síncrono: admin precisa saber se o SMTP falhou para poder
-  // tentar de novo. Diferente do lead (fire-and-forget).
+  // Envio de email FORA da transação — email não pode ser desfeito.
   try {
     await mailService.sendCorretoraInviteEmail(email, token, corretora.name);
   } catch (err) {
     logger.error(
-      { err, corretoraId, userId, email },
+      { err, corretoraId, userId: txResult.userId, email },
       "corretora.invite.email_failed"
     );
     throw new AppError(
@@ -188,19 +199,19 @@ async function inviteCorretoraUser(corretoraId, { nome, email }, { adminId } = {
     {
       adminId: adminId ?? null,
       corretoraId,
-      userId,
+      userId: txResult.userId,
       email,
-      resent,
+      resent: txResult.resent,
     },
     "corretora.invite.sent"
   );
 
   return {
-    id: userId,
+    id: txResult.userId,
     corretora_id: corretoraId,
     nome,
     email,
-    resent,
+    resent: txResult.resent,
     status: "invite_sent",
   };
 }

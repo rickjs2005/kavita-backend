@@ -38,8 +38,8 @@ function generateToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-async function revokeAllForUser(userId, scope = DEFAULT_SCOPE) {
-  await pool.execute(
+async function revokeAllForUser(userId, scope = DEFAULT_SCOPE, conn = pool) {
+  await conn.execute(
     `UPDATE ${TABLE_NAME}
        SET revoked_at = NOW()
      WHERE user_id = ? AND scope = ? AND revoked_at IS NULL`,
@@ -47,9 +47,9 @@ async function revokeAllForUser(userId, scope = DEFAULT_SCOPE) {
   );
 }
 
-async function storeToken(userId, token, expiresAt, scope = DEFAULT_SCOPE) {
+async function storeToken(userId, token, expiresAt, scope = DEFAULT_SCOPE, conn = pool) {
   const tokenHash = hashToken(token);
-  await pool.execute(
+  await conn.execute(
     `INSERT INTO ${TABLE_NAME} (user_id, scope, token_hash, expires_at)
      VALUES (?, ?, ?, ?)`,
     [userId, scope, tokenHash, expiresAt]

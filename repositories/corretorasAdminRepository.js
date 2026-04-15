@@ -53,8 +53,8 @@ async function findById(id) {
   return rows[0] ?? null;
 }
 
-async function findBySlug(slug) {
-  const [rows] = await pool.query("SELECT * FROM corretoras WHERE slug = ?", [slug]);
+async function findBySlug(slug, conn = pool) {
+  const [rows] = await conn.query("SELECT * FROM corretoras WHERE slug = ?", [slug]);
   return rows[0] ?? null;
 }
 
@@ -72,7 +72,7 @@ function serializeJsonFields(data) {
   return out;
 }
 
-async function create(data) {
+async function create(data, conn = pool) {
   const fields = [
     "name", "slug", "contact_name", "description", "logo_path",
     "city", "state", "region", "phone", "whatsapp", "email",
@@ -87,7 +87,7 @@ async function create(data) {
   const values = fields.map((f) => payload[f] ?? null);
 
   const sql = `INSERT INTO corretoras (${fields.join(", ")}) VALUES (${placeholders})`;
-  const [result] = await pool.query(sql, values);
+  const [result] = await conn.query(sql, values);
   return result.insertId;
 }
 
@@ -167,8 +167,8 @@ async function listSubmissions({ status, page, limit }) {
   return { items: rows, total, page, limit };
 }
 
-async function findSubmissionById(id) {
-  const [rows] = await pool.query(
+async function findSubmissionById(id, conn = pool) {
+  const [rows] = await conn.query(
     "SELECT * FROM corretora_submissions WHERE id = ?",
     [id]
   );
@@ -194,8 +194,8 @@ async function createSubmission(data) {
  * uma submissão para não guardar hash de pessoa que nunca virou
  * corretora.
  */
-async function clearSubmissionPassword(id) {
-  await pool.query(
+async function clearSubmissionPassword(id, conn = pool) {
+  await conn.query(
     "UPDATE corretora_submissions SET password_hash = NULL WHERE id = ?",
     [id]
   );
@@ -205,8 +205,8 @@ async function clearSubmissionPassword(id) {
  * Verifica se há submission pendente com o mesmo e-mail. Usado no
  * fluxo de signup para evitar dois cadastros duplicados na fila.
  */
-async function findPendingSubmissionByEmail(email) {
-  const [rows] = await pool.query(
+async function findPendingSubmissionByEmail(email, conn = pool) {
+  const [rows] = await conn.query(
     `SELECT id, email, status FROM corretora_submissions
      WHERE email = ? AND status = 'pending'
      LIMIT 1`,
@@ -215,23 +215,23 @@ async function findPendingSubmissionByEmail(email) {
   return rows[0] ?? null;
 }
 
-async function approveSubmission(id, { reviewed_by, corretora_id }) {
+async function approveSubmission(id, { reviewed_by, corretora_id }, conn = pool) {
   const sql = `
     UPDATE corretora_submissions
     SET status = 'approved', reviewed_by = ?, reviewed_at = NOW(), corretora_id = ?
     WHERE id = ?
   `;
-  const [result] = await pool.query(sql, [reviewed_by, corretora_id, id]);
+  const [result] = await conn.query(sql, [reviewed_by, corretora_id, id]);
   return result.affectedRows;
 }
 
-async function rejectSubmission(id, { reviewed_by, rejection_reason }) {
+async function rejectSubmission(id, { reviewed_by, rejection_reason }, conn = pool) {
   const sql = `
     UPDATE corretora_submissions
     SET status = 'rejected', reviewed_by = ?, reviewed_at = NOW(), rejection_reason = ?
     WHERE id = ?
   `;
-  const [result] = await pool.query(sql, [reviewed_by, rejection_reason, id]);
+  const [result] = await conn.query(sql, [reviewed_by, rejection_reason, id]);
   return result.affectedRows;
 }
 

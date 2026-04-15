@@ -10,6 +10,7 @@ const reviewsRepo = require("../repositories/corretoraReviewsRepository");
 const publicCorretorasRepo = require("../repositories/corretorasPublicRepository");
 const analyticsService = require("./analyticsService");
 const logger = require("../lib/logger");
+const { withTransaction } = require("../lib/withTransaction");
 
 async function createReviewFromPublic({ slug, data, meta }) {
   const corretora = await publicCorretorasRepo.findBySlug(slug);
@@ -66,29 +67,38 @@ async function createReviewFromPublic({ slug, data, meta }) {
 }
 
 async function moderateReview({ id, action, reviewed_by, rejection_reason }) {
-  const review = await reviewsRepo.findById(id);
-  if (!review) {
-    throw new AppError("Review não encontrada.", ERROR_CODES.NOT_FOUND, 404);
-  }
-  if (review.status !== "pending") {
-    throw new AppError(
-      `Review já foi ${review.status === "approved" ? "aprovada" : "rejeitada"}.`,
-      ERROR_CODES.CONFLICT,
-      409,
-    );
-  }
-
   const status = action === "approve" ? "approved" : "rejected";
-  const affected = await reviewsRepo.moderate({
-    id,
-    status,
-    reviewed_by,
-    rejection_reason: action === "reject" ? rejection_reason : null,
-  });
 
-  if (affected === 0) {
-    throw new AppError("Nada para atualizar.", ERROR_CODES.VALIDATION_ERROR, 400);
-  }
+  // Transação: re-lê status dentro do tx (defende contra moderação
+  // duplicada em paralelo) + UPDATE. Sem tx, duas moderações
+  // simultâneas poderiam ambas passar da checagem e gravar.
+  const review = await withTransaction(async (conn) => {
+    const current = await reviewsRepo.findById(id, conn);
+    if (!current) {
+      throw new AppError("Review não encontrada.", ERROR_CODES.NOT_FOUND, 404);
+    }
+    if (current.status !== "pending") {
+      throw new AppError(
+        `Review já foi ${current.status === "approved" ? "aprovada" : "rejeitada"}.`,
+        ERROR_CODES.CONFLICT,
+        409,
+      );
+    }
+
+    const affected = await reviewsRepo.moderate(
+      {
+        id,
+        status,
+        reviewed_by,
+        rejection_reason: action === "reject" ? rejection_reason : null,
+      },
+      conn,
+    );
+    if (affected === 0) {
+      throw new AppError("Nada para atualizar.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    return current;
+  });
 
   logger.info(
     {

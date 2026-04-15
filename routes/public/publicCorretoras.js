@@ -25,15 +25,24 @@ const leadsRateLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => `corretora_lead:${req.ip}`,
 });
 
+// Rate-limit para submissão pública de cadastro de corretora.
+// Protege contra abuso do upload (logo) e flood de submissions pendentes.
+const submitRateLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => `corretora_submit:${req.ip}`,
+});
+
 // Listagem pública de corretoras ativas
 router.get("/", ctrl.listCorretoras);
 
 // Lista de cidades disponíveis (para filtro)
 router.get("/cities", ctrl.listCities);
 
-// Submissão pública de cadastro (multipart para logo)
+// Submissão pública de cadastro (multipart para logo).
+// Rate limit vem ANTES do upload — caso o IP esteja bloqueado, não
+// gastamos disco/I/O recebendo o multipart antes de rejeitar.
 router.post(
   "/submit",
+  submitRateLimiter,
   upload.single("logo"),
   validate(submitCorretoraSchema),
   ctrl.submitCorretora

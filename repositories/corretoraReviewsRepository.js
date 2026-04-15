@@ -37,8 +37,8 @@ async function create({
   return result.insertId;
 }
 
-async function moderate({ id, status, reviewed_by, rejection_reason }) {
-  const [result] = await pool.query(
+async function moderate({ id, status, reviewed_by, rejection_reason }, conn = pool) {
+  const [result] = await conn.query(
     `UPDATE corretora_reviews
        SET status = ?,
            reviewed_by = ?,
@@ -144,8 +144,8 @@ async function getPendingCount() {
   return Number(row.total || 0);
 }
 
-async function findById(id) {
-  const [[row]] = await pool.query(
+async function findById(id, conn = pool) {
+  const [[row]] = await conn.query(
     "SELECT * FROM corretora_reviews WHERE id = ?",
     [id],
   );

@@ -16,6 +16,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const plansRepo = require("../repositories/plansRepository");
 const subsRepo = require("../repositories/subscriptionsRepository");
+const { withTransaction } = require("../lib/withTransaction");
 
 // Capabilities conhecidas e labels. Default values = do plano Free
 // (fallback quando corretora não tem subscription ativa).
@@ -121,40 +122,46 @@ function requirePlanCapability(key) {
  * webhook do provider.
  */
 async function assignPlan({ corretoraId, planId, opts = {} }) {
-  const plan = await plansRepo.findById(planId);
-  if (!plan || !plan.is_active) {
-    throw new AppError(
-      "Plano inválido ou inativo.",
-      ERROR_CODES.VALIDATION_ERROR,
-      400,
+  // Transação: cancelar subscription anterior + criar nova precisa ser
+  // atômico. Se o INSERT falhar depois do UPDATE, a corretora ficaria
+  // sem plano ativo. Com a transação, rollback preserva a anterior.
+  return withTransaction(async (conn) => {
+    const plan = await plansRepo.findById(planId, conn);
+    if (!plan || !plan.is_active) {
+      throw new AppError(
+        "Plano inválido ou inativo.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      );
+    }
+    await subsRepo.cancelActiveForCorretora(corretoraId, conn);
+
+    const now = new Date();
+    const periodEnd = new Date(now);
+    if (plan.billing_cycle === "yearly") {
+      periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    } else {
+      periodEnd.setMonth(periodEnd.getMonth() + 1);
+    }
+
+    const id = await subsRepo.create(
+      {
+        corretora_id: corretoraId,
+        plan_id: plan.id,
+        status: opts.status ?? "active",
+        current_period_start: now,
+        current_period_end: periodEnd,
+        provider: opts.provider ?? null,
+        provider_subscription_id: opts.provider_subscription_id ?? null,
+        provider_status: opts.provider_status ?? null,
+        meta: opts.meta ?? null,
+      },
+      conn,
     );
-  }
-  await subsRepo.cancelActiveForCorretora(corretoraId);
 
-  const now = new Date();
-  const periodEnd = new Date(now);
-  if (plan.billing_cycle === "yearly") {
-    periodEnd.setFullYear(periodEnd.getFullYear() + 1);
-  } else {
-    periodEnd.setMonth(periodEnd.getMonth() + 1);
-  }
-
-  const id = await subsRepo.create({
-    corretora_id: corretoraId,
-    plan_id: plan.id,
-    status: opts.status ?? "active",
-    current_period_start: now,
-    current_period_end: periodEnd,
-    provider: opts.provider ?? null,
-    provider_subscription_id: opts.provider_subscription_id ?? null,
-    provider_status: opts.provider_status ?? null,
-    meta: opts.meta ?? null,
+    const current = await subsRepo.getCurrentForCorretora(corretoraId, conn);
+    return { id, ...current };
   });
-
-  return subsRepo.getCurrentForCorretora(corretoraId).then((s) => ({
-    id,
-    ...s,
-  }));
 }
 
 module.exports = {
