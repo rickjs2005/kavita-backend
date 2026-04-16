@@ -13,6 +13,8 @@ const corretoraAuthService = require("./corretoraAuthService");
 const mailService = require("./mailService");
 const logger = require("../lib/logger");
 const { withTransaction } = require("../lib/withTransaction");
+const plansRepo = require("../repositories/plansRepository");
+const subsRepo = require("../repositories/subscriptionsRepository");
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -243,6 +245,29 @@ async function approveSubmission(submissionId, adminId) {
         );
         autoUserCreated = true;
       }
+    }
+
+    // Auto-assign trial: toda corretora aprovada nasce com 3 meses
+    // de teste gratuito. Busca plano Free no banco; se não existir,
+    // pula (fallback do planService cuida depois).
+    const freePlan = await plansRepo.findBySlug("free", conn);
+    if (freePlan) {
+      const now = new Date();
+      const trialEnd = new Date(now);
+      trialEnd.setMonth(trialEnd.getMonth() + 3);
+      await subsRepo.create(
+        {
+          corretora_id: corretoraId,
+          plan_id: freePlan.id,
+          status: "trialing",
+          current_period_start: now,
+          current_period_end: trialEnd,
+          payment_method: "manual",
+          monthly_price_cents: 0,
+          trial_ends_at: trialEnd,
+        },
+        conn,
+      );
     }
 
     return {

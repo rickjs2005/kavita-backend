@@ -37,8 +37,17 @@ async function list({ status, city, is_featured, search, page, limit }) {
 
   const offset = (page - 1) * limit;
   const dataSql = `
-    SELECT c.*
+    SELECT c.*,
+           p.slug AS plan_slug,
+           p.name AS plan_name,
+           cs.status AS sub_status,
+           cs.trial_ends_at AS sub_trial_ends_at,
+           cs.current_period_end AS sub_period_end
     FROM corretoras c
+    LEFT JOIN corretora_subscriptions cs
+      ON cs.corretora_id = c.id
+      AND cs.status IN ('active','trialing','past_due')
+    LEFT JOIN plans p ON p.id = cs.plan_id
     WHERE ${whereClause}
     ORDER BY c.is_featured DESC, c.sort_order ASC, c.name ASC
     LIMIT ? OFFSET ?

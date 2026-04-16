@@ -61,6 +61,7 @@ async function getPlanContext(corretoraId) {
       id: sub.id,
       status: sub.status,
       current_period_end: sub.current_period_end,
+      trial_ends_at: sub.trial_ends_at ?? null,
     },
     plan: {
       slug: sub.plan_slug,
