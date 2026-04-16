@@ -205,13 +205,32 @@ const updateLeadSchema = z
     amostra_status: z
       .enum(["nao_entregue", "prometida", "recebida", "laudada"])
       .optional(),
+    // Laudo operacional — classificação de café
+    bebida_classificacao: z
+      .enum(["especial", "dura", "riado", "rio", "escolha"])
+      .optional()
+      .nullable(),
+    pontuacao_sca: z
+      .number()
+      .min(0, "Pontuação mínima é 0.")
+      .max(100, "Pontuação máxima é 100.")
+      .optional()
+      .nullable(),
+    preco_referencia_saca: z
+      .number()
+      .min(0)
+      .optional()
+      .nullable(),
   })
   .refine(
     (data) =>
       data.status !== undefined ||
       "nota_interna" in data ||
-      data.amostra_status !== undefined,
-    { message: "Informe status, nota_interna ou amostra_status." },
+      data.amostra_status !== undefined ||
+      data.bebida_classificacao !== undefined ||
+      data.pontuacao_sca !== undefined ||
+      data.preco_referencia_saca !== undefined,
+    { message: "Informe ao menos um campo para atualizar." },
   );
 
 // ---------------------------------------------------------------------------

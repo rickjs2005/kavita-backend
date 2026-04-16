@@ -88,7 +88,14 @@ async function list({ corretoraId, status, page, limit }) {
 }
 
 async function update(id, corretoraId, data) {
-  const allowed = ["status", "nota_interna", "amostra_status"];
+  const allowed = [
+    "status",
+    "nota_interna",
+    "amostra_status",
+    "bebida_classificacao",
+    "pontuacao_sca",
+    "preco_referencia_saca",
+  ];
   const sets = [];
   const values = [];
 
