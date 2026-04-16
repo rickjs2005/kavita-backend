@@ -114,6 +114,48 @@ async function assignPlanToCorretora(req, res, next) {
   }
 }
 
+async function updateCorretoraSubscription(req, res, next) {
+  try {
+    const corretoraId = Number(req.params.corretoraId);
+    if (!Number.isInteger(corretoraId) || corretoraId <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const current = await subsRepo.getCurrentForCorretora(corretoraId);
+    if (!current) {
+      throw new AppError(
+        "Nenhuma assinatura ativa para esta corretora.",
+        ERROR_CODES.NOT_FOUND,
+        404,
+      );
+    }
+    const patch = {};
+    const body = req.body;
+    if (body.plan_id !== undefined) patch.plan_id = Number(body.plan_id);
+    if (body.status !== undefined) patch.status = body.status;
+    if (body.payment_method !== undefined) patch.payment_method = body.payment_method;
+    if (body.monthly_price_cents !== undefined)
+      patch.monthly_price_cents = body.monthly_price_cents != null ? Number(body.monthly_price_cents) : null;
+    if (body.trial_ends_at !== undefined)
+      patch.trial_ends_at = body.trial_ends_at || null;
+    if (body.current_period_end !== undefined)
+      patch.current_period_end = body.current_period_end || null;
+    if (body.notes !== undefined) patch.notes = body.notes || null;
+
+    await subsRepo.update(current.id, patch);
+    require("../../services/adminAuditService").record({
+      req,
+      action: "subscription.updated",
+      targetType: "corretora",
+      targetId: corretoraId,
+      meta: patch,
+    });
+    const updated = await subsRepo.getCurrentForCorretora(corretoraId);
+    response.ok(res, updated, "Assinatura atualizada.");
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function cancelCorretoraSubscription(req, res, next) {
   try {
     const corretoraId = Number(req.params.corretoraId);
@@ -190,6 +232,7 @@ module.exports = {
   updatePlan,
   getCorretoraSubscription,
   assignPlanToCorretora,
+  updateCorretoraSubscription,
   cancelCorretoraSubscription,
   listCityPromotions,
   createCityPromotion,

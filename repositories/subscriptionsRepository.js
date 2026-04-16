@@ -49,8 +49,9 @@ async function create(data, conn = pool) {
     `INSERT INTO corretora_subscriptions
        (corretora_id, plan_id, status,
         current_period_start, current_period_end,
-        provider, provider_subscription_id, provider_status, meta)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        provider, provider_subscription_id, provider_status, meta,
+        payment_method, monthly_price_cents, trial_ends_at, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.corretora_id,
       data.plan_id,
@@ -61,9 +62,42 @@ async function create(data, conn = pool) {
       data.provider_subscription_id ?? null,
       data.provider_status ?? null,
       data.meta ? JSON.stringify(data.meta) : null,
+      data.payment_method ?? "manual",
+      data.monthly_price_cents ?? null,
+      data.trial_ends_at ?? null,
+      data.notes ?? null,
     ],
   );
   return result.insertId;
+}
+
+async function update(id, data) {
+  const allowed = [
+    "plan_id",
+    "status",
+    "current_period_start",
+    "current_period_end",
+    "payment_method",
+    "monthly_price_cents",
+    "trial_ends_at",
+    "notes",
+    "canceled_at",
+  ];
+  const sets = [];
+  const values = [];
+  for (const key of allowed) {
+    if (data[key] !== undefined) {
+      sets.push(`${key} = ?`);
+      values.push(data[key]);
+    }
+  }
+  if (sets.length === 0) return 0;
+  values.push(id);
+  const [result] = await pool.query(
+    `UPDATE corretora_subscriptions SET ${sets.join(", ")} WHERE id = ?`,
+    values,
+  );
+  return result.affectedRows;
 }
 
 async function cancelActiveForCorretora(corretoraId, conn = pool) {
@@ -87,6 +121,7 @@ module.exports = {
   getCurrentForCorretora,
   listForCorretora,
   create,
+  update,
   cancelActiveForCorretora,
   updateStatus,
 };

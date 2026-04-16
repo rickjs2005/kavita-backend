@@ -19,6 +19,10 @@ router.post(
   "/corretoras/:corretoraId/subscription",
   ctrl.assignPlanToCorretora,
 );
+router.put(
+  "/corretoras/:corretoraId/subscription",
+  ctrl.updateCorretoraSubscription,
+);
 router.delete(
   "/corretoras/:corretoraId/subscription",
   ctrl.cancelCorretoraSubscription,
