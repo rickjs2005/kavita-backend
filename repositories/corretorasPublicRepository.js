@@ -53,12 +53,22 @@ async function list({ city, featured, search, page, limit }) {
 
 /**
  * Get a single active corretora by slug.
+ *
+ * IMPORTANTE: inclui `status` no SELECT. Historicamente esta coluna
+ * era omitida (o WHERE já filtra status='active', então a coluna
+ * parecia redundante). Mas consumidores downstream — em particular
+ * corretoraLeadsService.createLeadFromPublic — fazem checagens
+ * defensivas do tipo `if (corretora.status !== "active")`. Sem a
+ * coluna no SELECT, `status` era `undefined` e a checagem sempre
+ * falhava, resultando em 409 "Esta corretora não está recebendo
+ * contatos no momento." para corretoras que DE FATO estão ativas.
+ * Expor o campo resolve o contrato de forma explícita.
  */
 async function findBySlug(slug) {
   const sql = `
     SELECT c.id, c.name, c.slug, c.contact_name, c.description, c.logo_path,
            c.city, c.state, c.region, c.phone, c.whatsapp, c.email,
-           c.website, c.instagram, c.facebook, c.is_featured
+           c.website, c.instagram, c.facebook, c.is_featured, c.status
     FROM corretoras c
     WHERE c.slug = ? AND c.status = 'active'
     LIMIT 1

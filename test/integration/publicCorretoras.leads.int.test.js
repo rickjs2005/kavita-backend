@@ -203,6 +203,31 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
     expect(res.status).toBe(400);
   });
 
+  // Regressão específica: o bug histórico era que
+  // corretorasPublicRepository.findBySlug NÃO retornava a coluna
+  // `status` no SELECT (confiava no WHERE status='active'). Isso
+  // fazia `corretora.status !== "active"` sempre verdadeiro no
+  // service, resultando em 409 "Esta corretora não está recebendo
+  // contatos no momento." para corretoras ativas.
+  //
+  // Este teste confirma que, com o contrato corrigido (repo sempre
+  // devolve status), o payload feliz passa. Se alguém voltar a
+  // omitir status do SELECT público, o teste de integração real
+  // contra o DB quebra no mesmo cenário.
+  it("aceita quando repo devolve corretora com status='active' explicitamente", async () => {
+    publicRepo.findBySlug.mockResolvedValue({
+      ...ACTIVE_CORRETORA,
+      status: "active", // contrato corrigido do repo público
+    });
+
+    const res = await request(app)
+      .post(`${MOUNT_PATH}/cafe-do-joao/leads`)
+      .send({ nome: "Ana Silva", telefone: "33988887777" });
+
+    expect(res.status).toBe(201);
+    expect(leadsRepo.create).toHaveBeenCalledTimes(1);
+  });
+
   it("strip token Turnstile do body antes de validar (modo dev)", async () => {
     publicRepo.findBySlug.mockResolvedValue(ACTIVE_CORRETORA);
 
