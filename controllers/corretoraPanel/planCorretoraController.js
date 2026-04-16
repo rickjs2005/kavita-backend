@@ -29,4 +29,62 @@ async function getMyPlan(req, res, next) {
   }
 }
 
-module.exports = { getMyPlan };
+/**
+ * GET /api/corretora/plan/available
+ * Lista planos públicos ativos — usada na tela interna de upgrade.
+ */
+async function listAvailablePlans(_req, res, next) {
+  try {
+    const plansRepo = require("../../repositories/plansRepository");
+    const plans = await plansRepo.listPublic();
+    response.ok(res, plans);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/corretora/plan/upgrade
+ * Body: { plan_id: number }
+ *
+ * Troca o plano da corretora autenticada. Age sobre
+ * req.corretoraUser.corretora_id — impossível trocar plano de outra.
+ * Usa planService.assignPlan (transacional: cancela anterior + cria nova).
+ *
+ * Como billing ainda é manual, a subscription é criada com
+ * payment_method=manual e status=active. Admin depois confirma
+ * pagamento via SubscriptionManager.
+ */
+async function requestUpgrade(req, res, next) {
+  try {
+    const corretoraId = req.corretoraUser.corretora_id;
+    const planId = Number(req.body?.plan_id);
+    if (!Number.isInteger(planId) || planId <= 0) {
+      const AppError = require("../../errors/AppError");
+      const ERROR_CODES = require("../../constants/ErrorCodes");
+      throw new AppError(
+        "Selecione um plano válido.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      );
+    }
+    const result = await planService.assignPlan({
+      corretoraId,
+      planId,
+      opts: {
+        status: "active",
+        payment_method: "manual",
+        meta: {
+          source: "corretora_self_upgrade",
+          requested_by: req.corretoraUser.id,
+          requested_at: new Date().toISOString(),
+        },
+      },
+    });
+    response.ok(res, result, "Plano atualizado com sucesso.");
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getMyPlan, listAvailablePlans, requestUpgrade };

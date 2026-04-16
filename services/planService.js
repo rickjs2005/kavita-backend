@@ -156,6 +156,8 @@ async function assignPlan({ corretoraId, planId, opts = {} }) {
         provider_subscription_id: opts.provider_subscription_id ?? null,
         provider_status: opts.provider_status ?? null,
         meta: opts.meta ?? null,
+        payment_method: opts.payment_method ?? null,
+        monthly_price_cents: plan.price_cents ?? null,
       },
       conn,
     );

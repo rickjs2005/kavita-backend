@@ -6,5 +6,7 @@ const router = express.Router();
 const ctrl = require("../../controllers/corretoraPanel/planCorretoraController");
 
 router.get("/", ctrl.getMyPlan);
+router.get("/available", ctrl.listAvailablePlans);
+router.post("/upgrade", ctrl.requestUpgrade);
 
 module.exports = router;
