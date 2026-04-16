@@ -57,13 +57,28 @@ async function findByIdForCorretora(id, corretoraId) {
   return rows[0] ?? null;
 }
 
-async function list({ corretoraId, status, page, limit }) {
+async function list({
+  corretoraId,
+  status,
+  amostra_status,
+  bebida_classificacao,
+  page,
+  limit,
+}) {
   const where = ["corretora_id = ?"];
   const params = [corretoraId];
 
   if (status) {
     where.push("status = ?");
     params.push(status);
+  }
+  if (amostra_status) {
+    where.push("amostra_status = ?");
+    params.push(amostra_status);
+  }
+  if (bebida_classificacao) {
+    where.push("bebida_classificacao = ?");
+    params.push(bebida_classificacao);
   }
 
   const whereClause = where.join(" AND ");
@@ -95,6 +110,18 @@ async function update(id, corretoraId, data) {
     "bebida_classificacao",
     "pontuacao_sca",
     "preco_referencia_saca",
+    // Classificação expandida
+    "umidade_pct",
+    "peneira",
+    "catacao_defeitos",
+    "aspecto_lote",
+    "obs_sensoriais",
+    "obs_comerciais",
+    "mercado_indicado",
+    "aptidao_oferta",
+    "prioridade_comercial",
+    "altitude_origem",
+    "variedade_cultivar",
   ];
   const sets = [];
   const values = [];

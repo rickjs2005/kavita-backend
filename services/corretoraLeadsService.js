@@ -312,6 +312,8 @@ async function listLeadsForCorretora(corretoraId, query) {
   return leadsRepo.list({
     corretoraId,
     status: query.status,
+    amostra_status: query.amostra_status,
+    bebida_classificacao: query.bebida_classificacao,
     page: query.page,
     limit: query.limit,
   });

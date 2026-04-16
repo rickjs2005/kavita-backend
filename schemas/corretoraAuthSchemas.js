@@ -221,15 +221,71 @@ const updateLeadSchema = z
       .min(0)
       .optional()
       .nullable(),
+    // Classificação expandida (laudo completo)
+    umidade_pct: z
+      .number()
+      .min(0)
+      .max(30, "Umidade máxima 30%.")
+      .optional()
+      .nullable(),
+    peneira: z
+      .string()
+      .max(20)
+      .optional()
+      .nullable()
+      .transform(trimOrNull),
+    catacao_defeitos: z
+      .string()
+      .max(255)
+      .optional()
+      .nullable()
+      .transform(trimOrNull),
+    aspecto_lote: z
+      .string()
+      .max(120)
+      .optional()
+      .nullable()
+      .transform(trimOrNull),
+    obs_sensoriais: z
+      .string()
+      .max(2000)
+      .optional()
+      .nullable()
+      .transform(trimOrNull),
+    obs_comerciais: z
+      .string()
+      .max(2000)
+      .optional()
+      .nullable()
+      .transform(trimOrNull),
+    mercado_indicado: z
+      .enum(["exportacao", "mercado_interno", "cafeteria", "commodity", "indefinido"])
+      .optional()
+      .nullable(),
+    aptidao_oferta: z
+      .enum(["sim", "nao", "parcial"])
+      .optional()
+      .nullable(),
+    prioridade_comercial: z
+      .enum(["alta", "media", "baixa"])
+      .optional()
+      .nullable(),
+    altitude_origem: z
+      .number()
+      .int()
+      .min(0)
+      .max(3000)
+      .optional()
+      .nullable(),
+    variedade_cultivar: z
+      .string()
+      .max(80)
+      .optional()
+      .nullable()
+      .transform(trimOrNull),
   })
   .refine(
-    (data) =>
-      data.status !== undefined ||
-      "nota_interna" in data ||
-      data.amostra_status !== undefined ||
-      data.bebida_classificacao !== undefined ||
-      data.pontuacao_sca !== undefined ||
-      data.preco_referencia_saca !== undefined,
+    (data) => Object.values(data).some((v) => v !== undefined),
     { message: "Informe ao menos um campo para atualizar." },
   );
 
@@ -239,6 +295,12 @@ const updateLeadSchema = z
 
 const listLeadsQuerySchema = z.object({
   status: z.enum(["new", "contacted", "closed", "lost"]).optional(),
+  amostra_status: z
+    .enum(["nao_entregue", "prometida", "recebida", "laudada"])
+    .optional(),
+  bebida_classificacao: z
+    .enum(["especial", "dura", "riado", "rio", "escolha"])
+    .optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });
