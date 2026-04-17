@@ -125,6 +125,58 @@ async function sendCorretoraInviteEmail(toEmail, token, corretoraName) {
 }
 
 /**
+ * Envia e-mail editorial quando a submissão da corretora é rejeitada.
+ *
+ * Tom: assinado pela "Curadoria Kavita", transforma o "não" em convite
+ * para ajustar e reenviar. O mercado de corretoras da Zona da Mata é
+ * pequeno e movido a relacionamento — uma rejeição fria queima ponte
+ * que pode ser útil no futuro. O CTA primário leva de volta ao
+ * formulário de cadastro; o secundário abre canal de suporte.
+ */
+async function sendCorretoraRejectionEmail(toEmail, corretoraName, reason) {
+  const appUrl = config.appUrl.replace(/\/$/, "");
+  const cadastroUrl = `${appUrl}/mercado-do-cafe/corretoras/cadastro`;
+  const safeName = corretoraName || "sua corretora";
+  // HTML-escape mínimo para o motivo — o admin digita em textarea livre.
+  const safeReason = String(reason || "Motivo não informado.")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  await transporter.sendMail({
+    from: `"Curadoria Kavita — Mercado do Café" <${config.email.user}>`,
+    to: toEmail,
+    subject: "Sobre sua solicitação no Mercado do Café",
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; color:#1c1917;">
+        <h2 style="color:#92400e;margin:0 0 12px;">☕ Sobre o cadastro de ${safeName}</h2>
+        <p>Olá,</p>
+        <p>Agradecemos o interesse em participar do Mercado do Café. Neste momento, a curadoria da Kavita <strong>não aprovou a solicitação</strong> pelo motivo abaixo:</p>
+        <blockquote style="margin:16px 0;padding:12px 16px;background:#fef3c7;border-left:3px solid #b45309;border-radius:6px;color:#44403c;font-size:14px;line-height:1.5;">
+          ${safeReason}
+        </blockquote>
+        <p>Isso não é um encerramento — é um convite para ajustar. Você pode revisar as informações, adequar os pontos sinalizados e enviar um novo cadastro a qualquer momento.</p>
+        <p style="margin:24px 0;">
+          <a href="${cadastroUrl}"
+             style="display:inline-block;background:#b45309;color:white;
+                    padding:12px 24px;border-radius:8px;text-decoration:none;
+                    font-weight:600;">
+            Reenviar cadastro ajustado
+          </a>
+        </p>
+        <p style="color:#57534e;font-size:13px;line-height:1.6;">
+          Se quiser conversar antes de reenviar, responda este e-mail. A curadoria da Kavita acompanha pessoalmente cada corretora que se apresenta à plataforma, e queremos ver você na vitrine do Mercado do Café em breve.
+        </p>
+        <p style="color:#78716c;font-size:12px;margin-top:28px;">
+          — Equipe de Curadoria · Mercado do Café<br/>
+          <span style="color:#a8a29e;">Kavita · Zona da Mata mineira</span>
+        </p>
+      </div>
+    `,
+  });
+}
+
+/**
  * Envia o e-mail de redefinição de senha para usuário de corretora.
  * Link aponta para o painel da corretora, não para a loja.
  */
@@ -182,5 +234,6 @@ module.exports = {
   sendCorretoraResetPasswordEmail,
   sendCorretoraInviteEmail,
   sendCorretoraApprovedEmail,
+  sendCorretoraRejectionEmail,
   sendTransactionalEmail,
 };

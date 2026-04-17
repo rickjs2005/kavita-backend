@@ -64,6 +64,7 @@ describe("services/corretorasService", () => {
     jest.doMock(mailPath, () => ({
       sendCorretoraApprovedEmail: jest.fn().mockResolvedValue(undefined),
       sendCorretoraInviteEmail: jest.fn().mockResolvedValue(undefined),
+      sendCorretoraRejectionEmail: jest.fn().mockResolvedValue(undefined),
     }));
 
     adminRepo = require(adminRepoPath);
@@ -234,6 +235,45 @@ describe("services/corretorasService", () => {
         1,
         connMock,
       );
+      // Sem email na submissão → não tenta enviar e-mail editorial.
+      expect(mail.sendCorretoraRejectionEmail).not.toHaveBeenCalled();
+    });
+
+    it("envia e-mail editorial de rejeição quando submissão tem email", async () => {
+      adminRepo.findSubmissionById.mockResolvedValue({
+        id: 1,
+        status: "pending",
+        name: "Café do João",
+        email: "joao@example.com",
+      });
+      adminRepo.rejectSubmission.mockResolvedValue(1);
+      adminRepo.clearSubmissionPassword.mockResolvedValue(undefined);
+
+      await svc.rejectSubmission(1, 2, "Faltou certificação INCRA.");
+
+      expect(mail.sendCorretoraRejectionEmail).toHaveBeenCalledWith(
+        "joao@example.com",
+        "Café do João",
+        "Faltou certificação INCRA.",
+      );
+    });
+
+    it("não falha se envio de e-mail de rejeição lançar (fire-and-forget)", async () => {
+      adminRepo.findSubmissionById.mockResolvedValue({
+        id: 1,
+        status: "pending",
+        name: "Café do João",
+        email: "joao@example.com",
+      });
+      adminRepo.rejectSubmission.mockResolvedValue(1);
+      adminRepo.clearSubmissionPassword.mockResolvedValue(undefined);
+      mail.sendCorretoraRejectionEmail.mockRejectedValueOnce(
+        new Error("smtp down"),
+      );
+
+      await expect(
+        svc.rejectSubmission(1, 2, "motivo"),
+      ).resolves.toBeUndefined();
     });
   });
 });

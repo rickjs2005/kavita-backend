@@ -349,6 +349,20 @@ async function rejectSubmission(submissionId, adminId, reason) {
     );
     await adminRepo.clearSubmissionPassword(submissionId, conn);
   });
+
+  // Fora da transação: e-mail editorial não pode ser "desfeito" em
+  // rollback. Fire-and-forget — falha de envio não reverte a rejeição,
+  // só loga para inspeção posterior.
+  if (sub.email) {
+    try {
+      await mailService.sendCorretoraRejectionEmail(sub.email, sub.name, reason);
+    } catch (err) {
+      logger.warn(
+        { err, submissionId, email: sub.email },
+        "corretora.reject.email_failed"
+      );
+    }
+  }
 }
 
 module.exports = {

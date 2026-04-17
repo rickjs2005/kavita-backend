@@ -13,6 +13,7 @@ const router = express.Router();
 
 const { validate } = require("../../middleware/validate");
 const verifyCorretora = require("../../middleware/verifyCorretora");
+const verifyTurnstile = require("../../middleware/verifyTurnstile");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
 const {
   corretoraLoginSchema,
@@ -47,7 +48,19 @@ const resetRateLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => `corretora_reset:${req.ip}`,
 });
 
-router.post("/login", loginRateLimiter, validate(corretoraLoginSchema), ctrl.login);
+// Ordem do middleware em rotas sensíveis: rate-limit (barato) →
+// Turnstile (1 round-trip à Cloudflare) → Zod → controller.
+// Fail-closed do Turnstile protege contra credential stuffing e
+// enumeração em cenários em que o rate-limit por IP não basta
+// (rotação de IP, botnets). Em dev sem TURNSTILE_SECRET_KEY, o
+// middleware é bypass silencioso.
+router.post(
+  "/login",
+  loginRateLimiter,
+  verifyTurnstile,
+  validate(corretoraLoginSchema),
+  ctrl.login,
+);
 router.get("/me", verifyCorretora, ctrl.getMe);
 router.post("/logout", verifyCorretora, ctrl.logout);
 
@@ -55,14 +68,16 @@ router.post("/logout", verifyCorretora, ctrl.logout);
 router.post(
   "/forgot-password",
   forgotRateLimiter,
+  verifyTurnstile,
   validate(forgotPasswordSchema),
-  resetCtrl.forgotPassword
+  resetCtrl.forgotPassword,
 );
 router.post(
   "/reset-password",
   resetRateLimiter,
+  verifyTurnstile,
   validate(resetPasswordSchema),
-  resetCtrl.resetPassword
+  resetCtrl.resetPassword,
 );
 
 module.exports = router;
