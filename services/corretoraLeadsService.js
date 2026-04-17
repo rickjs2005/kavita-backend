@@ -337,8 +337,48 @@ function escapeHtml(str) {
 // Ações da corretora logada sobre seus próprios leads.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Score de prioridade (Sprint 6 — Onda 2).
+// ---------------------------------------------------------------------------
+//
+// Heurística simples derivada dos sinais que já coletamos. Não substitui o
+// julgamento do corretor — serve como rank sugestivo e filtro preset na UI.
+// Todos os pesos ficam aqui para o admin ajustar em um só lugar.
+const PRIORITY_WEIGHTS = {
+  volume_500_mais: 35,
+  volume_200_500: 20,
+  corrego_especial: 20,
+  aging_24h: 15, // status=new há > 24h
+  aging_48h: 30, // status=new há > 48h (acumulativo com 24h seria 45, mas só uma faixa aplica)
+  recorrente: 10, // mesmo telefone já procurou antes
+};
+
+function computePriorityScore(lead) {
+  let score = 0;
+
+  if (lead.volume_range === "500_mais") score += PRIORITY_WEIGHTS.volume_500_mais;
+  else if (lead.volume_range === "200_500") score += PRIORITY_WEIGHTS.volume_200_500;
+
+  if (isCorregoEspecial(lead.corrego_localidade)) {
+    score += PRIORITY_WEIGHTS.corrego_especial;
+  }
+
+  if (lead.status === "new" && lead.created_at) {
+    const ageMs = Date.now() - new Date(lead.created_at).getTime();
+    const ageHours = ageMs / 3_600_000;
+    if (ageHours >= 48) score += PRIORITY_WEIGHTS.aging_48h;
+    else if (ageHours >= 24) score += PRIORITY_WEIGHTS.aging_24h;
+  }
+
+  if (lead.previous_contacts_count > 0) {
+    score += PRIORITY_WEIGHTS.recorrente;
+  }
+
+  return score;
+}
+
 async function listLeadsForCorretora(corretoraId, query) {
-  return leadsRepo.list({
+  const result = await leadsRepo.list({
     corretoraId,
     status: query.status,
     amostra_status: query.amostra_status,
@@ -346,6 +386,14 @@ async function listLeadsForCorretora(corretoraId, query) {
     page: query.page,
     limit: query.limit,
   });
+  // Injeta priority_score em cada lead. Cálculo é barato (sem I/O)
+  // — feito no service em vez de no repo porque depende de lógica
+  // (isCorregoEspecial, aging) fora do SQL.
+  result.items = result.items.map((lead) => ({
+    ...lead,
+    priority_score: computePriorityScore(lead),
+  }));
+  return result;
 }
 
 async function getSummary(corretoraId) {
