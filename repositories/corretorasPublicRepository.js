@@ -33,6 +33,10 @@ function parseJsonFields(row) {
 // Usamos subquery em vez de JOIN+GROUP BY para preservar a paginação
 // simples do list() sem DISTINCT, e o índice idx_reviews_corretora_status
 // cobre a subquery.
+// SLA médio de primeira resposta: AVG(first_response_seconds) dos
+// últimos N leads respondidos. Filtramos só os que têm first_response_at
+// (= foram respondidos) para não inflar com leads em aberto.
+// Exibe "Responde em média Xh" na vitrine quando há >= 5 respondidos.
 const SELECT_COLUMNS = `
   c.id, c.name, c.slug, c.contact_name, c.description, c.logo_path,
   c.city, c.state, c.region, c.phone, c.whatsapp, c.email,
@@ -46,7 +50,17 @@ const SELECT_COLUMNS = `
   (
     SELECT AVG(r.rating) FROM corretora_reviews r
     WHERE r.corretora_id = c.id AND r.status = 'approved'
-  ) AS reviews_avg
+  ) AS reviews_avg,
+  (
+    SELECT AVG(l.first_response_seconds) FROM corretora_leads l
+    WHERE l.corretora_id = c.id
+      AND l.first_response_seconds IS NOT NULL
+  ) AS sla_avg_seconds,
+  (
+    SELECT COUNT(*) FROM corretora_leads l
+    WHERE l.corretora_id = c.id
+      AND l.first_response_seconds IS NOT NULL
+  ) AS sla_sample_count
 `;
 
 function normalizeRow(row) {
@@ -59,6 +73,14 @@ function normalizeRow(row) {
   }
   if (row.reviews_count != null) {
     row.reviews_count = Number(row.reviews_count);
+  }
+  // SLA: AVG retorna string, sample_count retorna BigInt/string
+  // dependendo do driver. Normaliza para number.
+  if (row.sla_avg_seconds != null) {
+    row.sla_avg_seconds = Math.round(Number(row.sla_avg_seconds));
+  }
+  if (row.sla_sample_count != null) {
+    row.sla_sample_count = Number(row.sla_sample_count);
   }
   return row;
 }

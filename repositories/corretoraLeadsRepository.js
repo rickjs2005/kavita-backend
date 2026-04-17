@@ -59,6 +59,32 @@ async function findByIdForCorretora(id, corretoraId) {
   return rows[0] ?? null;
 }
 
+/**
+ * Conta leads anteriores do mesmo produtor (telefone_normalizado) na
+ * MESMA corretora, excluindo o lead atual. Usado para banner de
+ * dedupe no painel ("este produtor já te procurou N vezes").
+ *
+ * Escopo restrito a `corretora_id` intencionalmente: contagem entre
+ * corretoras vazaria sinais privados de outras corretoras — mesmo
+ * que só seja um número, viola a promessa de isolamento do tenant.
+ */
+async function countPreviousFromSameProducer({
+  lead_id,
+  corretora_id,
+  telefone_normalizado,
+}) {
+  if (!telefone_normalizado) return 0;
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS total
+     FROM corretora_leads
+     WHERE corretora_id = ?
+       AND telefone_normalizado = ?
+       AND id <> ?`,
+    [corretora_id, telefone_normalizado, lead_id],
+  );
+  return Number(rows[0]?.total || 0);
+}
+
 async function list({
   corretoraId,
   status,
@@ -92,16 +118,37 @@ async function list({
   const total = Number(countRows[0]?.total || 0);
 
   const offset = (page - 1) * limit;
+  // Subquery correlacionada para contar leads anteriores do mesmo
+  // telefone_normalizado nesta mesma corretora (exclui o próprio
+  // lead via l.id <> cl.id). Custo O(N) em rows da página — aceitável
+  // para limit<=100 com o volume atual. Se o conjunto crescer, trocar
+  // por CTE com window function ou índice composto dedicado.
   const [rows] = await pool.query(
-    `SELECT *
-     FROM corretora_leads
-     WHERE ${whereClause}
-     ORDER BY created_at DESC
+    `SELECT cl.*,
+            (
+              SELECT COUNT(*)
+              FROM corretora_leads l
+              WHERE l.corretora_id = cl.corretora_id
+                AND l.telefone_normalizado = cl.telefone_normalizado
+                AND l.telefone_normalizado IS NOT NULL
+                AND l.id <> cl.id
+            ) AS previous_contacts_count
+     FROM corretora_leads cl
+     WHERE ${whereClause.replace(/corretora_id/g, "cl.corretora_id")}
+     ORDER BY cl.created_at DESC
      LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );
 
-  return { items: rows, total, page, limit };
+  return {
+    items: rows.map((r) => ({
+      ...r,
+      previous_contacts_count: Number(r.previous_contacts_count ?? 0),
+    })),
+    total,
+    page,
+    limit,
+  };
 }
 
 async function update(id, corretoraId, data) {
@@ -279,6 +326,7 @@ async function summary(corretoraId) {
 module.exports = {
   create,
   findByIdForCorretora,
+  countPreviousFromSameProducer,
   findByIdRaw,
   list,
   listAllForExport,
