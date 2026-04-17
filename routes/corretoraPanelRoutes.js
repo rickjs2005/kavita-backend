@@ -27,5 +27,6 @@ mount("/corretora/team", "./corretoraPanel/corretoraTeam");
 mount("/corretora/notifications", "./corretoraPanel/corretoraNotifications");
 mount("/corretora/plan", "./corretoraPanel/corretoraPlan");
 mount("/corretora/reviews", "./corretoraPanel/corretoraReviews");
+mount("/corretora/analytics", "./corretoraPanel/corretoraAnalytics");
 
 module.exports = router;
