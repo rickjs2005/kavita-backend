@@ -380,6 +380,119 @@ const getCorretoraAuditLogs = async (req, res, next) => {
 };
 
 /**
+ * POST /api/admin/mercado-do-cafe/corretoras/:id/archive
+ * Soft delete — preserva histórico/FK, tira da vitrine.
+ */
+const archiveCorretora = async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    await corretorasService.archiveCorretora(id);
+    auditService.record({
+      req,
+      action: "corretora.archived",
+      targetType: "corretora",
+      targetId: id,
+    });
+    return response.ok(res, null, "Corretora arquivada.");
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao arquivar.", ERROR_CODES.SERVER_ERROR, 500),
+    );
+  }
+};
+
+/**
+ * POST /api/admin/mercado-do-cafe/corretoras/:id/restore
+ * Reverte soft delete. Status (active/inactive) é preservado.
+ */
+const restoreCorretora = async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    await corretorasService.restoreCorretora(id);
+    auditService.record({
+      req,
+      action: "corretora.restored",
+      targetType: "corretora",
+      targetId: id,
+    });
+    return response.ok(res, null, "Corretora restaurada.");
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao restaurar.", ERROR_CODES.SERVER_ERROR, 500),
+    );
+  }
+};
+
+/**
+ * POST /api/admin/mercado-do-cafe/submissions/bulk-approve
+ * Body: { ids: number[] }
+ * Retorna agregado de sucessos/falhas. Nunca retorna 4xx parcial —
+ * prefere 200 com `failed > 0` para o admin ver o que não passou.
+ */
+const bulkApproveSubmissions = async (req, res, next) => {
+  try {
+    const result = await corretorasService.bulkApproveSubmissions(
+      req.body.ids,
+      req.admin?.id ?? null,
+    );
+    return response.ok(
+      res,
+      result,
+      `${result.approved} aprovada(s), ${result.failed} com erro.`,
+    );
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao aprovar em lote.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+};
+
+/**
+ * POST /api/admin/mercado-do-cafe/submissions/bulk-reject
+ * Body: { ids: number[], reason: string }
+ */
+const bulkRejectSubmissions = async (req, res, next) => {
+  try {
+    const result = await corretorasService.bulkRejectSubmissions(
+      req.body.ids,
+      req.admin?.id ?? null,
+      req.body.reason,
+    );
+    return response.ok(
+      res,
+      result,
+      `${result.rejected} rejeitada(s), ${result.failed} com erro.`,
+    );
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao rejeitar em lote.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+};
+
+/**
  * POST /api/admin/mercado-do-cafe/corretoras/:id/impersonate
  *
  * Emite um corretoraToken temporário (30 min) com claim de
@@ -488,6 +601,10 @@ module.exports = {
   getById,
   getCorretoraAuditLogs,
   impersonateCorretora,
+  archiveCorretora,
+  restoreCorretora,
+  bulkApproveSubmissions,
+  bulkRejectSubmissions,
   createCorretora,
   updateCorretora,
   toggleStatus,

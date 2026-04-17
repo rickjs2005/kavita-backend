@@ -16,7 +16,32 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const plansRepo = require("../repositories/plansRepository");
 const subsRepo = require("../repositories/subscriptionsRepository");
+const eventsRepo = require("../repositories/subscriptionEventsRepository");
+const logger = require("../lib/logger");
 const { withTransaction } = require("../lib/withTransaction");
+
+// Helper para snapshot leve do plano que vai no evento. Mantém só
+// os campos comercialmente relevantes — se o catálogo de planos mudar
+// depois, o evento preserva o contrato no momento da atribuição.
+function buildPlanSnapshot(plan) {
+  if (!plan) return null;
+  let capabilities = plan.capabilities;
+  if (typeof capabilities === "string") {
+    try {
+      capabilities = JSON.parse(capabilities);
+    } catch {
+      capabilities = {};
+    }
+  }
+  return {
+    id: plan.id,
+    slug: plan.slug,
+    name: plan.name,
+    price_cents: plan.price_cents ?? null,
+    billing_cycle: plan.billing_cycle ?? null,
+    capabilities: capabilities ?? {},
+  };
+}
 
 // Capabilities conhecidas e labels. Default values = do plano Free
 // (fallback quando corretora não tem subscription ativa).
@@ -123,10 +148,11 @@ function requirePlanCapability(key) {
  * webhook do provider.
  */
 async function assignPlan({ corretoraId, planId, opts = {} }) {
-  // Transação: cancelar subscription anterior + criar nova precisa ser
-  // atômico. Se o INSERT falhar depois do UPDATE, a corretora ficaria
-  // sem plano ativo. Com a transação, rollback preserva a anterior.
-  return withTransaction(async (conn) => {
+  // Snapshot do plano anterior para detectar upgrade/downgrade/renew
+  // no evento. Lido fora da tx porque é só leitura e simplifica o flow.
+  const previous = await subsRepo.getCurrentForCorretora(corretoraId);
+
+  const result = await withTransaction(async (conn) => {
     const plan = await plansRepo.findById(planId, conn);
     if (!plan || !plan.is_active) {
       throw new AppError(
@@ -163,8 +189,83 @@ async function assignPlan({ corretoraId, planId, opts = {} }) {
     );
 
     const current = await subsRepo.getCurrentForCorretora(corretoraId, conn);
-    return { id, ...current };
+    return { id, current, plan };
   });
+
+  // Log de evento fora da transação — falha não deve reverter o plano.
+  // Classifica como upgrade/downgrade por preço; "assigned" se é a
+  // primeira atribuição da corretora.
+  let eventType = "assigned";
+  if (previous && previous.plan_id && previous.plan_id !== result.plan.id) {
+    const prevPrice = Number(previous.monthly_price_cents ?? 0);
+    const newPrice = Number(result.plan.price_cents ?? 0);
+    eventType = newPrice > prevPrice ? "upgraded" : "downgraded";
+  }
+
+  eventsRepo
+    .create({
+      corretora_id: corretoraId,
+      subscription_id: result.id,
+      event_type: eventType,
+      from_plan_id: previous?.plan_id ?? null,
+      to_plan_id: result.plan.id,
+      from_status: previous?.status ?? null,
+      to_status: opts.status ?? "active",
+      plan_snapshot: buildPlanSnapshot(result.plan),
+      meta: {
+        payment_method: opts.payment_method ?? null,
+        provider: opts.provider ?? null,
+      },
+      actor_type: opts.actor_type ?? "admin",
+      actor_id: opts.actor_id ?? null,
+    })
+    .catch((err) =>
+      logger.warn(
+        { err, corretoraId, subscriptionId: result.id },
+        "subscription.assign.event_failed",
+      ),
+    );
+
+  return { id: result.id, ...result.current };
+}
+
+/**
+ * Marca subscription como expirada (usado pelo middleware
+ * verifyCorretora quando trial_ends_at passa). Dispara evento
+ * "expired" com snapshot do plano em vigor.
+ */
+async function markExpired(subscriptionId, corretoraId) {
+  const sub = await subsRepo.getCurrentForCorretora(corretoraId);
+  await subsRepo.updateStatus(subscriptionId, "expired");
+  eventsRepo
+    .create({
+      corretora_id: corretoraId,
+      subscription_id: subscriptionId,
+      event_type: "expired",
+      from_plan_id: sub?.plan_id ?? null,
+      to_plan_id: sub?.plan_id ?? null,
+      from_status: sub?.status ?? null,
+      to_status: "expired",
+      plan_snapshot: sub
+        ? buildPlanSnapshot({
+            id: sub.plan_id,
+            slug: sub.plan_slug,
+            name: sub.plan_name,
+            price_cents: sub.plan_price_cents,
+            billing_cycle: sub.plan_billing_cycle,
+            capabilities: sub.plan_capabilities,
+          })
+        : null,
+      meta: { trial_ends_at: sub?.trial_ends_at ?? null },
+      actor_type: "system",
+      actor_id: null,
+    })
+    .catch((err) =>
+      logger.warn(
+        { err, corretoraId, subscriptionId },
+        "subscription.expire.event_failed",
+      ),
+    );
 }
 
 module.exports = {
@@ -173,4 +274,5 @@ module.exports = {
   hasCapability,
   requirePlanCapability,
   assignPlan,
+  markExpired,
 };

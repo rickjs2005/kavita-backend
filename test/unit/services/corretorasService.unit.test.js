@@ -24,6 +24,12 @@ describe("services/corretorasService", () => {
   const subsRepoPath = require.resolve(
     "../../../repositories/subscriptionsRepository",
   );
+  const subEventsRepoPath = require.resolve(
+    "../../../repositories/subscriptionEventsRepository",
+  );
+  const slugHistoryRepoPath = require.resolve(
+    "../../../repositories/corretoraSlugHistoryRepository",
+  );
 
   let svc;
   let adminRepo;
@@ -81,6 +87,13 @@ describe("services/corretorasService", () => {
     jest.doMock(subsRepoPath, () => ({
       create: jest.fn().mockResolvedValue(undefined),
       getCurrentForCorretora: jest.fn(),
+    }));
+    jest.doMock(subEventsRepoPath, () => ({
+      create: jest.fn().mockResolvedValue(undefined),
+    }));
+    jest.doMock(slugHistoryRepoPath, () => ({
+      record: jest.fn().mockResolvedValue(undefined),
+      resolveRedirect: jest.fn().mockResolvedValue(null),
     }));
 
     adminRepo = require(adminRepoPath);

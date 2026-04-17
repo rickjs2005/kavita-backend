@@ -274,6 +274,31 @@ const rejectSubmissionSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Bulk actions em submissions (Sprint 3): admin seleciona múltiplos
+// pendentes e aprova/rejeita de uma vez. Limite generoso mas finito
+// para proteger contra DoS acidental.
+// ---------------------------------------------------------------------------
+
+const bulkApproveSubmissionsSchema = z.object({
+  ids: z
+    .array(z.coerce.number().int().positive())
+    .min(1, "Selecione ao menos 1 solicitação.")
+    .max(50, "Máximo 50 solicitações por operação."),
+});
+
+const bulkRejectSubmissionsSchema = z.object({
+  ids: z
+    .array(z.coerce.number().int().positive())
+    .min(1, "Selecione ao menos 1 solicitação.")
+    .max(50, "Máximo 50 solicitações por operação."),
+  reason: z
+    .string({ required_error: "Motivo da rejeição é obrigatório." })
+    .min(10, "Motivo deve ter pelo menos 10 caracteres.")
+    .max(2000, "Motivo deve ter no máximo 2000 caracteres.")
+    .transform((v) => v.trim()),
+});
+
+// ---------------------------------------------------------------------------
 // Query schemas
 // ---------------------------------------------------------------------------
 
@@ -311,6 +336,8 @@ module.exports = {
   statusSchema,
   featuredSchema,
   rejectSubmissionSchema,
+  bulkApproveSubmissionsSchema,
+  bulkRejectSubmissionsSchema,
   listPublicQuerySchema,
   listAdminQuerySchema,
   listSubmissionsQuerySchema,

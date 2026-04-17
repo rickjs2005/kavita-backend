@@ -19,6 +19,8 @@ const {
   statusSchema,
   featuredSchema,
   rejectSubmissionSchema,
+  bulkApproveSubmissionsSchema,
+  bulkRejectSubmissionsSchema,
 } = require("../../schemas/corretorasSchemas");
 const {
   inviteCorretoraUserSchema,
@@ -75,6 +77,11 @@ router.post(
 // suporte. Sessão real da corretora não é invalidada.
 router.post("/corretoras/:id/impersonate", ctrl.impersonateCorretora);
 
+// Soft delete (Sprint 3): preserva histórico, tira da vitrine e da
+// listagem admin padrão. Reversível via restore.
+router.post("/corretoras/:id/archive", ctrl.archiveCorretora);
+router.post("/corretoras/:id/restore", ctrl.restoreCorretora);
+
 // ─── Submissions ────────────────────────────────────────────────────────────
 
 router.get("/submissions", ctrl.listSubmissions);
@@ -87,6 +94,19 @@ router.post(
   "/submissions/:id/reject",
   validate(rejectSubmissionSchema),
   ctrl.rejectSubmission
+);
+
+// Bulk actions (Sprint 3) — aprovação/rejeição em lote. Rotas ficam
+// antes do `:id/reject` seria ambíguo, então usamos paths nomeados.
+router.post(
+  "/submissions/bulk-approve",
+  validate(bulkApproveSubmissionsSchema),
+  ctrl.bulkApproveSubmissions,
+);
+router.post(
+  "/submissions/bulk-reject",
+  validate(bulkRejectSubmissionsSchema),
+  ctrl.bulkRejectSubmissions,
 );
 
 // ─── Dashboard regional (Sprint 3) ──────────────────────────────────────────

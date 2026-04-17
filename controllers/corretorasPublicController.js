@@ -8,6 +8,7 @@ const { response } = require("../lib");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const publicRepo = require("../repositories/corretorasPublicRepository");
+const slugHistoryRepo = require("../repositories/corretoraSlugHistoryRepository");
 const corretorasService = require("../services/corretorasService");
 const mediaService = require("../services/mediaService");
 const {
@@ -47,17 +48,28 @@ const listCities = async (req, res, next) => {
 
 /**
  * GET /api/public/corretoras/:slug
+ *
+ * Se o slug não bate com nenhuma corretora ativa, consulta o histórico
+ * de slugs (Sprint 3). Encontrando match, devolve 200 com payload
+ * mínimo { redirect_to_slug } para o RSC emitir permanentRedirect 301
+ * e preservar SEO quando a corretora foi renomeada.
  */
 const getBySlug = async (req, res, next) => {
   try {
     const { slug } = req.params;
     const corretora = await publicRepo.findBySlug(slug);
-    if (!corretora) {
-      return next(
-        new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404)
-      );
+    if (corretora) {
+      return response.ok(res, corretora);
     }
-    return response.ok(res, corretora);
+
+    const moved = await slugHistoryRepo.resolveRedirect(slug);
+    if (moved) {
+      return response.ok(res, { redirect_to_slug: moved.current_slug });
+    }
+
+    return next(
+      new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404),
+    );
   } catch (err) {
     return next(
       err instanceof AppError

@@ -10,6 +10,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const authService = require("../services/corretoraAuthService");
 const subsRepo = require("../repositories/subscriptionsRepository");
+const planService = require("../services/planService");
 const logger = require("../lib/logger");
 
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -107,7 +108,9 @@ async function verifyCorretora(req, _res, next) {
     if (sub && sub.status === "trialing" && sub.trial_ends_at) {
       const trialEnd = new Date(sub.trial_ends_at);
       if (trialEnd < new Date()) {
-        await subsRepo.updateStatus(sub.id, "expired");
+        // markExpired atualiza status + grava subscription_event —
+        // mantém a trilha de churn legível fora do log do processo.
+        await planService.markExpired(sub.id, user.corretora_id);
         logger.info(
           { userId: user.id, corretoraId: user.corretora_id, subId: sub.id },
           "verifyCorretora: trial expired auto"

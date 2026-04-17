@@ -68,7 +68,7 @@ function normalizeRow(row) {
  * Featured corretoras come first, then sorted by sort_order, name.
  */
 async function list({ city, featured, search, page, limit }) {
-  const where = ["c.status = 'active'"];
+  const where = ["c.status = 'active'", "c.deleted_at IS NULL"];
   const params = [];
 
   if (city) {
@@ -133,7 +133,7 @@ async function findBySlug(slug) {
   const sql = `
     SELECT ${SELECT_COLUMNS}, c.status
     FROM corretoras c
-    WHERE c.slug = ? AND c.status = 'active'
+    WHERE c.slug = ? AND c.status = 'active' AND c.deleted_at IS NULL
     LIMIT 1
   `;
   const [rows] = await pool.query(sql, [slug]);
@@ -147,7 +147,7 @@ async function listCities() {
   const sql = `
     SELECT DISTINCT c.city
     FROM corretoras c
-    WHERE c.status = 'active'
+    WHERE c.status = 'active' AND c.deleted_at IS NULL
     ORDER BY c.city ASC
   `;
   const [rows] = await pool.query(sql);

@@ -8,8 +8,11 @@ const pool = require("../config/pool");
 
 // ─── Corretoras CRUD ────────────────────────────────────────────────────────
 
-async function list({ status, city, is_featured, search, page, limit }) {
-  const where = ["1=1"];
+async function list({ status, city, is_featured, search, page, limit, include_archived }) {
+  // Soft delete (Sprint 3): por default, só mostra corretoras não
+  // arquivadas. Admin pode passar include_archived=1 para ver as
+  // arquivadas (uso raro, vai ter rota dedicada no futuro).
+  const where = include_archived === "1" ? ["1=1"] : ["c.deleted_at IS NULL"];
   const params = [];
 
   if (status) {
@@ -57,9 +60,34 @@ async function list({ status, city, is_featured, search, page, limit }) {
   return { items: rows, total, page, limit };
 }
 
-async function findById(id) {
-  const [rows] = await pool.query("SELECT * FROM corretoras WHERE id = ?", [id]);
+async function findById(id, { includeArchived = false } = {}) {
+  const suffix = includeArchived ? "" : " AND deleted_at IS NULL";
+  const [rows] = await pool.query(
+    `SELECT * FROM corretoras WHERE id = ?${suffix}`,
+    [id],
+  );
   return rows[0] ?? null;
+}
+
+// Operações de soft delete. Ambas inocuas se chamadas duas vezes:
+// archive em arquivada não altera timestamp (preserva data original
+// via IS NULL guard); restore em ativa é no-op.
+async function archive(id) {
+  const [result] = await pool.query(
+    `UPDATE corretoras
+       SET deleted_at = NOW()
+     WHERE id = ? AND deleted_at IS NULL`,
+    [id],
+  );
+  return result.affectedRows;
+}
+
+async function restore(id) {
+  const [result] = await pool.query(
+    "UPDATE corretoras SET deleted_at = NULL WHERE id = ?",
+    [id],
+  );
+  return result.affectedRows;
 }
 
 async function findBySlug(slug, conn = pool) {
@@ -274,6 +302,8 @@ module.exports = {
   updateFeatured,
   clearFeatured,
   countFeatured,
+  archive,
+  restore,
   // Submissions
   listSubmissions,
   findSubmissionById,

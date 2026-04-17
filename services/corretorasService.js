@@ -9,12 +9,14 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const adminRepo = require("../repositories/corretorasAdminRepository");
 const usersRepo = require("../repositories/corretoraUsersRepository");
+const slugHistoryRepo = require("../repositories/corretoraSlugHistoryRepository");
 const corretoraAuthService = require("./corretoraAuthService");
 const mailService = require("./mailService");
 const logger = require("../lib/logger");
 const { withTransaction } = require("../lib/withTransaction");
 const plansRepo = require("../repositories/plansRepository");
 const subsRepo = require("../repositories/subscriptionsRepository");
+const subEventsRepo = require("../repositories/subscriptionEventsRepository");
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -67,10 +69,16 @@ async function updateCorretora(id, data) {
   }
 
   const merged = { ...data };
+  let previousSlug = null;
 
-  // Regenerate slug if name changed
+  // Regenerate slug if name changed. Guarda o slug antigo para gravar
+  // no histórico após o update (fora da transação do update ser
+  // atômica). Fire-and-forget — falha em histórico não quebra rename.
   if (data.name && data.name !== current.name) {
     merged.slug = await uniqueSlug(data.name, id);
+    if (merged.slug !== current.slug) {
+      previousSlug = current.slug;
+    }
   }
 
   // If deactivating, also remove featured
@@ -79,6 +87,18 @@ async function updateCorretora(id, data) {
   }
 
   await adminRepo.update(id, merged);
+
+  if (previousSlug) {
+    slugHistoryRepo
+      .record(previousSlug, id)
+      .catch((err) =>
+        logger.warn(
+          { err, corretoraId: id, previousSlug },
+          "corretora.update.slug_history_failed",
+        ),
+      );
+  }
+
   return adminRepo.findById(id);
 }
 
@@ -106,6 +126,50 @@ const MAX_FEATURED_CORRETORAS = (() => {
   const raw = Number.parseInt(process.env.MAX_FEATURED_CORRETORAS ?? "", 10);
   return Number.isFinite(raw) && raw > 0 ? raw : 5;
 })();
+
+/**
+ * Soft delete (Sprint 3). Arquiva a corretora — mantém o registro no
+ * banco para preservar FK de leads/subscriptions e auditoria, mas
+ * remove da vitrine pública e da listagem admin padrão. Também
+ * desliga destaque (is_featured=0) para liberar slot do cap global.
+ */
+async function archiveCorretora(id) {
+  const current = await adminRepo.findById(id);
+  if (!current) {
+    throw new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404);
+  }
+  if (current.is_featured) {
+    await adminRepo.clearFeatured(id);
+  }
+  const affected = await adminRepo.archive(id);
+  if (affected === 0) {
+    throw new AppError(
+      "Corretora já está arquivada.",
+      ERROR_CODES.CONFLICT,
+      409,
+    );
+  }
+}
+
+/**
+ * Restaura uma corretora arquivada. Status anterior é preservado
+ * (active/inactive); o operador pode reativar separadamente se
+ * precisar publicar de volta na vitrine.
+ */
+async function restoreCorretora(id) {
+  const current = await adminRepo.findById(id, { includeArchived: true });
+  if (!current) {
+    throw new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404);
+  }
+  if (current.deleted_at == null) {
+    throw new AppError(
+      "Corretora não está arquivada.",
+      ERROR_CODES.CONFLICT,
+      409,
+    );
+  }
+  await adminRepo.restore(id);
+}
 
 async function toggleFeatured(id, is_featured) {
   const current = await adminRepo.findById(id);
@@ -276,11 +340,13 @@ async function approveSubmission(submissionId, adminId) {
     // de teste gratuito. Busca plano Free no banco; se não existir,
     // pula (fallback do planService cuida depois).
     const freePlan = await plansRepo.findBySlug("free", conn);
+    let trialSubId = null;
+    let trialPlanSnapshot = null;
     if (freePlan) {
       const now = new Date();
       const trialEnd = new Date(now);
       trialEnd.setMonth(trialEnd.getMonth() + 3);
-      await subsRepo.create(
+      trialSubId = await subsRepo.create(
         {
           corretora_id: corretoraId,
           plan_id: freePlan.id,
@@ -293,6 +359,24 @@ async function approveSubmission(submissionId, adminId) {
         },
         conn,
       );
+      // Snapshot para o evento ser emitido fora da tx — mantém o plano
+      // no momento da atribuição mesmo que o catálogo mude depois.
+      let caps = freePlan.capabilities;
+      if (typeof caps === "string") {
+        try {
+          caps = JSON.parse(caps);
+        } catch {
+          caps = {};
+        }
+      }
+      trialPlanSnapshot = {
+        id: freePlan.id,
+        slug: freePlan.slug,
+        name: freePlan.name,
+        price_cents: freePlan.price_cents ?? 0,
+        billing_cycle: freePlan.billing_cycle ?? null,
+        capabilities: caps ?? {},
+      };
     }
 
     return {
@@ -302,12 +386,40 @@ async function approveSubmission(submissionId, adminId) {
       email: sub.email,
       name: sub.name,
       submissionId,
+      trialSubId,
+      trialPlanSnapshot,
+      freePlanId: freePlan?.id ?? null,
     };
   });
 
   if (txResult.raceCondition) {
     // Recursão segura: reconsulta estado e responde idempotente.
     return approveSubmission(submissionId, adminId);
+  }
+
+  // Evento de subscription "assigned" — fora da tx, fire-and-forget.
+  // Falha no event log não deve reverter aprovação.
+  if (txResult.trialSubId) {
+    subEventsRepo
+      .create({
+        corretora_id: txResult.corretoraId,
+        subscription_id: txResult.trialSubId,
+        event_type: "assigned",
+        from_plan_id: null,
+        to_plan_id: txResult.freePlanId,
+        from_status: null,
+        to_status: "trialing",
+        plan_snapshot: txResult.trialPlanSnapshot,
+        meta: { auto_trial: true, reason: "submission_approved" },
+        actor_type: "admin",
+        actor_id: adminId ?? null,
+      })
+      .catch((err) =>
+        logger.warn(
+          { err, corretoraId: txResult.corretoraId, subId: txResult.trialSubId },
+          "corretora.approve.subscription_event_failed",
+        ),
+      );
   }
 
   // Efeitos colaterais (email) ficam FORA da transação: email não
@@ -390,6 +502,59 @@ async function rejectSubmission(submissionId, adminId, reason) {
   }
 }
 
+/**
+ * Aprova múltiplas submissões pending em lote. Processa sequencialmente
+ * (cada aprovação é uma transação própria + efeitos colaterais como
+ * e-mail); não usa Promise.all para preservar ordem estável de eventos
+ * e evitar pressão concorrente no banco.
+ *
+ * Retorna { approved, failed, results } — nunca lança. Erros individuais
+ * são capturados em cada item para o admin ver o que deu certo.
+ */
+async function bulkApproveSubmissions(ids, adminId) {
+  const results = [];
+  for (const id of ids) {
+    try {
+      const res = await approveSubmission(id, adminId);
+      results.push({ id, ok: true, ...res });
+    } catch (err) {
+      results.push({
+        id,
+        ok: false,
+        error: err?.message ?? String(err),
+        code: err?.code ?? null,
+        status: err?.status ?? 500,
+      });
+    }
+  }
+  const approved = results.filter((r) => r.ok).length;
+  return { approved, failed: results.length - approved, results };
+}
+
+/**
+ * Rejeita múltiplas submissões pending em lote com o mesmo motivo.
+ * Mesmo padrão: sequencial, captura erros por item, retorna agregado.
+ */
+async function bulkRejectSubmissions(ids, adminId, reason) {
+  const results = [];
+  for (const id of ids) {
+    try {
+      await rejectSubmission(id, adminId, reason);
+      results.push({ id, ok: true });
+    } catch (err) {
+      results.push({
+        id,
+        ok: false,
+        error: err?.message ?? String(err),
+        code: err?.code ?? null,
+        status: err?.status ?? 500,
+      });
+    }
+  }
+  const rejected = results.filter((r) => r.ok).length;
+  return { rejected, failed: results.length - rejected, results };
+}
+
 module.exports = {
   slugify,
   uniqueSlug,
@@ -397,7 +562,11 @@ module.exports = {
   updateCorretora,
   toggleStatus,
   toggleFeatured,
+  archiveCorretora,
+  restoreCorretora,
   createSubmission,
   approveSubmission,
   rejectSubmission,
+  bulkApproveSubmissions,
+  bulkRejectSubmissions,
 };
