@@ -81,12 +81,18 @@ async function getPlanContext(corretoraId) {
       status: "free_default",
     };
   }
+  // sub.plan_capabilities já vem "efetivo" do repo (snapshot quando
+  // existe, senão plano vivo). snapshot separado indica se a
+  // assinatura está congelada — útil para UI admin mostrar "esta
+  // corretora está na versão antiga do plano Pro" quando o plano
+  // vivo difere.
   return {
     subscription: {
       id: sub.id,
       status: sub.status,
       current_period_end: sub.current_period_end,
       trial_ends_at: sub.trial_ends_at ?? null,
+      has_capabilities_snapshot: sub.capabilities_snapshot != null,
     },
     plan: {
       slug: sub.plan_slug,
@@ -171,6 +177,12 @@ async function assignPlan({ corretoraId, planId, opts = {} }) {
       periodEnd.setMonth(periodEnd.getMonth() + 1);
     }
 
+    // Fase 5.4 — Congelamos as capabilities no momento da atribuição.
+    // Mudanças posteriores no catálogo de planos NÃO afetam esta
+    // subscription até que o admin faça broadcast explícito.
+    const planSnapshot = buildPlanSnapshot(plan);
+    const capabilitiesSnapshot = planSnapshot?.capabilities ?? {};
+
     const id = await subsRepo.create(
       {
         corretora_id: corretoraId,
@@ -184,6 +196,7 @@ async function assignPlan({ corretoraId, planId, opts = {} }) {
         meta: opts.meta ?? null,
         payment_method: opts.payment_method ?? null,
         monthly_price_cents: plan.price_cents ?? null,
+        capabilities_snapshot: capabilitiesSnapshot,
       },
       conn,
     );
@@ -268,6 +281,41 @@ async function markExpired(subscriptionId, corretoraId) {
     );
 }
 
+/**
+ * Fase 5.4 — Broadcast de capabilities de um plano recém-editado
+ * para TODAS as assinaturas ativas dele. Chamado pelo
+ * adminPlansController.updatePlan quando o admin marca
+ * "aplicar a assinaturas ativas".
+ *
+ * Retorna { affected } para o caller gravar no audit log.
+ *
+ * Importante: isto é uma DECISÃO consciente do admin — alterar o
+ * contrato vigente de N corretoras pagantes retroativamente. A UI
+ * avisa claramente. Sem a flag, o comportamento padrão (e correto
+ * de SaaS) é preservar o contrato do momento da assinatura.
+ */
+async function broadcastCapabilitiesFromPlan(planId) {
+  const plan = await plansRepo.findById(planId);
+  if (!plan) {
+    throw new AppError(
+      "Plano não encontrado.",
+      ERROR_CODES.NOT_FOUND,
+      404,
+    );
+  }
+  const snapshot = buildPlanSnapshot(plan);
+  const capabilitiesSnapshot = snapshot?.capabilities ?? {};
+  const affected = await subsRepo.applyCapabilitiesSnapshotToActiveByPlan(
+    planId,
+    capabilitiesSnapshot,
+  );
+  logger.info(
+    { planId, planSlug: plan.slug, affected },
+    "plan.capabilities.broadcast",
+  );
+  return { affected, capabilities: capabilitiesSnapshot };
+}
+
 module.exports = {
   CAPABILITY_KEYS,
   getPlanContext,
@@ -275,4 +323,5 @@ module.exports = {
   requirePlanCapability,
   assignPlan,
   markExpired,
+  broadcastCapabilitiesFromPlan,
 };

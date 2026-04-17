@@ -53,12 +53,44 @@ async function updatePlan(req, res, next) {
     if (!Number.isInteger(id) || id <= 0) {
       throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
     }
-    const affected = await plansRepo.update(id, req.body);
+
+    // Fase 5.4 — flag opt-in para aplicar as novas capabilities a
+    // assinaturas ativas existentes. Separamos do body da update
+    // para não persistir esse boolean na tabela plans.
+    const applyToActive = Boolean(req.body?.apply_to_active_subscriptions);
+    const updatePayload = { ...req.body };
+    delete updatePayload.apply_to_active_subscriptions;
+
+    const affected = await plansRepo.update(id, updatePayload);
     if (affected === 0) {
       throw new AppError("Nada para atualizar.", ERROR_CODES.NOT_FOUND, 404);
     }
     const fresh = await plansRepo.findById(id);
-    response.ok(res, fresh, "Plano atualizado.");
+
+    let broadcast = null;
+    if (applyToActive) {
+      // Broadcast quebra contratos vigentes — ação deliberada. Grava
+      // audit log com o número de afetadas para rastreabilidade.
+      broadcast = await planService.broadcastCapabilitiesFromPlan(id);
+      require("../../services/adminAuditService").record({
+        req,
+        action: "plan.capabilities_broadcast",
+        targetType: "plan",
+        targetId: id,
+        meta: {
+          plan_slug: fresh.slug,
+          affected_subscriptions: broadcast.affected,
+        },
+      });
+    }
+
+    response.ok(
+      res,
+      { plan: fresh, broadcast },
+      broadcast
+        ? `Plano atualizado. ${broadcast.affected} assinatura(s) receberam as novas capabilities.`
+        : "Plano atualizado. Assinaturas existentes continuam com a versão anterior.",
+    );
   } catch (err) {
     next(err);
   }

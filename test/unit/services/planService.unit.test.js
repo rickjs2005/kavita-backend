@@ -44,6 +44,7 @@ describe("services/planService", () => {
       create: jest.fn(),
       cancelActiveForCorretora: jest.fn(),
       updateStatus: jest.fn(),
+      applyCapabilitiesSnapshotToActiveByPlan: jest.fn(),
     }));
 
     plansRepo = require(plansRepoPath);
@@ -159,6 +160,109 @@ describe("services/planService", () => {
       // Janela anual ≈ 365 dias (aceita variação de leap year)
       expect(diffDays).toBeGreaterThan(360);
       expect(diffDays).toBeLessThan(370);
+    });
+
+    // Fase 5.4 — assignPlan agora congela capabilities no momento
+    // da criação. Mudanças posteriores no catálogo não afetam esta
+    // assinatura até broadcast explícito.
+    it("grava capabilities_snapshot com as capabilities do plano", async () => {
+      plansRepo.findById.mockResolvedValue({
+        id: 4,
+        slug: "pro",
+        name: "Pro",
+        is_active: true,
+        billing_cycle: "monthly",
+        price_cents: 14900,
+        capabilities: {
+          max_users: 5,
+          leads_export: true,
+          regional_highlight: true,
+          advanced_reports: false,
+        },
+      });
+      subsRepo.cancelActiveForCorretora.mockResolvedValue(undefined);
+      subsRepo.create.mockResolvedValue(500);
+      subsRepo.getCurrentForCorretora.mockResolvedValue({});
+
+      await svc.assignPlan({ corretoraId: 10, planId: 4 });
+
+      const payload = subsRepo.create.mock.calls[0][0];
+      expect(payload.capabilities_snapshot).toEqual({
+        max_users: 5,
+        leads_export: true,
+        regional_highlight: true,
+        advanced_reports: false,
+      });
+    });
+
+    it("snapshot aceita capabilities em formato string (JSON serializado pelo driver)", async () => {
+      plansRepo.findById.mockResolvedValue({
+        id: 5,
+        slug: "pro",
+        name: "Pro",
+        is_active: true,
+        billing_cycle: "monthly",
+        price_cents: 14900,
+        capabilities: '{"max_users":3,"leads_export":false}',
+      });
+      subsRepo.cancelActiveForCorretora.mockResolvedValue(undefined);
+      subsRepo.create.mockResolvedValue(600);
+      subsRepo.getCurrentForCorretora.mockResolvedValue({});
+
+      await svc.assignPlan({ corretoraId: 11, planId: 5 });
+
+      const payload = subsRepo.create.mock.calls[0][0];
+      expect(payload.capabilities_snapshot).toEqual({
+        max_users: 3,
+        leads_export: false,
+      });
+    });
+  });
+
+  describe("broadcastCapabilitiesFromPlan()", () => {
+    it("404 se plano não existe", async () => {
+      plansRepo.findById.mockResolvedValue(null);
+      await expect(svc.broadcastCapabilitiesFromPlan(999)).rejects.toMatchObject({
+        status: 404,
+      });
+      expect(subsRepo.applyCapabilitiesSnapshotToActiveByPlan).not.toHaveBeenCalled();
+    });
+
+    it("aplica capabilities atuais às assinaturas ativas e retorna contagem", async () => {
+      plansRepo.findById.mockResolvedValue({
+        id: 7,
+        slug: "pro",
+        name: "Pro",
+        price_cents: 14900,
+        billing_cycle: "monthly",
+        capabilities: { max_users: 10, leads_export: true },
+      });
+      subsRepo.applyCapabilitiesSnapshotToActiveByPlan.mockResolvedValue(
+        12,
+      );
+
+      const result = await svc.broadcastCapabilitiesFromPlan(7);
+
+      expect(result).toEqual({
+        affected: 12,
+        capabilities: { max_users: 10, leads_export: true },
+      });
+      expect(
+        subsRepo.applyCapabilitiesSnapshotToActiveByPlan,
+      ).toHaveBeenCalledWith(7, { max_users: 10, leads_export: true });
+    });
+
+    it("broadcast com 0 assinaturas afetadas ainda retorna 0 (idempotente)", async () => {
+      plansRepo.findById.mockResolvedValue({
+        id: 8,
+        slug: "free",
+        name: "Free",
+        capabilities: { max_users: 1 },
+      });
+      subsRepo.applyCapabilitiesSnapshotToActiveByPlan.mockResolvedValue(0);
+
+      const result = await svc.broadcastCapabilitiesFromPlan(8);
+      expect(result.affected).toBe(0);
     });
   });
 });
