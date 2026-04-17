@@ -9,6 +9,7 @@ const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const authService = require("../../services/corretoraAuthService");
 const analyticsService = require("../../services/analyticsService");
+const auditLogsRepo = require("../../repositories/adminAuditLogsRepository");
 const logger = require("../../lib/logger");
 
 const COOKIE_NAME = "corretoraToken";
@@ -170,6 +171,7 @@ async function getMe(req, res, next) {
       corretora_id: u.corretora_id,
       corretora_name: u.corretora_name,
       corretora_slug: u.corretora_slug,
+      impersonation: u.impersonation ?? null,
     });
   } catch (err) {
     return next(
@@ -209,4 +211,80 @@ async function logout(req, res) {
   return response.ok(res, null, "Logout realizado com sucesso.");
 }
 
-module.exports = { login, getMe, logout };
+/**
+ * POST /api/corretora/exit-impersonation
+ * Só responde 204 quando a sessão atual é de fato impersonada.
+ * Para sessão normal, devolve 400 — sem efeito colateral — para não
+ * permitir que a UI do banner seja "forçada" a aparecer via request
+ * direto. Não incrementa token_version: a sessão original do user
+ * segue válida no outro cookie (se existir).
+ */
+async function exitImpersonation(req, res, next) {
+  try {
+    const u = req.corretoraUser;
+    if (!u?.impersonation) {
+      return next(
+        new AppError(
+          "Sessão atual não é impersonada.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400,
+        ),
+      );
+    }
+
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+    });
+
+    // Audit do encerramento — fire-and-forget. Usamos o repo direto
+    // (não o adminAuditService) porque esta rota é da corretora e
+    // não tem req.admin; o admin_id vem da claim preservada no JWT.
+    auditLogsRepo
+      .create({
+        admin_id: u.impersonation.admin_id ?? null,
+        admin_nome: u.impersonation.admin_nome ?? null,
+        action: "corretora.impersonation_ended",
+        target_type: "corretora",
+        target_id: u.corretora_id,
+        meta: {
+          corretora_user_id: u.id,
+          started_at: u.impersonation.started_at,
+        },
+        ip: req.ip,
+        user_agent: req.get("user-agent")?.slice(0, 500) || null,
+      })
+      .catch((err) => {
+        logger.warn(
+          { err, corretoraUserId: u.id },
+          "corretora.impersonation.exit_audit_failed",
+        );
+      });
+
+    logger.info(
+      {
+        corretoraUserId: u.id,
+        corretoraId: u.corretora_id,
+        adminId: u.impersonation.admin_id,
+        startedAt: u.impersonation.started_at,
+      },
+      "corretora.impersonation.exited",
+    );
+
+    return response.ok(res, null, "Impersonação encerrada.");
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao encerrar impersonação.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+module.exports = { login, getMe, logout, exitImpersonation };

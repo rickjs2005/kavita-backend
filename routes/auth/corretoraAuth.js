@@ -63,6 +63,13 @@ router.post(
 );
 router.get("/me", verifyCorretora, ctrl.getMe);
 router.post("/logout", verifyCorretora, ctrl.logout);
+// Sair de impersonação — só responde se a sessão atual é impersonada.
+// Não precisa de Turnstile: o cookie já foi validado como legítimo.
+router.post(
+  "/exit-impersonation",
+  verifyCorretora,
+  ctrl.exitImpersonation,
+);
 
 // Recuperação de senha (Fase 2) — rotas públicas, sem CSRF.
 router.post(

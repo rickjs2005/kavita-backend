@@ -9,8 +9,11 @@ const logger = require("../lib/logger");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const adminRepo = require("../repositories/corretorasAdminRepository");
+const auditRepo = require("../repositories/adminAuditLogsRepository");
+const usersRepo = require("../repositories/corretoraUsersRepository");
 const corretorasService = require("../services/corretorasService");
 const corretoraAuthService = require("../services/corretoraAuthService");
+const auditService = require("../services/adminAuditService");
 const mediaService = require("../services/mediaService");
 const {
   listAdminQuerySchema,
@@ -340,9 +343,151 @@ const getPendingCount = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/admin/mercado-do-cafe/corretoras/:id/audit-logs
+ *
+ * Retorna timeline de ações do admin sobre a corretora: mudança de
+ * status, destaque, aprovação/rejeição da submissão original, convite
+ * de acesso, etc. Fonte: admin_audit_logs. Mescla cronologicamente
+ * (target_type='corretora' direto + target_type='submission' quando
+ * houver submission_id vinculado).
+ */
+const getCorretoraAuditLogs = async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const corretora = await adminRepo.findById(id);
+    if (!corretora) {
+      throw new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404);
+    }
+    const items = await auditRepo.listForCorretora(id, corretora.submission_id, {
+      limit: 50,
+    });
+    return response.ok(res, items);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao carregar histórico.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+};
+
+/**
+ * POST /api/admin/mercado-do-cafe/corretoras/:id/impersonate
+ *
+ * Emite um corretoraToken temporário (30 min) com claim de
+ * impersonação, permitindo ao admin abrir o painel da corretora em
+ * modo suporte — sem trocar senha nem invalidar sessão real.
+ *
+ * O cookie é setado na resposta do admin (same-origin). Admin mantém
+ * seu adminToken; as duas sessões coexistem. A corretora real, se
+ * estiver logada em outro lugar, segue logada (tokenVersion não muda).
+ */
+const impersonateCorretora = async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+
+    const corretora = await adminRepo.findById(id);
+    if (!corretora) {
+      throw new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404);
+    }
+    if (corretora.status !== "active") {
+      throw new AppError(
+        "Só é possível impersonar corretoras ativas.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      );
+    }
+
+    const user = await usersRepo.findByCorretoraId(id);
+    if (!user) {
+      throw new AppError(
+        "Corretora ainda não tem usuário ativo. Envie o convite de primeiro acesso antes.",
+        ERROR_CODES.CONFLICT,
+        409,
+      );
+    }
+    if (!user.is_active) {
+      throw new AppError(
+        "O usuário principal desta corretora está inativo.",
+        ERROR_CODES.CONFLICT,
+        409,
+      );
+    }
+    if (corretoraAuthService.isPendingFirstAccess(user)) {
+      throw new AppError(
+        "Usuário ainda não definiu senha. Impersonação indisponível.",
+        ERROR_CODES.CONFLICT,
+        409,
+      );
+    }
+
+    const token = corretoraAuthService.generateImpersonationToken(user, {
+      adminId: req.admin?.id ?? null,
+      adminNome: req.admin?.nome ?? null,
+    });
+
+    res.cookie("corretoraToken", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: corretoraAuthService.IMPERSONATION_COOKIE_MAX_AGE_MS,
+      path: "/",
+    });
+
+    auditService.record({
+      req,
+      action: "corretora.impersonation_started",
+      targetType: "corretora",
+      targetId: id,
+      meta: {
+        corretora_user_id: user.id,
+        corretora_user_email: user.email,
+      },
+    });
+
+    logger.info(
+      {
+        adminId: req.admin?.id,
+        corretoraId: id,
+        corretoraUserId: user.id,
+      },
+      "corretora.impersonation.started",
+    );
+
+    return response.ok(
+      res,
+      { redirect: "/painel/corretora" },
+      "Impersonação iniciada. Abra o painel em outra aba.",
+    );
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao iniciar impersonação.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+};
+
 module.exports = {
   listCorretoras,
   getById,
+  getCorretoraAuditLogs,
+  impersonateCorretora,
   createCorretora,
   updateCorretora,
   toggleStatus,

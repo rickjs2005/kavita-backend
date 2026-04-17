@@ -130,6 +130,10 @@ async function verifyCorretora(req, _res, next) {
       role: user.role ?? "owner",
       corretora_name: user.corretora_name,
       corretora_slug: user.corretora_slug,
+      // Propaga claim de impersonação (quando presente no JWT). O painel
+      // usa para renderizar banner persistente e o controller de saída
+      // bloqueia sessões normais.
+      impersonation: decoded?.impersonation ?? null,
     };
 
     return next();

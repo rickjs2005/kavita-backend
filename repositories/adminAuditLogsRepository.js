@@ -90,4 +90,33 @@ async function list({ action, target_type, target_id, admin_id, page = 1, limit 
   };
 }
 
-module.exports = { create, list };
+/**
+ * Lista o histórico completo de uma corretora: ações diretas
+ * (target_type='corretora', target_id=corretoraId) + ações sobre a
+ * submissão original (target_type='submission', target_id=submissionId)
+ * mescladas em ordem cronológica decrescente.
+ *
+ * Retorna até `limit` registros. `submissionId` pode ser null — nesse
+ * caso só traz eventos diretos da corretora.
+ */
+async function listForCorretora(corretoraId, submissionId, { limit = 50 } = {}) {
+  const where = ["(target_type = 'corretora' AND target_id = ?)"];
+  const params = [corretoraId];
+
+  if (submissionId) {
+    where.push("(target_type = 'submission' AND target_id = ?)");
+    params.push(submissionId);
+  }
+
+  const sql = `
+    SELECT *
+    FROM admin_audit_logs
+    WHERE ${where.join(" OR ")}
+    ORDER BY created_at DESC
+    LIMIT ?
+  `;
+  const [rows] = await pool.query(sql, [...params, limit]);
+  return rows.map((r) => ({ ...r, meta: parseMeta(r.meta) }));
+}
+
+module.exports = { create, list, listForCorretora };

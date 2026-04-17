@@ -46,6 +46,39 @@ function generateToken(user) {
   });
 }
 
+// TTL curto para impersonação — 30 minutos é suficiente para uma
+// sessão de suporte e limita o raio se o cookie vazar.
+const IMPERSONATION_JWT_EXPIRES_IN = "30m";
+const IMPERSONATION_COOKIE_MAX_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * Gera JWT de impersonação: admin agindo como usuário de corretora.
+ * Carrega a claim `impersonation` com snapshot do admin — o middleware
+ * propaga para req.corretoraUser.impersonation, permitindo:
+ *   - exibir banner persistente "Você está como X" no painel
+ *   - auditar ações tomadas durante a janela como impersonadas
+ *   - bloquear a rota de impersonate-exit para sessões não-impersonadas
+ * Importante: usa o tokenVersion REAL do user (não incrementa). Assim
+ * a sessão original do corretora_user continua válida em paralelo e
+ * não é invalidada quando o admin entra/sai.
+ */
+function generateImpersonationToken(user, { adminId, adminNome }) {
+  const payload = {
+    id: user.id,
+    corretora_id: user.corretora_id,
+    tokenVersion: user.token_version ?? 0,
+    scope: "corretora",
+    impersonation: {
+      admin_id: adminId,
+      admin_nome: adminNome || null,
+      started_at: new Date().toISOString(),
+    },
+  };
+  return jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: IMPERSONATION_JWT_EXPIRES_IN,
+  });
+}
+
 async function findUserByEmail(email) {
   return usersRepo.findByEmail(email);
 }
@@ -238,6 +271,8 @@ module.exports = {
   hashPassword,
   verifyPassword,
   generateToken,
+  generateImpersonationToken,
+  IMPERSONATION_COOKIE_MAX_AGE_MS,
   findUserByEmail,
   findUserById,
   updateLastLogin,

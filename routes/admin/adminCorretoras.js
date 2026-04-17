@@ -32,6 +32,7 @@ const {
 
 router.get("/", ctrl.listCorretoras);
 router.get("/corretoras/:id", ctrl.getById);
+router.get("/corretoras/:id/audit-logs", ctrl.getCorretoraAuditLogs);
 
 router.post(
   "/corretoras",
@@ -68,6 +69,11 @@ router.post(
   validate(inviteCorretoraUserSchema),
   ctrl.inviteCorretoraUser
 );
+
+// Impersonação (Sprint 2 P1): admin recebe um corretoraToken curto
+// (30 min) com claim de impersonação para acessar o painel em modo
+// suporte. Sessão real da corretora não é invalidada.
+router.post("/corretoras/:id/impersonate", ctrl.impersonateCorretora);
 
 // ─── Submissions ────────────────────────────────────────────────────────────
 
