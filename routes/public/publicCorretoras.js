@@ -89,6 +89,15 @@ router.post(
   leadsCtrl.confirmLoteVendido,
 );
 
+// Sprint 7 — Status público do lead. Produtor consulta via link
+// enviado no e-mail de confirmação. Rate-limit leve (family de leads)
+// para não permitir enumeração de IDs. GET é idempotente.
+router.get(
+  "/leads/:id/status/:token",
+  leadsRateLimiter,
+  leadsCtrl.getLeadStatus,
+);
+
 // Detalhe por slug (deve vir depois das rotas nomeadas)
 router.get("/:slug", ctrl.getBySlug);
 

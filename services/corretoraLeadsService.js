@@ -14,7 +14,12 @@ const analyticsService = require("./analyticsService");
 const logger = require("../lib/logger");
 const { normalizePhone } = require("../lib/phoneNormalize");
 const { isCorregoEspecial } = require("../lib/corregosEspeciais");
-const { verifyLoteToken, generateLoteToken } = require("../lib/corretoraLeadTokens");
+const {
+  verifyLoteToken,
+  generateLoteToken,
+  verifyStatusToken,
+  generateStatusToken,
+} = require("../lib/corretoraLeadTokens");
 
 // ---------------------------------------------------------------------------
 // Criação de lead a partir do formulário público.
@@ -105,6 +110,10 @@ async function createLeadFromPublic({ slug, data, meta }) {
         corretoraNome: corretora.name,
         corretoraSlug: corretora.slug,
         retornoLabel,
+        // Sprint 7 — link autenticado por HMAC para o produtor
+        // acompanhar o status do próprio lead sem login.
+        leadId,
+        statusToken: generateStatusToken(leadId),
       })
       .catch((err) => {
         logger.warn(
@@ -573,14 +582,65 @@ async function confirmLoteVendidoFromPublic({ leadId, token }) {
   return { affected_count: affected.length, already_marked: false };
 }
 
+/**
+ * Sprint 7 — Consulta pública do status do lead pelo produtor.
+ * Reutiliza o padrão HMAC do lote-vendido: link na mensagem de
+ * confirmação + endpoint sem login que valida o par (leadId, token).
+ *
+ * Retorno é deliberadamente mínimo: status operacional + corretora
+ * + canal preferido + datas. Não expõe nota interna, laudo, volume
+ * ou qualquer campo que a corretora preenche no painel.
+ */
+async function getPublicLeadStatus({ leadId, token }) {
+  if (!verifyStatusToken(leadId, token)) {
+    throw new AppError(
+      "Link inválido ou expirado.",
+      ERROR_CODES.UNAUTHORIZED,
+      401,
+    );
+  }
+
+  const lead = await leadsRepo.findByIdRaw(leadId);
+  if (!lead) {
+    throw new AppError("Lead não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
+
+  const corretora = await publicCorretorasRepo.findById(lead.corretora_id);
+  // findById pode retornar null se a corretora ficou inativa/arquivada
+  // depois que o lead foi criado. Ainda retornamos status do lead —
+  // só omitimos os canais de contato (produtor não deve ser orientado
+  // a chamar um telefone que já não está mais sendo atendido).
+  const corretoraBlock = corretora
+    ? {
+        name: corretora.name,
+        slug: corretora.slug,
+        whatsapp: corretora.whatsapp ?? null,
+        phone: corretora.phone ?? null,
+        email: corretora.email ?? null,
+      }
+    : null;
+
+  return {
+    id: lead.id,
+    status: lead.status,
+    canal_preferido: lead.canal_preferido ?? null,
+    created_at: lead.created_at,
+    first_response_at: lead.first_response_at ?? null,
+    updated_at: lead.updated_at,
+    corretora: corretoraBlock,
+  };
+}
+
 module.exports = {
   createLeadFromPublic,
   listLeadsForCorretora,
   getSummary,
   updateLead,
   confirmLoteVendidoFromPublic,
-  // Helper exportado p/ uso em controller que precisa devolver o
+  getPublicLeadStatus,
+  // Helpers exportados p/ uso em controller que precisa devolver o
   // token gerado (ex: dev/admin debug, no futuro uso real é gerar
   // do lado do email enviado ao produtor).
   generateLoteToken,
+  generateStatusToken,
 };

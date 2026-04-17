@@ -86,4 +86,37 @@ async function confirmLoteVendido(req, res, next) {
   }
 }
 
-module.exports = { submitLead, confirmLoteVendido };
+/**
+ * GET /api/public/leads/:id/status/:token
+ *
+ * Sprint 7 — Produtor consulta o próprio lead via link enviado no
+ * e-mail de confirmação. Sem cookie, sem login. HMAC valida a posse
+ * legítima do par (id, token).
+ */
+async function getLeadStatus(req, res, next) {
+  try {
+    const leadId = Number(req.params.id);
+    const token = String(req.params.token || "");
+    if (!Number.isInteger(leadId) || leadId <= 0) {
+      throw new AppError(
+        "Link inválido.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      );
+    }
+    const data = await leadsService.getPublicLeadStatus({ leadId, token });
+    return response.ok(res, data);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao buscar status.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+module.exports = { submitLead, confirmLoteVendido, getLeadStatus };

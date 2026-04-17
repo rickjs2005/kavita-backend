@@ -163,6 +163,22 @@ async function findBySlug(slug) {
 }
 
 /**
+ * Lookup por id na camada pública. Mesmo filtro de status/deleted_at
+ * que findBySlug — usado pelo endpoint público de status de lead
+ * para evitar vazar dados de corretora arquivada/inativa ao produtor.
+ */
+async function findById(id) {
+  const sql = `
+    SELECT ${SELECT_COLUMNS}, c.status
+    FROM corretoras c
+    WHERE c.id = ? AND c.status = 'active' AND c.deleted_at IS NULL
+    LIMIT 1
+  `;
+  const [rows] = await pool.query(sql, [id]);
+  return normalizeRow(rows[0]) ?? null;
+}
+
+/**
  * List distinct cities that have active corretoras — used for filters.
  */
 async function listCities() {
@@ -179,5 +195,6 @@ async function listCities() {
 module.exports = {
   list,
   findBySlug,
+  findById,
   listCities,
 };

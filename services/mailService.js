@@ -226,11 +226,20 @@ async function sendLeadProducerConfirmationEmail({
   corretoraNome,
   corretoraSlug,
   retornoLabel,
+  leadId,
+  statusToken,
 }) {
   const appUrl = config.appUrl.replace(/\/$/, "");
   const corretoraUrl = corretoraSlug
     ? `${appUrl}/mercado-do-cafe/corretoras/${corretoraSlug}`
     : `${appUrl}/mercado-do-cafe/corretoras`;
+  // Link único para consultar status do lead (Sprint 7). Emitido só
+  // quando o caller forneceu leadId + statusToken; ausência não
+  // bloqueia o envio do e-mail.
+  const statusUrl =
+    leadId && statusToken
+      ? `${appUrl}/mercado-do-cafe/lead-status/${leadId}/${statusToken}`
+      : null;
 
   const safeProdutor = (produtorNome || "produtor(a)")
     .replace(/&/g, "&amp;")
@@ -269,7 +278,20 @@ async function sendLeadProducerConfirmationEmail({
             Ver a corretora
           </a>
         </p>
-        <p style="color:#57534e;font-size:13px;line-height:1.6;">
+        ${
+          statusUrl
+            ? `<p style="margin:16px 0 0;color:#57534e;font-size:13px;line-height:1.6;">
+                 Para acompanhar o status do seu contato a qualquer momento:
+               </p>
+               <p style="margin:8px 0 0;">
+                 <a href="${statusUrl}"
+                    style="color:#b45309;font-weight:600;text-decoration:underline;">
+                   Acompanhar meu contato
+                 </a>
+               </p>`
+            : ""
+        }
+        <p style="color:#57534e;font-size:13px;line-height:1.6;margin-top:20px;">
           Se a corretora não retornar em um dia útil, responda este e-mail que a equipe de curadoria da Kavita ajuda a destravar o contato.
         </p>
         <p style="color:#78716c;font-size:12px;margin-top:28px;">
@@ -285,9 +307,12 @@ async function sendLeadProducerConfirmationEmail({
         : `A corretora ${corretoraNome || ""} recebeu seu contato e vai retornar em breve.`,
       "",
       `Ver a corretora: ${corretoraUrl}`,
+      statusUrl ? `Acompanhar meu contato: ${statusUrl}` : null,
       "",
       "— Kavita · Mercado do Café",
-    ].join("\n"),
+    ]
+      .filter(Boolean)
+      .join("\n"),
   });
 }
 
