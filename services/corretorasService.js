@@ -96,6 +96,17 @@ async function toggleStatus(id, status) {
   await adminRepo.updateStatus(id, status);
 }
 
+// Cap global de destaques. Destaque é espaço escasso por design:
+// se "todo mundo é destaque, ninguém é". Valor configurável por env
+// para permitir ajuste por ambiente/região sem redeploy de código.
+// Default 5 é dimensionado para a Zona da Mata mineira — cabe uma
+// corretora forte por micro-região (Manhuaçu, Reduto, Simonésia,
+// Manhumirim, Lajinha/Caparaó).
+const MAX_FEATURED_CORRETORAS = (() => {
+  const raw = Number.parseInt(process.env.MAX_FEATURED_CORRETORAS ?? "", 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 5;
+})();
+
 async function toggleFeatured(id, is_featured) {
   const current = await adminRepo.findById(id);
   if (!current) {
@@ -107,6 +118,20 @@ async function toggleFeatured(id, is_featured) {
       ERROR_CODES.VALIDATION_ERROR,
       400
     );
+  }
+  // Cap aplicado só ao LIGAR destaque. Desligar (is_featured=false)
+  // nunca é bloqueado. Se a corretora alvo já está em destaque, não
+  // estamos consumindo um novo slot — deixa passar idempotente.
+  if (is_featured && !current.is_featured) {
+    const currentFeatured = await adminRepo.countFeatured();
+    if (currentFeatured >= MAX_FEATURED_CORRETORAS) {
+      throw new AppError(
+        `Limite de destaques atingido (${MAX_FEATURED_CORRETORAS}). Remova o destaque de outra corretora antes de destacar esta.`,
+        ERROR_CODES.CONFLICT,
+        409,
+        { current: currentFeatured, max: MAX_FEATURED_CORRETORAS },
+      );
+    }
   }
   await adminRepo.updateFeatured(id, is_featured);
 }

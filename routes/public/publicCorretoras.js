@@ -40,9 +40,13 @@ router.get("/cities", ctrl.listCities);
 // Submissão pública de cadastro (multipart para logo).
 // Rate limit vem ANTES do upload — caso o IP esteja bloqueado, não
 // gastamos disco/I/O recebendo o multipart antes de rejeitar.
+// Turnstile também vem antes do multer: o frontend envia o token no
+// header X-Turnstile-Token, então não precisamos do body parsed para
+// validar e evitamos orfanizar o logo em caso de fail-closed.
 router.post(
   "/submit",
   submitRateLimiter,
+  verifyTurnstile,
   upload.single("logo"),
   validate(submitCorretoraSchema),
   ctrl.submitCorretora

@@ -81,7 +81,14 @@ async function list({ city, featured, search, page, limit }) {
   }
 
   if (search) {
-    where.push("(c.name LIKE ? OR c.city LIKE ?)");
+    // COLLATE utf8mb4_general_ci é accent-insensitive em MySQL: permite
+    // matchear "manhuacu" com "Manhuaçu" (case + acentos). A coluna
+    // em si já deve ser utf8mb4, então o cast só é cosmético — mas
+    // garante o comportamento mesmo se alguma coluna vier com collation
+    // case-sensitive herdada de migração antiga.
+    where.push(
+      "(c.name LIKE ? COLLATE utf8mb4_general_ci OR c.city LIKE ? COLLATE utf8mb4_general_ci)",
+    );
     const term = `%${search}%`;
     params.push(term, term);
   }
@@ -93,11 +100,14 @@ async function list({ city, featured, search, page, limit }) {
   const total = Number(countRows[0]?.total || 0);
 
   const offset = (page - 1) * limit;
+  // COALESCE estabiliza a ordenação quando sort_order está NULL para
+  // corretoras antigas (antes de sort_order existir). Sem o fallback,
+  // MySQL ordenava NULLs primeiro e embaralhava a vitrine a cada query.
   const dataSql = `
     SELECT ${SELECT_COLUMNS}
     FROM corretoras c
     WHERE ${whereClause}
-    ORDER BY c.is_featured DESC, c.sort_order ASC, c.name ASC
+    ORDER BY c.is_featured DESC, COALESCE(c.sort_order, 999999) ASC, c.name ASC
     LIMIT ? OFFSET ?
   `;
 

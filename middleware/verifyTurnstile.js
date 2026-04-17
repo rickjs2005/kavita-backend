@@ -25,12 +25,26 @@ const SITEVERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 const TIMEOUT_MS = 5000;
 const TOKEN_FIELDS = ["cf-turnstile-response", "turnstile_token"];
+// Headers aceitos para rotas que rodam o middleware ANTES do body
+// parser (ex.: multipart). Clientes devem preferir o header para evitar
+// orfanizar uploads em caso de falha do Turnstile.
+const TOKEN_HEADERS = ["x-turnstile-token", "cf-turnstile-response"];
 
-function extractToken(body) {
-  if (!body || typeof body !== "object") return null;
-  for (const f of TOKEN_FIELDS) {
-    const v = body[f];
-    if (typeof v === "string" && v.trim().length > 0) return v.trim();
+function extractToken(req) {
+  const body = req?.body;
+  if (body && typeof body === "object") {
+    for (const f of TOKEN_FIELDS) {
+      const v = body[f];
+      if (typeof v === "string" && v.trim().length > 0) return v.trim();
+    }
+  }
+  // Fallback: header — útil quando o middleware roda antes do body
+  // parser (multipart). req.get() é case-insensitive.
+  if (typeof req?.get === "function") {
+    for (const h of TOKEN_HEADERS) {
+      const v = req.get(h);
+      if (typeof v === "string" && v.trim().length > 0) return v.trim();
+    }
   }
   return null;
 }
@@ -57,7 +71,7 @@ async function verifyTurnstile(req, _res, next) {
     return next();
   }
 
-  const token = extractToken(req.body);
+  const token = extractToken(req);
   if (!token) {
     return next(
       new AppError(

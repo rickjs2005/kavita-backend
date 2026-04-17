@@ -146,6 +146,18 @@ async function clearFeatured(id) {
   await pool.query(sql, [id]);
 }
 
+/**
+ * Conta corretoras ativas em destaque. Usado pelo service para aplicar
+ * o cap global (MAX_FEATURED_CORRETORAS) antes de permitir novo destaque.
+ * Só conta status = 'active' porque destaque de inativa é bloqueado.
+ */
+async function countFeatured() {
+  const [rows] = await pool.query(
+    "SELECT COUNT(*) AS total FROM corretoras WHERE is_featured = 1 AND status = 'active'",
+  );
+  return Number(rows[0]?.total || 0);
+}
+
 // ─── Submissions ────────────────────────────────────────────────────────────
 
 async function listSubmissions({ status, page, limit }) {
@@ -261,6 +273,7 @@ module.exports = {
   updateStatus,
   updateFeatured,
   clearFeatured,
+  countFeatured,
   // Submissions
   listSubmissions,
   findSubmissionById,

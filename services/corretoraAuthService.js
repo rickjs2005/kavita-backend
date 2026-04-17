@@ -12,6 +12,7 @@ const usersRepo = require("../repositories/corretoraUsersRepository");
 const adminRepo = require("../repositories/corretorasAdminRepository");
 const resetTokens = require("./passwordResetTokenService");
 const mailService = require("./mailService");
+const planService = require("./planService");
 const logger = require("../lib/logger");
 const { withTransaction } = require("../lib/withTransaction");
 
@@ -160,6 +161,23 @@ async function inviteCorretoraUser(corretoraId, { nome, email }, { adminId } = {
           "Já existe um usuário com este e-mail.",
           ERROR_CODES.CONFLICT,
           409
+        );
+      }
+      // Harmoniza com a checagem do painel da corretora (enforceUserLimit
+      // em routes/corretoraPanel/corretoraTeam.js). Antes desta sprint, o
+      // admin podia estourar o max_users que o painel já respeitava.
+      // countByCorretoraId roda no pool (não recebe conn); a janela de
+      // race para dois admins convidarem simultaneamente é aceitável —
+      // cenário raríssimo e divergência máxima é +1 acima do limite.
+      const planCtx = await planService.getPlanContext(corretoraId);
+      const maxUsers = planCtx.capabilities.max_users ?? 1;
+      const currentCount = await usersRepo.countByCorretoraId(corretoraId);
+      if (currentCount + 1 > maxUsers) {
+        throw new AppError(
+          `O plano atual (${planCtx.plan.name}) permite até ${maxUsers} usuário${maxUsers > 1 ? "s" : ""}. Faça upgrade antes de convidar mais membros.`,
+          ERROR_CODES.FORBIDDEN,
+          403,
+          { capability: "max_users", current: currentCount, max: maxUsers },
         );
       }
       userId = await usersRepo.createPending(

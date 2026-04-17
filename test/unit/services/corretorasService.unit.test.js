@@ -18,6 +18,12 @@ describe("services/corretorasService", () => {
     "../../../repositories/corretoraUsersRepository",
   );
   const mailPath = require.resolve("../../../services/mailService");
+  const plansRepoPath = require.resolve(
+    "../../../repositories/plansRepository",
+  );
+  const subsRepoPath = require.resolve(
+    "../../../repositories/subscriptionsRepository",
+  );
 
   let svc;
   let adminRepo;
@@ -65,6 +71,16 @@ describe("services/corretorasService", () => {
       sendCorretoraApprovedEmail: jest.fn().mockResolvedValue(undefined),
       sendCorretoraInviteEmail: jest.fn().mockResolvedValue(undefined),
       sendCorretoraRejectionEmail: jest.fn().mockResolvedValue(undefined),
+    }));
+
+    // Auto-trial na aprovação (commit 5f8e4e0) — sem esses mocks os
+    // testes de approveSubmission quebram ao tentar ler planos no pool.
+    jest.doMock(plansRepoPath, () => ({
+      findBySlug: jest.fn().mockResolvedValue(null),
+    }));
+    jest.doMock(subsRepoPath, () => ({
+      create: jest.fn().mockResolvedValue(undefined),
+      getCurrentForCorretora: jest.fn(),
     }));
 
     adminRepo = require(adminRepoPath);
