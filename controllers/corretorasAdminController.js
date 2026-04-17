@@ -10,6 +10,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const adminRepo = require("../repositories/corretorasAdminRepository");
 const auditRepo = require("../repositories/adminAuditLogsRepository");
+const subEventsRepo = require("../repositories/subscriptionEventsRepository");
 const usersRepo = require("../repositories/corretoraUsersRepository");
 const corretorasService = require("../services/corretorasService");
 const corretoraAuthService = require("../services/corretoraAuthService");
@@ -44,10 +45,16 @@ const listCorretoras = async (req, res, next) => {
 
 /**
  * GET /api/admin/corretoras/:id
+ *
+ * Admin vê corretora mesmo quando arquivada (precisa ser capaz de
+ * restaurar/editar após arquivar). A listagem tem default
+ * include_archived=0; o lookup por id ignora esse default.
  */
 const getById = async (req, res, next) => {
   try {
-    const corretora = await adminRepo.findById(req.params.id);
+    const corretora = await adminRepo.findById(req.params.id, {
+      includeArchived: true,
+    });
     if (!corretora) {
       return next(
         new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404)
@@ -380,6 +387,37 @@ const getCorretoraAuditLogs = async (req, res, next) => {
 };
 
 /**
+ * GET /api/admin/mercado-do-cafe/corretoras/:id/subscription-events
+ * Timeline de eventos de assinatura para auditoria financeira e
+ * análise de churn (usado pela UI admin em ambas trilhas — audit
+ * e subscription — na página de edição).
+ */
+const getCorretoraSubscriptionEvents = async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const corretora = await adminRepo.findById(id, { includeArchived: true });
+    if (!corretora) {
+      throw new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404);
+    }
+    const items = await subEventsRepo.listForCorretora(id, { limit: 50 });
+    return response.ok(res, items);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao carregar eventos de assinatura.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+};
+
+/**
  * POST /api/admin/mercado-do-cafe/corretoras/:id/archive
  * Soft delete — preserva histórico/FK, tira da vitrine.
  */
@@ -600,6 +638,7 @@ module.exports = {
   listCorretoras,
   getById,
   getCorretoraAuditLogs,
+  getCorretoraSubscriptionEvents,
   impersonateCorretora,
   archiveCorretora,
   restoreCorretora,

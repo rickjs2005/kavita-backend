@@ -7,6 +7,7 @@
 const { response } = require("../../lib");
 const planService = require("../../services/planService");
 const usersRepo = require("../../repositories/corretoraUsersRepository");
+const subEventsRepo = require("../../repositories/subscriptionEventsRepository");
 
 async function getMyPlan(req, res, next) {
   try {
@@ -74,6 +75,10 @@ async function requestUpgrade(req, res, next) {
       opts: {
         status: "active",
         payment_method: "manual",
+        // actor_type/id vão para subscription_events — classifica o
+        // upgrade como self-service (não admin) para análise de churn.
+        actor_type: "corretora_user",
+        actor_id: req.corretoraUser.id,
         meta: {
           source: "corretora_self_upgrade",
           requested_by: req.corretoraUser.id,
@@ -87,4 +92,27 @@ async function requestUpgrade(req, res, next) {
   }
 }
 
-module.exports = { getMyPlan, listAvailablePlans, requestUpgrade };
+/**
+ * GET /api/corretora/plan/events
+ * Histórico de eventos da própria corretora — trialing, upgrade,
+ * downgrade, expiração, etc. Fonte de verdade para a UI do painel
+ * renderizar linha do tempo de assinatura.
+ */
+async function listMyPlanEvents(req, res, next) {
+  try {
+    const corretoraId = req.corretoraUser.corretora_id;
+    const items = await subEventsRepo.listForCorretora(corretoraId, {
+      limit: 30,
+    });
+    response.ok(res, items);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  getMyPlan,
+  listAvailablePlans,
+  requestUpgrade,
+  listMyPlanEvents,
+};

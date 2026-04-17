@@ -35,6 +35,10 @@ const {
 router.get("/", ctrl.listCorretoras);
 router.get("/corretoras/:id", ctrl.getById);
 router.get("/corretoras/:id/audit-logs", ctrl.getCorretoraAuditLogs);
+router.get(
+  "/corretoras/:id/subscription-events",
+  ctrl.getCorretoraSubscriptionEvents,
+);
 
 router.post(
   "/corretoras",

@@ -7,6 +7,7 @@ const ctrl = require("../../controllers/corretoraPanel/planCorretoraController")
 
 router.get("/", ctrl.getMyPlan);
 router.get("/available", ctrl.listAvailablePlans);
+router.get("/events", ctrl.listMyPlanEvents);
 router.post("/upgrade", ctrl.requestUpgrade);
 
 module.exports = router;
