@@ -145,6 +145,19 @@ const createLeadSchema = z.object({
     .optional()
     .nullable()
     .transform(trimOrNull),
+  // Sprint 1 — E-mail opcional do produtor. Quando preenchido,
+  // disparamos confirmação automática "seu interesse foi enviado".
+  // Aceita vazio/null para preservar fluxo de quem prefere só WhatsApp.
+  email: z
+    .string()
+    .max(200)
+    .optional()
+    .nullable()
+    .transform(trimOrNull)
+    .refine(
+      (v) => v == null || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+      { message: "E-mail inválido." },
+    ),
   mensagem: z
     .string()
     .max(1000, "Mensagem deve ter no máximo 1000 caracteres.")

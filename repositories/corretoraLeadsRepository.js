@@ -11,6 +11,7 @@ async function create({
   nome,
   telefone,
   telefone_normalizado,
+  email,
   cidade,
   mensagem,
   objetivo,
@@ -24,16 +25,17 @@ async function create({
 }) {
   const [result] = await pool.query(
     `INSERT INTO corretora_leads
-       (corretora_id, nome, telefone, telefone_normalizado,
+       (corretora_id, nome, telefone, telefone_normalizado, email,
         cidade, mensagem, objetivo, tipo_cafe, volume_range,
         canal_preferido, corrego_localidade, safra_tipo,
         source_ip, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       corretora_id,
       nome,
       telefone,
       telefone_normalizado ?? null,
+      email ?? null,
       cidade ?? null,
       mensagem ?? null,
       objetivo ?? null,

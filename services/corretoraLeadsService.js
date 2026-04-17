@@ -41,6 +41,7 @@ async function createLeadFromPublic({ slug, data, meta }) {
     nome: data.nome,
     telefone: data.telefone,
     telefone_normalizado,
+    email: data.email,
     cidade: data.cidade,
     mensagem: data.mensagem,
     objetivo: data.objetivo,
@@ -89,6 +90,34 @@ async function createLeadFromPublic({ slug, data, meta }) {
       "corretora.lead.email_failed"
     );
   });
+
+  // Sprint 1 — Confirmação ao produtor. Dispara só se o produtor
+  // deixou e-mail no formulário. Fire-and-forget: falha não impede a
+  // criação do lead nem a notificação à corretora.
+  if (data.email) {
+    const retornoLabel = data.canal_preferido
+      ? LABEL_CANAL[data.canal_preferido]
+      : null;
+    mailService
+      .sendLeadProducerConfirmationEmail({
+        toEmail: data.email,
+        produtorNome: data.nome,
+        corretoraNome: corretora.name,
+        corretoraSlug: corretora.slug,
+        retornoLabel,
+      })
+      .catch((err) => {
+        logger.warn(
+          {
+            err: err?.message ?? String(err),
+            leadId,
+            corretoraId: corretora.id,
+            produtorEmail: data.email,
+          },
+          "corretora.lead.producer_confirmation_failed"
+        );
+      });
+  }
 
   // In-panel notification (Sprint 6B+7) — fire-and-forget como email.
   // Pertence à corretora, toda a equipe vê; marcação de leitura é
@@ -194,7 +223,7 @@ async function notifyCorretoraOfNewLead(corretora, lead) {
     lead.volume_range === "500_mais" ||
     isCorregoEspecial(lead.corrego_localidade);
   const priorityBadge = isHighPriority
-    ? `<span style="background:#b45309;color:white;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Alta prioridade</span>`
+    ? "<span style=\"background:#b45309;color:white;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;\">Alta prioridade</span>"
     : "";
 
   const subject = isHighPriority
@@ -277,7 +306,7 @@ async function notifyCorretoraOfNewLead(corretora, lead) {
 
   const textLines = [
     `Novo contato para ${corretora.name}${isHighPriority ? " [ALTA PRIORIDADE]" : ""}`,
-    ``,
+    "",
     `Nome: ${lead.nome}`,
     `Telefone: ${lead.telefone}`,
     lead.cidade ? `Cidade: ${lead.cidade}` : null,
@@ -286,7 +315,7 @@ async function notifyCorretoraOfNewLead(corretora, lead) {
     lead.volume_range ? `Volume estimado: ${LABEL_VOLUME[lead.volume_range]}` : null,
     lead.canal_preferido ? `Prefere contato por: ${LABEL_CANAL[lead.canal_preferido]}` : null,
     lead.mensagem ? `Mensagem: ${lead.mensagem}` : null,
-    ``,
+    "",
     `Responder pelo painel: ${process.env.APP_URL || ""}/painel/corretora/leads`,
   ];
   const text = textLines.filter(Boolean).join("\n");

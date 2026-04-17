@@ -212,6 +212,86 @@ async function sendCorretoraResetPasswordEmail(toEmail, token) {
 }
 
 /**
+ * Sprint 1 — Confirmação ao produtor quando ele envia um lead público
+ * a uma corretora. Fecha o loop "mandei, sumiu" transformando o ato
+ * de enviar mensagem em experiência observável pelo produtor.
+ *
+ * `retornoLabel` descreve o canal escolhido (WhatsApp/Ligação/E-mail)
+ * em texto legível — já pré-formatado pela camada que chama esta
+ * função, pra não duplicar o mapa de enums aqui.
+ */
+async function sendLeadProducerConfirmationEmail({
+  toEmail,
+  produtorNome,
+  corretoraNome,
+  corretoraSlug,
+  retornoLabel,
+}) {
+  const appUrl = config.appUrl.replace(/\/$/, "");
+  const corretoraUrl = corretoraSlug
+    ? `${appUrl}/mercado-do-cafe/corretoras/${corretoraSlug}`
+    : `${appUrl}/mercado-do-cafe/corretoras`;
+
+  const safeProdutor = (produtorNome || "produtor(a)")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const safeCorretora = (corretoraNome || "a corretora")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const safeRetorno = retornoLabel
+    ? String(retornoLabel)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+    : null;
+
+  const retornoLine = safeRetorno
+    ? `A corretora recebeu o seu contato e vai retornar por <strong>${safeRetorno}</strong> em breve.`
+    : "A corretora recebeu o seu contato e vai retornar pelo canal que você escolheu em breve.";
+
+  await transporter.sendMail({
+    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+    to: toEmail,
+    subject: `Seu interesse foi enviado para ${corretoraNome || "a corretora"}`,
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; color:#1c1917;">
+        <h2 style="color:#15803d;margin:0 0 12px;">☕ Contato registrado</h2>
+        <p>Olá, ${safeProdutor}.</p>
+        <p>${retornoLine}</p>
+        <p>Enquanto isso, você pode conferir novamente a página da <strong>${safeCorretora}</strong> e, se quiser, chamar direto pelo WhatsApp:</p>
+        <p style="margin:24px 0;">
+          <a href="${corretoraUrl}"
+             style="display:inline-block;background:#15803d;color:white;
+                    padding:12px 24px;border-radius:8px;text-decoration:none;
+                    font-weight:600;">
+            Ver a corretora
+          </a>
+        </p>
+        <p style="color:#57534e;font-size:13px;line-height:1.6;">
+          Se a corretora não retornar em um dia útil, responda este e-mail que a equipe de curadoria da Kavita ajuda a destravar o contato.
+        </p>
+        <p style="color:#78716c;font-size:12px;margin-top:28px;">
+          — Kavita · Mercado do Café<br/>
+          <span style="color:#a8a29e;">Zona da Mata mineira</span>
+        </p>
+      </div>
+    `,
+    text: [
+      `Olá, ${produtorNome || "produtor(a)"}.`,
+      retornoLabel
+        ? `A corretora ${corretoraNome || ""} recebeu seu contato e vai retornar por ${retornoLabel} em breve.`
+        : `A corretora ${corretoraNome || ""} recebeu seu contato e vai retornar em breve.`,
+      "",
+      `Ver a corretora: ${corretoraUrl}`,
+      "",
+      "— Kavita · Mercado do Café",
+    ].join("\n"),
+  });
+}
+
+/**
  * Envia e-mails transacionais (confirmação, comprovante, envio, notificações…)
  * @param {string} to
  * @param {string} subject
@@ -235,5 +315,6 @@ module.exports = {
   sendCorretoraInviteEmail,
   sendCorretoraApprovedEmail,
   sendCorretoraRejectionEmail,
+  sendLeadProducerConfirmationEmail,
   sendTransactionalEmail,
 };
