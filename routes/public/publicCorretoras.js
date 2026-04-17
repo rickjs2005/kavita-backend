@@ -31,6 +31,14 @@ const submitRateLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => `corretora_submit:${req.ip}`,
 });
 
+// Rate-limit específico do status público de lead. Chave composta por
+// token + IP: produtor legítimo abre o link do e-mail algumas vezes por
+// dia, enquanto polling abusivo é capturado por IP. Evita usar o
+// leadsRateLimiter genérico (que conta submits + status no mesmo balde).
+const statusRateLimiter = createAdaptiveRateLimiter({
+  keyGenerator: (req) => `corretora_lead_status:${req.params.token}:${req.ip}`,
+});
+
 // Listagem pública de corretoras ativas
 router.get("/", ctrl.listCorretoras);
 
@@ -90,11 +98,13 @@ router.post(
 );
 
 // Sprint 7 — Status público do lead. Produtor consulta via link
-// enviado no e-mail de confirmação. Rate-limit leve (family de leads)
-// para não permitir enumeração de IDs. GET é idempotente.
+// enviado no e-mail de confirmação. Rate-limit dedicado por
+// token+IP — não compartilha balde com submits, e bloqueia polling
+// abusivo do mesmo token sem punir o produtor que abre o link
+// algumas vezes por dia.
 router.get(
   "/leads/:id/status/:token",
-  leadsRateLimiter,
+  statusRateLimiter,
   leadsCtrl.getLeadStatus,
 );
 

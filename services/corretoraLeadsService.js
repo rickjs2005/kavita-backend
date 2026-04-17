@@ -9,6 +9,7 @@ const ERROR_CODES = require("../constants/ErrorCodes");
 const leadsRepo = require("../repositories/corretoraLeadsRepository");
 const publicCorretorasRepo = require("../repositories/corretorasPublicRepository");
 const notificationsRepo = require("../repositories/corretoraNotificationsRepository");
+const usersRepo = require("../repositories/corretoraUsersRepository");
 const mailService = require("./mailService");
 const analyticsService = require("./analyticsService");
 const logger = require("../lib/logger");
@@ -222,8 +223,55 @@ const LABEL_CANAL = {
   email: "E-mail",
 };
 
+/**
+ * Coleta destinatários do e-mail operacional de um novo lead.
+ * Inclui o e-mail institucional da corretora (quando existe) + todos
+ * os corretora_users com is_active=true E password_hash != null
+ * (ativados, com senha definida — quem pode entrar no painel).
+ *
+ * Dedupe case-insensitive: se o institucional bate com um user, só
+ * manda uma vez. Usuários pendentes de primeiro acesso ficam fora —
+ * receber notificação operacional sem conseguir abrir o painel cria
+ * confusão e pode até expor informação antes da ativação.
+ */
+async function collectLeadRecipients(corretora) {
+  const emails = [];
+  const seen = new Set();
+
+  function push(email) {
+    if (!email || typeof email !== "string") return;
+    const norm = email.trim().toLowerCase();
+    if (!norm || seen.has(norm)) return;
+    seen.add(norm);
+    emails.push(email.trim());
+  }
+
+  // E-mail institucional (fallback histórico — preserva comportamento
+  // pré-expansão para corretoras sem users ativados).
+  push(corretora?.email);
+
+  // Todos os users ativos e ativados. Falha aqui é logada mas não
+  // bloqueia o envio para o institucional.
+  if (corretora?.id) {
+    try {
+      const team = await usersRepo.listTeamByCorretoraId(corretora.id);
+      for (const u of team) {
+        if (u.is_active && u.activated) push(u.email);
+      }
+    } catch (err) {
+      logger.warn(
+        { err: err?.message ?? String(err), corretoraId: corretora.id },
+        "corretora.lead.team_lookup_failed",
+      );
+    }
+  }
+
+  return emails;
+}
+
 async function notifyCorretoraOfNewLead(corretora, lead) {
-  if (!corretora?.email) return; // nada para notificar
+  const recipients = await collectLeadRecipients(corretora);
+  if (recipients.length === 0) return; // nada para notificar
 
   // Identifica "prioridade" para destacar leads com volume alto OU
   // córrego mapeado como região de café especial (Sprint 7).
@@ -329,7 +377,35 @@ async function notifyCorretoraOfNewLead(corretora, lead) {
   ];
   const text = textLines.filter(Boolean).join("\n");
 
-  await mailService.sendTransactionalEmail(corretora.email, subject, html, text);
+  // Envia individualmente para cada destinatário. Loop sequencial para
+  // não estourar throttle do transporte; falha por destinatário é
+  // logada sem derrubar os demais. Resposta geral é bem-sucedida se
+  // ao menos um envio passou — o caller (createLeadFromPublic) já
+  // trata tudo como fire-and-forget.
+  const failures = [];
+  for (const to of recipients) {
+    try {
+      await mailService.sendTransactionalEmail(to, subject, html, text);
+    } catch (err) {
+      failures.push({ to, error: err?.message ?? String(err) });
+    }
+  }
+  if (failures.length > 0) {
+    logger.warn(
+      {
+        corretoraId: corretora.id,
+        leadId: lead.id,
+        totalRecipients: recipients.length,
+        failures,
+      },
+      "corretora.lead.notification_partial_failure",
+    );
+    // Se TODOS falharam, propaga erro para o caller logar como falha
+    // total (padrão pré-existente).
+    if (failures.length === recipients.length) {
+      throw new Error("Todos os envios falharam");
+    }
+  }
 }
 
 function escapeHtml(str) {

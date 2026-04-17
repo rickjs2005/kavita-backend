@@ -55,7 +55,8 @@ async function moderate({ id, status, reviewed_by, rejection_reason }, conn = po
 async function listPublicByCorretoraId(corretoraId, { limit = 20 } = {}) {
   const [rows] = await pool.query(
     `SELECT
-       id, lead_id, nome_autor, cidade_autor, rating, comentario, created_at
+       id, lead_id, nome_autor, cidade_autor, rating, comentario, created_at,
+       corretora_reply, replied_at
      FROM corretora_reviews
      WHERE corretora_id = ? AND status = 'approved'
      ORDER BY created_at DESC
@@ -64,6 +65,8 @@ async function listPublicByCorretoraId(corretoraId, { limit = 20 } = {}) {
   );
   // lead_id não é exposto ao público, mas usamos para marcar
   // "cliente verificado" no cliente (boolean derivado).
+  // replied_by NÃO entra no payload público — só serve para auditoria
+  // interna do tenant (quem respondeu).
   return rows.map((r) => ({
     id: r.id,
     nome_autor: r.nome_autor,
@@ -72,7 +75,64 @@ async function listPublicByCorretoraId(corretoraId, { limit = 20 } = {}) {
     comentario: r.comentario,
     verified_lead: Boolean(r.lead_id),
     created_at: r.created_at,
+    corretora_reply: r.corretora_reply ?? null,
+    replied_at: r.replied_at ?? null,
   }));
+}
+
+// ─── Read + Write — painel da corretora (tenant-scoped) ─────────────────────
+
+/**
+ * Lista reviews aprovadas da própria corretora. Inclui o reply para a UI
+ * mostrar estado atual e permitir edição. Limitado a status='approved':
+ * pending/rejected são problema do admin, não do tenant.
+ */
+async function listForCorretora(corretoraId, { limit = 50 } = {}) {
+  const [rows] = await pool.query(
+    `SELECT
+       id, nome_autor, cidade_autor, rating, comentario, created_at,
+       corretora_reply, replied_at, replied_by, lead_id
+     FROM corretora_reviews
+     WHERE corretora_id = ? AND status = 'approved'
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    [corretoraId, limit],
+  );
+  return rows.map((r) => ({
+    ...r,
+    rating: Number(r.rating),
+    verified_lead: Boolean(r.lead_id),
+  }));
+}
+
+/**
+ * Grava (ou atualiza) o reply público da corretora. Guard duplo:
+ * corretora_id garante isolamento tenant; status='approved' evita
+ * responder reviews pending/rejected. Reply vazio/null limpa —
+ * corretora pode retirar a resposta.
+ */
+async function setReply({ id, corretora_id, user_id, reply }) {
+  const text = reply ? String(reply).trim() : "";
+  if (text.length > 0) {
+    const [result] = await pool.query(
+      `UPDATE corretora_reviews
+         SET corretora_reply = ?,
+             replied_at = NOW(),
+             replied_by = ?
+       WHERE id = ? AND corretora_id = ? AND status = 'approved'`,
+      [text, user_id ?? null, id, corretora_id],
+    );
+    return result.affectedRows;
+  }
+  const [result] = await pool.query(
+    `UPDATE corretora_reviews
+       SET corretora_reply = NULL,
+           replied_at = NULL,
+           replied_by = NULL
+     WHERE id = ? AND corretora_id = ? AND status = 'approved'`,
+    [id, corretora_id],
+  );
+  return result.affectedRows;
 }
 
 async function getAggregateByCorretoraId(corretoraId) {
@@ -157,6 +217,8 @@ module.exports = {
   moderate,
   listPublicByCorretoraId,
   getAggregateByCorretoraId,
+  listForCorretora,
+  setReply,
   listAdmin,
   getPendingCount,
   findById,

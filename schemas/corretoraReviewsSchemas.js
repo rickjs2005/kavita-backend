@@ -56,6 +56,22 @@ const moderateReviewSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Corretora reply (PATCH /api/corretora/reviews/:id/reply)
+// ---------------------------------------------------------------------------
+//
+// Body { reply: string | null }:
+//   - string com conteúdo → grava/atualiza reply público
+//   - string vazia / null → remove reply (corretora desiste da resposta)
+const replyReviewSchema = z.object({
+  reply: z
+    .string()
+    .max(1000, "Resposta deve ter no máximo 1000 caracteres.")
+    .optional()
+    .nullable()
+    .transform((v) => (typeof v === "string" ? v.trim() : null)),
+});
+
+// ---------------------------------------------------------------------------
 // Query schemas
 // ---------------------------------------------------------------------------
 
@@ -72,5 +88,6 @@ const listReviewsAdminQuerySchema = z.object({
 module.exports = {
   createReviewSchema,
   moderateReviewSchema,
+  replyReviewSchema,
   listReviewsAdminQuerySchema,
 };
