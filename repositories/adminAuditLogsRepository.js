@@ -42,13 +42,38 @@ async function create({
   return result.insertId;
 }
 
-async function list({ action, target_type, target_id, admin_id, page = 1, limit = 50 } = {}) {
+/**
+ * Fase 7 — scopes agrupam prefixes de action em categorias visíveis
+ * no filtro. Ordem dos prefixes não importa (reescrevemos como
+ * `action LIKE ? OR action LIKE ?` no WHERE). Mantidos em um mapa
+ * exportado para o controller validar o valor recebido.
+ */
+const SCOPE_PREFIXES = {
+  mercado_cafe: ["corretora.", "submission.", "review.", "plan.", "subscription.", "team."],
+  monetizacao: ["plan.", "subscription.", "city_promotion."],
+  reviews: ["review."],
+  planos: ["plan."],
+  corretoras: ["corretora.", "submission."],
+  assinaturas: ["subscription.", "plan.capabilities_broadcast"],
+};
+
+async function list({ action, action_prefix, scope, target_type, target_id, admin_id, page = 1, limit = 50 } = {}) {
   const where = ["1=1"];
   const params = [];
 
   if (action) {
     where.push("action = ?");
     params.push(action);
+  }
+  if (action_prefix) {
+    where.push("action LIKE ?");
+    params.push(`${action_prefix}%`);
+  }
+  if (scope && SCOPE_PREFIXES[scope]) {
+    const prefixes = SCOPE_PREFIXES[scope];
+    const placeholders = prefixes.map(() => "action LIKE ?").join(" OR ");
+    where.push(`(${placeholders})`);
+    params.push(...prefixes.map((p) => `${p}%`));
   }
   if (target_type) {
     where.push("target_type = ?");
@@ -119,4 +144,4 @@ async function listForCorretora(corretoraId, submissionId, { limit = 50 } = {}) 
   return rows.map((r) => ({ ...r, meta: parseMeta(r.meta) }));
 }
 
-module.exports = { create, list, listForCorretora };
+module.exports = { create, list, listForCorretora, SCOPE_PREFIXES };

@@ -74,18 +74,44 @@ async function updatePlan(req, res, next) {
     const updatePayload = { ...req.body };
     delete updatePayload.apply_to_active_subscriptions;
 
+    // Fase 7 — snapshot antes do UPDATE pro audit before/after
+    const before = await plansRepo.findById(id);
+
     const affected = await plansRepo.update(id, updatePayload);
     if (affected === 0) {
       throw new AppError("Nada para atualizar.", ERROR_CODES.NOT_FOUND, 404);
     }
     const fresh = await plansRepo.findById(id);
 
+    // Audita UPDATE do plano em si (separado do broadcast opcional)
+    const auditService = require("../../services/adminAuditService");
+    const planDiff = auditService.diffFields(before, fresh, [
+      "slug",
+      "name",
+      "description",
+      "price_cents",
+      "billing_cycle",
+      "capabilities",
+      "sort_order",
+      "is_public",
+      "is_active",
+    ]);
+    if (planDiff.changed_fields.length > 0) {
+      auditService.record({
+        req,
+        action: "plan.updated",
+        targetType: "plan",
+        targetId: id,
+        meta: planDiff,
+      });
+    }
+
     let broadcast = null;
     if (applyToActive) {
       // Broadcast quebra contratos vigentes — ação deliberada. Grava
       // audit log com o número de afetadas para rastreabilidade.
       broadcast = await planService.broadcastCapabilitiesFromPlan(id);
-      require("../../services/adminAuditService").record({
+      auditService.record({
         req,
         action: "plan.capabilities_broadcast",
         targetType: "plan",
@@ -93,6 +119,9 @@ async function updatePlan(req, res, next) {
         meta: {
           plan_slug: fresh.slug,
           affected_subscriptions: broadcast.affected,
+          before: { capabilities: before?.capabilities ?? null },
+          after: { capabilities: fresh?.capabilities ?? null },
+          changed_fields: ["capabilities"],
         },
       });
     }
@@ -187,14 +216,30 @@ async function updateCorretoraSubscription(req, res, next) {
     if (body.notes !== undefined) patch.notes = body.notes || null;
 
     await subsRepo.update(current.id, patch);
-    require("../../services/adminAuditService").record({
+    const updated = await subsRepo.getCurrentForCorretora(corretoraId);
+
+    // Fase 7 — before/after em subscription.updated. `current` é o
+    // snapshot antes da escrita; `updated` re-lê depois.
+    const auditService = require("../../services/adminAuditService");
+    const diff = auditService.diffFields(current, updated, [
+      "plan_id",
+      "status",
+      "payment_method",
+      "monthly_price_cents",
+      "trial_ends_at",
+      "current_period_end",
+      "notes",
+    ]);
+    auditService.record({
       req,
       action: "subscription.updated",
       targetType: "corretora",
       targetId: corretoraId,
-      meta: patch,
+      meta:
+        diff.changed_fields.length > 0
+          ? diff
+          : { patch }, // fallback quando diff está vazio (ex.: noop)
     });
-    const updated = await subsRepo.getCurrentForCorretora(corretoraId);
     response.ok(res, updated, "Assinatura atualizada.");
   } catch (err) {
     next(err);

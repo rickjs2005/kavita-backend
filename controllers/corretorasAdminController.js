@@ -114,10 +114,45 @@ const updateCorretora = async (req, res, next) => {
       data.logo_path = persisted.path;
     }
 
-    const updated = await corretorasService.updateCorretora(
-      Number(req.params.id),
-      data
-    );
+    const targetId = Number(req.params.id);
+    // Fase 7 — guarda snapshot ANTES para o audit log before/after
+    const before = await adminRepo.findById(targetId);
+    const updated = await corretorasService.updateCorretora(targetId, data);
+
+    // Audita só os campos efetivamente editados. Não loga descrição
+    // cheia no meta — vai em changed_fields só para rastreabilidade.
+    const auditService = require("../services/adminAuditService");
+    const diff = auditService.diffFields(before, updated, [
+      "name",
+      "slug",
+      "contact_name",
+      "description",
+      "city",
+      "state",
+      "region",
+      "phone",
+      "whatsapp",
+      "email",
+      "website",
+      "instagram",
+      "facebook",
+      "logo_path",
+      "cidades_atendidas",
+      "tipos_cafe",
+      "perfil_compra",
+      "horario_atendimento",
+      "anos_atuacao",
+    ]);
+    if (diff.changed_fields.length > 0) {
+      auditService.record({
+        req,
+        action: "corretora.updated",
+        targetType: "corretora",
+        targetId,
+        meta: diff,
+      });
+    }
+
     return response.ok(res, updated, "Corretora atualizada.");
   } catch (err) {
     if (req.file) {
@@ -138,14 +173,19 @@ const updateCorretora = async (req, res, next) => {
 const toggleStatus = async (req, res, next) => {
   try {
     const targetId = Number(req.params.id);
+    // Fase 7 — before/after explícito no audit
+    const before = await adminRepo.findById(targetId);
     await corretorasService.toggleStatus(targetId, req.body.status);
-    // Audit (fire-and-forget)
     require("../services/adminAuditService").record({
       req,
       action: "corretora.status_changed",
       targetType: "corretora",
       targetId,
-      meta: { to: req.body.status },
+      meta: {
+        before: { status: before?.status ?? null },
+        after: { status: req.body.status },
+        changed_fields: ["status"],
+      },
     });
     return response.ok(res, null, "Status atualizado.");
   } catch (err) {
@@ -164,13 +204,18 @@ const toggleStatus = async (req, res, next) => {
 const toggleFeatured = async (req, res, next) => {
   try {
     const targetId = Number(req.params.id);
+    const before = await adminRepo.findById(targetId);
     await corretorasService.toggleFeatured(targetId, req.body.is_featured);
     require("../services/adminAuditService").record({
       req,
       action: "corretora.featured_changed",
       targetType: "corretora",
       targetId,
-      meta: { featured: Boolean(req.body.is_featured) },
+      meta: {
+        before: { is_featured: Boolean(before?.is_featured) },
+        after: { is_featured: Boolean(req.body.is_featured) },
+        changed_fields: ["is_featured"],
+      },
     });
     return response.ok(res, null, "Destaque atualizado.");
   } catch (err) {
@@ -634,6 +679,142 @@ const impersonateCorretora = async (req, res, next) => {
   }
 };
 
+// ─── Fase 7 — Notas internas admin ─────────────────────────────────────────
+
+const adminNotesRepo = require("../repositories/corretoraAdminNotesRepository");
+
+/**
+ * GET /api/admin/mercado-do-cafe/corretoras/:id/admin-notes
+ * Lista notas internas do admin sobre a corretora.
+ */
+const listAdminNotes = async (req, res, next) => {
+  try {
+    const corretoraId = Number(req.params.id);
+    if (!Number.isInteger(corretoraId) || corretoraId <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const notes = await adminNotesRepo.listForCorretora(corretoraId);
+    return response.ok(res, notes);
+  } catch (err) {
+    next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao listar notas.", ERROR_CODES.SERVER_ERROR, 500),
+    );
+  }
+};
+
+/**
+ * POST /api/admin/mercado-do-cafe/corretoras/:id/admin-notes
+ * Body: { body, category? }
+ */
+const createAdminNote = async (req, res, next) => {
+  try {
+    const corretoraId = Number(req.params.id);
+    if (!Number.isInteger(corretoraId) || corretoraId <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+    if (!body) {
+      throw new AppError(
+        "Escreva o conteúdo da nota.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      );
+    }
+    if (body.length > 2000) {
+      throw new AppError(
+        "Nota excede o limite de 2000 caracteres.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      );
+    }
+    const category =
+      typeof req.body?.category === "string" && req.body.category.trim()
+        ? req.body.category.trim().slice(0, 40)
+        : null;
+
+    // Confirma que a corretora existe antes de criar a nota
+    const corretora = await adminRepo.findById(corretoraId, {
+      includeArchived: true,
+    });
+    if (!corretora) {
+      throw new AppError(
+        "Corretora não encontrada.",
+        ERROR_CODES.NOT_FOUND,
+        404,
+      );
+    }
+
+    const id = await adminNotesRepo.create({
+      corretora_id: corretoraId,
+      admin_id: req.admin?.id ?? null,
+      admin_nome: req.admin?.nome ?? null,
+      body,
+      category,
+    });
+
+    auditService.record({
+      req,
+      action: "corretora.admin_note_created",
+      targetType: "corretora",
+      targetId: corretoraId,
+      meta: { note_id: id, category, preview: body.slice(0, 80) },
+    });
+
+    return response.created(res, { id }, "Nota adicionada.");
+  } catch (err) {
+    next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao adicionar nota.", ERROR_CODES.SERVER_ERROR, 500),
+    );
+  }
+};
+
+/**
+ * DELETE /api/admin/mercado-do-cafe/corretoras/:id/admin-notes/:noteId
+ */
+const deleteAdminNote = async (req, res, next) => {
+  try {
+    const corretoraId = Number(req.params.id);
+    const noteId = Number(req.params.noteId);
+    if (
+      !Number.isInteger(corretoraId) ||
+      corretoraId <= 0 ||
+      !Number.isInteger(noteId) ||
+      noteId <= 0
+    ) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const affected = await adminNotesRepo.deleteById({
+      id: noteId,
+      corretora_id: corretoraId,
+    });
+    if (affected === 0) {
+      throw new AppError(
+        "Nota não encontrada.",
+        ERROR_CODES.NOT_FOUND,
+        404,
+      );
+    }
+    auditService.record({
+      req,
+      action: "corretora.admin_note_deleted",
+      targetType: "corretora",
+      targetId: corretoraId,
+      meta: { note_id: noteId },
+    });
+    return response.ok(res, null, "Nota removida.");
+  } catch (err) {
+    next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao remover nota.", ERROR_CODES.SERVER_ERROR, 500),
+    );
+  }
+};
+
 module.exports = {
   listCorretoras,
   getById,
@@ -654,4 +835,7 @@ module.exports = {
   approveSubmission,
   rejectSubmission,
   getPendingCount,
+  listAdminNotes,
+  createAdminNote,
+  deleteAdminNote,
 };

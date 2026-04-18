@@ -27,6 +27,35 @@ const logger = require("../lib/logger");
  * @param {number} [params.targetId]     id do alvo
  * @param {Object} [params.meta]         payload livre (before/after, reason)
  */
+/**
+ * Fase 7 — helper para extrair before/after de UPDATEs. Dado dois
+ * objetos (antes e depois) e uma lista de campos relevantes, retorna
+ * `{ before, after, changed_fields }` com apenas os que MUDARAM.
+ * Mantém o audit log enxuto (evita registrar "campo X não mudou").
+ *
+ * Comparação é rasa (===) — suficiente pra strings/numbers/booleans
+ * que dominam o domínio. Para arrays/objects, compara via JSON.stringify
+ * (aceitável porque nossos objetos aqui são pequenos e previsíveis).
+ */
+function diffFields(before, after, fields) {
+  const result = { before: {}, after: {}, changed_fields: [] };
+  for (const field of fields) {
+    const b = before?.[field];
+    const a = after?.[field];
+    const bothArrayLike =
+      (b && typeof b === "object") || (a && typeof a === "object");
+    const same = bothArrayLike
+      ? JSON.stringify(b ?? null) === JSON.stringify(a ?? null)
+      : b === a;
+    if (!same) {
+      result.before[field] = b ?? null;
+      result.after[field] = a ?? null;
+      result.changed_fields.push(field);
+    }
+  }
+  return result;
+}
+
 async function record({ req, action, targetType, targetId, meta }) {
   try {
     await repo.create({
@@ -49,4 +78,4 @@ async function record({ req, action, targetType, targetId, meta }) {
   }
 }
 
-module.exports = { record };
+module.exports = { record, diffFields };

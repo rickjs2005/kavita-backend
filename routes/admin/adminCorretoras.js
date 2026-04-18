@@ -86,6 +86,11 @@ router.post("/corretoras/:id/impersonate", ctrl.impersonateCorretora);
 router.post("/corretoras/:id/archive", ctrl.archiveCorretora);
 router.post("/corretoras/:id/restore", ctrl.restoreCorretora);
 
+// Fase 7 — notas internas admin (privadas, nunca expostas à corretora)
+router.get("/corretoras/:id/admin-notes", ctrl.listAdminNotes);
+router.post("/corretoras/:id/admin-notes", ctrl.createAdminNote);
+router.delete("/corretoras/:id/admin-notes/:noteId", ctrl.deleteAdminNote);
+
 // ─── Submissions ────────────────────────────────────────────────────────────
 
 router.get("/submissions", ctrl.listSubmissions);
