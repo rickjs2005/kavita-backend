@@ -100,6 +100,25 @@ async function listForReconciliation({ payment_status, limit = 100 } = {}) {
   return rows;
 }
 
+/**
+ * ETAPA 1.2 — lookup por provider_subscription_id. Usado pelo domain
+ * handler do webhook Asaas para achar qual subscription local aplicar
+ * a transição (active/past_due/canceled).
+ */
+async function findByProviderSubscription(providerSubscriptionId) {
+  const [[row]] = await pool.query(
+    `SELECT s.*, p.slug AS plan_slug, p.name AS plan_name,
+            p.capabilities AS plan_capabilities
+       FROM corretora_subscriptions s
+       JOIN plans p ON p.id = s.plan_id
+      WHERE s.provider_subscription_id = ?
+      ORDER BY s.created_at DESC
+      LIMIT 1`,
+    [providerSubscriptionId],
+  );
+  return row ?? null;
+}
+
 async function listForCorretora(corretoraId) {
   const [rows] = await pool.query(
     `SELECT s.*, p.slug AS plan_slug, p.name AS plan_name
@@ -215,6 +234,16 @@ async function update(id, data) {
     "trial_ends_at",
     "notes",
     "canceled_at",
+    // ETAPA 1.2 — checkout pendente. pending_checkout_at permite
+    // mostrar "há 3h" na UI; null quando pago/cancelado.
+    "pending_checkout_url",
+    "pending_checkout_at",
+    // ETAPA 1.1/1.2 — estes eram gravados só pelo service via INSERT
+    // (Fase 6). Adicionados ao allowed list pra permitir UPDATE via
+    // webhook handler também (marcar provider_status = active_remote).
+    "provider",
+    "provider_subscription_id",
+    "provider_status",
   ];
   const sets = [];
   const values = [];
@@ -254,6 +283,7 @@ module.exports = {
   getCurrentForCorretora,
   listForCorretora,
   listForReconciliation,
+  findByProviderSubscription,
   create,
   update,
   cancelActiveForCorretora,

@@ -93,6 +93,11 @@ async function getPlanContext(corretoraId) {
       current_period_end: sub.current_period_end,
       trial_ends_at: sub.trial_ends_at ?? null,
       has_capabilities_snapshot: sub.capabilities_snapshot != null,
+      // ETAPA 1.2 — pagamento pendente que a corretora pode reabrir
+      pending_checkout_url: sub.pending_checkout_url ?? null,
+      pending_checkout_at: sub.pending_checkout_at ?? null,
+      // ETAPA 1.4 — cap mensal de leads pro painel mostrar uso
+      provider_status: sub.provider_status ?? null,
     },
     plan: {
       slug: sub.plan_slug,

@@ -21,13 +21,20 @@ async function getMyPlan(req, res, next) {
     const corretoraId = req.corretoraUser.corretora_id;
     const ctx = await planService.getPlanContext(corretoraId);
 
-    // Uso real vs limites. Hoje o único limite numérico relevante é
-    // `max_users`. Adicionar outros aqui conforme novos forem criados.
-    const usersTotal = await usersRepo.countByCorretoraId(corretoraId);
+    // Uso real vs limites. ETAPA 1.4 adiciona leads_this_month.
+    const leadsRepo = require("../../repositories/corretoraLeadsRepository");
+    const [usersTotal, leadsThisMonth] = await Promise.all([
+      usersRepo.countByCorretoraId(corretoraId),
+      leadsRepo.countInCurrentMonth(corretoraId),
+    ]);
     const usage = {
       users: {
         used: usersTotal,
         limit: ctx.capabilities?.max_users ?? null,
+      },
+      leads_this_month: {
+        used: leadsThisMonth,
+        limit: ctx.capabilities?.max_leads_per_month ?? null,
       },
     };
 
@@ -179,12 +186,19 @@ async function createCheckout(req, res, next) {
     // (se existir) pra ligar o fluxo remoto à linha local. O webhook
     // posterior vai conseguir encontrar a subscription certa via
     // provider_subscription_id na tabela corretora_subscriptions.
+    //
+    // ETAPA 1.2 — persistimos pending_checkout_url/at para a corretora
+    // poder reabrir o link caso feche a aba antes de pagar. O handler
+    // do webhook de payment_confirmed zera ambos (ver
+    // services/payment/webhookDomainHandler).
     const current = await subsRepo.getCurrentForCorretora(corretoraId);
     if (current) {
       await subsRepo.update(current.id, {
         provider: checkout.provider,
         provider_subscription_id: checkout.subscription_id,
         provider_status: "pending_checkout",
+        pending_checkout_url: checkout.checkout_url,
+        pending_checkout_at: new Date(),
       });
     }
 

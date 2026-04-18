@@ -424,6 +424,24 @@ async function listStaleNewLeads({
 }
 
 /**
+ * ETAPA 1.4 — contagem de leads criados no mês corrente. Usado pelo
+ * planService pra comparar com `max_leads_per_month` e decidir se
+ * mostra banner "cap atingido" no painel. Não filtra por status —
+ * o cap é de captação (leads recebidos), não de fechamento.
+ */
+async function countInCurrentMonth(corretoraId) {
+  const [[row]] = await pool.query(
+    `SELECT COUNT(*) AS total
+       FROM corretora_leads
+      WHERE corretora_id = ?
+        AND YEAR(created_at) = YEAR(CURDATE())
+        AND MONTH(created_at) = MONTH(CURDATE())`,
+    [corretoraId],
+  );
+  return Number(row?.total || 0);
+}
+
+/**
  * Fase 4 — valor do pipeline e compras do mês. Duas agregações:
  *   - Em negociação: leads com preco_proposto != null e status ativo
  *   - Fechadas no mês: leads com preco_fechado != null e
@@ -550,5 +568,6 @@ module.exports = {
   listStaleNewLeads,
   getPipelineValue,
   getClosedLotsAggregate,
+  countInCurrentMonth,
   summary,
 };

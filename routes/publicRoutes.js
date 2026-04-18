@@ -48,6 +48,9 @@ load("/public/drones", "./public/publicDrones");
 load("/public/corretoras", "./public/publicCorretoras");
 load("/public/plans", "./public/publicPlans");
 
+// — Webhooks externos (sem auth; validação via assinatura no adapter)
+load("/webhooks/asaas", "./public/webhookAsaas");
+
 // — Contato público —
 load("/public/contato", "./public/publicContato");
 load("/public/support-config", "./public/publicSupportConfig");

@@ -10,7 +10,9 @@ WORKDIR /app
 # Copy only package files first for layer caching
 COPY package.json package-lock.json ./
 
-# Install production dependencies only (no devDependencies)
+# Install production dependencies only (no devDependencies).
+# sequelize-cli fica disponível pra migrations no entrypoint porque
+# é dependency regular (não dev).
 RUN npm ci --omit=dev --ignore-scripts
 
 # ── Stage 2: production runtime ────────────────────────────────────────
@@ -44,4 +46,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Graceful shutdown: server.js already handles SIGTERM (bootstrap/shutdown.js)
 STOPSIGNAL SIGTERM
 
-CMD ["node", "server.js"]
+# ETAPA 1 — entrypoint roda migrations pendentes antes de subir o HTTP
+# server. Falha na migration → exit 1 → orquestrador reinicia até
+# o schema voltar a bater. Para emergências, SKIP_DB_MIGRATE=1 bypass.
+CMD ["node", "scripts/deploy/entrypoint.js"]

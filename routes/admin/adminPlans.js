@@ -16,6 +16,11 @@ const reconCtrl = require("../../controllers/admin/adminReconciliationController
 router.get("/reconciliation/summary", reconCtrl.getSummary);
 router.get("/reconciliation/subscriptions", reconCtrl.listSubscriptions);
 router.get("/reconciliation/webhook-events", reconCtrl.listWebhookEvents);
+// ETAPA 1.3 — retry manual de webhook event com erro
+router.post(
+  "/reconciliation/webhook-events/:id/retry",
+  reconCtrl.retryWebhookEvent,
+);
 
 // Subscriptions por corretora
 router.get(
