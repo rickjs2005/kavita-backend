@@ -323,6 +323,60 @@ async function sendLeadProducerConfirmationEmail({
  * @param {string} html
  * @param {string} [text] - fallback plaintext opcional (melhora score anti-spam)
  */
+/**
+ * ETAPA 2.3 — alerta de novo IP. Dispara quando o login vem de um
+ * IP diferente do last_login_ip do user. Tom neutro/informativo:
+ * não acusa fraude; orienta checar e (se não reconhece) resetar
+ * senha + ligar 2FA. Fire-and-forget no caller — falha de SMTP
+ * nunca bloqueia login.
+ */
+async function sendCorretoraNewIpAlertEmail({
+  toEmail,
+  corretoraName,
+  ip,
+  userAgent,
+  when,
+}) {
+  const appUrl = config.appUrl.replace(/\/$/, "");
+  const seguranca = `${appUrl}/painel/corretora/perfil/seguranca`;
+  const safeIp = String(ip || "desconhecido").replace(/[^\d.:a-f]/gi, "");
+  const safeUA = String(userAgent || "desconhecido")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .slice(0, 200);
+  const whenLabel = when
+    ? new Date(when).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
+    : new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+
+  await transporter.sendMail({
+    from: `"Kavita — Segurança" <${config.email.user}>`,
+    to: toEmail,
+    subject: `Novo acesso detectado em ${corretoraName || "sua conta"}`,
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; color:#1c1917;">
+        <h2 style="color:#b45309; margin:0 0 12px;">🔒 Acesso de um novo dispositivo</h2>
+        <p>Olá,</p>
+        <p>Detectamos um novo login na conta da corretora${corretoraName ? ` <strong>${corretoraName}</strong>` : ""}:</p>
+        <div style="background:#fef3c7; border-left:3px solid #b45309; padding:14px 16px; border-radius:6px; font-size:13px; color:#44403c; margin:16px 0;">
+          <p style="margin:4px 0"><strong>Quando:</strong> ${whenLabel}</p>
+          <p style="margin:4px 0"><strong>IP:</strong> ${safeIp}</p>
+          <p style="margin:4px 0"><strong>Dispositivo:</strong> ${safeUA}</p>
+        </div>
+        <p><strong>Foi você?</strong> Pode ignorar este e-mail.</p>
+        <p><strong>Não foi você?</strong> Acesse a área de segurança, troque a senha e ative o 2FA:</p>
+        <p style="margin:20px 0;">
+          <a href="${seguranca}"
+             style="display:inline-block; background:#b45309; color:white; padding:10px 20px; border-radius:8px; text-decoration:none; font-weight:600;">
+            Abrir segurança do painel
+          </a>
+        </p>
+        <p style="color:#78716c; font-size:12px;">Kavita · Mercado do Café</p>
+      </div>
+    `,
+  });
+}
+
 async function sendTransactionalEmail(to, subject, html, text = null) {
   const mailOptions = {
     from: `"Kavita" <${config.email.user}>`,
@@ -341,5 +395,6 @@ module.exports = {
   sendCorretoraApprovedEmail,
   sendCorretoraRejectionEmail,
   sendLeadProducerConfirmationEmail,
+  sendCorretoraNewIpAlertEmail,
   sendTransactionalEmail,
 };

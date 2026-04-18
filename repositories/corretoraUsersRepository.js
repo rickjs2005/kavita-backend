@@ -189,6 +189,54 @@ async function incrementTokenVersion(id) {
   );
 }
 
+// ETAPA 2.1 — 2FA TOTP helpers
+async function setTotpSecret(id, secret) {
+  const [result] = await pool.query(
+    `UPDATE corretora_users
+        SET totp_secret = ?,
+            totp_enabled = 0,
+            totp_enabled_at = NULL
+      WHERE id = ?`,
+    [secret, id],
+  );
+  return result.affectedRows;
+}
+
+async function enableTotp(id) {
+  const [result] = await pool.query(
+    `UPDATE corretora_users
+        SET totp_enabled = 1,
+            totp_enabled_at = NOW()
+      WHERE id = ? AND totp_secret IS NOT NULL`,
+    [id],
+  );
+  return result.affectedRows;
+}
+
+async function disableTotp(id) {
+  const [result] = await pool.query(
+    `UPDATE corretora_users
+        SET totp_secret = NULL,
+            totp_enabled = 0,
+            totp_enabled_at = NULL,
+            token_version = token_version + 1
+      WHERE id = ?`,
+    [id],
+  );
+  return result.affectedRows;
+}
+
+// ETAPA 2.3 — alerta novo IP: guarda último IP/quando
+async function updateLastLoginIp(id, ip) {
+  await pool.query(
+    `UPDATE corretora_users
+        SET last_login_ip = ?,
+            last_login_at = NOW()
+      WHERE id = ?`,
+    [ip ?? null, id],
+  );
+}
+
 module.exports = {
   findByEmail,
   findById,
@@ -205,4 +253,8 @@ module.exports = {
   updateLastLogin,
   incrementTokenVersion,
   updatePasswordAndBumpTokenVersion,
+  setTotpSecret,
+  enableTotp,
+  disableTotp,
+  updateLastLoginIp,
 };

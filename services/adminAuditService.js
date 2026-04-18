@@ -37,6 +37,30 @@ const logger = require("../lib/logger");
  * que dominam o domínio. Para arrays/objects, compara via JSON.stringify
  * (aceitável porque nossos objetos aqui são pequenos e previsíveis).
  */
+// ETAPA 2.5 — limite de tamanho por valor no audit. Descrição longa,
+// JSON de capabilities inflado ou lista de cidades inteira são comuns;
+// se persistirmos o valor cru, `admin_audit_logs.meta` cresce rápido.
+// O truncate é marcador explícito — não é hash porque admin precisa
+// ler o início pra investigar.
+const AUDIT_TRUNCATE_MAX = 500;
+
+function truncateForAudit(value) {
+  if (value == null) return value;
+  if (typeof value === "string") {
+    if (value.length <= AUDIT_TRUNCATE_MAX) return value;
+    return `${value.slice(0, AUDIT_TRUNCATE_MAX)}… (truncado ${value.length - AUDIT_TRUNCATE_MAX} caracteres)`;
+  }
+  if (typeof value === "object") {
+    // JSON-stringify o valor e aplica o mesmo limite. Devolve como
+    // STRING com sufixo — o admin vê o JSON inicial e entende que
+    // houve truncate. Não reconstroi o objeto (evita inventar dados).
+    const stringified = JSON.stringify(value);
+    if (stringified.length <= AUDIT_TRUNCATE_MAX) return value;
+    return `${stringified.slice(0, AUDIT_TRUNCATE_MAX)}… (truncado)`;
+  }
+  return value;
+}
+
 function diffFields(before, after, fields) {
   const result = { before: {}, after: {}, changed_fields: [] };
   for (const field of fields) {
@@ -53,8 +77,9 @@ function diffFields(before, after, fields) {
       ? JSON.stringify(bNorm) === JSON.stringify(aNorm)
       : bNorm === aNorm;
     if (!same) {
-      result.before[field] = bNorm;
-      result.after[field] = aNorm;
+      // Truncate ANTES de gravar — diff é sempre enxuto.
+      result.before[field] = truncateForAudit(bNorm);
+      result.after[field] = truncateForAudit(aNorm);
       result.changed_fields.push(field);
     }
   }
@@ -83,4 +108,4 @@ async function record({ req, action, targetType, targetId, meta }) {
   }
 }
 
-module.exports = { record, diffFields };
+module.exports = { record, diffFields, truncateForAudit, AUDIT_TRUNCATE_MAX };

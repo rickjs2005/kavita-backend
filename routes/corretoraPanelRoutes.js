@@ -28,5 +28,7 @@ mount("/corretora/notifications", "./corretoraPanel/corretoraNotifications");
 mount("/corretora/plan", "./corretoraPanel/corretoraPlan");
 mount("/corretora/reviews", "./corretoraPanel/corretoraReviews");
 mount("/corretora/analytics", "./corretoraPanel/corretoraAnalytics");
+// ETAPA 2 — 2FA TOTP + logout-all
+mount("/corretora/2fa", "./corretoraPanel/corretoraTotp");
 
 module.exports = router;

@@ -34,16 +34,48 @@ function verifyPassword(plain, hash) {
   return bcrypt.compare(String(plain), hash);
 }
 
-function generateToken(user) {
+function generateToken(user, extra = {}) {
   const payload = {
     id: user.id,
     corretora_id: user.corretora_id,
     tokenVersion: user.token_version ?? 0,
     scope: "corretora",
+    ...extra,
   };
   return jwt.sign(payload, process.env.JWT_SECRET, {
     expiresIn: JWT_EXPIRES_IN,
   });
+}
+
+// ETAPA 2.2 — challenge token efêmero emitido quando login está
+// aguardando verificação TOTP. JWT separado (scope diferente) com
+// TTL de 5 min; cliente troca por corretoraToken real em
+// POST /login/totp. Não dá acesso a nenhuma rota protegida — só
+// serve pro step de verificação.
+const TOTP_CHALLENGE_TTL = "5m";
+const TOTP_VERIFIED_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+function generateTotpChallengeToken(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      corretora_id: user.corretora_id,
+      tokenVersion: user.token_version ?? 0,
+      scope: "corretora-totp-challenge",
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: TOTP_CHALLENGE_TTL },
+  );
+}
+
+function verifyTotpChallengeToken(token) {
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded?.scope !== "corretora-totp-challenge") return null;
+    return decoded;
+  } catch {
+    return null;
+  }
 }
 
 // TTL curto para impersonação — 30 minutos é suficiente para uma
@@ -280,4 +312,7 @@ module.exports = {
   inviteCorretoraUser,
   isPendingFirstAccess,
   COOKIE_MAX_AGE_MS,
+  generateTotpChallengeToken,
+  verifyTotpChallengeToken,
+  TOTP_VERIFIED_TTL_MS,
 };

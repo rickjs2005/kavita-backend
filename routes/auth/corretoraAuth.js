@@ -19,8 +19,11 @@ const {
   corretoraLoginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  verifyTotpStepSchema,
 } = require("../../schemas/corretoraAuthSchemas");
 const ctrl = require("../../controllers/corretoraPanel/authCorretoraController");
+const totpCtrl = require("../../controllers/corretoraPanel/totpCorretoraController");
+const verifyCorretoraMw = require("../../middleware/verifyCorretora");
 const resetCtrl = require("../../controllers/corretoraPanel/passwordResetCorretoraController");
 
 const loginRateLimiter = createAdaptiveRateLimiter({
@@ -61,8 +64,18 @@ router.post(
   validate(corretoraLoginSchema),
   ctrl.login,
 );
+// ETAPA 2.2 — segundo passo quando 2FA está ativo. Aceita challenge
+// token (emitido em /login) + OTP de 6 dígitos OU backup code.
+router.post(
+  "/login/totp",
+  loginRateLimiter,
+  validate(verifyTotpStepSchema),
+  ctrl.verifyTotpStep,
+);
 router.get("/me", verifyCorretora, ctrl.getMe);
 router.post("/logout", verifyCorretora, ctrl.logout);
+// ETAPA 2.4 — sair de todos os dispositivos (incrementa token_version)
+router.post("/logout-all", verifyCorretoraMw, totpCtrl.logoutAllDevices);
 // Sair de impersonação — só responde se a sessão atual é impersonada.
 // Não precisa de Turnstile: o cookie já foi validado como legítimo.
 router.post(

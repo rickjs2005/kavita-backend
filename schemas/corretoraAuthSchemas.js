@@ -470,6 +470,31 @@ const inviteCorretoraUserSchema = z.object({
 // Recuperação de senha (POST /api/corretora/forgot-password e /reset-password)
 // ---------------------------------------------------------------------------
 
+// ETAPA 2 — schemas de 2FA TOTP
+const confirmTotpSetupSchema = z.object({
+  code: z
+    .string({ required_error: "Código TOTP é obrigatório." })
+    .regex(/^\d{6}$/, "Código deve ter 6 dígitos."),
+});
+
+const disableTotpSchema = z.object({
+  // Exige a senha atual pra desabilitar 2FA — previne
+  // usuário com cookie sequestrado desligar a proteção.
+  senha: z
+    .string({ required_error: "Senha atual é obrigatória." })
+    .min(1),
+});
+
+const verifyTotpStepSchema = z.object({
+  challenge_token: z
+    .string({ required_error: "challenge_token é obrigatório." })
+    .min(20),
+  code: z
+    .string({ required_error: "Código é obrigatório." })
+    .min(4)
+    .max(16),
+});
+
 const forgotPasswordSchema = z.object({
   email: z
     .string({ required_error: "E-mail é obrigatório." })
@@ -498,6 +523,9 @@ module.exports = {
   updateLeadProposalSchema,
   updateLeadNextActionSchema,
   listLeadsQuerySchema,
+  confirmTotpSetupSchema,
+  disableTotpSchema,
+  verifyTotpStepSchema,
   inviteCorretoraUserSchema,
   forgotPasswordSchema,
   resetPasswordSchema,

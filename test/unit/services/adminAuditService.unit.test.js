@@ -4,7 +4,11 @@
  * Fase 7 — testa o helper diffFields (função pura, sem I/O).
  */
 
-const { diffFields } = require("../../../services/adminAuditService");
+const {
+  diffFields,
+  truncateForAudit,
+  AUDIT_TRUNCATE_MAX,
+} = require("../../../services/adminAuditService");
 
 describe("services/adminAuditService.diffFields", () => {
   it("retorna changed_fields vazio quando nada mudou", () => {
@@ -61,5 +65,49 @@ describe("services/adminAuditService.diffFields", () => {
     expect(diff.changed_fields).toEqual(["name"]);
     expect(diff.before.name).toBeNull();
     expect(diff.after.name).toBe("X");
+  });
+});
+
+describe("services/adminAuditService.truncateForAudit", () => {
+  it("AUDIT_TRUNCATE_MAX é 500", () => {
+    expect(AUDIT_TRUNCATE_MAX).toBe(500);
+  });
+
+  it("deixa strings curtas intocadas", () => {
+    expect(truncateForAudit("hello")).toBe("hello");
+    expect(truncateForAudit("")).toBe("");
+  });
+
+  it("trunca string > 500 chars com sufixo explicativo", () => {
+    const long = "a".repeat(600);
+    const r = truncateForAudit(long);
+    expect(r).toMatch(/^a{500}… \(truncado 100 caracteres\)$/);
+  });
+
+  it("deixa null/undefined intactos", () => {
+    expect(truncateForAudit(null)).toBeNull();
+    expect(truncateForAudit(undefined)).toBeUndefined();
+  });
+
+  it("trunca objeto JSON grande devolvendo string marcada", () => {
+    const big = { items: Array.from({ length: 100 }, (_, i) => `x${i}`) };
+    const r = truncateForAudit(big);
+    expect(typeof r).toBe("string");
+    expect(r.length).toBeLessThanOrEqual(AUDIT_TRUNCATE_MAX + 30);
+    expect(r).toMatch(/… \(truncado\)$/);
+  });
+
+  it("deixa objetos pequenos intactos", () => {
+    const small = { name: "X", city: "Manhuaçu" };
+    const r = truncateForAudit(small);
+    expect(r).toEqual(small);
+  });
+
+  it("aplica truncate dentro de diffFields", () => {
+    const before = { description: "x".repeat(600) };
+    const after = { description: "y".repeat(600) };
+    const diff = diffFields(before, after, ["description"]);
+    expect(diff.before.description.length).toBeLessThan(600);
+    expect(diff.after.description.length).toBeLessThan(600);
   });
 });
