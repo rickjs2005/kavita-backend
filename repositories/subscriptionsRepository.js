@@ -53,6 +53,53 @@ async function getCurrentForCorretora(corretoraId, conn = pool) {
   };
 }
 
+/**
+ * Fase 6 — lista para reconciliação admin. Junta subscription +
+ * corretora + plano + status do gateway remoto. Filtros comuns:
+ *   payment_status = overdue | pending_checkout | active_remote | manual
+ *
+ * Não traz webhook events — UI consulta separadamente pra não
+ * inflar a página (eventos podem ser muitos por corretora).
+ */
+async function listForReconciliation({ payment_status, limit = 100 } = {}) {
+  const where = [];
+  const params = [];
+
+  if (payment_status === "overdue") {
+    where.push("s.status = 'past_due'");
+  } else if (payment_status === "pending_checkout") {
+    where.push("s.provider_status = 'pending_checkout'");
+  } else if (payment_status === "active_remote") {
+    where.push("s.provider IS NOT NULL");
+    where.push("s.status IN ('active','trialing')");
+    where.push("s.provider_status != 'pending_checkout'");
+  } else if (payment_status === "manual") {
+    where.push("(s.provider IS NULL OR s.payment_method = 'manual')");
+  }
+  where.push("s.status IN ('active','trialing','past_due','canceled')");
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const [rows] = await pool.query(
+    `SELECT s.id, s.corretora_id, s.plan_id, s.status,
+            s.payment_method, s.monthly_price_cents,
+            s.current_period_start, s.current_period_end,
+            s.trial_ends_at, s.canceled_at,
+            s.provider, s.provider_subscription_id, s.provider_status,
+            s.created_at, s.notes,
+            c.name AS corretora_name, c.slug AS corretora_slug,
+            c.city AS corretora_city, c.state AS corretora_state,
+            p.slug AS plan_slug, p.name AS plan_name
+       FROM corretora_subscriptions s
+       JOIN corretoras c ON c.id = s.corretora_id
+       JOIN plans p ON p.id = s.plan_id
+       ${whereClause}
+      ORDER BY s.created_at DESC
+      LIMIT ?`,
+    [...params, Number(limit)],
+  );
+  return rows;
+}
+
 async function listForCorretora(corretoraId) {
   const [rows] = await pool.query(
     `SELECT s.*, p.slug AS plan_slug, p.name AS plan_name
@@ -206,6 +253,7 @@ async function updateStatus(id, status) {
 module.exports = {
   getCurrentForCorretora,
   listForCorretora,
+  listForReconciliation,
   create,
   update,
   cancelActiveForCorretora,

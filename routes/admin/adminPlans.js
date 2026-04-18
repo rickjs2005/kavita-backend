@@ -11,6 +11,12 @@ router.post("/plans", ctrl.createPlan);
 router.get("/plans/:id/broadcast-preview", ctrl.getBroadcastPreview);
 router.put("/plans/:id", ctrl.updatePlan);
 
+// Fase 6 — reconciliação Asaas / manual
+const reconCtrl = require("../../controllers/admin/adminReconciliationController");
+router.get("/reconciliation/summary", reconCtrl.getSummary);
+router.get("/reconciliation/subscriptions", reconCtrl.listSubscriptions);
+router.get("/reconciliation/webhook-events", reconCtrl.listWebhookEvents);
+
 // Subscriptions por corretora
 router.get(
   "/corretoras/:corretoraId/subscription",

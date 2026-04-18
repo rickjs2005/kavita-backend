@@ -110,6 +110,67 @@ async function listUnprocessed({
 }
 
 /**
+ * Fase 6 — listagem para reconciliação admin. Aceita filtro por
+ * status (all / failed / unprocessed / processed) e provider.
+ * Retorna paginado com metadados pra UI montar badges.
+ */
+async function listForReconciliation({
+  provider,
+  status = "all",
+  limit = 50,
+} = {}) {
+  const where = [];
+  const params = [];
+  if (provider) {
+    where.push("provider = ?");
+    params.push(provider);
+  }
+  if (status === "failed") {
+    where.push("processing_error IS NOT NULL");
+  } else if (status === "unprocessed") {
+    where.push("processed_at IS NULL");
+  } else if (status === "processed") {
+    where.push("processed_at IS NOT NULL");
+    where.push("processing_error IS NULL");
+  }
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const [rows] = await pool.query(
+    `SELECT id, provider, provider_event_id, event_type,
+            processed_at, processing_error, retry_count,
+            created_at
+       FROM webhook_events
+       ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT ?`,
+    [...params, Number(limit)],
+  );
+  return rows;
+}
+
+/**
+ * Métricas curtas pra headline da página de reconciliação.
+ * Uma query só, com CASE WHEN, pra evitar 3 round-trips.
+ */
+async function getReconciliationCounts() {
+  const [[row]] = await pool.query(
+    `SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN processed_at IS NULL AND processing_error IS NULL THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN processing_error IS NOT NULL THEN 1 ELSE 0 END) AS failed,
+        SUM(CASE WHEN processed_at IS NOT NULL AND processing_error IS NULL THEN 1 ELSE 0 END) AS processed,
+        MAX(created_at) AS last_event_at
+       FROM webhook_events`,
+  );
+  return {
+    total: Number(row?.total || 0),
+    pending: Number(row?.pending || 0),
+    failed: Number(row?.failed || 0),
+    processed: Number(row?.processed || 0),
+    last_event_at: row?.last_event_at ?? null,
+  };
+}
+
+/**
  * Consulta por id (debug / admin inspecionar evento pontual).
  */
 async function findById(id) {
@@ -136,5 +197,7 @@ module.exports = {
   markProcessed,
   markFailed,
   listUnprocessed,
+  listForReconciliation,
+  getReconciliationCounts,
   findById,
 };

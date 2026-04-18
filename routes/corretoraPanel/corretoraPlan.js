@@ -9,5 +9,7 @@ router.get("/", ctrl.getMyPlan);
 router.get("/available", ctrl.listAvailablePlans);
 router.get("/events", ctrl.listMyPlanEvents);
 router.post("/upgrade", ctrl.requestUpgrade);
+// Fase 6 — checkout via Asaas. Frontend chama e redireciona pro link.
+router.post("/checkout", ctrl.createCheckout);
 
 module.exports = router;
