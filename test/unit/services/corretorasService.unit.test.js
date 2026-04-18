@@ -30,11 +30,13 @@ describe("services/corretorasService", () => {
   const slugHistoryRepoPath = require.resolve(
     "../../../repositories/corretoraSlugHistoryRepository",
   );
+  const planServicePath = require.resolve("../../../services/planService");
 
   let svc;
   let adminRepo;
   let usersRepo;
   let mail;
+  let planService;
   let connMock;
 
   beforeEach(() => {
@@ -95,10 +97,20 @@ describe("services/corretorasService", () => {
       record: jest.fn().mockResolvedValue(undefined),
       resolveRedirect: jest.fn().mockResolvedValue(null),
     }));
+    jest.doMock(planServicePath, () => ({
+      hasCapability: jest.fn().mockResolvedValue(true),
+      getPlanContext: jest.fn().mockResolvedValue({
+        plan: { slug: "pro", name: "Pro" },
+      }),
+      // Re-export minimal — corretorasService não usa mais nada
+      assignPlan: jest.fn(),
+      requirePlanCapability: jest.fn(),
+    }));
 
     adminRepo = require(adminRepoPath);
     usersRepo = require(usersRepoPath);
     mail = require(mailPath);
+    planService = require(planServicePath);
     svc = require("../../../services/corretorasService");
 
     jest.spyOn(console, "warn").mockImplementation(() => {});
@@ -303,6 +315,93 @@ describe("services/corretorasService", () => {
       await expect(
         svc.rejectSubmission(1, 2, "motivo"),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // toggleFeatured — Fase 1.3 (regional_highlight)
+  // -------------------------------------------------------------------------
+  describe("toggleFeatured()", () => {
+    beforeEach(() => {
+      adminRepo.updateFeatured = jest.fn().mockResolvedValue(1);
+      adminRepo.countFeatured = jest.fn().mockResolvedValue(0);
+    });
+
+    it("404 quando corretora não existe", async () => {
+      adminRepo.findById.mockResolvedValue(null);
+      await expect(svc.toggleFeatured(999, true)).rejects.toMatchObject({
+        status: 404,
+      });
+    });
+
+    it("bloqueia destacar corretora inativa (400)", async () => {
+      adminRepo.findById.mockResolvedValue({
+        id: 1,
+        status: "inactive",
+        is_featured: 0,
+      });
+      await expect(svc.toggleFeatured(1, true)).rejects.toMatchObject({
+        status: 400,
+      });
+    });
+
+    it("bloqueia destacar quando plano NÃO inclui regional_highlight", async () => {
+      adminRepo.findById.mockResolvedValue({
+        id: 1,
+        status: "active",
+        is_featured: 0,
+      });
+      planService.hasCapability.mockResolvedValueOnce(false);
+      planService.getPlanContext.mockResolvedValueOnce({
+        plan: { slug: "free", name: "Free" },
+      });
+
+      await expect(svc.toggleFeatured(1, true)).rejects.toMatchObject({
+        status: 400,
+      });
+      // Capability é checada ANTES do cap global — countFeatured não
+      // deve nem ser chamado quando plano reprova.
+      expect(adminRepo.countFeatured).not.toHaveBeenCalled();
+    });
+
+    it("permite destacar quando plano tem regional_highlight e cap livre", async () => {
+      adminRepo.findById.mockResolvedValue({
+        id: 1,
+        status: "active",
+        is_featured: 0,
+      });
+      planService.hasCapability.mockResolvedValue(true);
+      adminRepo.countFeatured.mockResolvedValue(2); // cap default 5
+
+      await svc.toggleFeatured(1, true);
+      expect(adminRepo.updateFeatured).toHaveBeenCalledWith(1, true);
+    });
+
+    it("bloqueia quando cap global está cheio (5 destaques)", async () => {
+      adminRepo.findById.mockResolvedValue({
+        id: 1,
+        status: "active",
+        is_featured: 0,
+      });
+      planService.hasCapability.mockResolvedValue(true);
+      adminRepo.countFeatured.mockResolvedValue(5);
+
+      await expect(svc.toggleFeatured(1, true)).rejects.toMatchObject({
+        status: 409,
+      });
+    });
+
+    it("desligar destaque nunca é bloqueado (idempotente)", async () => {
+      adminRepo.findById.mockResolvedValue({
+        id: 1,
+        status: "active",
+        is_featured: 1,
+      });
+      // Capability/cap NÃO são checados quando is_featured: false
+      await svc.toggleFeatured(1, false);
+      expect(planService.hasCapability).not.toHaveBeenCalled();
+      expect(adminRepo.countFeatured).not.toHaveBeenCalled();
+      expect(adminRepo.updateFeatured).toHaveBeenCalledWith(1, false);
     });
   });
 });

@@ -42,14 +42,19 @@ function diffFields(before, after, fields) {
   for (const field of fields) {
     const b = before?.[field];
     const a = after?.[field];
+    // null e undefined são semanticamente equivalentes no audit:
+    // ambos representam "ausência". Normaliza antes de comparar.
+    const bNorm = b ?? null;
+    const aNorm = a ?? null;
     const bothArrayLike =
-      (b && typeof b === "object") || (a && typeof a === "object");
+      (bNorm && typeof bNorm === "object") ||
+      (aNorm && typeof aNorm === "object");
     const same = bothArrayLike
-      ? JSON.stringify(b ?? null) === JSON.stringify(a ?? null)
-      : b === a;
+      ? JSON.stringify(bNorm) === JSON.stringify(aNorm)
+      : bNorm === aNorm;
     if (!same) {
-      result.before[field] = b ?? null;
-      result.after[field] = a ?? null;
+      result.before[field] = bNorm;
+      result.after[field] = aNorm;
       result.changed_fields.push(field);
     }
   }
