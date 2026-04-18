@@ -89,7 +89,15 @@ function normalizeRow(row) {
  * List active corretoras with optional filters and pagination.
  * Featured corretoras come first, then sorted by sort_order, name.
  */
-async function list({ city, featured, search, page, limit }) {
+async function list({
+  city,
+  featured,
+  search,
+  tipo_cafe,
+  perfil_compra,
+  page,
+  limit,
+}) {
   const where = ["c.status = 'active'", "c.deleted_at IS NULL"];
   const params = [];
 
@@ -100,6 +108,28 @@ async function list({ city, featured, search, page, limit }) {
 
   if (featured === "1") {
     where.push("c.is_featured = 1");
+  }
+
+  // Fase 5 — filtro por tipo de café que a corretora trabalha.
+  // tipos_cafe é coluna JSON no MySQL; usamos JSON_CONTAINS com o
+  // valor como string JSON. Funciona em MySQL 5.7+ e 8+.
+  if (tipo_cafe) {
+    where.push("JSON_CONTAINS(c.tipos_cafe, JSON_QUOTE(?))");
+    params.push(tipo_cafe);
+  }
+
+  // Fase 5 — filtro por perfil comercial (compra/vende/ambos).
+  // "ambos" na coluna é inclusivo em relação a "compra" e "venda":
+  // se o produtor busca "compra", mostramos também corretoras
+  // "ambos" porque elas realizam a ação.
+  if (perfil_compra) {
+    if (perfil_compra === "ambos") {
+      where.push("c.perfil_compra = 'ambos'");
+    } else {
+      // compra ou venda → inclui "ambos"
+      where.push("c.perfil_compra IN (?, 'ambos')");
+      params.push(perfil_compra);
+    }
   }
 
   if (search) {
