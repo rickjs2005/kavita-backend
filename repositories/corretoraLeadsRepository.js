@@ -235,6 +235,13 @@ async function update(id, corretoraId, data) {
     "prioridade_comercial",
     "altitude_origem",
     "variedade_cultivar",
+    // Fase 3 — proposta/compra + próxima ação
+    "preco_proposto",
+    "preco_fechado",
+    "data_compra",
+    "destino_venda",
+    "next_action_text",
+    "next_action_at",
   ];
   const sets = [];
   const values = [];

@@ -243,4 +243,166 @@ async function exportLeads(req, res, next) {
   }
 }
 
-module.exports = { listMine, getSummary, updateLead, exportLeads };
+/**
+ * GET /api/corretora/leads/:id
+ * Detalhe completo com notes + events.
+ */
+async function getLeadDetail(req, res, next) {
+  try {
+    const leadId = Number(req.params.id);
+    if (!Number.isInteger(leadId) || leadId <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const detail = await leadsService.getLeadDetail(
+      leadId,
+      req.corretoraUser.corretora_id,
+    );
+    return response.ok(res, detail);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao carregar detalhe do lead.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+/**
+ * POST /api/corretora/leads/:id/notes
+ * Body validado por validate(createLeadNoteSchema).
+ */
+async function addLeadNote(req, res, next) {
+  try {
+    const leadId = Number(req.params.id);
+    if (!Number.isInteger(leadId) || leadId <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const result = await leadsService.addLeadNote({
+      leadId,
+      corretoraId: req.corretoraUser.corretora_id,
+      actor: { userId: req.corretoraUser.id },
+      body: req.body.body,
+    });
+    return response.created(res, result, "Nota adicionada.");
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao adicionar nota.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+/**
+ * DELETE /api/corretora/leads/:id/notes/:noteId
+ * Remove uma nota do lead. Só autor/manager/owner devem poder —
+ * RBAC do route cuida disso.
+ */
+async function deleteLeadNote(req, res, next) {
+  try {
+    const leadId = Number(req.params.id);
+    const noteId = Number(req.params.noteId);
+    if (
+      !Number.isInteger(leadId) ||
+      leadId <= 0 ||
+      !Number.isInteger(noteId) ||
+      noteId <= 0
+    ) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    await leadsService.deleteLeadNote({
+      leadId,
+      corretoraId: req.corretoraUser.corretora_id,
+      noteId,
+    });
+    return response.ok(res, null, "Nota removida.");
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao remover nota.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+/**
+ * PATCH /api/corretora/leads/:id/proposal
+ */
+async function updateLeadProposal(req, res, next) {
+  try {
+    const leadId = Number(req.params.id);
+    if (!Number.isInteger(leadId) || leadId <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const updated = await leadsService.updateLeadProposal({
+      leadId,
+      corretoraId: req.corretoraUser.corretora_id,
+      actor: { userId: req.corretoraUser.id },
+      data: req.body,
+    });
+    return response.ok(res, updated, "Proposta atualizada.");
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao atualizar proposta.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+/**
+ * PATCH /api/corretora/leads/:id/next-action
+ */
+async function updateLeadNextAction(req, res, next) {
+  try {
+    const leadId = Number(req.params.id);
+    if (!Number.isInteger(leadId) || leadId <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const updated = await leadsService.updateLeadNextAction({
+      leadId,
+      corretoraId: req.corretoraUser.corretora_id,
+      actor: { userId: req.corretoraUser.id },
+      data: req.body,
+    });
+    return response.ok(res, updated, "Próxima ação atualizada.");
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao atualizar próxima ação.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+module.exports = {
+  listMine,
+  getSummary,
+  updateLead,
+  exportLeads,
+  getLeadDetail,
+  addLeadNote,
+  deleteLeadNote,
+  updateLeadProposal,
+  updateLeadNextAction,
+};

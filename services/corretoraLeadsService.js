@@ -7,6 +7,8 @@
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const leadsRepo = require("../repositories/corretoraLeadsRepository");
+const notesRepo = require("../repositories/corretoraLeadNotesRepository");
+const eventsRepo = require("../repositories/corretoraLeadEventsRepository");
 const publicCorretorasRepo = require("../repositories/corretorasPublicRepository");
 const notificationsRepo = require("../repositories/corretoraNotificationsRepository");
 const usersRepo = require("../repositories/corretoraUsersRepository");
@@ -132,6 +134,30 @@ async function createLeadFromPublic({ slug, data, meta }) {
     },
     "corretora.lead.created"
   );
+
+  // Fase 3 — primeira entrada na timeline. Actor "system" porque vem
+  // do form público, sem usuário da corretora logado. Fire-and-forget.
+  eventsRepo
+    .create({
+      lead_id: leadId,
+      corretora_id: corretora.id,
+      actor_user_id: null,
+      actor_type: "system",
+      event_type: "lead_created",
+      title: `Lead recebido${data.cidade ? ` de ${data.cidade}` : ""}`,
+      meta: {
+        volume_range: data.volume_range ?? null,
+        objetivo: data.objetivo ?? null,
+        tipo_cafe: data.tipo_cafe ?? null,
+        urgencia: data.urgencia ?? null,
+      },
+    })
+    .catch((err) =>
+      logger.warn(
+        { err, leadId, corretoraId: corretora.id },
+        "corretora.lead.event_create_failed",
+      ),
+    );
 
   // Sprint 7 — Se o produtor enviou e-mail no formulário (canal_preferido
   // = email OU mensagem incluiu e-mail), enviamos um e-mail leve a ele
@@ -578,6 +604,31 @@ async function updateLead(leadId, corretoraId, data, actor = {}) {
       },
       "corretora.lead.status_changed"
     );
+    // Fase 3 — timeline. Mapeia status→event_type pra UI distinguir
+    // "ganho" / "perdido" de mudança neutra e pintar a linha
+    // correspondente (verde pra won, rose pra lost).
+    const eventType =
+      data.status === "closed"
+        ? "deal_won"
+        : data.status === "lost"
+          ? "deal_lost"
+          : "status_changed";
+    eventsRepo
+      .create({
+        lead_id: leadId,
+        corretora_id: corretoraId,
+        actor_user_id: actor.userId ?? null,
+        actor_type: actor.userId ? "corretora_user" : "system",
+        event_type: eventType,
+        title: `Status: ${current.status} → ${data.status}`,
+        meta: { from: current.status, to: data.status },
+      })
+      .catch((err) =>
+        logger.warn(
+          { err, leadId, corretoraId },
+          "corretora.lead.event_status_failed",
+        ),
+      );
     analyticsService.track({
       name: "lead_status_updated",
       actorType: "corretora_user",
@@ -766,11 +817,219 @@ async function getPublicLeadStatus({ leadId, token }) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Fase 3 — Detalhe do lead, notas datadas, proposta, próxima ação.
+// ---------------------------------------------------------------------------
+
+/**
+ * Detalhe completo do lead para a página /painel/corretora/leads/[id].
+ * Traz lead + notas + eventos (timeline) + previous_contacts_count.
+ * Escopo obrigatório por corretora_id — o controller passa o tenant
+ * do req.corretoraUser; aqui só propagamos para evitar vazamento.
+ */
+async function getLeadDetail(leadId, corretoraId) {
+  const lead = await leadsRepo.findByIdForCorretora(leadId, corretoraId);
+  if (!lead) {
+    throw new AppError("Lead não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
+
+  const [notes, events, previousCount] = await Promise.all([
+    notesRepo.listForLead({ leadId, corretoraId }),
+    eventsRepo.listForLead({ leadId, corretoraId }),
+    leadsRepo.countPreviousFromSameProducer({
+      lead_id: leadId,
+      corretora_id: corretoraId,
+      telefone_normalizado: lead.telefone_normalizado,
+    }),
+  ]);
+
+  return {
+    lead: {
+      ...lead,
+      previous_contacts_count: previousCount,
+      priority_score: computePriorityScore({
+        ...lead,
+        previous_contacts_count: previousCount,
+      }),
+    },
+    notes,
+    events,
+  };
+}
+
+/**
+ * Adiciona nota datada à timeline do lead. Também emite evento
+ * note_added no events repo para aparecer na timeline unificada.
+ * Actor é o user logado da corretora.
+ */
+async function addLeadNote({ leadId, corretoraId, actor, body }) {
+  const lead = await leadsRepo.findByIdForCorretora(leadId, corretoraId);
+  if (!lead) {
+    throw new AppError("Lead não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
+  const id = await notesRepo.create({
+    lead_id: leadId,
+    corretora_id: corretoraId,
+    author_user_id: actor?.userId ?? null,
+    body,
+  });
+  eventsRepo
+    .create({
+      lead_id: leadId,
+      corretora_id: corretoraId,
+      actor_user_id: actor?.userId ?? null,
+      actor_type: "corretora_user",
+      event_type: "note_added",
+      title: "Nota adicionada",
+      meta: { note_id: id, preview: body.slice(0, 80) },
+    })
+    .catch((err) =>
+      logger.warn(
+        { err, leadId, corretoraId },
+        "corretora.lead.event_note_failed",
+      ),
+    );
+  return { id };
+}
+
+async function deleteLeadNote({ leadId, corretoraId, noteId }) {
+  const affected = await notesRepo.deleteById({
+    id: noteId,
+    lead_id: leadId,
+    corretora_id: corretoraId,
+  });
+  if (affected === 0) {
+    throw new AppError("Nota não encontrada.", ERROR_CODES.NOT_FOUND, 404);
+  }
+}
+
+/**
+ * Registra/atualiza campos de proposta no lead. Emite evento de
+ * timeline adequado ao "salto" feito (proposal_sent quando um preço
+ * proposto aparece pela primeira vez, deal_won quando preco_fechado
+ * aparece). Mantém update atômico via o repo.update padrão.
+ */
+async function updateLeadProposal({ leadId, corretoraId, actor, data }) {
+  const current = await leadsRepo.findByIdForCorretora(leadId, corretoraId);
+  if (!current) {
+    throw new AppError("Lead não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
+
+  const patch = {};
+  if (data.preco_proposto !== undefined) patch.preco_proposto = data.preco_proposto;
+  if (data.preco_fechado !== undefined) patch.preco_fechado = data.preco_fechado;
+  if (data.data_compra !== undefined) patch.data_compra = data.data_compra;
+  if (data.destino_venda !== undefined) patch.destino_venda = data.destino_venda;
+
+  const affected = await leadsRepo.update(leadId, corretoraId, patch);
+  if (affected === 0) {
+    throw new AppError(
+      "Nada para atualizar.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+    );
+  }
+
+  // Emissão de evento com granularidade:
+  //   - preço proposto apareceu pela 1ª vez => proposal_sent
+  //   - preço fechado apareceu pela 1ª vez => deal_won
+  //   - alteração de proposto/fechado existente => proposal_updated
+  // Fire-and-forget.
+  let eventType = "proposal_updated";
+  let title = "Proposta atualizada";
+  if (data.preco_fechado != null && current.preco_fechado == null) {
+    eventType = "deal_won";
+    title = `Compra fechada${
+      data.preco_fechado ? ` — R$ ${Number(data.preco_fechado).toFixed(2)}/sc` : ""
+    }`;
+  } else if (data.preco_proposto != null && current.preco_proposto == null) {
+    eventType = "proposal_sent";
+    title = `Proposta enviada — R$ ${Number(data.preco_proposto).toFixed(2)}/sc`;
+  }
+
+  eventsRepo
+    .create({
+      lead_id: leadId,
+      corretora_id: corretoraId,
+      actor_user_id: actor?.userId ?? null,
+      actor_type: "corretora_user",
+      event_type: eventType,
+      title,
+      meta: {
+        preco_proposto: data.preco_proposto ?? null,
+        preco_fechado: data.preco_fechado ?? null,
+        data_compra: data.data_compra ?? null,
+        destino_venda: data.destino_venda ?? null,
+      },
+    })
+    .catch((err) =>
+      logger.warn(
+        { err, leadId, corretoraId },
+        "corretora.lead.event_proposal_failed",
+      ),
+    );
+
+  return leadsRepo.findByIdForCorretora(leadId, corretoraId);
+}
+
+async function updateLeadNextAction({ leadId, corretoraId, actor, data }) {
+  const current = await leadsRepo.findByIdForCorretora(leadId, corretoraId);
+  if (!current) {
+    throw new AppError("Lead não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
+
+  const patch = {};
+  if (data.next_action_text !== undefined) {
+    patch.next_action_text = data.next_action_text;
+  }
+  if (data.next_action_at !== undefined) {
+    patch.next_action_at = data.next_action_at;
+  }
+  if (Object.keys(patch).length === 0) {
+    throw new AppError(
+      "Informe ao menos um campo para atualizar.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+    );
+  }
+
+  await leadsRepo.update(leadId, corretoraId, patch);
+
+  eventsRepo
+    .create({
+      lead_id: leadId,
+      corretora_id: corretoraId,
+      actor_user_id: actor?.userId ?? null,
+      actor_type: "corretora_user",
+      event_type: "next_action_set",
+      title: patch.next_action_text
+        ? `Próxima ação: ${patch.next_action_text}`
+        : "Próxima ação limpa",
+      meta: {
+        text: patch.next_action_text ?? null,
+        due_at: patch.next_action_at ?? null,
+      },
+    })
+    .catch((err) =>
+      logger.warn(
+        { err, leadId, corretoraId },
+        "corretora.lead.event_next_action_failed",
+      ),
+    );
+
+  return leadsRepo.findByIdForCorretora(leadId, corretoraId);
+}
+
 module.exports = {
   createLeadFromPublic,
   listLeadsForCorretora,
   getSummary,
   updateLead,
+  getLeadDetail,
+  addLeadNote,
+  deleteLeadNote,
+  updateLeadProposal,
+  updateLeadNextAction,
   confirmLoteVendidoFromPublic,
   getPublicLeadStatus,
   // Helpers exportados p/ uso em controller que precisa devolver o

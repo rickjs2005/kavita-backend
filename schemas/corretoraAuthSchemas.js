@@ -350,6 +350,71 @@ const updateLeadSchema = z
 // Listagem de leads pela corretora
 // ---------------------------------------------------------------------------
 
+// Fase 3 — Notas datadas no detalhe do lead
+// POST /api/corretora/leads/:id/notes
+const createLeadNoteSchema = z.object({
+  body: z
+    .string({ required_error: "Texto da nota é obrigatório." })
+    .min(1, "Nota vazia.")
+    .max(2000, "Máximo 2000 caracteres.")
+    .transform((v) => v.trim()),
+});
+
+// Fase 3 — Proposta / compra
+// PATCH /api/corretora/leads/:id/proposal
+const updateLeadProposalSchema = z
+  .object({
+    preco_proposto: z
+      .number()
+      .min(0, "Preço não pode ser negativo.")
+      .max(100000)
+      .optional()
+      .nullable(),
+    preco_fechado: z
+      .number()
+      .min(0, "Preço não pode ser negativo.")
+      .max(100000)
+      .optional()
+      .nullable(),
+    data_compra: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Data deve estar em YYYY-MM-DD.")
+      .optional()
+      .nullable(),
+    destino_venda: z
+      .enum([
+        "mercado_interno",
+        "exportacao",
+        "cooperativa",
+        "revenda",
+        "outro",
+      ])
+      .optional()
+      .nullable(),
+  })
+  .refine(
+    (data) => Object.values(data).some((v) => v !== undefined),
+    { message: "Informe ao menos um campo para atualizar." },
+  );
+
+// Fase 3 — Próxima ação (lembrete simples)
+// PATCH /api/corretora/leads/:id/next-action
+const updateLeadNextActionSchema = z.object({
+  next_action_text: z
+    .string()
+    .max(255, "Máximo 255 caracteres.")
+    .optional()
+    .nullable()
+    .transform(trimOrNull),
+  // ISO datetime ou null para limpar. Não validamos "no futuro" — o
+  // corretor pode querer registrar compromisso passado que esqueceu.
+  next_action_at: z
+    .string()
+    .datetime({ offset: true, message: "Formato de data inválido." })
+    .optional()
+    .nullable(),
+});
+
 const listLeadsQuerySchema = z.object({
   status: z.enum(["new", "contacted", "closed", "lost"]).optional(),
   amostra_status: z
@@ -411,6 +476,9 @@ module.exports = {
   updateProfileSchema,
   createLeadSchema,
   updateLeadSchema,
+  createLeadNoteSchema,
+  updateLeadProposalSchema,
+  updateLeadNextActionSchema,
   listLeadsQuerySchema,
   inviteCorretoraUserSchema,
   forgotPasswordSchema,
