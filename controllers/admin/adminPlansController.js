@@ -47,6 +47,19 @@ async function createPlan(req, res, next) {
   }
 }
 
+async function getBroadcastPreview(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const preview = await planService.getBroadcastPreview(id);
+    response.ok(res, preview);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function updatePlan(req, res, next) {
   try {
     const id = Number(req.params.id);
@@ -262,6 +275,7 @@ module.exports = {
   listPlans,
   createPlan,
   updatePlan,
+  getBroadcastPreview,
   getCorretoraSubscription,
   assignPlanToCorretora,
   updateCorretoraSubscription,

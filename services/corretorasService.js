@@ -17,6 +17,7 @@ const { withTransaction } = require("../lib/withTransaction");
 const plansRepo = require("../repositories/plansRepository");
 const subsRepo = require("../repositories/subscriptionsRepository");
 const subEventsRepo = require("../repositories/subscriptionEventsRepository");
+const planService = require("./planService");
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -187,6 +188,28 @@ async function toggleFeatured(id, is_featured) {
   // nunca é bloqueado. Se a corretora alvo já está em destaque, não
   // estamos consumindo um novo slot — deixa passar idempotente.
   if (is_featured && !current.is_featured) {
+    // Checa capability do plano ANTES do cap global: feedback ao admin
+    // é mais útil ("plano FREE não tem destaque regional") do que
+    // ("limite atingido"). Sem isso, destaque vira grátis e anula o
+    // valor do plano pago.
+    const hasHighlight = await planService.hasCapability(
+      id,
+      "regional_highlight",
+    );
+    if (!hasHighlight) {
+      const ctx = await planService.getPlanContext(id);
+      throw new AppError(
+        `Plano atual (${ctx.plan?.name ?? "sem plano"}) não inclui destaque regional. Faça upgrade do plano antes de destacar esta corretora.`,
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+        {
+          capability: "regional_highlight",
+          current_plan_slug: ctx.plan?.slug ?? null,
+          current_plan_name: ctx.plan?.name ?? null,
+        },
+      );
+    }
+
     const currentFeatured = await adminRepo.countFeatured();
     if (currentFeatured >= MAX_FEATURED_CORRETORAS) {
       throw new AppError(

@@ -64,7 +64,11 @@ mount(
   "./admin/adminCorretorasMetrics",
   requirePermission("mercado_cafe_manage"),
 );
-mount("/admin/monetization", "./admin/adminPlans");
+mount(
+  "/admin/monetization",
+  "./admin/adminPlans",
+  requirePermission("mercado_cafe_manage"),
+);
 mount("/admin/audit", "./admin/adminAudit");
 
 /* ============================================================

@@ -8,6 +8,7 @@ const ctrl = require("../../controllers/admin/adminPlansController");
 // Plans
 router.get("/plans", ctrl.listPlans);
 router.post("/plans", ctrl.createPlan);
+router.get("/plans/:id/broadcast-preview", ctrl.getBroadcastPreview);
 router.put("/plans/:id", ctrl.updatePlan);
 
 // Subscriptions por corretora

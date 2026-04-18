@@ -294,6 +294,60 @@ async function markExpired(subscriptionId, corretoraId) {
  * avisa claramente. Sem a flag, o comportamento padrão (e correto
  * de SaaS) é preservar o contrato do momento da assinatura.
  */
+/**
+ * Fase 5.4 preview — monta relatório de impacto para o admin
+ * revisar ANTES de confirmar o broadcast. Retorna:
+ *   - plan: info do plano + capabilities "vivas"
+ *   - affected_count
+ *   - subscriptions: lista resumida com nome da corretora, status,
+ *     e flag indicando se já tem snapshot divergente
+ */
+async function getBroadcastPreview(planId) {
+  const plan = await plansRepo.findById(planId);
+  if (!plan) {
+    throw new AppError(
+      "Plano não encontrado.",
+      ERROR_CODES.NOT_FOUND,
+      404,
+    );
+  }
+  const snapshot = buildPlanSnapshot(plan);
+  const liveCapabilities = snapshot?.capabilities ?? {};
+  const activeSubs = await subsRepo.listActiveByPlan(planId);
+
+  const subscriptions = activeSubs.map((s) => {
+    const hasSnapshot = s.capabilities_snapshot != null;
+    const currentEffective = s.capabilities_snapshot ?? liveCapabilities;
+    const divergent =
+      hasSnapshot &&
+      JSON.stringify(currentEffective) !== JSON.stringify(liveCapabilities);
+    return {
+      subscription_id: s.id,
+      corretora_id: s.corretora_id,
+      corretora_name: s.corretora_name,
+      corretora_slug: s.corretora_slug,
+      corretora_city: s.corretora_city,
+      corretora_state: s.corretora_state,
+      status: s.status,
+      current_period_end: s.current_period_end,
+      trial_ends_at: s.trial_ends_at,
+      has_snapshot: hasSnapshot,
+      divergent_from_live: divergent,
+    };
+  });
+
+  return {
+    plan: {
+      id: plan.id,
+      slug: plan.slug,
+      name: plan.name,
+      capabilities_live: liveCapabilities,
+    },
+    affected_count: subscriptions.length,
+    subscriptions,
+  };
+}
+
 async function broadcastCapabilitiesFromPlan(planId) {
   const plan = await plansRepo.findById(planId);
   if (!plan) {
@@ -324,4 +378,5 @@ module.exports = {
   assignPlan,
   markExpired,
   broadcastCapabilitiesFromPlan,
+  getBroadcastPreview,
 };

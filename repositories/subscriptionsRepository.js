@@ -107,6 +107,30 @@ async function create(data, conn = pool) {
 }
 
 /**
+ * Fase 5.4 preview — lista assinaturas ativas de um plano, com nome
+ * da corretora e snapshot atual (se houver), para o admin decidir
+ * conscientemente se vai broadcastear novas capabilities.
+ */
+async function listActiveByPlan(planId, conn = pool) {
+  const [rows] = await conn.query(
+    `SELECT s.id, s.corretora_id, s.status, s.current_period_end,
+            s.trial_ends_at, s.capabilities_snapshot,
+            c.name AS corretora_name, c.slug AS corretora_slug,
+            c.city AS corretora_city, c.state AS corretora_state
+       FROM corretora_subscriptions s
+       JOIN corretoras c ON c.id = s.corretora_id
+      WHERE s.plan_id = ?
+        AND s.status IN ('active','trialing','past_due')
+      ORDER BY c.name ASC`,
+    [planId],
+  );
+  return rows.map((r) => ({
+    ...r,
+    capabilities_snapshot: parseJsonField(r.capabilities_snapshot),
+  }));
+}
+
+/**
  * Broadcast: aplica um capabilities_snapshot a TODAS as assinaturas
  * ativas/trial/past_due do plano dado. Usado pelo admin quando
  * explicitamente marca "aplicar a assinaturas existentes" ao editar
@@ -186,5 +210,6 @@ module.exports = {
   update,
   cancelActiveForCorretora,
   updateStatus,
+  listActiveByPlan,
   applyCapabilitiesSnapshotToActiveByPlan,
 };
