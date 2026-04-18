@@ -297,6 +297,47 @@ async function countPending() {
   return Number(rows[0]?.total || 0);
 }
 
+/**
+ * ETAPA 3.4 — lista corretoras com cadastro regional incompleto.
+ * "Incompleto" = `endereco_textual` vazio/null E nenhum dos 4 booleans
+ * operacionais marcado (café especial, retirada, exportação, cooperativas)
+ * E sem `volume_minimo_sacas` setado.
+ *
+ * Critério intencional amplo: corretoras que editaram PARCIALMENTE
+ * (1–2 campos de 6) já ficam fora da lista — já deram o pontapé,
+ * admin não precisa incomodar.
+ */
+async function listIncompleteRegional({ limit = 100 } = {}) {
+  const [rows] = await pool.query(
+    `SELECT id, name, slug, city, state, email, contact_name, created_at,
+            endereco_textual, compra_cafe_especial, volume_minimo_sacas,
+            faz_retirada_amostra, trabalha_exportacao, trabalha_cooperativas,
+            (
+              (CASE WHEN endereco_textual IS NULL OR endereco_textual = '' THEN 1 ELSE 0 END) +
+              (CASE WHEN volume_minimo_sacas IS NULL THEN 1 ELSE 0 END) +
+              (1 - COALESCE(compra_cafe_especial, 0)) +
+              (1 - COALESCE(faz_retirada_amostra, 0)) +
+              (1 - COALESCE(trabalha_exportacao, 0)) +
+              (1 - COALESCE(trabalha_cooperativas, 0))
+            ) AS missing_count
+       FROM corretoras
+      WHERE status = 'active'
+        AND deleted_at IS NULL
+        AND (
+          endereco_textual IS NULL OR endereco_textual = ''
+        )
+        AND COALESCE(compra_cafe_especial, 0) = 0
+        AND COALESCE(faz_retirada_amostra, 0) = 0
+        AND COALESCE(trabalha_exportacao, 0) = 0
+        AND COALESCE(trabalha_cooperativas, 0) = 0
+        AND volume_minimo_sacas IS NULL
+      ORDER BY created_at DESC
+      LIMIT ?`,
+    [Number(limit)],
+  );
+  return rows;
+}
+
 module.exports = {
   // Corretoras
   list,
@@ -319,4 +360,5 @@ module.exports = {
   countPending,
   clearSubmissionPassword,
   findPendingSubmissionByEmail,
+  listIncompleteRegional,
 };

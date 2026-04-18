@@ -12,6 +12,7 @@ const eventsRepo = require("../repositories/corretoraLeadEventsRepository");
 const publicCorretorasRepo = require("../repositories/corretorasPublicRepository");
 const notificationsRepo = require("../repositories/corretoraNotificationsRepository");
 const usersRepo = require("../repositories/corretoraUsersRepository");
+const smsService = require("./smsService");
 const mailService = require("./mailService");
 const analyticsService = require("./analyticsService");
 const logger = require("../lib/logger");
@@ -117,6 +118,7 @@ async function createLeadFromPublic({ slug, data, meta }) {
     urgencia: data.urgencia,
     observacoes: data.observacoes,
     consentimento_contato: data.consentimento_contato === true,
+    sms_optin: data.sms_optin === true,
     source_ip: meta?.ip,
     user_agent: meta?.userAgent,
   });
@@ -604,6 +606,43 @@ async function updateLead(leadId, corretoraId, data, actor = {}) {
       },
       "corretora.lead.status_changed"
     );
+    // ETAPA 3.2 — SMS "corretora respondeu" quando status vai
+    // new → contacted (primeira resposta) + produtor fez opt-in +
+    // ainda não enviamos esse SMS antes. Tudo fire-and-forget:
+    // falha de SMS nunca derruba o update de status.
+    if (
+      current.status === "new" &&
+      data.status === "contacted" &&
+      current.sms_optin &&
+      !current.sms_sent_contacted_at
+    ) {
+      // Busca nome da corretora (current só tem colunas do lead).
+      publicCorretorasRepo
+        .findById(current.corretora_id)
+        .then((corretora) => {
+          const corretoraName = corretora?.name || "a corretora";
+          const firstName =
+            String(current.nome ?? "").split(" ")[0] || "produtor";
+          return smsService.send({
+            to: current.telefone,
+            text: `Oi ${firstName}, a ${corretoraName} recebeu seu contato no Kavita e vai retornar em breve.`,
+            context: "lead.contacted",
+          });
+        })
+        .then((r) => {
+          if (r?.sent) {
+            return leadsRepo.markSmsContactedSent(leadId);
+          }
+          return undefined;
+        })
+        .catch((err) =>
+          logger.warn(
+            { err: err?.message ?? String(err), leadId },
+            "corretora.lead.sms_send_failed",
+          ),
+        );
+    }
+
     // Fase 3 — timeline. Mapeia status→event_type pra UI distinguir
     // "ganho" / "perdido" de mudança neutra e pintar a linha
     // correspondente (verde pra won, rose pra lost).

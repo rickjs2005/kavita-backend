@@ -27,6 +27,7 @@ async function create({
   urgencia,
   observacoes,
   consentimento_contato,
+  sms_optin,
   source_ip,
   user_agent,
 }) {
@@ -37,9 +38,9 @@ async function create({
         canal_preferido, corrego_localidade, safra_tipo,
         possui_amostra, possui_laudo, bebida_percebida,
         preco_esperado_saca, urgencia, observacoes,
-        consentimento_contato,
+        consentimento_contato, sms_optin,
         source_ip, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       corretora_id,
       nome,
@@ -61,11 +62,27 @@ async function create({
       urgencia ?? null,
       observacoes ?? null,
       consentimento_contato ? 1 : 0,
+      sms_optin ? 1 : 0,
       source_ip ?? null,
       user_agent ?? null,
     ],
   );
   return result.insertId;
+}
+
+/**
+ * ETAPA 3.2 — marca que o SMS "corretora respondeu" já foi enviado
+ * para este lead. Idempotência: não dispara 2x se a corretora voltar
+ * pra "new" e novamente "contacted" na mesma sessão.
+ */
+async function markSmsContactedSent(leadId) {
+  const [result] = await pool.query(
+    `UPDATE corretora_leads
+        SET sms_sent_contacted_at = NOW()
+      WHERE id = ? AND sms_sent_contacted_at IS NULL`,
+    [leadId],
+  );
+  return result.affectedRows;
 }
 
 /**
@@ -569,5 +586,6 @@ module.exports = {
   getPipelineValue,
   getClosedLotsAggregate,
   countInCurrentMonth,
+  markSmsContactedSent,
   summary,
 };

@@ -251,6 +251,10 @@ const createLeadSchema = z.object({
     .refine((v) => v === true, {
       message: "Precisamos da sua autorização para compartilhar com a corretora.",
     }),
+  // ETAPA 3.2 — opt-in SMS (produtor 50+ anos prefere SMS a WhatsApp).
+  // Opcional; default false. Consentimento adicional ao LGPD do
+  // canal geral — ficar explícito no form.
+  sms_optin: z.boolean().optional(),
   // Honeypot — campo invisível posicionado fora da tela no form.
   // Usuário humano nunca preenche; bot que tenta preencher tudo cai
   // aqui. Se vier qualquer coisa diferente de vazio/null, o controller

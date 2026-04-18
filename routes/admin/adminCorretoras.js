@@ -91,6 +91,11 @@ router.get("/corretoras/:id/admin-notes", ctrl.listAdminNotes);
 router.post("/corretoras/:id/admin-notes", ctrl.createAdminNote);
 router.delete("/corretoras/:id/admin-notes/:noteId", ctrl.deleteAdminNote);
 
+// ETAPA 3.4 — backfill regional: corretoras com perfil incompleto
+const backfillCtrl = require("../../controllers/admin/adminRegionalBackfillController");
+router.get("/backfill-regional", backfillCtrl.listIncomplete);
+router.post("/backfill-regional/invite/:id", backfillCtrl.sendInvite);
+
 // ─── Submissions ────────────────────────────────────────────────────────────
 
 router.get("/submissions", ctrl.listSubmissions);

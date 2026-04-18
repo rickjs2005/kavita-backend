@@ -51,6 +51,9 @@ load("/public/plans", "./public/publicPlans");
 // — Webhooks externos (sem auth; validação via assinatura no adapter)
 load("/webhooks/asaas", "./public/webhookAsaas");
 
+// — ETAPA 3.1: cotação café (fail-silent quando provider desligado)
+load("/public/cotacoes-cafe", "./public/publicCotacoesCafe");
+
 // — Contato público —
 load("/public/contato", "./public/publicContato");
 load("/public/support-config", "./public/publicSupportConfig");

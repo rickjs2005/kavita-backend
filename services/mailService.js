@@ -377,6 +377,59 @@ async function sendCorretoraNewIpAlertEmail({
   });
 }
 
+/**
+ * ETAPA 3.4 — convite editorial pro admin chamar corretora a
+ * completar o perfil regional. Tom respeitoso/relacional (não
+ * cobrança), explica por que cada campo ajuda o produtor.
+ */
+async function sendRegionalBackfillInviteEmail({
+  toEmail,
+  corretoraName,
+  contactName,
+}) {
+  const appUrl = config.appUrl.replace(/\/$/, "");
+  const perfilUrl = `${appUrl}/painel/corretora/perfil`;
+  const safeName = corretoraName || "sua corretora";
+  const greeting = contactName ? `Olá, ${contactName}` : "Olá";
+
+  await transporter.sendMail({
+    from: `"Curadoria Kavita — Mercado do Café" <${config.email.user}>`,
+    to: toEmail,
+    subject: `Complete o perfil regional da ${safeName} (2 minutos)`,
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; color:#1c1917;">
+        <h2 style="color:#92400e; margin:0 0 12px;">☕ Produtor está olhando sua ficha</h2>
+        <p>${greeting},</p>
+        <p>
+          A ficha da <strong>${safeName}</strong> já está ativa, mas ainda falta
+          preencher os sinais que o produtor da Zona da Mata olha primeiro:
+        </p>
+        <ul style="color:#44403c;font-size:14px;line-height:1.7;">
+          <li><strong>Endereço</strong> da mesa — aparece com mapa</li>
+          <li><strong>Volume mínimo</strong> de saca que vocês aceitam</li>
+          <li>Se compram <strong>café especial</strong> (arábica SCA 80+)</li>
+          <li>Se fazem <strong>retirada de amostra</strong></li>
+          <li>Se trabalham com <strong>exportação</strong></li>
+          <li>Se atendem <strong>cooperativas</strong></li>
+        </ul>
+        <p style="color:#44403c;font-size:14px;">
+          Cada sinal vira um chip na sua ficha pública — reduz fricção na
+          decisão do produtor e aumenta a taxa de contato. Leva 2 minutos:
+        </p>
+        <p style="margin:24px 0;">
+          <a href="${perfilUrl}"
+             style="display:inline-block; background:#b45309; color:white; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:600;">
+            Completar perfil regional
+          </a>
+        </p>
+        <p style="color:#78716c; font-size:12px;">
+          Precisa de ajuda? Responda este e-mail e a Curadoria Kavita dá suporte.
+        </p>
+      </div>
+    `,
+  });
+}
+
 async function sendTransactionalEmail(to, subject, html, text = null) {
   const mailOptions = {
     from: `"Kavita" <${config.email.user}>`,
@@ -396,5 +449,6 @@ module.exports = {
   sendCorretoraRejectionEmail,
   sendLeadProducerConfirmationEmail,
   sendCorretoraNewIpAlertEmail,
+  sendRegionalBackfillInviteEmail,
   sendTransactionalEmail,
 };
