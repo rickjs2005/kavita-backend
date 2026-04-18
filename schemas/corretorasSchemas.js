@@ -306,6 +306,18 @@ const listPublicQuerySchema = z.object({
   city: z.string().optional(),
   featured: z.string().optional(),
   search: z.string().optional(),
+  // Fase 5 — filtros profundos. Todos opcionais para preservar
+  // compat com consumers antigos (Next RSC + fetchers) que não
+  // passam esses params.
+  tipo_cafe: z
+    .enum([
+      "arabica_comum",
+      "arabica_especial",
+      "natural",
+      "cereja_descascado",
+    ])
+    .optional(),
+  perfil_compra: z.enum(["compra", "venda", "ambos"]).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
 });
