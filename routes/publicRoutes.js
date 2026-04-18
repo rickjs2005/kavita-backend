@@ -54,6 +54,9 @@ load("/webhooks/asaas", "./public/webhookAsaas");
 // — ETAPA 3.1: cotação café (fail-silent quando provider desligado)
 load("/public/cotacoes-cafe", "./public/publicCotacoesCafe");
 
+// — FIX #3: features ativas no ambiente (SMS, cotação)
+load("/public/features", "./public/publicFeatures");
+
 // — Contato público —
 load("/public/contato", "./public/publicContato");
 load("/public/support-config", "./public/publicSupportConfig");

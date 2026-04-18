@@ -322,6 +322,113 @@ describe("services/corretoraLeadsService", () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // FIX #6 — preco_fechado auto-seta status=closed
+  // -------------------------------------------------------------------------
+  describe("updateLeadProposal() — auto-close", () => {
+    it("preco_fechado pela 1ª vez fecha o deal automaticamente", async () => {
+      leadsRepo.findByIdForCorretora
+        .mockResolvedValueOnce({
+          id: 42,
+          corretora_id: 10,
+          status: "contacted",
+          preco_fechado: null,
+          created_at: new Date(),
+          first_response_at: new Date(),
+        })
+        .mockResolvedValueOnce({ id: 42, status: "closed" });
+
+      await svc.updateLeadProposal({
+        leadId: 42,
+        corretoraId: 10,
+        actor: { userId: 7 },
+        data: { preco_fechado: 1815 },
+      });
+
+      // O patch enviado ao repo.update deve incluir status: "closed"
+      expect(leadsRepo.update).toHaveBeenCalledWith(
+        42,
+        10,
+        expect.objectContaining({
+          preco_fechado: 1815,
+          status: "closed",
+        }),
+      );
+    });
+
+    it("NÃO auto-fecha se status já é lost (preserva manual)", async () => {
+      leadsRepo.findByIdForCorretora
+        .mockResolvedValueOnce({
+          id: 42,
+          corretora_id: 10,
+          status: "lost",
+          preco_fechado: null,
+          created_at: new Date(),
+          first_response_at: new Date(),
+        })
+        .mockResolvedValueOnce({ id: 42, status: "lost" });
+
+      await svc.updateLeadProposal({
+        leadId: 42,
+        corretoraId: 10,
+        actor: { userId: 7 },
+        data: { preco_fechado: 1815 },
+      });
+
+      const patch = leadsRepo.update.mock.calls[0][2];
+      expect(patch.status).toBeUndefined();
+    });
+
+    it("NÃO auto-fecha quando preco_fechado já existia (atualização)", async () => {
+      leadsRepo.findByIdForCorretora
+        .mockResolvedValueOnce({
+          id: 42,
+          corretora_id: 10,
+          status: "contacted",
+          preco_fechado: 1800, // já tinha valor
+          created_at: new Date(),
+          first_response_at: new Date(),
+        })
+        .mockResolvedValueOnce({ id: 42, status: "contacted" });
+
+      await svc.updateLeadProposal({
+        leadId: 42,
+        corretoraId: 10,
+        actor: { userId: 7 },
+        data: { preco_fechado: 1820 }, // ajuste
+      });
+
+      const patch = leadsRepo.update.mock.calls[0][2];
+      expect(patch.status).toBeUndefined();
+    });
+
+    it("auto-close desde 'new' grava first_response_at (SLA)", async () => {
+      leadsRepo.findByIdForCorretora
+        .mockResolvedValueOnce({
+          id: 42,
+          corretora_id: 10,
+          status: "new",
+          preco_fechado: null,
+          created_at: new Date(Date.now() - 3600 * 1000), // 1h atrás
+          first_response_at: null,
+        })
+        .mockResolvedValueOnce({ id: 42, status: "closed" });
+
+      await svc.updateLeadProposal({
+        leadId: 42,
+        corretoraId: 10,
+        actor: { userId: 7 },
+        data: { preco_fechado: 1815 },
+      });
+
+      expect(leadsRepo.markFirstResponse).toHaveBeenCalledWith(
+        42,
+        10,
+        expect.any(Number),
+      );
+    });
+  });
+
   describe("deleteLeadNote()", () => {
     it("404 quando nota não existe no escopo (corretora, lead)", async () => {
       notesRepo.deleteById.mockResolvedValue(0);

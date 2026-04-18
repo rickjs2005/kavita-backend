@@ -960,6 +960,19 @@ async function updateLeadProposal({ leadId, corretoraId, actor, data }) {
   if (data.data_compra !== undefined) patch.data_compra = data.data_compra;
   if (data.destino_venda !== undefined) patch.destino_venda = data.destino_venda;
 
+  // FIX #6 — preco_fechado preenchido fecha o deal automaticamente.
+  // Sem isso, o corretor gravava valor e esquecia de mudar status;
+  // "Fechadas no mês" ficava silencioso. Só auto-fecha se status
+  // ainda está ativo (preserva lost/closed manual).
+  const autoClose =
+    data.preco_fechado != null &&
+    current.preco_fechado == null &&
+    current.status !== "closed" &&
+    current.status !== "lost";
+  if (autoClose) {
+    patch.status = "closed";
+  }
+
   const affected = await leadsRepo.update(leadId, corretoraId, patch);
   if (affected === 0) {
     throw new AppError(
@@ -967,6 +980,53 @@ async function updateLeadProposal({ leadId, corretoraId, actor, data }) {
       ERROR_CODES.VALIDATION_ERROR,
       400,
     );
+  }
+
+  // Se o auto-close disparou e SLA ainda não foi marcado (lead pulou
+  // direto de "new" pra "closed" sem passar por "contacted"), grava
+  // first_response_at agora — caso contrário a métrica de tempo
+  // até resposta fica null pra deals fechados rápido.
+  if (autoClose && current.status === "new" && !current.first_response_at) {
+    const responseSeconds = Math.max(
+      0,
+      Math.floor(
+        (Date.now() - new Date(current.created_at).getTime()) / 1000,
+      ),
+    );
+    leadsRepo
+      .markFirstResponse(leadId, corretoraId, responseSeconds)
+      .catch((err) =>
+        logger.warn(
+          { err, leadId },
+          "corretora.lead.first_response_auto_close_failed",
+        ),
+      );
+  }
+
+  // Se auto-close disparou, emite TAMBÉM o status_changed antes do
+  // deal_won — timeline fica coerente ("new → closed" + "deal ganho")
+  // sem furar a sequência.
+  if (autoClose) {
+    eventsRepo
+      .create({
+        lead_id: leadId,
+        corretora_id: corretoraId,
+        actor_user_id: actor?.userId ?? null,
+        actor_type: "corretora_user",
+        event_type: "status_changed",
+        title: `Status: ${current.status} → closed (auto)`,
+        meta: {
+          from: current.status,
+          to: "closed",
+          reason: "auto_on_preco_fechado",
+        },
+      })
+      .catch((err) =>
+        logger.warn(
+          { err, leadId },
+          "corretora.lead.event_auto_close_failed",
+        ),
+      );
   }
 
   // Emissão de evento com granularidade:
