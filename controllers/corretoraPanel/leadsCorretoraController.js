@@ -244,6 +244,29 @@ async function exportLeads(req, res, next) {
 }
 
 /**
+ * GET /api/corretora/leads/risks
+ * Snapshot operacional: overdue, stale, pipeline value.
+ */
+async function getDashboardRisks(req, res, next) {
+  try {
+    const data = await leadsService.getDashboardRisks(
+      req.corretoraUser.corretora_id,
+    );
+    return response.ok(res, data);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao carregar riscos.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+/**
  * GET /api/corretora/leads/:id
  * Detalhe completo com notes + events.
  */
@@ -398,6 +421,7 @@ async function updateLeadNextAction(req, res, next) {
 module.exports = {
   listMine,
   getSummary,
+  getDashboardRisks,
   updateLead,
   exportLeads,
   getLeadDetail,

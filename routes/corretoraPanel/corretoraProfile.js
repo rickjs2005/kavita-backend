@@ -10,6 +10,7 @@ const router = express.Router();
 const { validate } = require("../../middleware/validate");
 const { requireCapability } = require("../../lib/corretoraPermissions");
 const { updateProfileSchema } = require("../../schemas/corretoraAuthSchemas");
+const mediaService = require("../../services/mediaService");
 const ctrl = require("../../controllers/corretoraPanel/profileCorretoraController");
 
 // GET é livre para qualquer role autenticado (inclusive viewer) — todos
@@ -20,6 +21,14 @@ router.put(
   requireCapability("profile.edit"),
   validate(updateProfileSchema),
   ctrl.updateMyProfile,
+);
+// Fase 4 — upload de logo pela própria corretora (sem depender do admin).
+// mediaService.upload já limita tipo (JPEG/PNG/WebP) e tamanho (2 MB).
+router.put(
+  "/logo",
+  requireCapability("profile.edit"),
+  mediaService.upload.single("logo"),
+  ctrl.updateMyLogo,
 );
 
 module.exports = router;

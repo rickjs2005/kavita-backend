@@ -376,6 +376,100 @@ async function getTopCorregos({ daysBack = 7, limit = 5 } = {}) {
   }));
 }
 
+/**
+ * Fase 4 — próximas ações vencidas. Lista leads com next_action_at
+ * no passado, ainda relevantes (status != closed/lost). Ordena pelas
+ * mais antigas primeiro. Limite para não inundar o dashboard.
+ */
+async function listOverdueNextActions({ corretoraId, limit = 10 }) {
+  const [rows] = await pool.query(
+    `SELECT id, nome, cidade, corrego_localidade, status,
+            next_action_text, next_action_at
+       FROM corretora_leads
+      WHERE corretora_id = ?
+        AND next_action_at IS NOT NULL
+        AND next_action_at < NOW()
+        AND status NOT IN ('closed', 'lost')
+      ORDER BY next_action_at ASC
+      LIMIT ?`,
+    [corretoraId, Number(limit)],
+  );
+  return rows;
+}
+
+/**
+ * Fase 4 — leads parados. status='new' + criado há mais que
+ * `hoursThreshold` horas + sem first_response_at. São os leads que
+ * estão esfriando sem ninguém tocar. Ordena pelos mais velhos.
+ */
+async function listStaleNewLeads({
+  corretoraId,
+  hoursThreshold = 48,
+  limit = 10,
+}) {
+  const [rows] = await pool.query(
+    `SELECT id, nome, cidade, corrego_localidade, telefone,
+            volume_range, tipo_cafe, urgencia,
+            created_at, recontact_count
+       FROM corretora_leads
+      WHERE corretora_id = ?
+        AND status = 'new'
+        AND first_response_at IS NULL
+        AND created_at < DATE_SUB(NOW(), INTERVAL ? HOUR)
+      ORDER BY created_at ASC
+      LIMIT ?`,
+    [corretoraId, Number(hoursThreshold), Number(limit)],
+  );
+  return rows;
+}
+
+/**
+ * Fase 4 — valor do pipeline e compras do mês. Duas agregações:
+ *   - Em negociação: leads com preco_proposto != null e status ativo
+ *   - Fechadas no mês: leads com preco_fechado != null e
+ *     data_compra no mês corrente
+ *
+ * Retorna contagens e somas simples. Cálculo de "sacas negociadas"
+ * usa o range médio do volume_range (heurística — não temos o
+ * número exato de sacas; é aproximação editorial).
+ */
+async function getPipelineValue(corretoraId) {
+  const [[negotiating]] = await pool.query(
+    `SELECT COUNT(*) AS total,
+            SUM(preco_proposto) AS soma_propostos
+       FROM corretora_leads
+      WHERE corretora_id = ?
+        AND preco_proposto IS NOT NULL
+        AND status NOT IN ('closed', 'lost')`,
+    [corretoraId],
+  );
+  const [[closedMonth]] = await pool.query(
+    `SELECT COUNT(*) AS total,
+            SUM(preco_fechado) AS soma_fechados
+       FROM corretora_leads
+      WHERE corretora_id = ?
+        AND preco_fechado IS NOT NULL
+        AND data_compra IS NOT NULL
+        AND YEAR(data_compra) = YEAR(CURDATE())
+        AND MONTH(data_compra) = MONTH(CURDATE())`,
+    [corretoraId],
+  );
+  return {
+    negotiating: {
+      total: Number(negotiating?.total || 0),
+      soma_propostos: negotiating?.soma_propostos
+        ? Number(negotiating.soma_propostos)
+        : 0,
+    },
+    closed_month: {
+      total: Number(closedMonth?.total || 0),
+      soma_fechados: closedMonth?.soma_fechados
+        ? Number(closedMonth.soma_fechados)
+        : 0,
+    },
+  };
+}
+
 async function summary(corretoraId) {
   const [rows] = await pool.query(
     `SELECT status, COUNT(*) AS total
@@ -407,5 +501,8 @@ module.exports = {
   markFirstResponse,
   broadcastLoteVendido,
   getTopCorregos,
+  listOverdueNextActions,
+  listStaleNewLeads,
+  getPipelineValue,
   summary,
 };

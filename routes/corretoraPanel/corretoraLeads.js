@@ -21,6 +21,11 @@ const ctrl = require("../../controllers/corretoraPanel/leadsCorretoraController"
 router.get("/", requireCapability("leads.view"), ctrl.listMine);
 router.get("/summary", requireCapability("leads.view"), ctrl.getSummary);
 router.get(
+  "/risks",
+  requireCapability("leads.view"),
+  ctrl.getDashboardRisks,
+);
+router.get(
   "/export",
   requireCapability("leads.export"),
   requirePlanCapability("leads_export"),

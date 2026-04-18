@@ -972,6 +972,22 @@ async function updateLeadProposal({ leadId, corretoraId, actor, data }) {
   return leadsRepo.findByIdForCorretora(leadId, corretoraId);
 }
 
+/**
+ * Fase 4 — snapshot operacional do dashboard. Agrega 3 blocos:
+ *   - overdue: próximas ações vencidas (máx 10)
+ *   - stale: leads parados > 48h sem primeira resposta (máx 10)
+ *   - pipeline: valor em negociação + fechadas no mês
+ * Paralelo, escopado por corretora.
+ */
+async function getDashboardRisks(corretoraId) {
+  const [overdue, stale, pipeline] = await Promise.all([
+    leadsRepo.listOverdueNextActions({ corretoraId }),
+    leadsRepo.listStaleNewLeads({ corretoraId }),
+    leadsRepo.getPipelineValue(corretoraId),
+  ]);
+  return { overdue, stale, pipeline };
+}
+
 async function updateLeadNextAction({ leadId, corretoraId, actor, data }) {
   const current = await leadsRepo.findByIdForCorretora(leadId, corretoraId);
   if (!current) {
@@ -1026,6 +1042,7 @@ module.exports = {
   getSummary,
   updateLead,
   getLeadDetail,
+  getDashboardRisks,
   addLeadNote,
   deleteLeadNote,
   updateLeadProposal,
