@@ -43,6 +43,8 @@ const SELECT_COLUMNS = `
   c.website, c.instagram, c.facebook, c.is_featured,
   c.cidades_atendidas, c.tipos_cafe, c.perfil_compra,
   c.horario_atendimento, c.anos_atuacao, c.foto_responsavel_path,
+  c.endereco_textual, c.compra_cafe_especial, c.volume_minimo_sacas,
+  c.faz_retirada_amostra, c.trabalha_exportacao, c.trabalha_cooperativas,
   (
     SELECT COUNT(*) FROM corretora_reviews r
     WHERE r.corretora_id = c.id AND r.status = 'approved'

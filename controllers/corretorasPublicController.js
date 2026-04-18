@@ -116,9 +116,38 @@ const submitCorretora = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/public/corretoras/:slug/track-record
+ *
+ * Fase 8 — prova social agregada. Retorna total de lotes fechados
+ * nos últimos 365 dias e estimativa de sacas (midpoint por faixa).
+ * NÃO expõe nome de produtor nem preço — só contagem e soma.
+ */
+const getTrackRecord = async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+    const corretora = await publicRepo.findBySlug(slug);
+    if (!corretora) {
+      return next(
+        new AppError("Corretora não encontrada.", ERROR_CODES.NOT_FOUND, 404),
+      );
+    }
+    const leadsRepo = require("../repositories/corretoraLeadsRepository");
+    const agg = await leadsRepo.getClosedLotsAggregate(corretora.id);
+    return response.ok(res, agg);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError("Erro ao buscar histórico.", ERROR_CODES.SERVER_ERROR, 500),
+    );
+  }
+};
+
 module.exports = {
   listCorretoras,
   listCities,
   getBySlug,
   submitCorretora,
+  getTrackRecord,
 };

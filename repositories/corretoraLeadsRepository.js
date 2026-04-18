@@ -470,6 +470,51 @@ async function getPipelineValue(corretoraId) {
   };
 }
 
+/**
+ * Fase 8 — prova social anonimizada. Agrega lotes fechados (leads
+ * com preco_fechado IS NOT NULL) e soma sacas via volume_range
+ * usando o ponto médio de cada faixa:
+ *   ate_50 → 35, 50_200 → 125, 200_500 → 350, 500_mais → 700
+ * Esses números são heurística — nenhum produtor individual é
+ * exposto. O público vê só o agregado "X lotes · ~Y sacas".
+ *
+ * Janela: últimos 365 dias, suficiente pra cobrir uma safra completa.
+ */
+const VOLUME_MIDPOINT = {
+  ate_50: 35,
+  "50_200": 125,
+  "200_500": 350,
+  "500_mais": 700,
+};
+
+async function getClosedLotsAggregate(corretoraId) {
+  const [rows] = await pool.query(
+    `SELECT volume_range, COUNT(*) AS total
+       FROM corretora_leads
+      WHERE corretora_id = ?
+        AND preco_fechado IS NOT NULL
+        AND (data_compra IS NULL
+             OR data_compra >= DATE_SUB(CURDATE(), INTERVAL 365 DAY))
+      GROUP BY volume_range`,
+    [corretoraId],
+  );
+  let totalLots = 0;
+  let estimatedSacas = 0;
+  for (const r of rows) {
+    const n = Number(r.total || 0);
+    totalLots += n;
+    const midpoint = VOLUME_MIDPOINT[r.volume_range] ?? 0;
+    estimatedSacas += midpoint * n;
+  }
+  return {
+    total_lots: totalLots,
+    estimated_sacas: estimatedSacas,
+    // Expor o contrato para quem for ler (admin/ficha): não é preço,
+    // não é nome de produtor, não é data exata. Só a soma.
+    window_days: 365,
+  };
+}
+
 async function summary(corretoraId) {
   const [rows] = await pool.query(
     `SELECT status, COUNT(*) AS total
@@ -504,5 +549,6 @@ module.exports = {
   listOverdueNextActions,
   listStaleNewLeads,
   getPipelineValue,
+  getClosedLotsAggregate,
   summary,
 };

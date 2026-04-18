@@ -118,6 +118,9 @@ async function create(data, conn = pool) {
     // Regional (Sprint 2)
     "cidades_atendidas", "tipos_cafe", "perfil_compra",
     "horario_atendimento", "anos_atuacao", "foto_responsavel_path",
+    // Fase 8 — regionais adicionais Zona da Mata
+    "endereco_textual", "compra_cafe_especial", "volume_minimo_sacas",
+    "faz_retirada_amostra", "trabalha_exportacao", "trabalha_cooperativas",
   ];
   const payload = serializeJsonFields(data);
   const placeholders = fields.map(() => "?").join(", ");
@@ -137,6 +140,9 @@ async function update(id, data) {
     // Regional (Sprint 2)
     "cidades_atendidas", "tipos_cafe", "perfil_compra",
     "horario_atendimento", "anos_atuacao", "foto_responsavel_path",
+    // Fase 8 — regionais adicionais Zona da Mata
+    "endereco_textual", "compra_cafe_especial", "volume_minimo_sacas",
+    "faz_retirada_amostra", "trabalha_exportacao", "trabalha_cooperativas",
   ];
 
   const payload = serializeJsonFields(data);

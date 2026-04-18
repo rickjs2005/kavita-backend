@@ -105,6 +105,24 @@ const updateProfileSchema = z
       .max(120)
       .optional()
       .nullable(),
+    // Fase 8 — regionais adicionais Zona da Mata
+    endereco_textual: z
+      .string()
+      .max(255)
+      .optional()
+      .nullable()
+      .transform(trimOrNull),
+    compra_cafe_especial: z.coerce.boolean().optional(),
+    volume_minimo_sacas: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(100000)
+      .optional()
+      .nullable(),
+    faz_retirada_amostra: z.coerce.boolean().optional(),
+    trabalha_exportacao: z.coerce.boolean().optional(),
+    trabalha_cooperativas: z.coerce.boolean().optional(),
   })
   .refine(
     (data) => {

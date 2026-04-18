@@ -108,6 +108,9 @@ router.get(
   leadsCtrl.getLeadStatus,
 );
 
+// Fase 8 — track record agregado (prova social sem nome de produtor)
+router.get("/:slug/track-record", ctrl.getTrackRecord);
+
 // Detalhe por slug (deve vir depois das rotas nomeadas)
 router.get("/:slug", ctrl.getBySlug);
 

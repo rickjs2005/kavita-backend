@@ -62,6 +62,13 @@ async function updateMyProfile(req, res, next) {
       "perfil_compra",
       "horario_atendimento",
       "anos_atuacao",
+      // Fase 8 — regionais adicionais Zona da Mata
+      "endereco_textual",
+      "compra_cafe_especial",
+      "volume_minimo_sacas",
+      "faz_retirada_amostra",
+      "trabalha_exportacao",
+      "trabalha_cooperativas",
     ];
 
     const data = {};
