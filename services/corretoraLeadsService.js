@@ -42,6 +42,58 @@ async function createLeadFromPublic({ slug, data, meta }) {
 
   const telefone_normalizado = normalizePhone(data.telefone);
 
+  // Fase 2 dedupe — se o mesmo produtor (telefone_normalizado) já
+  // contactou essa corretora nas últimas 24h, NÃO criamos lead novo.
+  // Em vez disso, incrementamos recontact_count no lead existente e
+  // avisamos a corretora que o produtor voltou a chamar (sinal de
+  // interesse forte). Evita ruído no CRM e SLA artificialmente quebrado.
+  if (telefone_normalizado) {
+    const existing = await leadsRepo.findRecentByCorretoraAndPhone({
+      corretora_id: corretora.id,
+      telefone_normalizado,
+      hours: 24,
+    });
+    if (existing) {
+      await leadsRepo.markRecontactAttempt(existing.id).catch((err) => {
+        logger.warn(
+          { err, leadId: existing.id, corretoraId: corretora.id },
+          "corretora.lead.recontact_update_failed",
+        );
+      });
+      logger.info(
+        {
+          leadId: existing.id,
+          corretoraId: corretora.id,
+          corretoraSlug: slug,
+          ageMinutes: Math.floor(
+            (Date.now() - new Date(existing.created_at).getTime()) / 60000,
+          ),
+        },
+        "corretora.lead.deduped",
+      );
+      notificationsRepo
+        .create({
+          corretora_id: corretora.id,
+          type: "lead.recontato",
+          title: `Produtor voltou a chamar — ${data.nome}`,
+          body: `O mesmo contato (${data.telefone}) tentou falar com você de novo. Pode ser hora de um retorno proativo.`,
+          link: "/painel/corretora/leads",
+          meta: { lead_id: existing.id, source: "recontact_dedupe" },
+        })
+        .catch((err) => {
+          logger.warn(
+            { err, corretoraId: corretora.id, leadId: existing.id },
+            "corretora.lead.recontact_notification_failed",
+          );
+        });
+      return {
+        id: existing.id,
+        corretora_id: corretora.id,
+        deduplicated: true,
+      };
+    }
+  }
+
   const leadId = await leadsRepo.create({
     corretora_id: corretora.id,
     nome: data.nome,
@@ -56,6 +108,13 @@ async function createLeadFromPublic({ slug, data, meta }) {
     canal_preferido: data.canal_preferido,
     corrego_localidade: data.corrego_localidade,
     safra_tipo: data.safra_tipo,
+    possui_amostra: data.possui_amostra,
+    possui_laudo: data.possui_laudo,
+    bebida_percebida: data.bebida_percebida,
+    preco_esperado_saca: data.preco_esperado_saca,
+    urgencia: data.urgencia,
+    observacoes: data.observacoes,
+    consentimento_contato: data.consentimento_contato === true,
     source_ip: meta?.ip,
     user_agent: meta?.userAgent,
   });

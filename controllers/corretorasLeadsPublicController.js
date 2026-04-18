@@ -17,6 +17,27 @@ async function submitLead(req, res, next) {
   try {
     const { slug } = req.params;
 
+    // Honeypot — bot que preencheu o campo invisível cai aqui.
+    // Resposta deliberadamente idêntica ao caso de sucesso para não
+    // revelar a trap; o lead NÃO é criado. Log para telemetria/tuning
+    // do rate-limit adaptativo.
+    if (req.body?.website_hp && String(req.body.website_hp).trim() !== "") {
+      require("../lib/logger").info(
+        {
+          slug,
+          ip: req.ip,
+          userAgent: req.get("user-agent")?.slice(0, 200) || null,
+          honeypotValue: String(req.body.website_hp).slice(0, 80),
+        },
+        "corretora.lead.honeypot_trapped",
+      );
+      return response.created(
+        res,
+        { id: null },
+        "Mensagem enviada! A corretora receberá seu contato em instantes.",
+      );
+    }
+
     const result = await leadsService.createLeadFromPublic({
       slug,
       data: req.body,
@@ -26,11 +47,10 @@ async function submitLead(req, res, next) {
       },
     });
 
-    return response.created(
-      res,
-      { id: result.id },
-      "Mensagem enviada! A corretora receberá seu contato em instantes."
-    );
+    const msg = result.deduplicated
+      ? "Já recebemos seu contato recentemente — a corretora foi avisada de que você voltou a chamar e retorna em breve."
+      : "Mensagem enviada! A corretora receberá seu contato em instantes.";
+    return response.created(res, { id: result.id, deduplicated: Boolean(result.deduplicated) }, msg);
   } catch (err) {
     return next(
       err instanceof AppError

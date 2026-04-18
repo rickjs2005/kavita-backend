@@ -198,6 +198,50 @@ const createLeadSchema = z.object({
     .enum(["atual", "remanescente"])
     .optional()
     .nullable(),
+  // Sprint 2 Fase 2 — Campos regionais adicionais para qualificação
+  // operacional do lead (tudo opcional — form público não deve pesar).
+  possui_amostra: z
+    .enum(["sim", "nao", "vou_colher"])
+    .optional()
+    .nullable(),
+  possui_laudo: z
+    .enum(["sim", "nao"])
+    .optional()
+    .nullable(),
+  bebida_percebida: z
+    .enum(["especial", "dura", "riada", "rio", "mole", "nao_sei"])
+    .optional()
+    .nullable(),
+  preco_esperado_saca: z
+    .number()
+    .min(0, "Preço mínimo é 0.")
+    .max(100000, "Preço acima do razoável — confira os dígitos.")
+    .optional()
+    .nullable(),
+  urgencia: z
+    .enum(["hoje", "semana", "mes", "sem_pressa"])
+    .optional()
+    .nullable(),
+  observacoes: z
+    .string()
+    .max(1000, "Máximo 1000 caracteres.")
+    .optional()
+    .nullable()
+    .transform(trimOrNull),
+  consentimento_contato: z
+    .boolean({ required_error: "Autorize o contato para enviar." })
+    .refine((v) => v === true, {
+      message: "Precisamos da sua autorização para compartilhar com a corretora.",
+    }),
+  // Honeypot — campo invisível posicionado fora da tela no form.
+  // Usuário humano nunca preenche; bot que tenta preencher tudo cai
+  // aqui. Se vier qualquer coisa diferente de vazio/null, o controller
+  // responde 201 silenciosamente SEM criar lead (não revelamos a trap).
+  website_hp: z
+    .string()
+    .max(500)
+    .optional()
+    .nullable(),
 });
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,13 @@ async function create({
   canal_preferido,
   corrego_localidade,
   safra_tipo,
+  possui_amostra,
+  possui_laudo,
+  bebida_percebida,
+  preco_esperado_saca,
+  urgencia,
+  observacoes,
+  consentimento_contato,
   source_ip,
   user_agent,
 }) {
@@ -28,8 +35,11 @@ async function create({
        (corretora_id, nome, telefone, telefone_normalizado, email,
         cidade, mensagem, objetivo, tipo_cafe, volume_range,
         canal_preferido, corrego_localidade, safra_tipo,
+        possui_amostra, possui_laudo, bebida_percebida,
+        preco_esperado_saca, urgencia, observacoes,
+        consentimento_contato,
         source_ip, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       corretora_id,
       nome,
@@ -44,11 +54,65 @@ async function create({
       canal_preferido ?? null,
       corrego_localidade ?? null,
       safra_tipo ?? null,
+      possui_amostra ?? null,
+      possui_laudo ?? null,
+      bebida_percebida ?? null,
+      preco_esperado_saca ?? null,
+      urgencia ?? null,
+      observacoes ?? null,
+      consentimento_contato ? 1 : 0,
       source_ip ?? null,
       user_agent ?? null,
     ],
   );
   return result.insertId;
+}
+
+/**
+ * Fase 2 dedupe — busca lead recente (janela de N horas) do mesmo
+ * produtor (telefone_normalizado) na mesma corretora. Usado pelo
+ * service antes de criar novo lead para evitar contato duplicado
+ * quando o produtor re-submete em janela curta.
+ *
+ * Escopo por corretora_id intencional: o mesmo produtor pode (e deve)
+ * aparecer em múltiplas corretoras — dedupe global bloquearia o
+ * comportamento esperado do marketplace.
+ */
+async function findRecentByCorretoraAndPhone({
+  corretora_id,
+  telefone_normalizado,
+  hours = 24,
+}) {
+  if (!telefone_normalizado) return null;
+  const [[row]] = await pool.query(
+    `SELECT id, created_at, status, first_response_at
+       FROM corretora_leads
+      WHERE corretora_id = ?
+        AND telefone_normalizado = ?
+        AND created_at >= DATE_SUB(NOW(), INTERVAL ? HOUR)
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [corretora_id, telefone_normalizado, hours],
+  );
+  return row ?? null;
+}
+
+/**
+ * Marca que o mesmo produtor tentou contato novamente — incrementa
+ * contador e atualiza timestamp da última tentativa no lead existente.
+ * Mantém o registro original do lead (nome/mensagem/etc) inalterado:
+ * a corretora ainda está atendendo aquele contato; a nova tentativa
+ * é sinal de que o produtor está preocupado/interessado.
+ */
+async function markRecontactAttempt(leadId) {
+  const [result] = await pool.query(
+    `UPDATE corretora_leads
+        SET recontact_count = COALESCE(recontact_count, 0) + 1,
+            last_recontact_at = NOW()
+      WHERE id = ?`,
+    [leadId],
+  );
+  return result.affectedRows;
 }
 
 async function findByIdForCorretora(id, corretoraId) {
@@ -328,6 +392,8 @@ module.exports = {
   findByIdForCorretora,
   countPreviousFromSameProducer,
   findByIdRaw,
+  findRecentByCorretoraAndPhone,
+  markRecontactAttempt,
   list,
   listAllForExport,
   update,
