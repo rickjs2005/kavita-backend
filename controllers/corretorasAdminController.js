@@ -294,6 +294,20 @@ const approveSubmission = async (req, res, next) => {
       : "Corretora aprovada e publicada.";
     return response.ok(res, { corretora_id: result.corretora_id }, msg);
   } catch (err) {
+    // Logar o erro original antes de mascarar como "SERVER_ERROR" 500 —
+    // sem isso, qualquer falha no service (constraint de banco, coluna
+    // nova sem default, race condition) vira toast opaco no admin e
+    // não aparece no log agregado com contexto.
+    if (!(err instanceof AppError)) {
+      logger.error(
+        {
+          err: { message: err?.message, code: err?.code, stack: err?.stack },
+          submissionId: Number(req.params.id),
+          adminId: req.admin?.id,
+        },
+        "corretora.approve.unexpected_error",
+      );
+    }
     return next(
       err instanceof AppError
         ? err

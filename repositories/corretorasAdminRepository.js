@@ -110,7 +110,13 @@ function serializeJsonFields(data) {
 }
 
 async function create(data, conn = pool) {
-  const fields = [
+  // Lista branca de colunas que o caller pode setar. Qualquer campo fora
+  // daqui é silenciosamente ignorado. Campos NÃO passados ficam fora do
+  // INSERT — o MySQL aplica o DEFAULT definido no schema. Isso evita o
+  // bug em que colunas NOT NULL DEFAULT 0 (ex.: compra_cafe_especial,
+  // faz_retirada_amostra da Fase 8) recebem NULL explícito e quebram
+  // o INSERT quando o approveSubmission não as passa.
+  const allowed = [
     "name", "slug", "contact_name", "description", "logo_path",
     "city", "state", "region", "phone", "whatsapp", "email",
     "website", "instagram", "facebook", "status", "is_featured",
@@ -122,10 +128,22 @@ async function create(data, conn = pool) {
     "endereco_textual", "compra_cafe_especial", "volume_minimo_sacas",
     "faz_retirada_amostra", "trabalha_exportacao", "trabalha_cooperativas",
   ];
-  const payload = serializeJsonFields(data);
-  const placeholders = fields.map(() => "?").join(", ");
-  const values = fields.map((f) => payload[f] ?? null);
 
+  const payload = serializeJsonFields(data);
+  const fields = [];
+  const values = [];
+  for (const key of allowed) {
+    if (payload[key] !== undefined) {
+      fields.push(key);
+      values.push(payload[key]);
+    }
+  }
+
+  if (fields.length === 0) {
+    throw new Error("Nenhum campo válido para inserir corretora.");
+  }
+
+  const placeholders = fields.map(() => "?").join(", ");
   const sql = `INSERT INTO corretoras (${fields.join(", ")}) VALUES (${placeholders})`;
   const [result] = await conn.query(sql, values);
   return result.insertId;
