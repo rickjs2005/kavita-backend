@@ -477,6 +477,76 @@ const getCorretoraSubscriptionEvents = async (req, res, next) => {
 };
 
 /**
+ * POST /api/admin/mercado-do-cafe/corretoras/:id/cancel-subscription
+ * Body: { reason?: string, target_plan_slug?: "free" | null }
+ *
+ * Cancela a assinatura ativa de uma corretora sem arquivar o registro
+ * nem mexer em usuários. Diferente de archive: a corretora continua
+ * operando, só perde o plano pago.
+ *
+ * Por padrão (sem target_plan_slug) cai no FREE. Passando null,
+ * a corretora fica sem plano ativo (status: expired degradado) —
+ * usar com cuidado.
+ */
+const cancelCorretoraSubscription = async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+
+    const reason = typeof req.body?.reason === "string"
+      ? req.body.reason.trim().slice(0, 500)
+      : null;
+    const targetPlanSlug = req.body?.target_plan_slug === null
+      ? null
+      : typeof req.body?.target_plan_slug === "string"
+        ? req.body.target_plan_slug.trim() || "free"
+        : "free";
+
+    const planService = require("../services/planService");
+    const result = await planService.cancelPlan({
+      corretoraId: id,
+      opts: {
+        actor_type: "admin",
+        actor_id: req.admin?.id ?? null,
+        reason,
+        targetPlanSlug,
+        source: "admin_manual_cancel",
+      },
+    });
+
+    auditService.record({
+      req,
+      action: "corretora.subscription_canceled",
+      targetType: "corretora",
+      targetId: id,
+      meta: {
+        reason,
+        target_plan_slug: targetPlanSlug,
+        already_free: result.already_free,
+      },
+    });
+
+    const msg = result.already_free
+      ? "Corretora já estava no plano gratuito."
+      : "Assinatura cancelada.";
+
+    return response.ok(res, result, msg);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao cancelar assinatura.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+};
+
+/**
  * POST /api/admin/mercado-do-cafe/corretoras/:id/archive
  * Soft delete — preserva histórico/FK, tira da vitrine.
  */
@@ -837,6 +907,7 @@ module.exports = {
   impersonateCorretora,
   archiveCorretora,
   restoreCorretora,
+  cancelCorretoraSubscription,
   bulkApproveSubmissions,
   bulkRejectSubmissions,
   createCorretora,

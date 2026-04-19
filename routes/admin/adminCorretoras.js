@@ -85,6 +85,11 @@ router.post("/corretoras/:id/impersonate", ctrl.impersonateCorretora);
 // listagem admin padrão. Reversível via restore.
 router.post("/corretoras/:id/archive", ctrl.archiveCorretora);
 router.post("/corretoras/:id/restore", ctrl.restoreCorretora);
+// Cancela a assinatura ativa sem arquivar a corretora (volta pro FREE).
+router.post(
+  "/corretoras/:id/cancel-subscription",
+  ctrl.cancelCorretoraSubscription,
+);
 
 // Fase 7 — notas internas admin (privadas, nunca expostas à corretora)
 router.get("/corretoras/:id/admin-notes", ctrl.listAdminNotes);

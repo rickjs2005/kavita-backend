@@ -248,6 +248,126 @@ async function assignPlan({ corretoraId, planId, opts = {} }) {
 }
 
 /**
+ * Cancela o plano ativo da corretora e atribui o plano FREE na
+ * mesma transação. Emite evento `canceled` (não `downgraded` — fica
+ * explícito em churn analytics que foi ação deliberada de cancelar,
+ * não uma migração entre planos pagos).
+ *
+ * opts:
+ *   - actor_type: "corretora_user" | "admin" | "system"
+ *   - actor_id:   number | null
+ *   - reason:     string opcional (vai pro meta do evento — feedback)
+ *   - targetPlanSlug: default "free". Admin pode passar null pra
+ *     deixar a corretora SEM plano ativo (força reativação manual).
+ *
+ * Se a corretora já está no FREE (sem plano pago), devolve idempotente
+ * sem erro — fica seguro chamar "cancelar" mesmo sem saber o estado.
+ */
+async function cancelPlan({ corretoraId, opts = {} }) {
+  const previous = await subsRepo.getCurrentForCorretora(corretoraId);
+
+  // Idempotência: se o único plano atual é FREE (price_cents=0) ou
+  // não existe subscription nenhuma, não há o que cancelar.
+  const alreadyFreeOrNone =
+    !previous ||
+    Number(previous.monthly_price_cents ?? 0) === 0;
+  if (alreadyFreeOrNone) {
+    return {
+      already_free: true,
+      current: previous ?? null,
+    };
+  }
+
+  const targetSlug =
+    opts.targetPlanSlug === null ? null : opts.targetPlanSlug ?? "free";
+
+  const result = await withTransaction(async (conn) => {
+    // 1) Cancela subscription ativa — bate status='canceled' + canceled_at.
+    await subsRepo.cancelActiveForCorretora(corretoraId, conn);
+
+    if (targetSlug === null) {
+      // Admin optou por deixar a corretora SEM plano ativo — sai da tx
+      // sem criar nada. Corretora vai entrar em modo degradado.
+      return { newSubId: null, newPlan: null };
+    }
+
+    const targetPlan = await plansRepo.findBySlug(targetSlug, conn);
+    if (!targetPlan || !targetPlan.is_active) {
+      throw new AppError(
+        `Plano ${targetSlug} não encontrado ou inativo.`,
+        ERROR_CODES.SERVER_ERROR,
+        500,
+      );
+    }
+
+    const now = new Date();
+    const periodEnd = new Date(now);
+    periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+    const planSnapshot = buildPlanSnapshot(targetPlan);
+    const capabilitiesSnapshot = planSnapshot?.capabilities ?? {};
+
+    const newSubId = await subsRepo.create(
+      {
+        corretora_id: corretoraId,
+        plan_id: targetPlan.id,
+        status: "active",
+        current_period_start: now,
+        current_period_end: periodEnd,
+        payment_method: "manual",
+        monthly_price_cents: targetPlan.price_cents ?? 0,
+        capabilities_snapshot: capabilitiesSnapshot,
+        meta: { assigned_by: "cancel_flow" },
+      },
+      conn,
+    );
+
+    return { newSubId, newPlan: targetPlan };
+  });
+
+  // Evento "canceled" — assinatura PAGA virou FREE ou nenhuma. Fica
+  // fora da tx pra falha de event log não reverter o cancelamento.
+  eventsRepo
+    .create({
+      corretora_id: corretoraId,
+      subscription_id: result.newSubId ?? null,
+      event_type: "canceled",
+      from_plan_id: previous?.plan_id ?? null,
+      to_plan_id: result.newPlan?.id ?? null,
+      from_status: previous?.status ?? null,
+      to_status: result.newPlan ? "active" : null,
+      plan_snapshot: result.newPlan ? buildPlanSnapshot(result.newPlan) : null,
+      meta: {
+        reason: opts.reason ?? null,
+        previous_plan_slug: previous?.plan_slug ?? null,
+        previous_monthly_price_cents: previous?.monthly_price_cents ?? null,
+        source: opts.source ?? null,
+      },
+      actor_type: opts.actor_type ?? "corretora_user",
+      actor_id: opts.actor_id ?? null,
+    })
+    .catch((err) =>
+      logger.warn(
+        { err, corretoraId, subscriptionId: result.newSubId },
+        "subscription.cancel.event_failed",
+      ),
+    );
+
+  const current = await subsRepo.getCurrentForCorretora(corretoraId);
+  return {
+    already_free: false,
+    previous_plan: previous
+      ? {
+          slug: previous.plan_slug ?? null,
+          name: previous.plan_name ?? null,
+          monthly_price_cents: previous.monthly_price_cents ?? 0,
+        }
+      : null,
+    current,
+  };
+}
+
+/**
  * Marca subscription como expirada (usado pelo middleware
  * verifyCorretora quando trial_ends_at passa). Dispara evento
  * "expired" com snapshot do plano em vigor.
@@ -381,6 +501,7 @@ module.exports = {
   hasCapability,
   requirePlanCapability,
   assignPlan,
+  cancelPlan,
   markExpired,
   broadcastCapabilitiesFromPlan,
   getBroadcastPreview,

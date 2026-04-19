@@ -153,6 +153,197 @@ async function archiveCorretora(id) {
 }
 
 /**
+ * Self-service: corretora encerra a própria conta.
+ *
+ * Fluxo defensivo (ordem intencional):
+ *   1. Valida senha do usuário que está pedindo
+ *   2. Valida que user é `owner` (única role com autoridade)
+ *   3. Cancela subscription ativa (volta pro FREE, ativando canceled event)
+ *   4. Arquiva a corretora (soft-delete: deleted_at=NOW, remove featured)
+ *   5. Invalida token_version de TODOS os users da corretora — força
+ *      logout imediato em todas as abas abertas do time
+ *   6. Envia e-mail de confirmação para o e-mail institucional (best-
+ *      effort, não bloqueia o encerramento)
+ *
+ * Não apaga dados (LGPD: titular pode solicitar exclusão via suporte,
+ * mas o padrão é arquivar pra preservar auditoria de leads já fechados
+ * e não quebrar FKs históricas).
+ *
+ * @param {object} args
+ * @param {number} args.corretoraId
+ * @param {number} args.userId     — quem está pedindo (owner)
+ * @param {string} args.password   — confirmação
+ * @param {string} [args.reason]   — feedback opcional pro time Kavita
+ */
+async function deactivateOwnAccount({ corretoraId, userId, password, reason }) {
+  if (!password || typeof password !== "string") {
+    throw new AppError(
+      "Informe a senha para confirmar o encerramento.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+      { field: "password" },
+    );
+  }
+
+  const user = await usersRepo.findById(userId);
+  if (!user || user.corretora_id !== corretoraId) {
+    throw new AppError(
+      "Usuário não encontrado.",
+      ERROR_CODES.NOT_FOUND,
+      404,
+    );
+  }
+  if (user.role !== "owner") {
+    throw new AppError(
+      "Apenas a proprietária da conta pode encerrar a corretora.",
+      ERROR_CODES.FORBIDDEN,
+      403,
+    );
+  }
+  if (!user.password_hash) {
+    throw new AppError(
+      "Defina uma senha antes de encerrar a conta.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+    );
+  }
+
+  const ok = await corretoraAuthService.verifyPassword(
+    password,
+    user.password_hash,
+  );
+  if (!ok) {
+    throw new AppError(
+      "Senha incorreta.",
+      ERROR_CODES.INVALID_CREDENTIALS ?? ERROR_CODES.FORBIDDEN,
+      401,
+    );
+  }
+
+  const corretora = await adminRepo.findById(corretoraId);
+  if (!corretora) {
+    throw new AppError(
+      "Corretora não encontrada.",
+      ERROR_CODES.NOT_FOUND,
+      404,
+    );
+  }
+  if (corretora.deleted_at != null) {
+    // Idempotente: já está arquivada, só garante logout do time.
+    await invalidateAllTokensForCorretora(corretoraId);
+    return { already_archived: true };
+  }
+
+  const trimmedReason = typeof reason === "string"
+    ? reason.trim().slice(0, 500) || null
+    : null;
+
+  // 1) Cancela plano ativo (seguro chamar mesmo se já for FREE).
+  //    Fazemos ANTES de arquivar pra manter FK subscription→corretora
+  //    válida no momento do evento 'canceled'.
+  try {
+    await planService.cancelPlan({
+      corretoraId,
+      opts: {
+        actor_type: "corretora_user",
+        actor_id: userId,
+        reason: trimmedReason
+          ? `account_deactivation: ${trimmedReason}`
+          : "account_deactivation",
+        source: "corretora_self_deactivate",
+        // Sem targetPlanSlug — vamos arquivar a corretora em seguida,
+        // então não faz sentido criar nova subscription FREE. Passa
+        // null pra só cancelar, sem recriar nada.
+        targetPlanSlug: null,
+      },
+    });
+  } catch (err) {
+    logger.warn(
+      { err: err?.message, corretoraId, userId },
+      "corretora.deactivate.cancel_plan_failed",
+    );
+    // Não bloqueia o encerramento — se o banco estiver OK, o archive
+    // a seguir deixa o registro em estado consistente de qualquer forma.
+  }
+
+  // 2) Arquiva corretora (deleted_at=NOW, remove featured).
+  if (corretora.is_featured) {
+    await adminRepo.clearFeatured(corretoraId);
+  }
+  const affected = await adminRepo.archive(corretoraId);
+  if (affected === 0) {
+    // Race condition — outro request já arquivou. Trata idempotente.
+    await invalidateAllTokensForCorretora(corretoraId);
+    return { already_archived: true };
+  }
+
+  // 3) Invalida todas as sessões de todos os users.
+  await invalidateAllTokensForCorretora(corretoraId);
+
+  // 4) Evento de auditoria — além do evento 'canceled' do plano,
+  //    gravamos marca de encerramento pra audit admin conseguir
+  //    distinguir de cancelamento simples de plano.
+  logger.info(
+    {
+      corretoraId,
+      userId,
+      reason: trimmedReason,
+      corretoraName: corretora.name,
+    },
+    "corretora.self_deactivated",
+  );
+
+  // 5) E-mail de confirmação — best-effort.
+  if (corretora.email) {
+    mailService
+      .sendCorretoraAccountClosedEmail?.({
+        toEmail: corretora.email,
+        corretoraName: corretora.name,
+        reason: trimmedReason,
+      })
+      ?.catch((err) =>
+        logger.warn(
+          { err: err?.message, corretoraId },
+          "corretora.deactivate.email_failed",
+        ),
+      );
+  }
+
+  return {
+    already_archived: false,
+    reason: trimmedReason,
+  };
+}
+
+/**
+ * Incrementa token_version de todos os users da corretora — força
+ * logout em todas as sessões abertas (o middleware verifyCorretora
+ * compara a versão do JWT com a do banco e rejeita).
+ */
+async function invalidateAllTokensForCorretora(corretoraId) {
+  try {
+    const team = await usersRepo.listTeamByCorretoraId(corretoraId);
+    await Promise.all(
+      team.map((u) =>
+        usersRepo
+          .incrementTokenVersion(u.id)
+          .catch((err) =>
+            logger.warn(
+              { err: err?.message, userId: u.id },
+              "corretora.deactivate.invalidate_token_failed",
+            ),
+          ),
+      ),
+    );
+  } catch (err) {
+    logger.warn(
+      { err: err?.message, corretoraId },
+      "corretora.deactivate.list_team_failed",
+    );
+  }
+}
+
+/**
  * Restaura uma corretora arquivada. Status anterior é preservado
  * (active/inactive); o operador pode reativar separadamente se
  * precisar publicar de volta na vitrine.
@@ -587,6 +778,7 @@ module.exports = {
   toggleFeatured,
   archiveCorretora,
   restoreCorretora,
+  deactivateOwnAccount,
   createSubmission,
   approveSubmission,
   rejectSubmission,

@@ -30,5 +30,7 @@ mount("/corretora/reviews", "./corretoraPanel/corretoraReviews");
 mount("/corretora/analytics", "./corretoraPanel/corretoraAnalytics");
 // ETAPA 2 — 2FA TOTP + logout-all
 mount("/corretora/2fa", "./corretoraPanel/corretoraTotp");
+// Encerramento de conta (self-service owner).
+mount("/corretora/account", "./corretoraPanel/corretoraAccount");
 
 module.exports = router;

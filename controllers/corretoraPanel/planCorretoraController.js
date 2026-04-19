@@ -238,6 +238,76 @@ async function createCheckout(req, res, next) {
 }
 
 /**
+ * POST /api/corretora/plan/cancel
+ * Body: { reason?: string }
+ *
+ * Cancela o plano pago atual. Efeito: corretora volta ao FREE
+ * automaticamente — acesso ao painel continua, mas features pagas
+ * (export, destaque, advanced_reports, max_users > 1) bloqueiam.
+ *
+ * Só o owner pode cancelar (decisão comercial). Manager/sales/viewer
+ * caem em 403.
+ *
+ * Se a corretora já está no FREE, o endpoint é idempotente e retorna
+ * 200 com `already_free: true` — evita erro confuso se a UI mostrou
+ * o botão por race condition.
+ *
+ * Nota: cancelamento no gateway (Asaas) fica como best-effort em
+ * background — o paymentService trata nos webhooks. Aqui a subscription
+ * local já é cancelada de imediato pra não deixar UI dessincronizada.
+ */
+async function cancelMyPlan(req, res, next) {
+  try {
+    const corretoraId = req.corretoraUser.corretora_id;
+    const role = req.corretoraUser.role;
+
+    if (role !== "owner") {
+      throw new AppError(
+        "Apenas a proprietária da conta pode cancelar o plano.",
+        ERROR_CODES.FORBIDDEN,
+        403,
+      );
+    }
+
+    const reason = typeof req.body?.reason === "string"
+      ? req.body.reason.trim().slice(0, 500)
+      : null;
+
+    const result = await planService.cancelPlan({
+      corretoraId,
+      opts: {
+        actor_type: "corretora_user",
+        actor_id: req.corretoraUser.id,
+        reason,
+        source: "corretora_self_cancel",
+      },
+    });
+
+    // Best-effort: avisa paymentService pra cancelar no gateway remoto
+    // (Asaas). Se falhar, log + segue — subscription local já está
+    // cancelada e o webhook de conciliação do Asaas vai fechar o loop.
+    if (!result.already_free && paymentService.isGatewayActive()) {
+      paymentService
+        .cancelRemoteSubscription?.(corretoraId)
+        .catch((err) =>
+          logger.warn(
+            { err, corretoraId },
+            "corretora.plan.cancel.remote_cancel_failed",
+          ),
+        );
+    }
+
+    const msg = result.already_free
+      ? "Você já está no plano gratuito."
+      : "Plano cancelado. Você voltou ao plano gratuito.";
+
+    response.ok(res, result, msg);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * GET /api/corretora/plan/events
  * Histórico de eventos da própria corretora — trialing, upgrade,
  * downgrade, expiração, etc. Fonte de verdade para a UI do painel
@@ -260,5 +330,6 @@ module.exports = {
   listAvailablePlans,
   requestUpgrade,
   createCheckout,
+  cancelMyPlan,
   listMyPlanEvents,
 };
