@@ -71,6 +71,13 @@ uploads/
 public/uploads/
 
 # =========================
+# BACKUPS DE BANCO (scripts/backup-mysql.js)
+# =========================
+backups/
+*.sql.gz
+*.sql.bak
+
+# =========================
 # IDE / OS
 # =========================
 .vscode/

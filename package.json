@@ -20,6 +20,7 @@
     "test:unit:cov": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js test/unit --coverage --runInBand",
     "worker:abandoned-carts": "node jobs/abandonedCartsWorker.js",
     "mail:test": "node scripts/send-test-email.js",
+    "db:backup": "node scripts/backup-mysql.js",
     "db:migrate": "cross-env NODE_ENV=development sequelize-cli db:migrate",
     "db:migrate:prod": "cross-env NODE_ENV=production sequelize-cli db:migrate",
     "db:status": "cross-env NODE_ENV=development sequelize-cli db:migrate:status",
@@ -39,6 +40,7 @@
     "db:test:undo:all": "sequelize-cli db:migrate:undo:all --env test"
   },
   "dependencies": {
+    "@sentry/node": "^10.49.0",
     "axios": "^1.8.4",
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",
