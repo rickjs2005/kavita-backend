@@ -88,3 +88,85 @@ Deixe o entrypoint aplicar na subida.
 ## 7. Pré-condição `sequelize-cli`
 
 Este projeto mantém `sequelize-cli` em **dependencies** (não devDependencies) para que o `--omit=dev` do Docker não o remova. Se o `npm ci` for reconfigurado, mantenha essa decisão.
+
+---
+
+## 8. Envio de e-mail em produção (P0-01)
+
+O Kavita envia e-mails transacionais (aprovação de corretora, convite
+de primeiro acesso, reset de senha, avisos de trial, confirmação de
+lead). A factory de transporter fica em `services/mail/transport.js` e
+decide o provider por env:
+
+| MAIL_PROVIDER | Uso | Vars obrigatórias |
+|---|---|---|
+| `sendgrid` | **Recomendado em produção** | `SENDGRID_API_KEY`, `MAIL_FROM` |
+| `smtp` | AWS SES, Mailgun, Postmark, SMTP corporativo | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `MAIL_FROM` |
+| `disabled` | **Bloqueado em produção** | só dev/CI |
+
+### Configurando SendGrid (caminho recomendado)
+
+1. Criar conta em https://sendgrid.com (plano Free = 100 e-mails/dia)
+2. Verificar domínio remetente em **Settings → Sender Authentication**
+   - DNS records (CNAMEs + SPF) precisam propagar antes do primeiro envio
+3. Gerar API key em **Settings → API Keys** (permissão "Mail Send")
+4. Setar no ambiente de produção:
+   ```
+   MAIL_PROVIDER=sendgrid
+   SENDGRID_API_KEY=SG.xxxxx
+   MAIL_FROM=no-reply@kavita.com.br
+   MAIL_FROM_NAME=Kavita
+   ```
+5. Deploy. Primeiro e-mail testa o fluxo completo.
+
+### Configurando SMTP genérico (fallback)
+
+Qualquer provider compatível (AWS SES, Mailgun, Postmark, Resend, SMTP
+corporativo) funciona via:
+
+```
+MAIL_PROVIDER=smtp
+SMTP_HOST=email-smtp.us-east-1.amazonaws.com   # exemplo AWS SES
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=AKIAxxxxxx
+SMTP_PASS=BAseSMTPPasswordFromIAM
+MAIL_FROM=no-reply@kavita.com.br
+```
+
+### Testando envio em dev/staging
+
+```bash
+# E-mail curto pra validar credenciais:
+npm run mail:test -- seu-email@exemplo.com
+
+# Simula e-mail de primeiro acesso:
+node scripts/send-test-email.js seu-email@exemplo.com invite
+
+# Simula aviso de trial (3 dias):
+node scripts/send-test-email.js seu-email@exemplo.com trial
+
+# Em produção exige --allow-prod explícito:
+NODE_ENV=production node scripts/send-test-email.js equipe@kavita.com.br plain --allow-prod
+```
+
+### Troubleshooting
+
+| Sintoma | Causa provável | Fix |
+|---|---|---|
+| Boot não quebra mas nada é enviado | `MAIL_PROVIDER=disabled` em dev | Setar provider real; confirmar ausência em prod (env.js bloqueia disabled em prod) |
+| `Invalid login: 535-5.7.8 BadCredentials` | Senha de app Gmail expirou | Migrar pra SendGrid (`MAIL_PROVIDER=sendgrid`) |
+| E-mail cai no spam | `MAIL_FROM` não está num domínio verificado | Verificar domínio no SendGrid (SPF + DKIM) ou configurar DKIM no DNS |
+| Error `Nenhum provider de e-mail configurado` no boot em prod | Nenhuma var setada | Definir `MAIL_PROVIDER` + credenciais antes do deploy |
+| Teste passa mas produção falha | API key com permissão errada | SendGrid: garantir permissão "Mail Send" (não só "Email Activity") |
+
+### Cron de verificação
+
+Opcionalmente, agendar envio de smoke test diário pra um inbox monitorado:
+
+```
+0 9 * * * cd /var/app && NODE_ENV=production node scripts/send-test-email.js ops@kavita.com.br plain --allow-prod >> /var/log/kavita/mail-smoke.log 2>&1
+```
+
+Se o log mostrar erro, alerta imediato em vez de descobrir quando um
+usuário real reclamar que não recebeu reset de senha.

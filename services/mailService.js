@@ -1,18 +1,44 @@
 // services/mailService.js
-const nodemailer = require("nodemailer");
-const config = require("../config/env");
+//
+// Envio de todos os e-mails transacionais do Kavita. O transporter
+// é resolvido em lazy-init pela factory em `services/mail/transport.js`
+// — permite trocar provider (SendGrid, SMTP genérico, Gmail legado,
+// stub em dev) apenas via env, sem editar este arquivo.
+//
+// Regras importantes:
+//   - Nenhuma das 10+ funções abaixo quebra API pública — os callers
+//     (controllers, workers, services) continuam chamando exatamente
+//     como antes.
+//   - O campo `from:` sempre passa pelo helper `buildFrom(nome)` pra
+//     centralizar o endereço remetente. Nome é contextual por função
+//     (ex.: "Curadoria Kavita — Mercado do Café") mas o endereço
+//     vem de MAIL_FROM / SMTP_FROM / EMAIL_USER.
+//   - Falhas de envio NÃO devem reverter transações. Os callers já
+//     tratam fire-and-forget e logam; este arquivo só precisa lançar
+//     o erro pro caller decidir.
 
-/**
- * Transporter global de e-mail (Gmail ou SMTP)
- * Usa a mesma configuração para reset de senha e e-mails transacionais.
- */
-const transporter = nodemailer.createTransport({
-  service: "Gmail",
-  auth: {
-    user: config.email.user,
-    pass: config.email.pass,
-  },
-});
+"use strict";
+
+const config = require("../config/env");
+const { createMailTransport, buildFrom } = require("./mail/transport");
+
+// Lazy init: chamamos createMailTransport() no primeiro uso e
+// cacheamos. Evita quebrar o boot em dev quando provider está
+// misconfigurado — o erro só aparece quando algo realmente tentar
+// mandar e-mail.
+let _transporter = null;
+function transporter() {
+  if (!_transporter) {
+    _transporter = createMailTransport();
+  }
+  return _transporter;
+}
+
+// Atalho interno pra reduzir diff das funções abaixo — elas chamavam
+// `transporter.sendMail(...)` como singleton. Mantém a mesma forma.
+const transporterProxy = {
+  sendMail: (opts) => transporter().sendMail(opts),
+};
 
 /**
  * Envia o e-mail de redefinição de senha
@@ -20,8 +46,8 @@ const transporter = nodemailer.createTransport({
 async function sendResetPasswordEmail(toEmail, token) {
   const resetLink = `${config.appUrl.replace(/\/$/, "")}/reset-password?token=${token}`;
 
-  await transporter.sendMail({
-    from: `"Suporte" <${config.email.user}>`,
+  await transporterProxy.sendMail({
+    from: buildFrom("Kavita — Suporte"),
     to: toEmail,
     subject: "Redefinição de Senha",
     html: `
@@ -46,8 +72,8 @@ async function sendCorretoraApprovedEmail(toEmail, corretoraName) {
   const loginUrl = `${config.appUrl.replace(/\/$/, "")}/painel/corretora/login`;
   const safeName = corretoraName || "sua corretora";
 
-  await transporter.sendMail({
-    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+  await transporterProxy.sendMail({
+    from: buildFrom("Kavita — Mercado do Café"),
     to: toEmail,
     subject: "Seu cadastro foi aprovado — bem-vinda ao Mercado do Café",
     html: `
@@ -92,8 +118,8 @@ async function sendCorretoraInviteEmail(toEmail, token, corretoraName) {
   const loginUrl = `${config.appUrl.replace(/\/$/, "")}/painel/corretora/login`;
   const safeName = corretoraName || "sua corretora";
 
-  await transporter.sendMail({
-    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+  await transporterProxy.sendMail({
+    from: buildFrom("Kavita — Mercado do Café"),
     to: toEmail,
     subject: `Bem-vinda à mesa do Kavita — ${safeName}`,
     html: `
@@ -130,19 +156,19 @@ async function sendCorretoraInviteEmail(toEmail, token, corretoraName) {
       </div>
     `,
     text: [
-      `Olá,`,
-      ``,
+      "Olá,",
+      "",
       `O acesso ao painel da ${safeName} foi criado no Kavita.`,
-      `É aqui que você vai receber contatos de produtores, fazer propostas e registrar lotes fechados.`,
-      ``,
-      `Defina sua senha (o link vale por 7 dias):`,
+      "É aqui que você vai receber contatos de produtores, fazer propostas e registrar lotes fechados.",
+      "",
+      "Defina sua senha (o link vale por 7 dias):",
       link,
-      ``,
+      "",
       `Depois de definir a senha, você entra sempre por ${loginUrl}`,
-      ``,
-      `Se o link vencer antes que você consiga abrir, é só pedir um novo na tela de login em "esqueci a senha".`,
-      ``,
-      `— Curadoria Kavita · Mercado do Café`,
+      "",
+      "Se o link vencer antes que você consiga abrir, é só pedir um novo na tela de login em \"esqueci a senha\".",
+      "",
+      "— Curadoria Kavita · Mercado do Café",
     ].join("\n"),
   });
 }
@@ -166,8 +192,8 @@ async function sendCorretoraRejectionEmail(toEmail, corretoraName, reason) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-  await transporter.sendMail({
-    from: `"Curadoria Kavita — Mercado do Café" <${config.email.user}>`,
+  await transporterProxy.sendMail({
+    from: buildFrom("Curadoria Kavita — Mercado do Café"),
     to: toEmail,
     subject: "Sobre sua solicitação no Mercado do Café",
     html: `
@@ -206,8 +232,8 @@ async function sendCorretoraRejectionEmail(toEmail, corretoraName, reason) {
 async function sendCorretoraResetPasswordEmail(toEmail, token) {
   const resetLink = `${config.appUrl.replace(/\/$/, "")}/painel/corretora/resetar-senha?token=${token}`;
 
-  await transporter.sendMail({
-    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+  await transporterProxy.sendMail({
+    from: buildFrom("Kavita — Mercado do Café"),
     to: toEmail,
     subject: "Redefinir senha do painel da corretora",
     html: `
@@ -283,8 +309,8 @@ async function sendLeadProducerConfirmationEmail({
     ? `A corretora <strong>${safeCorretora}</strong> foi avisada e deve retornar por <strong>${safeRetorno}</strong>. Normalmente o retorno chega no mesmo dia útil.`
     : `A corretora <strong>${safeCorretora}</strong> foi avisada e deve retornar pelo canal que você escolheu. Normalmente o retorno chega no mesmo dia útil.`;
 
-  await transporter.sendMail({
-    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+  await transporterProxy.sendMail({
+    from: buildFrom("Kavita — Mercado do Café"),
     to: toEmail,
     subject: `Seu pedido de contato chegou na ${corretoraNome || "corretora"}`,
     html: `
@@ -378,8 +404,8 @@ async function sendCorretoraNewIpAlertEmail({
     ? new Date(when).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
     : new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
-  await transporter.sendMail({
-    from: `"Kavita — Segurança" <${config.email.user}>`,
+  await transporterProxy.sendMail({
+    from: buildFrom("Kavita — Segurança"),
     to: toEmail,
     subject: `Novo acesso detectado em ${corretoraName || "sua conta"}`,
     html: `
@@ -421,8 +447,8 @@ async function sendRegionalBackfillInviteEmail({
   const safeName = corretoraName || "sua corretora";
   const greeting = contactName ? `Olá, ${contactName}` : "Olá";
 
-  await transporter.sendMail({
-    from: `"Curadoria Kavita — Mercado do Café" <${config.email.user}>`,
+  await transporterProxy.sendMail({
+    from: buildFrom("Curadoria Kavita — Mercado do Café"),
     to: toEmail,
     subject: `Complete o perfil regional da ${safeName} (2 minutos)`,
     html: `
@@ -568,8 +594,8 @@ async function sendCorretoraTrialEndingEmail({
     "— Curadoria Kavita · Mercado do Café",
   ].join("\n");
 
-  await transporter.sendMail({
-    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+  await transporterProxy.sendMail({
+    from: buildFrom("Kavita — Mercado do Café"),
     to: toList,
     subject,
     html,
@@ -581,13 +607,13 @@ async function sendCorretoraTrialEndingEmail({
 
 async function sendTransactionalEmail(to, subject, html, text = null) {
   const mailOptions = {
-    from: `"Kavita" <${config.email.user}>`,
+    from: buildFrom("Kavita"),
     to,
     subject,
     html,
   };
   if (text) mailOptions.text = text;
-  await transporter.sendMail(mailOptions);
+  await transporterProxy.sendMail(mailOptions);
 }
 
 module.exports = {

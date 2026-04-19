@@ -19,6 +19,7 @@
     "test:unit": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js test/unit --runInBand",
     "test:unit:cov": "cross-env NODE_ENV=test NODE_PATH=./vendor node ./node_modules/jest/bin/jest.js test/unit --coverage --runInBand",
     "worker:abandoned-carts": "node jobs/abandonedCartsWorker.js",
+    "mail:test": "node scripts/send-test-email.js",
     "db:migrate": "cross-env NODE_ENV=development sequelize-cli db:migrate",
     "db:migrate:prod": "cross-env NODE_ENV=production sequelize-cli db:migrate",
     "db:status": "cross-env NODE_ENV=development sequelize-cli db:migrate:status",
