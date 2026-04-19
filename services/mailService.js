@@ -89,38 +89,61 @@ async function sendCorretoraApprovedEmail(toEmail, corretoraName) {
  */
 async function sendCorretoraInviteEmail(toEmail, token, corretoraName) {
   const link = `${config.appUrl.replace(/\/$/, "")}/painel/corretora/primeiro-acesso?token=${token}`;
+  const loginUrl = `${config.appUrl.replace(/\/$/, "")}/painel/corretora/login`;
   const safeName = corretoraName || "sua corretora";
 
   await transporter.sendMail({
     from: `"Kavita — Mercado do Café" <${config.email.user}>`,
     to: toEmail,
-    subject: "Bem-vinda ao Mercado do Café — defina sua senha",
+    subject: `Bem-vinda à mesa do Kavita — ${safeName}`,
     html: `
-      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px;">
-        <h2 style="color:#15803d;margin:0 0 12px;">☕ Bem-vinda ao Mercado do Café</h2>
-        <p>Seu acesso ao painel da <strong>${safeName}</strong> foi criado no Kavita.</p>
-        <p>Clique no botão abaixo para definir sua senha e entrar pela primeira vez. O link expira em <strong>7 dias</strong>.</p>
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; color:#1c1917;">
+        <h2 style="color:#b45309;margin:0 0 12px;">☕ Sua sala no Mercado do Café está pronta</h2>
+        <p>Olá,</p>
+        <p>O acesso ao painel da <strong>${safeName}</strong> foi criado. É aqui que você vai receber os contatos de produtores da Zona da Mata, fazer propostas, acompanhar amostras e registrar lotes fechados.</p>
+        <p>Para entrar pela primeira vez, defina uma senha:</p>
         <p style="margin:24px 0;">
           <a href="${link}"
-             style="display:inline-block;background:#15803d;color:white;
-                    padding:12px 24px;border-radius:8px;text-decoration:none;
-                    font-weight:600;">
+             style="display:inline-block;background:#b45309;color:white;
+                    padding:12px 26px;border-radius:10px;text-decoration:none;
+                    font-weight:600;font-size:15px;">
             Definir minha senha
           </a>
         </p>
-        <p style="color:#71717a;font-size:13px;">
-          Depois de definir a senha, você poderá acessar o painel a qualquer
-          momento em <strong>${config.appUrl.replace(/\/$/, "")}/painel/corretora/login</strong>.
+        <div style="background:#fef3c7;border-left:3px solid #b45309;border-radius:6px;padding:10px 14px;margin:20px 0;font-size:13px;color:#44403c;">
+          <strong>O link vale por 7 dias.</strong> Se vencer antes que você consiga abrir, é só pedir um novo em <em>painel &rsaquo; esqueci a senha</em> que reenviamos.
+        </div>
+        <p style="color:#57534e;font-size:13px;line-height:1.6;">
+          Depois de definir a senha, você entra sempre por
+          <a href="${loginUrl}" style="color:#b45309;">${loginUrl}</a>.
         </p>
-        <p style="color:#71717a;font-size:12px;margin-top:24px;">
-          Se você não estava esperando este e-mail, ignore esta mensagem —
-          nenhuma conta foi ativada sem sua confirmação.
+        <p style="color:#78716c;font-size:12px;margin-top:24px;">
+          Se você não estava esperando este e-mail, pode ignorar — a conta só fica ativa depois que você mesma criar a senha.
+        </p>
+        <p style="color:#78716c;font-size:12px;margin-top:28px;">
+          — Curadoria Kavita · Mercado do Café<br/>
+          <span style="color:#a8a29e;">Zona da Mata mineira</span>
         </p>
         <p style="color:#a1a1aa;font-size:11px;word-break:break-all;margin-top:16px;">
           Link direto: ${link}
         </p>
       </div>
     `,
+    text: [
+      `Olá,`,
+      ``,
+      `O acesso ao painel da ${safeName} foi criado no Kavita.`,
+      `É aqui que você vai receber contatos de produtores, fazer propostas e registrar lotes fechados.`,
+      ``,
+      `Defina sua senha (o link vale por 7 dias):`,
+      link,
+      ``,
+      `Depois de definir a senha, você entra sempre por ${loginUrl}`,
+      ``,
+      `Se o link vencer antes que você consiga abrir, é só pedir um novo na tela de login em "esqueci a senha".`,
+      ``,
+      `— Curadoria Kavita · Mercado do Café`,
+    ].join("\n"),
   });
 }
 
@@ -257,42 +280,45 @@ async function sendLeadProducerConfirmationEmail({
     : null;
 
   const retornoLine = safeRetorno
-    ? `A corretora recebeu o seu contato e vai retornar por <strong>${safeRetorno}</strong> em breve.`
-    : "A corretora recebeu o seu contato e vai retornar pelo canal que você escolheu em breve.";
+    ? `A corretora <strong>${safeCorretora}</strong> foi avisada e deve retornar por <strong>${safeRetorno}</strong>. Normalmente o retorno chega no mesmo dia útil.`
+    : `A corretora <strong>${safeCorretora}</strong> foi avisada e deve retornar pelo canal que você escolheu. Normalmente o retorno chega no mesmo dia útil.`;
 
   await transporter.sendMail({
     from: `"Kavita — Mercado do Café" <${config.email.user}>`,
     to: toEmail,
-    subject: `Seu interesse foi enviado para ${corretoraNome || "a corretora"}`,
+    subject: `Seu pedido de contato chegou na ${corretoraNome || "corretora"}`,
     html: `
       <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; color:#1c1917;">
-        <h2 style="color:#15803d;margin:0 0 12px;">☕ Contato registrado</h2>
+        <h2 style="color:#b45309;margin:0 0 12px;">☕ Recebemos seu pedido de contato</h2>
         <p>Olá, ${safeProdutor}.</p>
         <p>${retornoLine}</p>
-        <p>Enquanto isso, você pode conferir novamente a página da <strong>${safeCorretora}</strong> e, se quiser, chamar direto pelo WhatsApp:</p>
-        <p style="margin:24px 0;">
+        <p style="margin-top:16px;">Enquanto isso, se quiser, você pode rever a página da corretora ou chamar direto pelos canais dela:</p>
+        <p style="margin:22px 0;">
           <a href="${corretoraUrl}"
-             style="display:inline-block;background:#15803d;color:white;
-                    padding:12px 24px;border-radius:8px;text-decoration:none;
+             style="display:inline-block;background:#b45309;color:white;
+                    padding:12px 24px;border-radius:10px;text-decoration:none;
                     font-weight:600;">
-            Ver a corretora
+            Abrir a página da corretora
           </a>
         </p>
         ${
           statusUrl
-            ? `<p style="margin:16px 0 0;color:#57534e;font-size:13px;line-height:1.6;">
-                 Para acompanhar o status do seu contato a qualquer momento:
-               </p>
-               <p style="margin:8px 0 0;">
-                 <a href="${statusUrl}"
-                    style="color:#b45309;font-weight:600;text-decoration:underline;">
-                   Acompanhar meu contato
-                 </a>
-               </p>`
+            ? `<div style="background:#fef3c7;border-left:3px solid #b45309;border-radius:6px;padding:12px 14px;margin:18px 0;">
+                 <p style="margin:0 0 6px;color:#44403c;font-size:13px;line-height:1.5;">
+                   <strong>Acompanhe o andamento a qualquer momento.</strong>
+                   Este link privado mostra se a corretora já respondeu e se o lote foi fechado.
+                 </p>
+                 <p style="margin:0;">
+                   <a href="${statusUrl}"
+                      style="color:#b45309;font-weight:600;text-decoration:underline;">
+                     Ver status do meu contato
+                   </a>
+                 </p>
+               </div>`
             : ""
         }
         <p style="color:#57534e;font-size:13px;line-height:1.6;margin-top:20px;">
-          Se a corretora não retornar em um dia útil, responda este e-mail que a equipe de curadoria da Kavita ajuda a destravar o contato.
+          <strong>Não ouviu nada em um dia útil?</strong> Responda este e-mail. A curadoria da Kavita entra em contato com a corretora e te ajuda a destravar a conversa.
         </p>
         <p style="color:#78716c;font-size:12px;margin-top:28px;">
           — Kavita · Mercado do Café<br/>
@@ -302,12 +328,15 @@ async function sendLeadProducerConfirmationEmail({
     `,
     text: [
       `Olá, ${produtorNome || "produtor(a)"}.`,
-      retornoLabel
-        ? `A corretora ${corretoraNome || ""} recebeu seu contato e vai retornar por ${retornoLabel} em breve.`
-        : `A corretora ${corretoraNome || ""} recebeu seu contato e vai retornar em breve.`,
       "",
-      `Ver a corretora: ${corretoraUrl}`,
-      statusUrl ? `Acompanhar meu contato: ${statusUrl}` : null,
+      retornoLabel
+        ? `A corretora ${corretoraNome || ""} foi avisada e deve retornar por ${retornoLabel}. Normalmente o retorno chega no mesmo dia útil.`
+        : `A corretora ${corretoraNome || ""} foi avisada e deve retornar pelo canal que você escolheu. Normalmente o retorno chega no mesmo dia útil.`,
+      "",
+      `Abrir a página da corretora: ${corretoraUrl}`,
+      statusUrl ? `Ver status do meu contato: ${statusUrl}` : null,
+      "",
+      "Não ouviu nada em um dia útil? Responda este e-mail que a curadoria ajuda a destravar a conversa.",
       "",
       "— Kavita · Mercado do Café",
     ]
@@ -430,6 +459,126 @@ async function sendRegionalBackfillInviteEmail({
   });
 }
 
+/**
+ * Bloco 3 — fim de trial. Uma única função cobre os 3 avisos progressivos
+ * (7d, 3d, 1d) + a notificação de trial expirado. Parametrizada por
+ * `daysLeft`: números positivos = dias antes do fim; 0 ou negativo =
+ * já expirou. A escolha do momento de envio fica com o caller (job
+ * `trialEndingJob.js` que roda 1x por dia).
+ *
+ * `toEmail` é array quando queremos atingir todos os usuários ativos da
+ * corretora, string quando é um caso singular (ex.: só o owner).
+ *
+ * Copy muda o tom conforme urgência — aviso "calmo" em 7d vira
+ * "último dia" em 1d e "serviço pausado" em expirado.
+ */
+async function sendCorretoraTrialEndingEmail({
+  toEmail,
+  corretoraName,
+  daysLeft,
+  trialEndsAt,
+}) {
+  const appUrl = config.appUrl.replace(/\/$/, "");
+  const planosUrl = `${appUrl}/painel/corretora/planos`;
+  const safeName = corretoraName || "sua corretora";
+  const expired = daysLeft <= 0;
+
+  // Formato de data human-friendly (ex.: "21 de abril").
+  const endDate = trialEndsAt ? new Date(trialEndsAt) : null;
+  const endLabel =
+    endDate && !Number.isNaN(endDate.getTime())
+      ? endDate.toLocaleDateString("pt-BR", {
+          day: "2-digit",
+          month: "long",
+        })
+      : null;
+
+  let subject;
+  let headline;
+  let body;
+  let ctaLabel;
+  let kickerColor;
+  if (expired) {
+    subject = `${safeName}: seu teste gratuito expirou`;
+    headline = "Seu teste gratuito acabou";
+    body = `O período gratuito da <strong>${safeName}</strong> terminou${endLabel ? ` em ${endLabel}` : ""}. Os leads continuam chegando na sua página, mas o painel entra em modo limitado até você escolher um plano. Assine agora para manter o histórico e responder produtores sem interrupção.`;
+    ctaLabel = "Reativar minha conta";
+    kickerColor = "#be123c";
+  } else if (daysLeft <= 1) {
+    subject = `${safeName}: último dia do teste gratuito`;
+    headline = "Último dia do seu teste gratuito";
+    body = `Amanhã o teste gratuito da <strong>${safeName}</strong> acaba${endLabel ? ` (${endLabel})` : ""}. Assine hoje para manter tudo funcionando — leads, timeline, propostas e equipe — sem interrupção.`;
+    ctaLabel = "Assinar agora";
+    kickerColor = "#b45309";
+  } else if (daysLeft <= 3) {
+    subject = `${safeName}: seu teste gratuito acaba em ${daysLeft} dias`;
+    headline = `Seu teste acaba em ${daysLeft} dias`;
+    body = `O teste gratuito da <strong>${safeName}</strong> termina em ${daysLeft} dias${endLabel ? ` (${endLabel})` : ""}. Vale a pena escolher o plano agora com calma — sua operação segue exatamente com os leads e histórico que você já tem hoje.`;
+    ctaLabel = "Ver planos";
+    kickerColor = "#b45309";
+  } else {
+    subject = `${safeName}: seu teste gratuito acaba em ${daysLeft} dias`;
+    headline = `Seu teste gratuito acaba em ${daysLeft} dias`;
+    body = `Você está usando o Mercado do Café no período de teste gratuito da <strong>${safeName}</strong>. Faltam ${daysLeft} dias${endLabel ? ` (termina em ${endLabel})` : ""}. Quando for a hora, dá pra escolher o plano direto pelo painel — sem perder o histórico.`;
+    ctaLabel = "Conhecer os planos";
+    kickerColor = "#b45309";
+  }
+
+  const toList = Array.isArray(toEmail)
+    ? toEmail.filter(Boolean)
+    : toEmail
+      ? [toEmail]
+      : [];
+  if (toList.length === 0) return { sent: 0 };
+
+  const html = `
+    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; color:#1c1917;">
+      <p style="color:${kickerColor};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;margin:0 0 6px;">
+        ${expired ? "Teste expirado" : "Teste gratuito"}
+      </p>
+      <h2 style="color:#1c1917;margin:0 0 14px;font-size:20px;">☕ ${headline}</h2>
+      <p style="font-size:14px;line-height:1.55;margin:0 0 18px;">${body}</p>
+      <p style="margin:22px 0;">
+        <a href="${planosUrl}"
+           style="display:inline-block;background:${expired ? "#be123c" : "#b45309"};color:white;
+                  padding:12px 24px;border-radius:10px;text-decoration:none;
+                  font-weight:600;">
+          ${ctaLabel}
+        </a>
+      </p>
+      <p style="color:#57534e;font-size:13px;line-height:1.6;">
+        Qualquer dúvida sobre qual plano escolher, é só responder este e-mail que a curadoria da Kavita ajuda a decidir.
+      </p>
+      <p style="color:#78716c;font-size:12px;margin-top:28px;">
+        — Curadoria Kavita · Mercado do Café<br/>
+        <span style="color:#a8a29e;">Zona da Mata mineira</span>
+      </p>
+    </div>
+  `;
+
+  const text = [
+    headline,
+    "",
+    body.replace(/<[^>]+>/g, ""),
+    "",
+    `${ctaLabel}: ${planosUrl}`,
+    "",
+    "Qualquer dúvida sobre qual plano escolher, é só responder este e-mail.",
+    "",
+    "— Curadoria Kavita · Mercado do Café",
+  ].join("\n");
+
+  await transporter.sendMail({
+    from: `"Kavita — Mercado do Café" <${config.email.user}>`,
+    to: toList,
+    subject,
+    html,
+    text,
+  });
+
+  return { sent: toList.length };
+}
+
 async function sendTransactionalEmail(to, subject, html, text = null) {
   const mailOptions = {
     from: `"Kavita" <${config.email.user}>`,
@@ -450,5 +599,6 @@ module.exports = {
   sendLeadProducerConfirmationEmail,
   sendCorretoraNewIpAlertEmail,
   sendRegionalBackfillInviteEmail,
+  sendCorretoraTrialEndingEmail,
   sendTransactionalEmail,
 };

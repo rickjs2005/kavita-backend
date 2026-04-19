@@ -74,4 +74,22 @@ function parseJson(value) {
   }
 }
 
-module.exports = { create, listForCorretora };
+/**
+ * Bloco 3 — checa se já existe evento com o mesmo `event_type` e
+ * mesmo `meta.bucket` para esta subscription. Idempotência do job
+ * de lembrete de trial: garante no máximo 1 e-mail por bucket
+ * (7d / 3d / 1d / expired) por subscription.
+ */
+async function hasEventWithBucket(subscriptionId, eventType, bucket) {
+  const [[row]] = await pool.query(
+    `SELECT COUNT(*) AS n
+       FROM subscription_events
+      WHERE subscription_id = ?
+        AND event_type = ?
+        AND JSON_EXTRACT(meta, '$.bucket') = JSON_QUOTE(?)`,
+    [subscriptionId, eventType, bucket],
+  );
+  return Number(row?.n ?? 0) > 0;
+}
+
+module.exports = { create, listForCorretora, hasEventWithBucket };

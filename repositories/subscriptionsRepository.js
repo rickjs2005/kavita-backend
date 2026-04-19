@@ -279,6 +279,57 @@ async function updateStatus(id, status) {
   return result.affectedRows;
 }
 
+/**
+ * Bloco 3 — lista subscriptions em trial que vencem dentro de N dias
+ * (aprox.). `daysFromNow` é um inteiro (7, 3, 1, 0 etc.). 0 significa
+ * "já expirou e ainda não foi movida de trialing". A janela é meia-dia
+ * do dia-alvo ±12h para tolerar drift de cron/timezone.
+ *
+ * Retorna dados suficientes para o job decidir enviar e-mail:
+ * corretora + e-mail institucional + lista de users ativos é buscada
+ * separadamente no service (evita JOIN caro aqui).
+ */
+async function listTrialsEndingOn(daysFromNow) {
+  // Centralizamos a janela em "daysFromNow dias no futuro, à meia-noite
+  // local". Gera intervalo [00:00, 23:59:59] no tz do servidor (Sao Paulo).
+  // Para `daysFromNow <= 0`, queremos trials cujo end já passou mas a
+  // sub ainda está como "trialing".
+  const nowMs = Date.now();
+  const dayMs = 86_400_000;
+  const target = new Date(nowMs + daysFromNow * dayMs);
+  target.setHours(0, 0, 0, 0);
+  const startIso = target.toISOString();
+  const endTarget = new Date(target.getTime() + dayMs - 1);
+  const endIso = endTarget.toISOString();
+
+  let where;
+  let params;
+  if (daysFromNow <= 0) {
+    // "Expirou" — trial_ends_at < now, mas status ainda é "trialing".
+    where =
+      "s.status = 'trialing' AND s.trial_ends_at IS NOT NULL AND s.trial_ends_at < NOW()";
+    params = [];
+  } else {
+    where =
+      "s.status = 'trialing' AND s.trial_ends_at IS NOT NULL AND s.trial_ends_at BETWEEN ? AND ?";
+    params = [startIso, endIso];
+  }
+
+  const [rows] = await pool.query(
+    `SELECT s.id, s.corretora_id, s.plan_id, s.status, s.trial_ends_at,
+            p.slug AS plan_slug, p.name AS plan_name,
+            c.name AS corretora_name, c.slug AS corretora_slug,
+            c.email AS corretora_email
+       FROM corretora_subscriptions s
+       JOIN plans p ON p.id = s.plan_id
+       JOIN corretoras c ON c.id = s.corretora_id
+      WHERE ${where}
+      ORDER BY s.trial_ends_at ASC`,
+    params,
+  );
+  return rows;
+}
+
 module.exports = {
   getCurrentForCorretora,
   listForCorretora,
@@ -290,4 +341,5 @@ module.exports = {
   updateStatus,
   listActiveByPlan,
   applyCapabilitiesSnapshotToActiveByPlan,
+  listTrialsEndingOn,
 };

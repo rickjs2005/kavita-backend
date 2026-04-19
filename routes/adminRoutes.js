@@ -54,20 +54,25 @@ mount("/admin/servicos",        "./admin/adminServicos");
 mount("/admin/servicos/solicitacoes", "./admin/adminSolicitacoesServicos");
 mount("/admin/especialidades",  "./admin/adminEspecialidades");
 mount("/admin/drones",          "./admin/adminDrones");
+// Bloco 5 — permissões granulares. O mount exige o piso mínimo (view).
+// Ações mais sensíveis (approve/moderate/plan_manage/financial) ficam
+// no controller/router individual via requirePermission. Quem tem a
+// super-permissão legada `mercado_cafe_manage` continua passando tudo
+// (ver middleware/requirePermission.js -> MODULE_SUPER_PERMISSIONS).
 mount(
   "/admin/mercado-do-cafe",
   "./admin/adminCorretoras",
-  requirePermission("mercado_cafe_manage"),
+  requirePermission("mercado_cafe_view"),
 );
 mount(
   "/admin/mercado-do-cafe/metrics",
   "./admin/adminCorretorasMetrics",
-  requirePermission("mercado_cafe_manage"),
+  requirePermission("mercado_cafe_view"),
 );
 mount(
   "/admin/monetization",
   "./admin/adminPlans",
-  requirePermission("mercado_cafe_manage"),
+  requirePermission("mercado_cafe_view"),
 );
 mount("/admin/audit", "./admin/adminAudit");
 

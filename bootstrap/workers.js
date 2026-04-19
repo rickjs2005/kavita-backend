@@ -33,6 +33,13 @@ try {
   logger.warn({ err }, "lead follow-up job not loaded");
 }
 
+let trialReminderJob;
+try {
+  trialReminderJob = require("../jobs/trialReminderJob");
+} catch (err) {
+  logger.warn({ err }, "trial reminder job not loaded");
+}
+
 function startWorkers() {
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
@@ -61,6 +68,12 @@ function startWorkers() {
   if (leadFollowupJob && typeof leadFollowupJob.register === "function") {
     leadFollowupJob.register().catch((err) => {
       logger.error({ err }, "lead follow-up job registration failed");
+    });
+  }
+
+  if (trialReminderJob && typeof trialReminderJob.register === "function") {
+    trialReminderJob.register().catch((err) => {
+      logger.error({ err }, "trial reminder job registration failed");
     });
   }
 }

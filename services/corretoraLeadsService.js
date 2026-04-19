@@ -80,8 +80,12 @@ async function createLeadFromPublic({ slug, data, meta }) {
           type: "lead.recontato",
           title: `Produtor voltou a chamar — ${data.nome}`,
           body: `O mesmo contato (${data.telefone}) tentou falar com você de novo. Pode ser hora de um retorno proativo.`,
-          link: "/painel/corretora/leads",
-          meta: { lead_id: existing.id, source: "recontact_dedupe" },
+          link: `/painel/corretora/leads/${existing.id}`,
+          meta: {
+            lead_id: existing.id,
+            source: "recontact_dedupe",
+            high_priority: true,
+          },
         })
         .catch((err) => {
           logger.warn(
@@ -248,13 +252,18 @@ async function createLeadFromPublic({ slug, data, meta }) {
         ? `Novo lead alta prioridade${cityPart}${corregoPart}`
         : `Novo lead${cityPart}${corregoPart}`,
       body: bodyParts.join(" · "),
-      link: "/painel/corretora/leads",
+      // Link direto pro detalhe do lead — corretora chega em 1 clique
+      // no lugar onde precisa agir, sem passar pela listagem.
+      link: leadId ? `/painel/corretora/leads/${leadId}` : "/painel/corretora/leads",
       meta: {
         lead_id: leadId,
         nome: data.nome,
         cidade: data.cidade ?? null,
         corrego: data.corrego_localidade ?? null,
         is_corrego_premium: isCorregoPremium,
+        // Flag explícita pro frontend priorizar visualmente na lista
+        // e no pulse do sino. Tom mais forte quando alta prioridade.
+        high_priority: isHighPriority === true,
       },
     })
     .catch((err) => {
@@ -371,8 +380,8 @@ async function notifyCorretoraOfNewLead(corretora, lead) {
     : "";
 
   const subject = isHighPriority
-    ? `[Alta prioridade] Novo contato — ${lead.nome}`
-    : `Novo contato recebido — ${lead.nome}`;
+    ? `⚡ Lead com alta prioridade — ${lead.nome}${lead.cidade ? ` (${lead.cidade})` : ""}`
+    : `Novo lead de café — ${lead.nome}${lead.cidade ? ` (${lead.cidade})` : ""}`;
 
   const qualFields = [
     lead.objetivo && { label: "Objetivo", value: LABEL_OBJETIVO[lead.objetivo] },
@@ -406,63 +415,80 @@ async function notifyCorretoraOfNewLead(corretora, lead) {
        </div>`
     : "";
 
+  // Telefone limpo para gerar link WhatsApp diretamente no e-mail — tira
+  // da corretora o passo de "abrir painel → copiar telefone → abrir WA".
+  // Fallback: se o telefone estiver anômalo, não renderiza o botão.
+  const telDigits = String(lead.telefone || "").replace(/\D/g, "");
+  const waUrl = telDigits.length >= 10 ? `https://wa.me/55${telDigits}` : null;
+  const leadUrl = `${appUrl}/painel/corretora/leads/${lead.id}`;
+
   const html = `
-    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px;">
-      <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px;">
-        <h2 style="color:#15803d;margin:0;">☕ Novo contato no Mercado do Café</h2>
+    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; color:#1c1917;">
+      <div style="margin:0 0 14px;">
+        <h2 style="color:#b45309;margin:0 0 6px;font-size:18px;">☕ Novo lead de café${isHighPriority ? " · alta prioridade" : ""}</h2>
         ${priorityBadge}
       </div>
-      <p>Olá ${escapeHtml(corretora.contact_name || corretora.name)},</p>
-      <p>Um produtor entrou em contato com a <strong>${escapeHtml(corretora.name)}</strong>
-         pela sua página no Kavita:</p>
-      <div style="background:#f4f4f5;border-radius:12px;padding:16px;margin:16px 0;">
-        <p style="margin:4px 0"><strong>Nome:</strong> ${escapeHtml(lead.nome)}</p>
-        <p style="margin:4px 0"><strong>Telefone:</strong> ${escapeHtml(lead.telefone)}</p>
-        ${lead.cidade ? `<p style="margin:4px 0"><strong>Cidade:</strong> ${escapeHtml(lead.cidade)}</p>` : ""}
-        ${qualHtml}
-        ${lead.mensagem ? `<p style="margin:12px 0 4px"><strong>Mensagem:</strong><br/>${escapeHtml(lead.mensagem)}</p>` : ""}
-      </div>
-      <p>Acesse seu painel para responder e atualizar o status:</p>
-      <p>
-        <a href="${appUrl}/painel/corretora/leads"
-           style="display:inline-block;background:#15803d;color:white;
-                  padding:10px 20px;border-radius:8px;text-decoration:none;">
-          Abrir painel
-        </a>
-      </p>
+      <p style="font-size:15px;margin:0 0 6px;"><strong>${escapeHtml(lead.nome)}</strong>${lead.cidade ? ` · ${escapeHtml(lead.cidade)}` : ""} quer falar com a ${escapeHtml(corretora.name)}.</p>
+      <p style="color:#57534e;font-size:13px;margin:0 0 18px;">Responder rápido é o que mais fecha lote. Abra o lead ou chame direto pelo WhatsApp:</p>
 
-      <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e4e4e7;">
-        <p style="margin:0 0 8px;font-size:12px;color:#71717a;">
-          <strong>Tip · Sprint 7:</strong> Compartilhe este link com o
-          produtor para ele sinalizar caso já tenha vendido o lote
-          (libera espaço na sua mesa de amostras):
+      <div style="margin:0 0 18px;">
+        <a href="${leadUrl}"
+           style="display:inline-block;background:#b45309;color:white;
+                  padding:12px 22px;border-radius:10px;text-decoration:none;
+                  font-weight:600;margin-right:8px;margin-bottom:6px;">
+          Abrir lead no painel
+        </a>
+        ${
+          waUrl
+            ? `<a href="${waUrl}"
+                   style="display:inline-block;background:#15803d;color:white;
+                          padding:12px 22px;border-radius:10px;text-decoration:none;
+                          font-weight:600;margin-bottom:6px;">
+                  Chamar no WhatsApp
+                </a>`
+            : ""
+        }
+      </div>
+
+      <div style="background:#f5f5f4;border-radius:12px;padding:14px 16px;margin:16px 0;">
+        <p style="margin:4px 0;font-size:14px;"><strong>Telefone:</strong> ${escapeHtml(lead.telefone)}</p>
+        ${qualHtml.replace('margin:12px 0;padding-top:12px;border-top:1px solid #e4e4e7;', 'margin:8px 0 0;padding-top:8px;border-top:1px solid #e7e5e4;')}
+        ${lead.mensagem ? `<p style="margin:12px 0 4px;font-size:13px;"><strong>O que o produtor escreveu:</strong><br/>${escapeHtml(lead.mensagem)}</p>` : ""}
+      </div>
+
+      <div style="margin-top:20px;padding-top:14px;border-top:1px solid #e7e5e4;">
+        <p style="margin:0 0 6px;font-size:12px;color:#78716c;">
+          <strong>Quando o lote fechar</strong>, você pode enviar este link ao produtor para registrar a venda e liberar sua mesa de amostras:
         </p>
         <p style="margin:4px 0;font-size:11px;word-break:break-all;">
           <a href="${loteVendidoUrl}" style="color:#b45309;">${loteVendidoUrl}</a>
         </p>
       </div>
 
-      <p style="color:#71717a;font-size:12px;margin-top:24px;">
-        Kavita • Mercado do Café
+      <p style="color:#a8a29e;font-size:12px;margin-top:22px;">
+        Kavita · Mercado do Café — Zona da Mata mineira
       </p>
     </div>
   `;
 
   const textLines = [
-    `Novo contato para ${corretora.name}${isHighPriority ? " [ALTA PRIORIDADE]" : ""}`,
+    `Novo lead de café para ${corretora.name}${isHighPriority ? " [ALTA PRIORIDADE]" : ""}`,
     "",
-    `Nome: ${lead.nome}`,
+    `${lead.nome}${lead.cidade ? ` · ${lead.cidade}` : ""} quer falar com a corretora.`,
+    "",
     `Telefone: ${lead.telefone}`,
-    lead.cidade ? `Cidade: ${lead.cidade}` : null,
     lead.objetivo ? `Objetivo: ${LABEL_OBJETIVO[lead.objetivo]}` : null,
     lead.tipo_cafe ? `Tipo de café: ${LABEL_TIPO_CAFE[lead.tipo_cafe]}` : null,
     lead.volume_range ? `Volume estimado: ${LABEL_VOLUME[lead.volume_range]}` : null,
     lead.canal_preferido ? `Prefere contato por: ${LABEL_CANAL[lead.canal_preferido]}` : null,
     lead.mensagem ? `Mensagem: ${lead.mensagem}` : null,
     "",
-    `Responder pelo painel: ${process.env.APP_URL || ""}/painel/corretora/leads`,
-  ];
-  const text = textLines.filter(Boolean).join("\n");
+    `Abrir lead no painel: ${leadUrl}`,
+    waUrl ? `Chamar no WhatsApp: ${waUrl}` : null,
+    "",
+    "Responder rápido é o que mais fecha lote.",
+  ].filter(Boolean);
+  const text = textLines.join("\n");
 
   // Envia individualmente para cada destinatário. Loop sequencial para
   // não estourar throttle do transporte; falha por destinatário é

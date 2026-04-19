@@ -11,6 +11,7 @@ const plansRepo = require("../../repositories/plansRepository");
 const subsRepo = require("../../repositories/subscriptionsRepository");
 const promosRepo = require("../../repositories/cityPromotionsRepository");
 const planService = require("../../services/planService");
+const broadcastTokens = require("../../lib/broadcastPreviewTokens");
 
 // ─── Plans ──────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,26 @@ async function getBroadcastPreview(req, res, next) {
       throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
     }
     const preview = await planService.getBroadcastPreview(id);
-    response.ok(res, preview);
+
+    // Bloco 5 — token com TTL 10min contendo hash das capabilities.
+    // O frontend precisa devolver este token no PUT /plans/:id quando
+    // apply_to_active_subscriptions=true. Se as capabilities mudarem
+    // entre preview e apply, o hash não bate e o backend rejeita.
+    const plan = await plansRepo.findById(id);
+    const confirmation_token = broadcastTokens.generateToken(
+      id,
+      plan?.capabilities ?? null,
+    );
+    const token_expires_at = new Date(
+      Date.now() + broadcastTokens.TTL_MS,
+    ).toISOString();
+
+    response.ok(res, {
+      ...preview,
+      confirmation_token,
+      token_expires_at,
+      token_ttl_ms: broadcastTokens.TTL_MS,
+    });
   } catch (err) {
     next(err);
   }
@@ -71,11 +91,48 @@ async function updatePlan(req, res, next) {
     // assinaturas ativas existentes. Separamos do body da update
     // para não persistir esse boolean na tabela plans.
     const applyToActive = Boolean(req.body?.apply_to_active_subscriptions);
+    const confirmationToken = req.body?.broadcast_confirmation_token ?? null;
     const updatePayload = { ...req.body };
     delete updatePayload.apply_to_active_subscriptions;
+    delete updatePayload.broadcast_confirmation_token;
 
     // Fase 7 — snapshot antes do UPDATE pro audit before/after
     const before = await plansRepo.findById(id);
+
+    // Bloco 5 — preview obrigatório. Quando o admin pede broadcast, o
+    // token tem que existir, estar dentro do TTL e o hash das
+    // capabilities precisa bater com as capabilities vigentes AGORA
+    // (as do `before`, antes do UPDATE). Isso impede aplicar broadcast
+    // com base em preview obsoleto — se o plano mudou nos últimos 10
+    // minutos, refaça a conferência.
+    if (applyToActive) {
+      const check = broadcastTokens.verifyToken(
+        confirmationToken,
+        id,
+        before?.capabilities ?? null,
+      );
+      if (!check.ok) {
+        const reasons = {
+          missing:
+            "Broadcast exige confirmação. Abra o preview e tente novamente.",
+          malformed: "Token de confirmação malformado.",
+          plan_mismatch:
+            "Token de confirmação é de outro plano. Refaça o preview.",
+          expired:
+            "Token de confirmação expirou (10 min). Abra o preview novamente.",
+          bad_signature:
+            "Assinatura do token inválida. Refaça o preview.",
+          plan_changed:
+            "O plano mudou desde o último preview. Abra o preview novamente para revisar o novo impacto.",
+        };
+        throw new AppError(
+          reasons[check.reason] || "Token de confirmação inválido.",
+          ERROR_CODES.VALIDATION_ERROR,
+          check.reason === "plan_changed" ? 409 : 400,
+          { reason: check.reason },
+        );
+      }
+    }
 
     const affected = await plansRepo.update(id, updatePayload);
     if (affected === 0) {
