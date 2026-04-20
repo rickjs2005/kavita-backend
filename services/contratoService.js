@@ -32,6 +32,7 @@ const contratoRepo = require("../repositories/contratoRepository");
 const leadsRepo = require("../repositories/corretoraLeadsRepository");
 const publicCorretorasRepo = require("../repositories/corretorasPublicRepository");
 const leadEventsRepo = require("../repositories/corretoraLeadEventsRepository");
+const contratoSignerService = require("./contratoSignerService");
 const { parseDataFieldsByTipo } = require("../schemas/contratoSchemas");
 
 // ---------------------------------------------------------------------------
@@ -399,12 +400,9 @@ async function enviarParaAssinatura({ id, corretoraId, actor }) {
   }
 
   if (SIGNER_PROVIDER === "clicksign") {
-    // PR 2: integração ClickSign real + webhook.
-    throw new AppError(
-      "Integração ClickSign ainda não configurada.",
-      ERROR_CODES.PROVIDER_NOT_IMPLEMENTED ?? "PROVIDER_NOT_IMPLEMENTED",
-      501,
-    );
+    // Delega para o orquestrador — ele fala com a API e persiste os
+    // IDs do envelope. Eventos, logs e transição também são de lá.
+    return contratoSignerService.enviarParaClickSign({ contrato, actor });
   }
 
   await contratoRepo.updateStatus(id, "sent", {

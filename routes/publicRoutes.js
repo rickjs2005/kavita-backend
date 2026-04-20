@@ -53,6 +53,7 @@ load("/public/verificar-contrato", "./public/publicContratoVerificacao");
 
 // — Webhooks externos (sem auth; validação via assinatura no adapter)
 load("/webhooks/asaas", "./public/webhookAsaas");
+load("/webhooks/clicksign", "./public/webhookClicksign");
 
 // — ETAPA 3.1: cotação café (fail-silent quando provider desligado)
 load("/public/cotacoes-cafe", "./public/publicCotacoesCafe");

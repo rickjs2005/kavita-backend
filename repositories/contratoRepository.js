@@ -120,6 +120,8 @@ async function updateStatus(id, status, patch = {}) {
     "signed_at",
     "cancelled_at",
     "cancel_reason",
+    "signed_pdf_url",
+    "signed_hash_sha256",
   ]) {
     if (Object.prototype.hasOwnProperty.call(patch, key)) {
       sets.push(`${key} = ?`);
@@ -134,11 +136,20 @@ async function updateStatus(id, status, patch = {}) {
   );
 }
 
+async function findBySignerDocumentId(documentId) {
+  const [rows] = await pool.query(
+    `SELECT * FROM contratos WHERE signer_document_id = ? LIMIT 1`,
+    [documentId],
+  );
+  return hydrate(rows[0]);
+}
+
 module.exports = {
   create,
   findById,
   findByIdUnscoped,
   findByToken,
+  findBySignerDocumentId,
   listByLead,
   hasActiveForLead,
   updateStatus,
