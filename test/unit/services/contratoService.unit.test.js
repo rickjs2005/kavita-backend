@@ -165,10 +165,12 @@ describe("contratoService internals", () => {
       expect(publicPayload.hash_sha256).toBe("a".repeat(64));
       expect(publicPayload.resumo.safra).toBe("2025/2026");
       expect(publicPayload.resumo.quantidade_sacas).toBe(200);
-      expect(publicPayload.resumo.produtor_nome).toBe("João Silva");
+      // LGPD: nome do produtor vem mascarado — "João Silva" → "J. Silva"
+      expect(publicPayload.resumo.produtor_iniciais).toBe("J. Silva");
 
-      // Sanidade inversa: nada de preço, prazo ou dados de contato.
+      // Sanidade inversa: nada de nome completo, preço, prazo ou contato.
       expect(publicPayload).not.toHaveProperty("preco_saca");
+      expect(JSON.stringify(publicPayload)).not.toContain("João Silva");
       expect(JSON.stringify(publicPayload)).not.toContain("preco_saca");
       expect(JSON.stringify(publicPayload)).not.toContain("prazo_pagamento");
     });
@@ -189,6 +191,7 @@ describe("contratoService internals", () => {
         },
       });
       expect(publicPayload.resumo.safra).toBe("2026/2027");
+      expect(publicPayload.resumo.produtor_iniciais).toBe("M. Souza");
     });
   });
 });

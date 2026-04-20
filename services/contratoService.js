@@ -185,8 +185,29 @@ async function _persistPdf({ corretoraId, token, pdfBuffer }) {
   return { absPath, relPath };
 }
 
-// Recorte público seguro para a página de verificação — NÃO expõe
-// telefone, email ou valores fechados.
+// Redução LGPD do nome do produtor para verificação pública:
+// "João Silva Santos" → "J. S. Santos". Preserva identificação
+// sem expor nome completo a qualquer visitante do QR Code.
+function _maskProducerName(fullName) {
+  if (!fullName || typeof fullName !== "string") return null;
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase() + ".";
+  const last = parts[parts.length - 1];
+  const initials = parts
+    .slice(0, -1)
+    .map((p) => p.charAt(0).toUpperCase() + ".")
+    .join(" ");
+  return `${initials} ${last}`;
+}
+
+// Recorte público seguro para a página de verificação.
+//
+// Não expõe: telefone, e-mail, CPF/CNPJ, endereço, preço, prazo de
+// pagamento. Expõe apenas o mínimo que prova autenticidade do
+// documento impresso com o QR Code: corretora (razão social/slug),
+// tipo, status, hash, datas e resumo genérico (safra + sacas).
+// Nome do produtor aparece apenas em forma abreviada (iniciais).
 function _publicProjection(contrato) {
   const df = contrato.data_fields || {};
   return {
@@ -202,7 +223,8 @@ function _publicProjection(contrato) {
     resumo: {
       safra: df.safra ?? df.safra_futura ?? null,
       quantidade_sacas: df.quantidade_sacas ?? null,
-      produtor_nome: df.__partes_produtor_nome ?? null,
+      // Iniciais em vez de nome completo — defesa LGPD em rota pública.
+      produtor_iniciais: _maskProducerName(df.__partes_produtor_nome),
     },
   };
 }
