@@ -32,5 +32,7 @@ mount("/corretora/analytics", "./corretoraPanel/corretoraAnalytics");
 mount("/corretora/2fa", "./corretoraPanel/corretoraTotp");
 // Encerramento de conta (self-service owner).
 mount("/corretora/account", "./corretoraPanel/corretoraAccount");
+// Fase 10.1 — contratos de compra e venda de café.
+mount("/corretora/contratos", "./corretoraPanel/corretoraContratos");
 
 module.exports = router;

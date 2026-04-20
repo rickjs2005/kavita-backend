@@ -1,0 +1,91 @@
+<h1>Compra e Venda de Café Disponível</h1>
+
+<div class="parties-block">
+  <p><strong>Compradora (Corretora):</strong> {{partes.corretora_nome}}{{#if partes.corretora_cnpj}}, CNPJ {{partes.corretora_cnpj}}{{/if}}{{#if partes.corretora_endereco}}, com endereço em {{partes.corretora_endereco}}{{/if}}.</p>
+  <p><strong>Vendedor (Produtor):</strong> {{partes.produtor_nome}}{{#if partes.produtor_cidade}}, {{partes.produtor_cidade}}{{/if}}, telefone {{partes.produtor_telefone}}{{#if partes.produtor_email}}, e-mail {{partes.produtor_email}}{{/if}}.</p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 1ª — Do Objeto</h2>
+  <p>
+    O presente instrumento tem por objeto a compra e venda de café em grão
+    verde, safra {{safra}}, tipo/bebida conforme laudo ({{bebida_laudo}}),
+    a ser entregue pelo Vendedor à Compradora nas condições deste contrato.
+  </p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 2ª — Da Quantidade e Preço</h2>
+  <table class="spec-table">
+    <tr>
+      <th>Quantidade</th>
+      <td>{{quantidade_sacas}} sacas de 60 kg líquidos</td>
+    </tr>
+    <tr>
+      <th>Preço por saca</th>
+      <td>{{brl preco_saca}}</td>
+    </tr>
+    <tr>
+      <th>Valor total</th>
+      <td>{{brl (multiply quantidade_sacas preco_saca)}}</td>
+    </tr>
+    <tr>
+      <th>Prazo de pagamento</th>
+      <td>{{prazo_pagamento_dias}} dias úteis após a entrega e classificação definitiva</td>
+    </tr>
+  </table>
+  <p>
+    O valor total de referência, calculado pela multiplicação da quantidade
+    pelo preço por saca, será liquidado conforme o prazo acima, mediante
+    comprovação de entrega no local indicado na Cláusula 3ª.
+  </p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 3ª — Do Local de Entrega</h2>
+  <p>
+    A entrega do café será realizada em {{nome_armazem_ou_fazenda}},
+    correndo por conta do Vendedor os riscos inerentes ao transporte até
+    o momento do recebimento pela Compradora.
+  </p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 4ª — Da Qualidade e Amostra</h2>
+  <p>
+    A Compradora reserva-se o direito de recusar o lote caso a classificação
+    física (peneira, defeitos, umidade) divirja materialmente da amostra
+    {{#if id_amostra}}identificada sob o nº {{id_amostra}}{{else}}apresentada ao exame prévio{{/if}},
+    que integra este contrato para todos os fins. A classificação definitiva
+    dar-se-á por classificador credenciado e vinculará as partes.
+  </p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 5ª — Da Mora e Foro</h2>
+  <p>
+    O descumprimento das obrigações aqui pactuadas sujeita a parte inadimplente
+    a multa de 10% (dez por cento) sobre o valor total do contrato, sem
+    prejuízo da cobrança de perdas e danos e demais cominações legais.
+    Fica eleito o foro da comarca da sede da Compradora para dirimir eventuais
+    controvérsias.
+  </p>
+</div>
+
+{{#if observacoes}}
+<div class="clause">
+  <h2 class="clause-title">Cláusula 6ª — Observações</h2>
+  <p>{{observacoes}}</p>
+</div>
+{{/if}}
+
+<div class="signature-block">
+  <div class="party">
+    {{partes.corretora_nome}}<br />
+    <small>(Compradora)</small>
+  </div>
+  <div class="party">
+    {{partes.produtor_nome}}<br />
+    <small>(Vendedor)</small>
+  </div>
+</div>

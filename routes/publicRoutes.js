@@ -48,6 +48,9 @@ load("/public/drones", "./public/publicDrones");
 load("/public/corretoras", "./public/publicCorretoras");
 load("/public/plans", "./public/publicPlans");
 
+// — Fase 10.1: verificação pública de contrato (QR Code do rodapé).
+load("/public/verificar-contrato", "./public/publicContratoVerificacao");
+
 // — Webhooks externos (sem auth; validação via assinatura no adapter)
 load("/webhooks/asaas", "./public/webhookAsaas");
 

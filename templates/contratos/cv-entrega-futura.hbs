@@ -1,0 +1,102 @@
+<h1>Compra e Venda de Café — Entrega Futura (Contrato a Termo)</h1>
+
+<div class="parties-block">
+  <p><strong>Compradora (Corretora):</strong> {{partes.corretora_nome}}{{#if partes.corretora_cnpj}}, CNPJ {{partes.corretora_cnpj}}{{/if}}{{#if partes.corretora_endereco}}, com endereço em {{partes.corretora_endereco}}{{/if}}.</p>
+  <p><strong>Vendedor (Produtor):</strong> {{partes.produtor_nome}}{{#if partes.produtor_cidade}}, {{partes.produtor_cidade}}{{/if}}, telefone {{partes.produtor_telefone}}{{#if partes.produtor_email}}, e-mail {{partes.produtor_email}}{{/if}}.</p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 1ª — Do Objeto</h2>
+  <p>
+    O presente instrumento tem por objeto a compra e venda a termo de café
+    arábica a ser produzido na safra {{safra_futura}}, com especificação
+    sensorial de referência {{bebida_laudo}}, a ser entregue pelo Vendedor
+    à Compradora nas condições abaixo.
+  </p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 2ª — Da Quantidade e Preço</h2>
+  <table class="spec-table">
+    <tr>
+      <th>Quantidade</th>
+      <td>{{quantidade_sacas}} sacas de 60 kg líquidos</td>
+    </tr>
+    <tr>
+      <th>Preço base</th>
+      <td>
+        Indicador CEPEA/ESALQ do café arábica em {{dataBR data_referencia_cepea}},
+        acrescido do diferencial (<em>basis</em>) de {{brl diferencial_basis}} por saca.
+      </td>
+    </tr>
+    <tr>
+      <th>Local de entrega</th>
+      <td>{{nome_armazem_ou_fazenda}}</td>
+    </tr>
+  </table>
+  <p>
+    A liquidação financeira dar-se-á em conformidade com o preço base apurado
+    acima, sobre a quantidade efetivamente entregue e classificada.
+  </p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 3ª — Da Qualidade e Amostra</h2>
+  <p>
+    A Compradora reserva-se o direito de recusar o lote caso a classificação
+    física divirja materialmente do padrão de referência acima{{#if id_amostra}},
+    identificado pela amostra nº {{id_amostra}}{{/if}}. A classificação
+    definitiva dar-se-á por classificador credenciado e vinculará as partes.
+  </p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 4ª — Cláusula de <em>Washout</em> (Multa por Não Entrega)</h2>
+  <p>
+    Em caso de não entrega, total ou parcial, do café pactuado na data de
+    vencimento, o Vendedor pagará à Compradora multa de 20% (vinte por cento)
+    sobre o valor de mercado apurado no dia do vencimento, acrescida das
+    perdas e danos correspondentes, salvo se demonstrar, de forma
+    inequívoca, a ocorrência de caso fortuito ou força maior — em especial
+    geada, seca extrema ou evento climático adverso devidamente comprovado
+    por laudo técnico oficial.
+  </p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 5ª — Da Natureza do Título</h2>
+  <p>
+    O presente instrumento, firmado pelas partes, constitui título executivo
+    extrajudicial para os fins do disposto no Código de Processo Civil,
+    autorizando, desde logo, a execução de suas obrigações em caso de
+    inadimplemento.
+  </p>
+</div>
+
+<div class="clause">
+  <h2 class="clause-title">Cláusula 6ª — Da Mora e Foro</h2>
+  <p>
+    O descumprimento das obrigações aqui pactuadas, ressalvada a cláusula de
+    <em>washout</em> acima, sujeita a parte inadimplente às cominações legais
+    cabíveis. Fica eleito o foro da comarca da sede da Compradora para
+    dirimir eventuais controvérsias.
+  </p>
+</div>
+
+{{#if observacoes}}
+<div class="clause">
+  <h2 class="clause-title">Cláusula 7ª — Observações</h2>
+  <p>{{observacoes}}</p>
+</div>
+{{/if}}
+
+<div class="signature-block">
+  <div class="party">
+    {{partes.corretora_nome}}<br />
+    <small>(Compradora)</small>
+  </div>
+  <div class="party">
+    {{partes.produtor_nome}}<br />
+    <small>(Vendedor)</small>
+  </div>
+</div>

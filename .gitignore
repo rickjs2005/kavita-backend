@@ -69,6 +69,9 @@ pids/
 # =========================
 uploads/
 public/uploads/
+# Arquivos privados (contratos assinados, etc.). Servidos somente
+# via rotas autenticadas, nunca expostos via express.static.
+storage/
 
 # =========================
 # BACKUPS DE BANCO (scripts/backup-mysql.js)

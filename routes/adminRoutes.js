@@ -75,6 +75,9 @@ mount(
   requirePermission("mercado_cafe_view"),
 );
 mount("/admin/audit", "./admin/adminAudit");
+// Fase 10.1 — stub de simulação de assinatura de contrato. Inerte em
+// produção (service valida CONTRATO_SIGNER_PROVIDER=stub).
+mount("/admin/contratos", "./admin/adminContratos");
 
 /* ============================================================
  * Operações de negócio
