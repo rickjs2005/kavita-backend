@@ -17,8 +17,10 @@
 "use strict";
 
 const PROVIDER = "noticias_agricolas";
+// Path atualizado em 2026-04-20 — o site reorganizou a árvore e o
+// path antigo (/cotacoes/cafe/cafe-arabica-cepea) virou 404.
 const SOURCE_URL =
-  "https://www.noticiasagricolas.com.br/cotacoes/cafe/cafe-arabica-cepea";
+  "https://www.noticiasagricolas.com.br/cotacoes/cafe/indicador-cepea-esalq-cafe-arabica";
 
 function isConfigured() {
   // Sem credencial — adapter só opera se o provider estiver
@@ -41,8 +43,9 @@ function isConfigured() {
 async function fetchArabicaPrice() {
   const res = await fetch(SOURCE_URL, {
     headers: {
+      // Header HTTP é ByteString (ASCII) — nada de em-dash/acento.
       "User-Agent":
-        "KavitaBot/1.0 (+https://kavita.com.br) — cotacao mirror 15min",
+        "KavitaBot/1.0 (+https://kavita.com.br) cotacao-mirror-15min",
       Accept: "text/html",
     },
     redirect: "follow",
@@ -50,24 +53,60 @@ async function fetchArabicaPrice() {
   if (!res.ok) return null;
   const html = await res.text();
 
-  // Parsers tolerantes. Pegamos o PRIMEIRO match — a página mostra
-  // "valor atual" em destaque antes de variações por praça/tipo.
-  // Cada padrão cobre uma variação comum de formatação:
-  //   1.800,72  |  R$ 1.800,72  |  1800,72
-  const priceMatch =
-    html.match(
-      /(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})\s*(?:por\s+saca|\/\s*saca|de\s+60\s*kg)?/i,
-    ) || null;
+  // Estratégia de parser em dois níveis, do mais estrito ao mais
+  // tolerante. Strict-first porque a página mistura preço real do
+  // indicador com propagandas e outros campos "R$ X,YZ".
+  //
+  // Nível 1 — tabela estruturada do indicador:
+  //   <table class="cotacao">…<th>Valor R$</th><td>1.804,50</td>…
+  //   Pegamos o primeiro <td> após "Valor R$" — é o indicador principal.
+  //
+  // Nível 2 — fallback: buscar valor no formato típico de saca de
+  //   café (4 dígitos antes da vírgula, entre 500 e 5000 reais), o
+  //   que elimina preços tipo "R$ 4,97" (propaganda de assinatura).
+  //
+  // Se nada passa a validação sanitária (faixa plausível), null.
+
+  let priceReais = null;
+
+  // Nível 1: busca estruturada em tabela.
+  const tableMatch = html.match(
+    /Valor\s+R\$[\s\S]{0,200}?<td[^>]*>\s*(\d{1,3}(?:\.\d{3})+,\d{2})\s*<\/td>/i,
+  );
+  if (tableMatch) {
+    priceReais = parseFloat(
+      tableMatch[1].replace(/\./g, "").replace(",", "."),
+    );
+  }
+
+  // Nível 2: fallback tolerante com sanidade de faixa.
+  if (!Number.isFinite(priceReais) || priceReais < 500 || priceReais > 5000) {
+    // Em 2026 preço da saca arábica fica tipicamente em R$ 1.000–3.000.
+    // Relaxamos para 500–5000 por segurança.
+    const allMatches = html.match(/(\d{1,2}\.\d{3},\d{2})/g) || [];
+    for (const m of allMatches) {
+      const v = parseFloat(m.replace(/\./g, "").replace(",", "."));
+      if (v >= 500 && v <= 5000) {
+        priceReais = v;
+        break;
+      }
+    }
+  }
+
+  if (
+    !Number.isFinite(priceReais) ||
+    priceReais < 500 ||
+    priceReais > 5000
+  ) {
+    // Não conseguimos identificar o indicador. Preferimos não mostrar
+    // nada a mostrar valor errado (ver ADR do service: "não inventa preço").
+    return null;
+  }
+
+  // Variação é best-effort — não essencial para o ticker.
   const variationMatch =
     html.match(/\(\s*([+-]?\d+[\.,]\d+)\s*%\s*\)/) ||
     html.match(/Var[^<]*?([+-]?\d+[\.,]\d+)\s*%/i);
-
-  if (!priceMatch) return null;
-
-  // "1.800,72" → 180072 centavos
-  const priceNormalized = priceMatch[1].replace(/\./g, "").replace(",", ".");
-  const priceReais = parseFloat(priceNormalized);
-  if (!Number.isFinite(priceReais) || priceReais <= 0) return null;
 
   const priceCents = Math.round(priceReais * 100);
   let variationPct = null;

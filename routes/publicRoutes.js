@@ -58,6 +58,9 @@ load("/webhooks/clicksign", "./public/webhookClicksign");
 // — ETAPA 3.1: cotação café (fail-silent quando provider desligado)
 load("/public/cotacoes-cafe", "./public/publicCotacoesCafe");
 
+// — Fase 10.4: ticker unificado de mercado (CEPEA + ICE "C").
+load("/public/market-quotes", "./public/publicMarketQuotes");
+
 // — FIX #3: features ativas no ambiente (SMS, cotação)
 load("/public/features", "./public/publicFeatures");
 

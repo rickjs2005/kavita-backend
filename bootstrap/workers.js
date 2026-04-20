@@ -40,6 +40,13 @@ try {
   logger.warn({ err }, "trial reminder job not loaded");
 }
 
+let marketQuotesSyncJob;
+try {
+  marketQuotesSyncJob = require("../jobs/marketQuotesSyncJob");
+} catch (err) {
+  logger.warn({ err }, "market quotes sync job not loaded");
+}
+
 function startWorkers() {
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
@@ -74,6 +81,15 @@ function startWorkers() {
   if (trialReminderJob && typeof trialReminderJob.register === "function") {
     trialReminderJob.register().catch((err) => {
       logger.error({ err }, "trial reminder job registration failed");
+    });
+  }
+
+  if (
+    marketQuotesSyncJob &&
+    typeof marketQuotesSyncJob.register === "function"
+  ) {
+    marketQuotesSyncJob.register().catch((err) => {
+      logger.error({ err }, "market quotes sync job registration failed");
     });
   }
 }
