@@ -36,4 +36,7 @@ router.get("/alerts", ctrl.listAlerts);
 router.post("/alerts", validate(createAlertSubscriptionSchema), ctrl.createAlert);
 router.delete("/alerts/:id", ctrl.deleteAlert);
 
+// Fase 10.1 PR 4 — contratos do produtor.
+router.use("/contratos", require("./producerContratos"));
+
 module.exports = router;

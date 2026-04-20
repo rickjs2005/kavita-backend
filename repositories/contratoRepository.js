@@ -144,6 +144,61 @@ async function findBySignerDocumentId(documentId) {
   return hydrate(rows[0]);
 }
 
+/**
+ * Lista contratos em que o produtor identificado pelo email é
+ * signatário. O vínculo é via `corretora_leads.email` — o lead guarda
+ * o email informado pelo produtor na captura, que é o mesmo usado
+ * pela ClickSign. Retorna já com dados da corretora para o frontend
+ * renderizar sem segunda query.
+ *
+ * Segurança: escopa estritamente por email da sessão autenticada.
+ * Um produtor com email X nunca vê contrato de lead com email Y.
+ */
+async function listByProducerEmail(email) {
+  if (!email) return [];
+  const [rows] = await pool.query(
+    `SELECT
+        c.id, c.tipo, c.status, c.hash_sha256,
+        c.qr_verification_token,
+        c.sent_at, c.signed_at, c.cancelled_at, c.cancel_reason,
+        c.created_at,
+        c.data_fields,
+        (c.signed_pdf_url IS NOT NULL) AS has_signed_pdf,
+        co.id AS corretora_id, co.name AS corretora_name,
+        co.slug AS corretora_slug, co.logo_path AS corretora_logo
+       FROM contratos c
+       JOIN corretora_leads l ON l.id = c.lead_id
+       JOIN corretoras co ON co.id = c.corretora_id
+      WHERE LOWER(l.email) = LOWER(?)
+      ORDER BY c.created_at DESC
+      LIMIT 100`,
+    [email],
+  );
+  return rows.map((r) => ({
+    ...r,
+    data_fields: parseJsonField(r.data_fields),
+    has_signed_pdf: Boolean(r.has_signed_pdf),
+  }));
+}
+
+/**
+ * Busca 1 contrato por id, escopado por email do produtor. Usado
+ * pelo endpoint de download de PDF — evita IDOR (produtor com id A
+ * não consegue baixar contrato de produtor B mesmo guessando o id).
+ */
+async function findByIdForProducer(id, email) {
+  if (!email) return null;
+  const [rows] = await pool.query(
+    `SELECT c.*
+       FROM contratos c
+       JOIN corretora_leads l ON l.id = c.lead_id
+      WHERE c.id = ? AND LOWER(l.email) = LOWER(?)
+      LIMIT 1`,
+    [id, email],
+  );
+  return hydrate(rows[0]);
+}
+
 module.exports = {
   create,
   findById,
@@ -151,6 +206,8 @@ module.exports = {
   findByToken,
   findBySignerDocumentId,
   listByLead,
+  listByProducerEmail,
+  findByIdForProducer,
   hasActiveForLead,
   updateStatus,
 };
