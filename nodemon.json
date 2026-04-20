@@ -1,0 +1,32 @@
+{
+  "ignore": [
+    "storage/",
+    "uploads/",
+    "public/uploads/",
+    "logs/",
+    "backups/",
+    "coverage/",
+    "node_modules/",
+    "*.log",
+    "*.pdf",
+    "test/"
+  ],
+  "delay": 500,
+  "watch": [
+    "server.js",
+    "config/",
+    "controllers/",
+    "lib/",
+    "middleware/",
+    "repositories/",
+    "routes/",
+    "schemas/",
+    "services/",
+    "errors/",
+    "constants/",
+    "jobs/",
+    "migrations/",
+    "templates/"
+  ],
+  "ext": "js,json,hbs"
+}

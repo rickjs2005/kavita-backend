@@ -94,7 +94,8 @@ const createContratoBaseSchema = z.object({
   tipo: z.enum(["disponivel", "entrega_futura"]),
   // O middleware valida estrutura mínima; o service faz o parse
   // discriminado final (ver contratoService.gerarContrato).
-  data_fields: z.record(z.any()),
+  // Zod v4 exige (keySchema, valueSchema) em z.record.
+  data_fields: z.record(z.string(), z.any()),
 });
 
 function parseDataFieldsByTipo(tipo, data_fields) {

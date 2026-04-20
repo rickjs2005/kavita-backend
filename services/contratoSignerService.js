@@ -35,6 +35,21 @@ function _sha256Hex(buffer) {
  * Produtor precisa de email — se não tiver, erro explícito para a
  * corretora completar o cadastro antes de enviar.
  */
+// ClickSign v3 exige nome com pelo menos 2 palavras (nome + sobrenome).
+// "João" sozinho devolve 400 "name não está em um formato válido".
+function _assertFullName(name, who) {
+  const trimmed = String(name ?? "").trim();
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) {
+    throw new AppError(
+      `Nome de ${who} precisa ter nome e sobrenome para assinar via ClickSign. Atualize o cadastro antes de enviar.`,
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+    );
+  }
+  return trimmed;
+}
+
 async function _buildSigners({ contrato, corretoraId }) {
   const lead = await leadsRepo.findByIdForCorretora(
     contrato.lead_id,
@@ -64,14 +79,20 @@ async function _buildSigners({ contrato, corretoraId }) {
     );
   }
 
+  const corretoraSignerName = _assertFullName(
+    corretora.contact_name || corretora.name,
+    "responsável da corretora",
+  );
+  const produtorSignerName = _assertFullName(lead.nome, "produtor");
+
   return [
     {
-      name: corretora.contact_name || corretora.name,
+      name: corretoraSignerName,
       email: corretora.email,
       role: "corretora",
     },
     {
-      name: lead.nome,
+      name: produtorSignerName,
       email: lead.email,
       role: "produtor",
     },
@@ -245,9 +266,10 @@ async function processarEventoWebhook(domainEvent) {
     title = "Contrato assinado (ClickSign)";
 
     try {
-      const signedBuffer = await clicksignAdapter.baixarPdfAssinado(
-        domainEvent.document_id,
-      );
+      const signedBuffer = await clicksignAdapter.baixarPdfAssinado({
+        envelopeId: contrato.signer_envelope_id,
+        documentId: domainEvent.document_id,
+      });
       patch.signed_pdf_url = await _persistSignedPdf({
         contrato,
         signedBuffer,

@@ -73,9 +73,10 @@ async function _request(path, { method = "GET", body = null, timeoutMs = DEFAULT
       method,
       headers: {
         "Content-Type": "application/json",
-        // ClickSign aceita token via query (?access_token=) ou header.
-        // Header é mais limpo e não aparece em logs de proxy.
-        Authorization: `Bearer ${cfg.apiToken}`,
+        // ClickSign v3 aceita token no header Authorization SEM prefixo
+        // Bearer. Com "Bearer <token>" a API devolve 401 "Access Token
+        // inválido". Confirmado via smoke em sandbox.clicksign.com.
+        Authorization: cfg.apiToken,
         Accept: "application/json",
         "User-Agent": "Kavita/1.0 (contratos)",
       },
@@ -117,16 +118,19 @@ async function _request(path, { method = "GET", body = null, timeoutMs = DEFAULT
 // ---------------------------------------------------------------------------
 
 /**
- * Cria envelope com 1 documento + 2 signatários (corretora + produtor)
- * e dispara o envio para assinatura.
+ * Cria envelope com 1 documento + N signatários + requirements (sign
+ * + auth por email) e dispara o envio.
  *
- * Fluxo ClickSign v3:
- *   1) POST /envelopes               → cria envelope em draft
- *   2) POST /envelopes/:id/documents → anexa PDF base64
- *   3) POST /envelopes/:id/signers   → 1x por signatário
- *   4) PATCH /envelopes/:id { status: running } → envia notificação
+ * Fluxo ClickSign v3 (JSON:API):
+ *   1) POST /envelopes                     → cria envelope em draft
+ *   2) POST /envelopes/:id/documents       → anexa PDF base64
+ *   3) POST /envelopes/:id/signers         → 1x por signatário
+ *   4) POST /envelopes/:id/requirements    → 2x por signer (sign + auth=email)
+ *   5) PATCH /envelopes/:id status=running → envia notificação
  *
- * Retorna identificadores externos para persistir em `contratos`.
+ * Todos os bodies seguem formato JSON:API: { data: { type, attributes,
+ * relationships } }. Chamadas antigas ao estilo { envelope: {...} } dão
+ * 400 "data deve ser informado".
  */
 async function criarEnvelopeCompleto({
   nomeEnvelope,
@@ -148,15 +152,18 @@ async function criarEnvelopeCompleto({
   const envelope = await _request("/api/v3/envelopes", {
     method: "POST",
     body: {
-      envelope: {
-        name: nomeEnvelope,
-        locale: "pt-BR",
-        auto_close: true,
-        block_after_refusal: true,
+      data: {
+        type: "envelopes",
+        attributes: {
+          name: nomeEnvelope,
+          locale: "pt-BR",
+          auto_close: true,
+          block_after_refusal: true,
+        },
       },
     },
   });
-  const envelopeId = envelope?.data?.id ?? envelope?.envelope?.id ?? null;
+  const envelopeId = envelope?.data?.id ?? null;
   if (!envelopeId) {
     throw new ClickSignError("ClickSign não devolveu envelope id.", {
       body: envelope,
@@ -169,67 +176,117 @@ async function criarEnvelopeCompleto({
     {
       method: "POST",
       body: {
-        document: {
-          filename: `${nomeEnvelope}.pdf`,
-          content_base64: `data:application/pdf;base64,${pdfBuffer.toString("base64")}`,
+        data: {
+          type: "documents",
+          attributes: {
+            filename: `${nomeEnvelope}.pdf`,
+            content_base64: `data:application/pdf;base64,${pdfBuffer.toString("base64")}`,
+          },
         },
       },
     },
   );
-  const documentId =
-    documentCreate?.data?.id ?? documentCreate?.document?.id ?? null;
+  const documentId = documentCreate?.data?.id ?? null;
   if (!documentId) {
     throw new ClickSignError("ClickSign não devolveu document id.", {
       body: documentCreate,
     });
   }
 
-  // 3) Adiciona signatários
+  // 3) Adiciona signatários + 4) Requirements (sign + auth=email)
   const signerIds = [];
   for (const s of signers) {
-    const payload = {
-      signer: {
-        name: s.name,
-        email: s.email,
-        documentation: s.cpf ?? null,
-        // Autenticação simples por email/WhatsApp — para contratos
-        // de alto valor o jurídico pode pedir selfie/CPF, daí
-        // evoluímos aqui.
-        auths: ["email"],
-        has_documentation: Boolean(s.cpf),
-      },
-    };
-    const created = await _request(
+    const createdSigner = await _request(
       `/api/v3/envelopes/${envelopeId}/signers`,
-      { method: "POST", body: payload },
+      {
+        method: "POST",
+        body: {
+          data: {
+            type: "signers",
+            attributes: {
+              name: s.name,
+              email: s.email,
+              has_documentation: Boolean(s.cpf),
+              documentation: s.cpf ?? null,
+              // Sem birthday/refusable — fica no default do provedor.
+            },
+          },
+        },
+      },
     );
-    const signerId = created?.data?.id ?? created?.signer?.id ?? null;
-    if (signerId) signerIds.push(signerId);
+    const signerId = createdSigner?.data?.id ?? null;
+    if (!signerId) {
+      throw new ClickSignError("ClickSign não devolveu signer id.", {
+        body: createdSigner,
+      });
+    }
+    signerIds.push(signerId);
+
+    // 4a) requirement "agree" — obrigação de assinar o documento.
+    // ClickSign v3 exige `role: "sign"` aqui.
+    await _request(`/api/v3/envelopes/${envelopeId}/requirements`, {
+      method: "POST",
+      body: {
+        data: {
+          type: "requirements",
+          attributes: { action: "agree", role: "sign" },
+          relationships: {
+            document: { data: { type: "documents", id: documentId } },
+            signer: { data: { type: "signers", id: signerId } },
+          },
+        },
+      },
+    });
+
+    // 4b) requirement "provide_evidence" — método de autenticação.
+    // NÃO aceita role (aceita apenas action + auth). Enviar role aqui
+    // causa "role não está disponível".
+    await _request(`/api/v3/envelopes/${envelopeId}/requirements`, {
+      method: "POST",
+      body: {
+        data: {
+          type: "requirements",
+          attributes: { action: "provide_evidence", auth: "email" },
+          relationships: {
+            document: { data: { type: "documents", id: documentId } },
+            signer: { data: { type: "signers", id: signerId } },
+          },
+        },
+      },
+    });
   }
 
-  // 4) Dispara envio
+  // 5) Dispara envio (status=running)
   await _request(`/api/v3/envelopes/${envelopeId}`, {
     method: "PATCH",
-    body: { envelope: { status: "running" } },
+    body: {
+      data: {
+        type: "envelopes",
+        id: envelopeId,
+        attributes: { status: "running" },
+      },
+    },
   });
 
   return { envelopeId, documentId, signerIds };
 }
 
 /**
- * Baixa o PDF assinado final. ClickSign devolve URL temporária ou
- * conteúdo em base64 dependendo do plano; aqui tratamos URL.
+ * Baixa o PDF assinado final. ClickSign v3 expõe a URL em
+ * `data.links.files.signed` no endpoint nested do envelope. A URL é
+ * pré-assinada S3 e expira em ~5 minutos — baixar imediatamente.
  */
-async function baixarPdfAssinado(documentId) {
-  if (!documentId) throw new ClickSignError("documentId ausente.");
-  const meta = await _request(`/api/v3/documents/${documentId}`);
-  const downloadUrl =
-    meta?.data?.attributes?.downloads?.signed_file_url ??
-    meta?.document?.downloads?.signed_file_url ??
-    null;
+async function baixarPdfAssinado({ envelopeId, documentId }) {
+  if (!envelopeId || !documentId) {
+    throw new ClickSignError("envelopeId e documentId são obrigatórios.");
+  }
+  const meta = await _request(
+    `/api/v3/envelopes/${envelopeId}/documents/${documentId}`,
+  );
+  const downloadUrl = meta?.data?.links?.files?.signed ?? null;
   if (!downloadUrl) {
     throw new ClickSignError(
-      "ClickSign não devolveu signed_file_url.",
+      "ClickSign não devolveu links.files.signed.",
       { body: meta },
     );
   }

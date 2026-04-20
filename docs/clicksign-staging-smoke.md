@@ -35,8 +35,8 @@ npm run db:migrate
 ### 0.3. Webhook no painel ClickSign
 
 1. <https://sandbox.clicksign.com> → `Configurações → Webhooks`
-2. URL: `https://staging.kavita.com.br/api/public/webhooks/clicksign`
-   (substitua pelo host real de staging)
+2. URL: `https://staging.kavita.com.br/api/webhooks/clicksign`
+   (substitua pelo host real de staging; caminho sem `/public/`)
 3. Eventos: marcar `auto_close`, `close`, `cancel`, `refuse`,
    `deadline`, `sign`
 4. HMAC Secret: o mesmo que está em `CLICKSIGN_HMAC_SECRET`

@@ -15,6 +15,25 @@ const {
 } = require("../../schemas/contratoSchemas");
 const logger = require("../../lib/logger");
 
+// Em qualquer catch que mascara o erro em AppError genérico, logar o
+// err original antes — do contrário o errorHandler só vê o AppError
+// criado aqui e o stack real fica invisível em prod/dev.
+function _logAndMask(err, context, genericMessage) {
+  if (!(err instanceof AppError)) {
+    logger.error(
+      {
+        err: err?.message ?? String(err),
+        stack: err?.stack,
+        context,
+      },
+      "contrato.controller.unhandled",
+    );
+  }
+  return err instanceof AppError
+    ? err
+    : new AppError(genericMessage, ERROR_CODES.SERVER_ERROR, 500);
+}
+
 function _parseIdParam(param) {
   const id = Number(param);
   if (!Number.isInteger(id) || id <= 0) {
@@ -55,15 +74,7 @@ async function createContrato(req, res, next) {
 
     return response.created(res, result, "Contrato gerado.");
   } catch (err) {
-    return next(
-      err instanceof AppError
-        ? err
-        : new AppError(
-            "Erro ao gerar contrato.",
-            ERROR_CODES.SERVER_ERROR,
-            500,
-          ),
-    );
+    return next(_logAndMask(err, "createContrato", "Erro ao gerar contrato."));
   }
 }
 
@@ -80,15 +91,7 @@ async function enviarContrato(req, res, next) {
     });
     return response.ok(res, result, "Contrato enviado para assinatura.");
   } catch (err) {
-    return next(
-      err instanceof AppError
-        ? err
-        : new AppError(
-            "Erro ao enviar contrato.",
-            ERROR_CODES.SERVER_ERROR,
-            500,
-          ),
-    );
+    return next(_logAndMask(err, "enviarContrato", "Erro ao enviar contrato."));
   }
 }
 

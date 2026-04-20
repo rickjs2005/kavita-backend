@@ -19,7 +19,7 @@ do ClickSign e a arquitetura do roadmap completo, leia primeiro
 1. Criar conta **sandbox** em <https://sandbox.clicksign.com>
 2. `Configurações → API Access` → gerar `access token`
 3. `Configurações → Webhooks` → novo webhook:
-   - URL: `{APP_URL}/api/public/webhooks/clicksign`
+   - URL: `{APP_URL}/api/webhooks/clicksign` (sem `/public/` — é onde `routes/public/webhookClicksign.js` é montado via `load("/webhooks/clicksign", ...)` no `publicRoutes.js`)
    - Eventos: marcar `auto_close`, `close`, `cancel`, `refuse`,
      `deadline`, `sign`
    - Gerar **HMAC Secret** (guardar)
@@ -92,8 +92,8 @@ node -e "console.log(require('./services/contratos/clicksignAdapter').isConfigur
                                        │
                                        ▼
                             ┌─────────────────────────┐
-                            │ POST /api/public/       │
-                            │   webhooks/clicksign    │
+                            │ POST /api/webhooks/     │
+                            │   clicksign             │
                             │  express.raw() → HMAC   │
                             └──────────┬──────────────┘
                                        │
