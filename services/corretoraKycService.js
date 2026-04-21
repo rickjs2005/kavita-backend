@@ -49,7 +49,7 @@ function _assertTransition(from, to) {
 }
 
 async function _findCorretora(id) {
-  const corretora = await corretorasRepo.findByIdRaw(id);
+  const corretora = await corretorasRepo.findById(id);
   if (!corretora) {
     throw new AppError(
       "Corretora não encontrada.",
