@@ -68,6 +68,9 @@ load("/public/features", "./public/publicFeatures");
 load("/public/contato", "./public/publicContato");
 load("/public/support-config", "./public/publicSupportConfig");
 
+// — Fase 10.3: canal público de privacidade (DPO).
+load("/public/privacidade/contato", "./public/publicPrivacyContact");
+
 // — Consulta de CEP (proxy para ViaCEP) —
 load("/public/cep", "./public/publicCep");
 

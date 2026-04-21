@@ -39,4 +39,7 @@ router.delete("/alerts/:id", ctrl.deleteAlert);
 // Fase 10.1 PR 4 — contratos do produtor.
 router.use("/contratos", require("./producerContratos"));
 
+// Fase 10.3 — direitos LGPD (meus dados, exportar, excluir).
+router.use("/privacidade", require("./producerPrivacy"));
+
 module.exports = router;

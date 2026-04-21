@@ -78,6 +78,30 @@ async function touchLastLogin(id) {
   );
 }
 
+/**
+ * Marca ou desmarca `pending_deletion_at` — usado pelo fluxo LGPD
+ * (Fase 10.3). Passar Date para marcar, null para cancelar.
+ */
+async function setPendingDeletion(id, whenOrNull) {
+  await pool.query(
+    `UPDATE producer_accounts SET pending_deletion_at = ? WHERE id = ?`,
+    [whenOrNull, id],
+  );
+}
+
+/**
+ * Registra versão da política de privacidade aceita pelo titular.
+ */
+async function setPrivacyPolicyAccepted(id, version) {
+  await pool.query(
+    `UPDATE producer_accounts
+        SET privacy_policy_version = ?,
+            privacy_policy_accepted_at = NOW()
+      WHERE id = ?`,
+    [String(version), id],
+  );
+}
+
 async function bumpTokenVersion(id) {
   await pool.query(
     `UPDATE producer_accounts SET token_version = token_version + 1 WHERE id = ?`,
@@ -204,6 +228,8 @@ module.exports = {
   updateProfile,
   touchLastLogin,
   bumpTokenVersion,
+  setPendingDeletion,
+  setPrivacyPolicyAccepted,
   listFavorites,
   addFavorite,
   removeFavorite,
