@@ -9,9 +9,8 @@
 const express = require("express");
 const router = express.Router();
 
-const {
-  createAdaptiveRateLimiter,
-} = require("../../middleware/adaptiveRateLimiter");
+// O módulo exporta o factory como default (module.exports = factory).
+const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
 const ctrl = require("../../controllers/public/publicPrivacyContactController");
 
 const privacyContactLimiter = createAdaptiveRateLimiter({
