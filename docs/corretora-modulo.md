@@ -2,6 +2,8 @@
 
 Documento de referência do módulo **corretora de café** do Kavita, capturado ao fim das Fases 1–8 (2026-04-18). Cobre as três camadas (público, painel da corretora, admin), o fluxo Asaas, permissões, status de lead e timeline de eventos.
 
+> **Posicionamento:** Kavita é a plataforma vertical para corretoras de café do Brasil. Nascemos na Zona da Mata Mineira (praça piloto — ver [regionalizacao-manhuacu.md](./regionalizacao-manhuacu.md)) e estamos preparados para atender qualquer região produtora — Sul de Minas, Cerrado, Mogiana, Matas de Minas, Caparaó, Espírito Santo, Sul da Bahia e outras. Estratégia de expansão em [estrategia-regioes.md](./estrategia-regioes.md).
+
 > Ao editar este documento, manter ordem: **conceito → contratos → operação**. Nunca descrever código por linha — descrever **decisões** e **limites**.
 
 ---

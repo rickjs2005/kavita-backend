@@ -1,7 +1,15 @@
 # Regionalização Manhuaçu / Zona da Mata
 
+> **Documento histórico.** Descreve a praça piloto Manhuaçu / Zona da Mata.
+> O posicionamento atual da SaaS é **nacional** para corretoras de café,
+> mantendo a Zona da Mata como origem e primeira validação. Para a
+> estratégia de expansão por regiões cafeeiras, ver
+> [estrategia-regioes.md](./estrategia-regioes.md).
+
 Documenta os ajustes do módulo Mercado do Café para a realidade operacional
-de Manhuaçu e das Matas de Minas. Decisões de produto, copy e UX.
+de Manhuaçu e das Matas de Minas. Decisões de produto, copy e UX que
+deram origem ao sistema. As decisões aqui descritas continuam vigentes
+como fundação do produto — outras regiões herdam os mesmos princípios.
 
 ## Princípios
 
