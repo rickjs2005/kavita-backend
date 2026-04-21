@@ -155,4 +155,9 @@ router.post(
   reviewsAdmin.moderateReview,
 );
 
+// ─── Fase 10.2 — KYC das corretoras ────────────────────────────
+// Montado em /corretoras/:id/kyc. O sub-router usa mergeParams
+// para receber req.params.id vindo daqui.
+router.use("/corretoras/:id/kyc", require("./adminCorretoraKyc"));
+
 module.exports = router;

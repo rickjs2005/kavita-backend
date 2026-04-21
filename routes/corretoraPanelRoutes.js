@@ -34,5 +34,7 @@ mount("/corretora/2fa", "./corretoraPanel/corretoraTotp");
 mount("/corretora/account", "./corretoraPanel/corretoraAccount");
 // Fase 10.1 — contratos de compra e venda de café.
 mount("/corretora/contratos", "./corretoraPanel/corretoraContratos");
+// Fase 10.2 — status KYC da própria corretora (leitura).
+mount("/corretora/kyc", "./corretoraPanel/corretoraKycStatus");
 
 module.exports = router;

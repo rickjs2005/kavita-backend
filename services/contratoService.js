@@ -33,6 +33,7 @@ const leadsRepo = require("../repositories/corretoraLeadsRepository");
 const publicCorretorasRepo = require("../repositories/corretorasPublicRepository");
 const leadEventsRepo = require("../repositories/corretoraLeadEventsRepository");
 const contratoSignerService = require("./contratoSignerService");
+const corretoraKycService = require("./corretoraKycService");
 const { parseDataFieldsByTipo } = require("../schemas/contratoSchemas");
 
 // ---------------------------------------------------------------------------
@@ -280,6 +281,11 @@ async function gerarContrato({
       404,
     );
   }
+
+  // Fase 10.2 — gate de KYC. Corretora precisa estar verified antes
+  // de emitir qualquer contrato. `publicCorretorasRepo.findById` já
+  // inclui `kyc_status` (coluna adicionada na migration 07).
+  corretoraKycService.requireVerifiedOrThrow(corretora);
 
   // 2) Valida dataFields do tipo certo (Zod discriminado)
   let parsedFields;
