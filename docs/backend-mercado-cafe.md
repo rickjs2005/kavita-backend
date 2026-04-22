@@ -1,7 +1,11 @@
 # Backend — Mercado do Café
 
 Documentação do backend do módulo Mercado do Café (marketplace de corretoras
-de café verde da Zona da Mata Mineira).
+de café verde — praça piloto Zona da Mata Mineira, expansão nacional em curso).
+
+> **📘 Complementar técnico.** Para a visão arquitetural consolidada do módulo (camadas público / painel corretora / admin, permissões RBAC, timeline de lead), ver [corretora-modulo.md](./corretora-modulo.md) — doc principal.
+>
+> Para estado pós-Fase 10 (KYC/AML, contratos digitais, LGPD 2.0, ticker CEPEA/ICE), ver [../BACKEND_SECURITY_ALIGNMENT.md](../BACKEND_SECURITY_ALIGNMENT.md) (seção "Mercado do Café Fase 10 visão consolidada") e [roadmap-fase-10-entregue.md](./roadmap-fase-10-entregue.md).
 
 > Escopo: apenas o módulo Mercado do Café. Para convenções gerais do
 > backend, veja [../CLAUDE.md](../CLAUDE.md) e [../README.md](../README.md).
@@ -17,8 +21,9 @@ de café verde da Zona da Mata Mineira).
 - **Padrão arquitetural**: Routes → Controllers → Services → Repositories.
 - **Respostas**: sempre `lib/response.js` (`response.ok/created`) — nunca `res.json()` cru.
 - **Erros**: `AppError` + `ERROR_CODES` + `errorHandler`.
-- **Autenticação**: 3 contextos JWT independentes em cookies HttpOnly
-  (admin 2h, corretora 7d, produtor 30d via magic link).
+- **Autenticação**: 4 contextos JWT independentes em cookies HttpOnly
+  (usuário da loja 7d, admin 2h, corretora via login + magic link, produtor
+  via magic link sem senha). Detalhes em [../BACKEND_SECURITY_ALIGNMENT.md](../BACKEND_SECURITY_ALIGNMENT.md).
 - **Observabilidade**: `logger` (pino-like) com eventos estruturados
   (`corretora.lead.created`, `producer.magic_link.sent`, `admin.audit.*`).
 

@@ -1,5 +1,7 @@
 # Melhorias do módulo Mercado do Café — 2026-04-15
 
+> **📦 ARQUIVADO em 2026-04-22.** Este documento registra melhorias aplicadas em 15 de abril de 2026, pré-Fase 10. Itens mencionados como pendentes podem ter sido resolvidos durante a Fase 10 — cruzar com [`../roadmap-fase-10-entregue.md`](../roadmap-fase-10-entregue.md). Mantido como registro histórico.
+
 Registro operacional das mudanças feitas após a auditoria de 2026-04-14/15. Foco: consistência transacional, segurança e pontos de operação que estavam apenas no admin.
 
 ## Resumo das mudanças

@@ -1,5 +1,7 @@
 # Auditoria da SaaS Kavita — 2026-04-14
 
+> **📦 ARQUIVADO em 2026-04-22.** Auditoria point-in-time de 14 de abril de 2026. Para análises mais recentes, ver auditorias no vault Obsidian em `kavita-os/02 - Auditorias/`. Mantida como registro histórico de débitos e priorizações daquele momento.
+
 Auditoria completa do sistema Kavita (e-commerce base + Mercado do Café)
 consolidando três eixos: Segurança, Arquitetura/Qualidade, DB/Observabilidade/Deploy.
 

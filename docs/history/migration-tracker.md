@@ -1,5 +1,7 @@
 # Migration Tracker — kavita-backend
 
+> **📦 ARQUIVADO em 2026-04-22.** Migração arquitetural do backend concluída em 100% — todo o código segue o padrão moderno (rota → controller → service → repository). Mantido como registro histórico do processo. Para a arquitetura viva, ver [`../../CLAUDE.md`](../../CLAUDE.md) e [`../../README.md`](../../README.md).
+
 > **Ultima atualizacao:** 2026-04-08
 
 ---

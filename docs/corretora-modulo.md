@@ -1,6 +1,8 @@
 # Módulo Mercado do Café — arquitetura consolidada
 
-Documento de referência do módulo **corretora de café** do Kavita, capturado ao fim das Fases 1–8 (2026-04-18). Cobre as três camadas (público, painel da corretora, admin), o fluxo Asaas, permissões, status de lead e timeline de eventos.
+Documento de referência do módulo **corretora de café** do Kavita, capturado ao fim das Fases 1–8 (2026-04-18) e atualizado com referência à Fase 10 (2026-04-21).
+
+> **📍 Documento principal do módulo.** Para mapeamento técnico detalhado (rotas → controllers → services → repositories) ver [backend-mercado-cafe.md](./backend-mercado-cafe.md). Para estado pós-Fase 10 (KYC, contratos, LGPD 2.0, ticker), ver [../BACKEND_SECURITY_ALIGNMENT.md](../BACKEND_SECURITY_ALIGNMENT.md) e [roadmap-fase-10-entregue.md](./roadmap-fase-10-entregue.md).
 
 > **Posicionamento:** Kavita é a plataforma vertical para corretoras de café do Brasil. Nascemos na Zona da Mata Mineira (praça piloto — ver [regionalizacao-manhuacu.md](./regionalizacao-manhuacu.md)) e estamos preparados para atender qualquer região produtora — Sul de Minas, Cerrado, Mogiana, Matas de Minas, Caparaó, Espírito Santo, Sul da Bahia e outras. Estratégia de expansão em [estrategia-regioes.md](./estrategia-regioes.md).
 

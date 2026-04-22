@@ -1,5 +1,7 @@
 # Plano de Documentacao Swagger — kavita-backend
 
+> **📦 ARQUIVADO em 2026-04-22.** Plano cumprido — specs OpenAPI vivas em [`../swagger/`](../swagger/) (14 arquivos `.js`, cobertura ~96%). Mantido como registro histórico do processo de implantação.
+
 > **Estado atual (2026-04-08):** cobertura Swagger atingiu ~96% (~176 de ~183 endpoints) via arquivos dedicados em `docs/swagger/`. O inventario abaixo e historico — grande parte dos endpoints listados como "sem doc" ja foi documentada.
 >
 > **Tipo:** Inventario historico e colecao de exemplos copy-paste. Nao e o retrato exato do estado atual da API.

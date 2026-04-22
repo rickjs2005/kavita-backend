@@ -305,7 +305,7 @@ O Helmet 8 define `Cross-Origin-Resource-Policy: same-origin` por padrão. O ove
 
 ## Modulos
 
-Todos os modulos seguem o padrao moderno. Historico de migracao: [docs/migration-tracker.md](docs/migration-tracker.md).
+Todos os modulos seguem o padrao moderno. Historico de migracao (100% concluida, arquivado em 2026-04-22): [docs/history/migration-tracker.md](docs/history/migration-tracker.md).
 
 | Dominio | Rota | Controller | Service | Repository |
 |---|---|---|---|---|
@@ -770,7 +770,7 @@ module.exports = { CriarProdutoSchema, formatZodErrors };
 | [docs/api-response.md](docs/api-response.md) | Contrato de resposta da API, helpers, exemplos |
 | [docs/decisions.md](docs/decisions.md) | ADRs — decisoes arquiteturais com contexto e consequencias |
 | [docs/observability.md](docs/observability.md) | Health check, estado do logging, lacunas e roadmap |
-| [docs/migration-tracker.md](docs/migration-tracker.md) | Historico da migracao arquitetural (100% concluida) |
-| [docs/swagger-plan.md](docs/swagger-plan.md) | Inventario de cobertura Swagger e plano de execucao |
+| [docs/history/migration-tracker.md](docs/history/migration-tracker.md) | Historico da migracao arquitetural (100% concluida — arquivado 2026-04-22) |
+| [docs/history/swagger-plan.md](docs/history/swagger-plan.md) | Inventario de cobertura Swagger (plano cumprido — specs vivas em docs/swagger/, arquivado 2026-04-22) |
 | [BACKEND_SECURITY_ALIGNMENT.md](BACKEND_SECURITY_ALIGNMENT.md) | Controles de seguranca, cobertura e lacunas |
 | [CLAUDE.md](CLAUDE.md) | Instrucoes operacionais para IA/agentes |

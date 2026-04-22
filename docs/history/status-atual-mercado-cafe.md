@@ -1,5 +1,7 @@
 # Status Atual — Mercado do Café
 
+> **📦 ARQUIVADO em 2026-04-22.** Este documento descreve o estado do módulo pré-Fase 10 (13 a 15 de abril de 2026). Para a visão atual pós-entrega da Fase 10, usar [`../roadmap-fase-10-entregue.md`](../roadmap-fase-10-entregue.md) e [`../../BACKEND_SECURITY_ALIGNMENT.md`](../../BACKEND_SECURITY_ALIGNMENT.md). Mantido como registro histórico.
+
 Fotografia do módulo em **2026-04-13** (atualizada em 2026-04-15). O que já
 está pronto, o que é débito técnico consciente e o que ainda falta para
 escalar.
