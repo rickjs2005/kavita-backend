@@ -112,12 +112,18 @@ async function scanAbandonedCarts(horasParam) {
       : DEFAULT_ABANDON_THRESHOLD_HOURS;
 
   const carts = await repo.findOpenCartsOlderThan(thresholdHours);
-  let scanned = 0;
+  const candidates = carts.length;
+  let inserted = 0;
+  let skippedEmpty = 0;
+  let skippedError = 0;
 
   for (const cart of carts) {
     try {
       const itensRows = await repo.findCartItems(cart.id);
-      if (!itensRows || itensRows.length === 0) continue;
+      if (!itensRows || itensRows.length === 0) {
+        skippedEmpty += 1;
+        continue;
+      }
 
       const itens = itensRows.map((row) => ({
         produto_id: row.produto_id,
@@ -139,7 +145,7 @@ async function scanAbandonedCarts(horasParam) {
         createdAt: cart.created_at,
       });
 
-      scanned += 1;
+      inserted += 1;
 
       try {
         const now = new Date();
@@ -153,11 +159,18 @@ async function scanAbandonedCarts(horasParam) {
         logger.warn({ err: errNotif, abandonedId }, "[cartsAdminService] Erro ao agendar notificações");
       }
     } catch (errCart) {
+      skippedError += 1;
       logger.warn({ err: errCart, cartId: cart.id }, "[cartsAdminService] Erro ao processar carrinho");
     }
   }
 
-  return scanned;
+  return {
+    candidates,
+    inserted,
+    skippedEmpty,
+    skippedError,
+    minHours: thresholdHours,
+  };
 }
 
 async function notifyAbandonedCart(id, tipo) {

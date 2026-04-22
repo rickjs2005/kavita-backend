@@ -5,14 +5,26 @@ const { response } = require("../lib");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const svc = require("../services/cartsAdminService");
+const adminAudit = require("../services/adminAuditService");
 
 const scan = async (req, res, next) => {
   try {
     // req.body.horas é coercido para number|undefined pelo ScanBodySchema.
     // req.query.horas (string) é aceito como fallback pelo service.
     const horas = req.body?.horas ?? req.query.horas;
-    const scanned = await svc.scanAbandonedCarts(horas);
-    return response.ok(res, { scanned }, `${scanned} carrinho(s) registrado(s) como abandonado(s).`);
+    const report = await svc.scanAbandonedCarts(horas);
+
+    // Auditoria do scan manual — fire-and-forget, nao bloqueia resposta.
+    adminAudit.record({
+      req,
+      action: "carrinhos.scan",
+      targetType: "carrinhos_abandonados",
+      targetId: null,
+      meta: report,
+    });
+
+    const message = `${report.inserted} carrinho(s) adicionado(s) de ${report.candidates} candidato(s).`;
+    return response.ok(res, report, message);
   } catch (err) {
     return next(err instanceof AppError ? err : new AppError("Erro ao escanear carrinhos abandonados.", ERROR_CODES.SERVER_ERROR, 500));
   }

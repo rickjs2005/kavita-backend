@@ -47,6 +47,13 @@ try {
   logger.warn({ err }, "market quotes sync job not loaded");
 }
 
+let abandonedCartsScanJob;
+try {
+  abandonedCartsScanJob = require("../jobs/abandonedCartsScanJob");
+} catch (err) {
+  logger.warn({ err }, "abandoned carts scan job not loaded");
+}
+
 function startWorkers() {
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
@@ -90,6 +97,15 @@ function startWorkers() {
   ) {
     marketQuotesSyncJob.register().catch((err) => {
       logger.error({ err }, "market quotes sync job registration failed");
+    });
+  }
+
+  if (
+    abandonedCartsScanJob &&
+    typeof abandonedCartsScanJob.register === "function"
+  ) {
+    abandonedCartsScanJob.register().catch((err) => {
+      logger.error({ err }, "abandoned carts scan job registration failed");
     });
   }
 }

@@ -98,13 +98,20 @@ describe("AdminCarts routes (routes/admin/adminCarts.js)", () => {
           expect(params[0][0][3]).toBe("pending");                      // status
           return [{ affectedRows: 3 }];
         }
+        if (String(sql).includes("INSERT INTO admin_audit_logs")) {
+          // Audit fire-and-forget — aceita sem asserir.
+          return [{ insertId: 999 }];
+        }
         throw new Error(`SQL não mapeado: ${sql}`);
       });
 
       const res = await request(app).post("/api/admin/carrinhos/scan").send({});
 
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ ok: true, data: { scanned: 1 } });
+      expect(res.body).toMatchObject({
+        ok: true,
+        data: { candidates: 1, inserted: 1, skippedEmpty: 0, minHours: 24 },
+      });
     });
 
     test("200: não insere quando carrinho elegível não tem itens", async () => {
@@ -114,13 +121,17 @@ describe("AdminCarts routes (routes/admin/adminCarts.js)", () => {
         if (String(sql).includes("FROM carrinhos c")) return [[{ id: 11, usuario_id: 8, created_at: "2026-01-01" }]];
         if (String(sql).includes("FROM carrinho_itens ci")) return [[]];
         if (String(sql).includes("INSERT INTO carrinhos_abandonados")) throw new Error("Não deveria inserir sem itens");
+        if (String(sql).includes("INSERT INTO admin_audit_logs")) return [{ insertId: 999 }];
         throw new Error(`SQL não mapeado: ${sql}`);
       });
 
       const res = await request(app).post("/api/admin/carrinhos/scan").send({});
 
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ ok: true, data: { scanned: 0 } });
+      expect(res.body).toMatchObject({
+        ok: true,
+        data: { candidates: 1, inserted: 0, skippedEmpty: 1, minHours: 24 },
+      });
     });
 
     test("200: respeita horas=2 no body (threshold customizado)", async () => {
@@ -131,13 +142,17 @@ describe("AdminCarts routes (routes/admin/adminCarts.js)", () => {
           expect(params).toEqual([2]); // threshold vindo do body
           return [[]];
         }
+        if (String(sql).includes("INSERT INTO admin_audit_logs")) return [{ insertId: 999 }];
         throw new Error(`SQL não mapeado: ${sql}`);
       });
 
       const res = await request(app).post("/api/admin/carrinhos/scan").send({ horas: 2 });
 
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ ok: true, data: { scanned: 0 } });
+      expect(res.body).toMatchObject({
+        ok: true,
+        data: { candidates: 0, inserted: 0, minHours: 2 },
+      });
     });
 
     test("400: horas=0 rejeitado pelo schema (mínimo é 1)", async () => {
