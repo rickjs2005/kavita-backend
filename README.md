@@ -458,12 +458,14 @@ Erros 500+ nunca expõem stack trace em produção.
 
 ## Autenticação
 
-O sistema tem dois contextos de autenticação completamente independentes.
+O sistema tem **quatro contextos de autenticação completamente independentes**. Cada um tem cookie HttpOnly próprio, middleware dedicado e endpoint de login distinto. Os cookies podem coexistir no mesmo browser (um admin pode estar impersonando uma corretora, por exemplo).
 
-| Contexto | Cookie | Validade JWT | Middleware |
-|---|---|---|---|
-| Admin | `adminToken` (HttpOnly) | 2h | `verifyAdmin` |
-| Usuário | `auth_token` (HttpOnly) | 7d (ver nota abaixo) | `authenticateToken` |
+| Contexto | Cookie | Validade JWT | Middleware | Login |
+|---|---|---|---|---|
+| Admin | `adminToken` (HttpOnly) | 2h | `verifyAdmin` | `POST /api/admin/login` |
+| Usuário da loja | `auth_token` (HttpOnly) | 7d (ver nota abaixo) | `authenticateToken` | `POST /api/login` |
+| Corretora | cookie próprio (HttpOnly) | definido no service | `verifyCorretora` | `POST /api/corretora/login` ou magic-link |
+| Produtor | cookie próprio (HttpOnly) | definido no service | `verifyProducer` | magic-link (`POST /api/public/produtor/magic-link` + `GET /api/produtor/verify/:token`) |
 
 ### Fluxo admin
 
@@ -473,12 +475,27 @@ O sistema tem dois contextos de autenticação completamente independentes.
 4. `req.admin` fica disponível: `{ id, email, nome, role, role_id, permissions }`
 5. `POST /api/admin/logout` → incrementa `tokenVersion` no banco (invalida todos os tokens ativos) → limpa cookie
 
-### Fluxo usuário
+### Fluxo usuário da loja
 
 1. `POST /api/login` → valida credenciais → assina JWT → define cookie `auth_token`
 2. Rotas protegidas de usuário aplicam `authenticateToken` + `validateCSRF`
 3. `authenticateToken` valida JWT, busca usuário no banco, verifica `tokenVersion`
 4. `req.user` fica disponível: `{ id, nome, email, role }`
+
+### Fluxo corretora
+
+1. `POST /api/corretora/login` (senha) **ou** `POST /api/corretora/magic-link` (e-mail)
+2. `verifyCorretora` popula `req.corretoraUser` + `req.corretora`
+3. TOTP opcional via `/api/corretora/totp/*`
+4. Impersonação: admin pode entrar no painel via `POST /api/admin/corretoras/:id/impersonate`; sair via `POST /api/corretora/exit-impersonation` (só limpa o cookie de corretora, `adminToken` permanece)
+
+### Fluxo produtor (magic-link, sem senha)
+
+1. Produtor informa e-mail → `POST /api/public/produtor/magic-link` (Turnstile + rate limit)
+2. Backend envia link assinado (HMAC + TTL curto)
+3. Produtor clica → frontend chama `GET /api/produtor/verify/:token` → cookie emitido
+4. `verifyProducer` popula `req.producer` em rotas privadas do painel produtor
+5. LGPD: `POST /api/producer/data-request`, `POST /api/producer/data-deletion`
 
 ### CSRF
 

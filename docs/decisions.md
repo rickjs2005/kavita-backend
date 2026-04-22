@@ -12,7 +12,7 @@ Formato: ADR leve. Cada entrada tem contexto, decisão, consequências e o que n
 - [ADR-002 — Sequelize permanece no projeto apenas para migrations via CLI](#adr-002--sequelize-permanece-no-projeto-apenas-para-migrations-via-cli)
 - [ADR-003 — CSRF com double-submit cookie](#adr-003--csrf-com-double-submit-cookie)
 - [ADR-004 — tokenVersion para revogação de sessão com JWT stateless](#adr-004--tokenversion-para-revogação-de-sessão-com-jwt-stateless)
-- [ADR-005 — Dois contextos de autenticação separados: admin e usuário](#adr-005--dois-contextos-de-autenticação-separados-admin-e-usuário)
+- [ADR-005 — Dois contextos de autenticação separados: admin e usuário (estendido para 4 em 2026-04-22)](#adr-005--dois-contextos-de-autenticação-separados-admin-e-usuário)
 - [ADR-006 — Upload e mídia centralizados em mediaService](#adr-006--upload-e-mídia-centralizados-em-mediaservice)
 - [ADR-007 — Migração para arquitetura em camadas: route → controller → service → repository](#adr-007--migração-para-arquitetura-em-camadas-route--controller--service--repository)
 
@@ -176,8 +176,10 @@ No logout, `tokenVersion` é incrementado no banco. Todos os JWTs emitidos antes
 
 ## ADR-005 — Dois contextos de autenticação separados: admin e usuário
 
-**Status:** Ativo
-**Código:** `middleware/verifyAdmin.js`, `middleware/authenticateToken.js`
+**Status:** Ativo — **estendido em 2026-04-22** para quatro contextos (admin, usuário, corretora, produtor)
+**Código:** `middleware/verifyAdmin.js`, `middleware/authenticateToken.js`, `middleware/verifyCorretora.js`, `middleware/verifyProducer.js`
+
+> **Nota de atualização (2026-04-22):** O princípio de isolamento descrito neste ADR continua válido. Hoje o sistema tem **quatro** contextos isolados (não dois): admin, usuário da loja, corretora e produtor (magic-link). Cada um tem cookie HttpOnly próprio e middleware dedicado. Para a visão atual consolidada, ver `BACKEND_SECURITY_ALIGNMENT.md` seção "Autenticação — quatro contextos isolados".
 
 ### Contexto
 
