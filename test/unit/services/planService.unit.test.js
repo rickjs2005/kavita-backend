@@ -106,6 +106,147 @@ describe("services/planService", () => {
     });
   });
 
+  describe("requirePlanCapability() — G1 bloqueio de features SaaS", () => {
+    function makeReq(corretoraId) {
+      return corretoraId
+        ? { corretoraUser: { corretora_id: corretoraId } }
+        : {};
+    }
+
+    it("401 quando não há corretoraUser na request", async () => {
+      const mw = svc.requirePlanCapability("create_contract");
+      const next = jest.fn();
+      await mw(makeReq(null), {}, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      const err = next.mock.calls[0][0];
+      expect(err.status).toBe(401);
+      expect(err.code).toBe("UNAUTHORIZED");
+    });
+
+    it("403 com payload padronizado quando FREE tenta create_contract", async () => {
+      subsRepo.getCurrentForCorretora.mockResolvedValue(null);
+      plansRepo.findBySlug.mockResolvedValue({
+        slug: "free",
+        name: "Free",
+        capabilities: {
+          max_users: 1,
+          leads_export: false,
+          regional_highlight: false,
+          advanced_reports: false,
+          create_contract: false,
+        },
+      });
+      const mw = svc.requirePlanCapability("create_contract");
+      const next = jest.fn();
+      await mw(makeReq(42), {}, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      const err = next.mock.calls[0][0];
+      expect(err.status).toBe(403);
+      expect(err.code).toBe("PLAN_CAPABILITY_REQUIRED");
+      expect(err.message).toMatch(/plano atual não permite/i);
+      expect(err.details).toEqual({
+        capability: "create_contract",
+        current_plan: "free",
+        upgrade_url: "/painel/corretora/planos",
+      });
+    });
+
+    it("403 quando PRO tenta regional_highlight (capability só do PREMIUM)", async () => {
+      subsRepo.getCurrentForCorretora.mockResolvedValue({
+        plan_slug: "pro",
+        plan_name: "Pro",
+        plan_price_cents: 14900,
+        status: "active",
+        plan_capabilities: {
+          max_users: 3,
+          leads_export: true,
+          regional_highlight: false,
+          advanced_reports: true,
+          create_contract: true,
+        },
+      });
+      const mw = svc.requirePlanCapability("regional_highlight");
+      const next = jest.fn();
+      await mw(makeReq(42), {}, next);
+
+      const err = next.mock.calls[0][0];
+      expect(err.status).toBe(403);
+      expect(err.details.current_plan).toBe("pro");
+      expect(err.details.capability).toBe("regional_highlight");
+    });
+
+    it("libera (next sem erro) quando PRO tenta create_contract", async () => {
+      subsRepo.getCurrentForCorretora.mockResolvedValue({
+        plan_slug: "pro",
+        plan_name: "Pro",
+        plan_price_cents: 14900,
+        status: "active",
+        plan_capabilities: {
+          max_users: 3,
+          leads_export: true,
+          regional_highlight: false,
+          advanced_reports: true,
+          create_contract: true,
+        },
+      });
+      const mw = svc.requirePlanCapability("create_contract");
+      const next = jest.fn();
+      await mw(makeReq(42), {}, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(next.mock.calls[0][0]).toBeUndefined();
+    });
+
+    it("libera quando PREMIUM tenta advanced_reports", async () => {
+      subsRepo.getCurrentForCorretora.mockResolvedValue({
+        plan_slug: "premium",
+        plan_name: "Premium",
+        plan_price_cents: 39900,
+        status: "active",
+        plan_capabilities: {
+          max_users: 10,
+          leads_export: true,
+          regional_highlight: true,
+          advanced_reports: true,
+          create_contract: true,
+        },
+      });
+      const mw = svc.requirePlanCapability("advanced_reports");
+      const next = jest.fn();
+      await mw(makeReq(42), {}, next);
+
+      expect(next.mock.calls[0][0]).toBeUndefined();
+    });
+
+    it("403 quando capability está AUSENTE do snapshot (defesa contra subscription antiga)", async () => {
+      // Simula corretora PRO cuja subscription foi criada antes da
+      // capability create_contract existir — snapshot não tem a key.
+      subsRepo.getCurrentForCorretora.mockResolvedValue({
+        plan_slug: "pro",
+        plan_name: "Pro",
+        plan_price_cents: 14900,
+        status: "active",
+        plan_capabilities: {
+          max_users: 3,
+          leads_export: true,
+          // create_contract ausente de propósito
+        },
+      });
+      const mw = svc.requirePlanCapability("create_contract");
+      const next = jest.fn();
+      await mw(makeReq(42), {}, next);
+
+      const err = next.mock.calls[0][0];
+      expect(err.status).toBe(403);
+      expect(err.code).toBe("PLAN_CAPABILITY_REQUIRED");
+      // Backfill da migration 2026042400000001 garante que snapshots
+      // ATIVOS sempre têm a key em produção; este teste documenta o
+      // comportamento defensivo para casos edge.
+    });
+  });
+
   describe("assignPlan()", () => {
     it("400 se plano inativo", async () => {
       plansRepo.findById.mockResolvedValue({ id: 2, is_active: false });

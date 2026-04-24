@@ -27,6 +27,11 @@ const ERROR_CODES = {
   // Regras de negócio
   STOCK_LIMIT: "STOCK_LIMIT",
   UNPROCESSABLE_ENTITY: "UNPROCESSABLE_ENTITY",
+  // PLAN_CAPABILITY_REQUIRED → endpoint exige capability ausente no
+  // plano atual da corretora (SaaS Mercado do Café) — HTTP 403.
+  // Payload inclui `details.capability` + `details.current_plan` +
+  // `details.upgrade_url` para o frontend oferecer CTA de upgrade.
+  PLAN_CAPABILITY_REQUIRED: "PLAN_CAPABILITY_REQUIRED",
 
   // News/Clima/Cotações (geocoding/provider)
   GEOCODING_ERROR: "GEOCODING_ERROR",

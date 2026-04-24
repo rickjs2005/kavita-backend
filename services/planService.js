@@ -50,6 +50,7 @@ const CAPABILITY_KEYS = [
   "leads_export",
   "regional_highlight",
   "advanced_reports",
+  "create_contract",
 ];
 
 const FREE_FALLBACK = {
@@ -57,7 +58,12 @@ const FREE_FALLBACK = {
   leads_export: false,
   regional_highlight: false,
   advanced_reports: false,
+  create_contract: false,
 };
+
+// URL pública do catálogo de planos. Usada no payload 403 para o
+// frontend oferecer CTA de upgrade sem precisar hardcodar a rota.
+const UPGRADE_URL = "/painel/corretora/planos";
 
 /**
  * Retorna a subscription + capabilities resolvidas da corretora.
@@ -131,6 +137,21 @@ async function hasCapability(corretoraId, key, requestedValue = true) {
  * Middleware Express — exige capability booleana. Para limites
  * numéricos, use checagem manual no controller (precisa do contexto,
  * ex: total de users).
+ *
+ * Em caso de bloqueio, responde 403 com payload padronizado:
+ *   {
+ *     ok: false,
+ *     code: "PLAN_CAPABILITY_REQUIRED",
+ *     message: "Seu plano atual não permite este recurso. Faça upgrade para continuar.",
+ *     details: {
+ *       capability: "create_contract",
+ *       current_plan: "free",
+ *       upgrade_url: "/painel/corretora/planos"
+ *     }
+ *   }
+ *
+ * O frontend usa `details.capability` para identificar qual modal de
+ * upgrade abrir e `details.upgrade_url` como href do CTA.
  */
 function requirePlanCapability(key) {
   return async (req, _res, next) => {
@@ -138,14 +159,28 @@ function requirePlanCapability(key) {
     if (!corretoraId) {
       return next(new AppError("Não autenticado.", ERROR_CODES.UNAUTHORIZED, 401));
     }
-    const ok = await hasCapability(corretoraId, key);
+    // Resolve uma vez o contexto para decisão + payload. Evita segunda
+    // query caso bloqueio precise do slug do plano atual.
+    const ctx = await getPlanContext(corretoraId);
+    const v = ctx.capabilities?.[key];
+    const ok =
+      typeof v === "boolean"
+        ? v === true
+        : typeof v === "number"
+          ? true // limites numéricos não bloqueiam no middleware (check manual no controller)
+          : false;
+
     if (!ok) {
       return next(
         new AppError(
-          "Esta funcionalidade requer um plano superior.",
-          ERROR_CODES.FORBIDDEN,
+          "Seu plano atual não permite este recurso. Faça upgrade para continuar.",
+          ERROR_CODES.PLAN_CAPABILITY_REQUIRED,
           403,
-          { capability: key },
+          {
+            capability: key,
+            current_plan: ctx.plan?.slug ?? "free",
+            upgrade_url: UPGRADE_URL,
+          },
         ),
       );
     }
