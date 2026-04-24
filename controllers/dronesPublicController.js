@@ -110,10 +110,17 @@ async function enrichModelsWithMedia(items, modelsJson) {
   return withSelection.map((m) => {
     const card = m.current_card_media_id ? mediaById[String(m.current_card_media_id)] : null;
     const hero = m.current_hero_media_id ? mediaById[String(m.current_hero_media_id)] : null;
+
+    // Fallback automático: se o admin selecionou só a mídia de HERO
+    // (destaque principal) e esqueceu de selecionar para o CARD, usa
+    // a HERO no card também. Evita card ficar sem imagem mesmo quando
+    // o admin já configurou destaque — bug comum na landing /drones.
+    const cardResolved = card ?? hero ?? null;
+
     return {
       ...m,
-      card_media_path: card?.media_path || null,
-      card_media_type: card?.media_type || null,
+      card_media_path: cardResolved?.media_path || null,
+      card_media_type: cardResolved?.media_type || null,
       hero_media_path: hero?.media_path || null,
       hero_media_type: hero?.media_type || null,
     };
