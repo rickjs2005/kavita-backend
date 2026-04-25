@@ -68,6 +68,13 @@ try {
   logger.warn({ err }, "stale leads scan job not loaded");
 }
 
+let kycStaleScanJob;
+try {
+  kycStaleScanJob = require("../jobs/kycStaleScanJob");
+} catch (err) {
+  logger.warn({ err }, "kyc stale scan job not loaded");
+}
+
 function startWorkers() {
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
@@ -132,6 +139,12 @@ function startWorkers() {
   if (staleLeadsScanJob && typeof staleLeadsScanJob.register === "function") {
     staleLeadsScanJob.register().catch((err) => {
       logger.error({ err }, "stale leads scan job registration failed");
+    });
+  }
+
+  if (kycStaleScanJob && typeof kycStaleScanJob.register === "function") {
+    kycStaleScanJob.register().catch((err) => {
+      logger.error({ err }, "kyc stale scan job registration failed");
     });
   }
 }
