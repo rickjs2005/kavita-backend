@@ -441,6 +441,58 @@ async function listStaleNewLeads({
 }
 
 /**
+ * G2 — leads parados agrupados por corretora.
+ *
+ * Mesma regra do listStaleNewLeads (status='new' + first_response_at
+ * NULL + created_at < NOW() - threshold), mas roda 1x global e
+ * agrega por corretora. Usado pelo cron noturno staleLeadsScanJob.
+ *
+ * Retorna [{ corretora_id, total, oldest_created_at, top_leads: [...] }]
+ * top_leads tem até 10 leads por corretora pra montar o body da
+ * notificação no painel.
+ *
+ * Conservador por design: só `status='new'` (não inclui 'contacted'
+ * parado pra evitar falso positivo na primeira versão).
+ *
+ * @param {{hoursThreshold?: number}} [opts]
+ * @returns {Promise<Array<{corretora_id: number, total: number, oldest_created_at: Date, top_leads: object[]}>>}
+ */
+async function listStaleLeadsByCorretora({ hoursThreshold = 72 } = {}) {
+  // 1. Lista todos os leads parados (sem agrupar) ordenados por
+  //    corretora + idade. JS depois faz o group-by + slice de top 10.
+  //    SQL puro com GROUP_CONCAT não dá pra retornar objetos
+  //    estruturados, e fazer N+1 queries é mais lento.
+  const [rows] = await pool.query(
+    `SELECT corretora_id,
+            id, nome, cidade, telefone, volume_range, tipo_cafe,
+            urgencia, created_at, recontact_count
+       FROM corretora_leads
+      WHERE status = 'new'
+        AND first_response_at IS NULL
+        AND created_at < DATE_SUB(NOW(), INTERVAL ? HOUR)
+        AND corretora_id IS NOT NULL
+      ORDER BY corretora_id ASC, created_at ASC`,
+    [Number(hoursThreshold)],
+  );
+
+  if (rows.length === 0) return [];
+
+  const buckets = new Map();
+  for (const r of rows) {
+    const list = buckets.get(r.corretora_id) ?? [];
+    list.push(r);
+    buckets.set(r.corretora_id, list);
+  }
+
+  return Array.from(buckets.entries()).map(([corretora_id, list]) => ({
+    corretora_id,
+    total: list.length,
+    oldest_created_at: list[0].created_at, // ORDER BY ASC garante o mais antigo primeiro
+    top_leads: list.slice(0, 10),
+  }));
+}
+
+/**
  * ETAPA 1.4 — contagem de leads criados no mês corrente. Usado pelo
  * planService pra comparar com `max_leads_per_month` e decidir se
  * mostra banner "cap atingido" no painel. Não filtra por status —
@@ -583,6 +635,7 @@ module.exports = {
   getTopCorregos,
   listOverdueNextActions,
   listStaleNewLeads,
+  listStaleLeadsByCorretora,
   getPipelineValue,
   getClosedLotsAggregate,
   countInCurrentMonth,

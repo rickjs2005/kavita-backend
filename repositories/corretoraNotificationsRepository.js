@@ -85,10 +85,31 @@ async function markAllAsRead({ corretora_id, user_id }) {
   );
 }
 
+/**
+ * Verifica se já existe notificação de um tipo específico para a
+ * corretora hoje (desde 00:00 BRT). Usado pelo cron de leads parados
+ * pra evitar criar 2 alertas no mesmo dia.
+ *
+ * @param {{corretora_id: number, type: string}} args
+ * @returns {Promise<boolean>}
+ */
+async function existsTodayByType({ corretora_id, type }) {
+  const [rows] = await pool.query(
+    `SELECT 1 FROM corretora_notifications
+      WHERE corretora_id = ?
+        AND type = ?
+        AND created_at >= CURRENT_DATE
+      LIMIT 1`,
+    [corretora_id, type],
+  );
+  return rows.length > 0;
+}
+
 module.exports = {
   create,
   listForUser,
   countUnreadForUser,
   markAsRead,
   markAllAsRead,
+  existsTodayByType,
 };
