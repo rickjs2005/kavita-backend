@@ -133,6 +133,17 @@ async function update(conn, id, { name, description, priceNum, qtyNum, catIdNum,
      WHERE id = ?`,
     [name, description || null, priceNum, qtyNum, catIdNum, shippingFreeBool ? 1 : 0, shippingFreeFromQty, shippingPrazoDias ?? null, id]
   );
+  // A1+A2 — após admin alterar quantity, sincroniza is_active. Se admin
+  // zerou estoque, sistema desativa. Se admin repôs estoque e produto
+  // estava auto-desativado, sistema reativa.
+  // NÃO afeta produtos que admin desativou manualmente — proteção
+  // garantida pelo deactivated_by='manual' no sync helper.
+  if (result.affectedRows > 0) {
+    const {
+      syncActiveByStock,
+    } = require("../services/productStockSyncService");
+    await syncActiveByStock(conn, id);
+  }
   return result.affectedRows;
 }
 

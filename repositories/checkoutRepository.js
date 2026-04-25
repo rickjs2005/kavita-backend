@@ -146,7 +146,9 @@ async function insertOrderItem(conn, pedidoId, productId, quantidade, valorUnita
 }
 
 /**
- * Debits stock for a product by the given quantity.
+ * Debits stock for a product by the given quantity, then syncs is_active
+ * via productStockSyncService (A1+A2). Se a venda zerar o estoque, o
+ * produto é desativado automaticamente com deactivated_by='system'.
  *
  * @param {object} conn
  * @param {number} productId
@@ -157,6 +159,9 @@ async function debitStock(conn, productId, quantidade) {
     "UPDATE products SET quantity = quantity - ? WHERE id = ?",
     [quantidade, productId]
   );
+  // Require local pra evitar ciclo na inicialização do módulo.
+  const { syncActiveByStock } = require("../services/productStockSyncService");
+  await syncActiveByStock(conn, productId);
 }
 
 /**

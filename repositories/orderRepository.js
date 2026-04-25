@@ -158,17 +158,39 @@ async function lockOrderForUpdate(conn, pedidoId) {
 }
 
 /**
+ * Lê os produto_ids dos itens de um pedido. Usado pelo restoreStock
+ * para saber quais produtos receber sync de estoque (A1+A2) após o
+ * UPDATE em massa.
+ */
+async function listProductIdsByOrder(db, pedidoId) {
+  const [rows] = await db.query(
+    "SELECT DISTINCT produto_id FROM pedidos_produtos WHERE pedido_id = ?",
+    [pedidoId],
+  );
+  return rows.map((r) => r.produto_id);
+}
+
+/**
  * Restores stock for all items of a cancelled order.
  *
- * Accepts pool (standalone) or conn (inside a transaction).
+ * Accepts pool (standalone) or conn (inside a transaction). Callers em
+ * produção SEMPRE passam conn (orderService.updateDeliveryStatus dentro
+ * de withTransaction).
+ *
  * No SQL-level idempotency guard — callers MUST apply the pre-check:
  *   status_entrega <> 'cancelado' AND status_pagamento <> 'falhou'
  * (see orderService.updateDeliveryStatus for the authoritative guard)
+ *
+ * Após restaurar, executa syncActiveByStock pra cada produto afetado
+ * (A1+A2) — produto que estava auto-desativado por estoque zerado é
+ * reativado se voltar a ter estoque. Produto desativado manualmente
+ * não é tocado.
  *
  * @param {object} db  pool or connection
  * @param {number|string} pedidoId
  */
 async function restoreStock(db, pedidoId) {
+  const productIds = await listProductIdsByOrder(db, pedidoId);
   await db.query(
     `UPDATE products p
         JOIN pedidos_produtos pp ON pp.produto_id = p.id
@@ -176,6 +198,11 @@ async function restoreStock(db, pedidoId) {
       WHERE pp.pedido_id = ?`,
     [pedidoId]
   );
+  // Require local pra evitar ciclo: orderRepository → service → repository.
+  const {
+    syncActiveByStockBatch,
+  } = require("../services/productStockSyncService");
+  await syncActiveByStockBatch(db, productIds);
 }
 
 /**
@@ -190,10 +217,14 @@ async function restoreStock(db, pedidoId) {
  *
  * Must be called inside an open transaction on `conn`.
  *
+ * Após restaurar, executa syncActiveByStock pra cada produto afetado
+ * (A1+A2). Mesma lógica do restoreStock — só reativa quem foi auto.
+ *
  * @param {object} conn  MySQL2 connection (inside a transaction)
  * @param {number|string} pedidoId
  */
 async function restoreStockOnFailure(conn, pedidoId) {
+  const productIds = await listProductIdsByOrder(conn, pedidoId);
   await conn.query(
     `UPDATE products p
         JOIN pedidos_produtos pp ON pp.produto_id = p.id
@@ -203,6 +234,10 @@ async function restoreStockOnFailure(conn, pedidoId) {
        AND ped.status_pagamento <> 'falhou'`,
     [pedidoId]
   );
+  const {
+    syncActiveByStockBatch,
+  } = require("../services/productStockSyncService");
+  await syncActiveByStockBatch(conn, productIds);
 }
 
 // ---------------------------------------------------------------------------
