@@ -50,7 +50,9 @@ async function tick() {
     const report = await expiredCleanupService.runOnce();
     _state.lastReport = report;
     _state.lastStatus =
-      report.promotions > 0 || report.slides > 0 ? "success" : "idle";
+      report.promotions > 0 || report.slides > 0 || report.coupons > 0
+        ? "success"
+        : "idle";
     _state.lastError = null;
   } catch (err) {
     _state.lastStatus = "error";

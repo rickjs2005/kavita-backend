@@ -1,21 +1,23 @@
 "use strict";
 // services/expiredCleanupService.js
 //
-// D2+D3 (auditoria automação) — limpeza diária defensiva de:
+// D2+D3+D1 (auditoria automação) — limpeza diária defensiva de:
 //   - product_promotions com end_at no passado
 //   - hero_slides       com ends_at no passado
+//   - cupons            com expiracao no passado (D1, 2026-04-25)
 //
-// Por que isso é defensivo: o backend público JÁ filtra por
-// start_at/end_at em todas as queries (promoSql.activePromoWhere,
-// heroSlidesRepository.findActiveSlides, promocoesRepository.BASE_SQL).
-// Então uma promoção/slide vencido com is_active=1 não vaza pro
-// público nem pro checkout — fica só "fantasma" no admin.
+// Por que é defensivo: o backend já filtra/rejeita esses recursos no
+// uso real:
+//   - promoSql.activePromoWhere filtra promoções por janela
+//   - heroSlidesRepository.findActiveSlides filtra slides por janela
+//   - couponService.validateCouponRules rejeita cupom vencido em runtime
 //
-// Esta cleanup serve para:
-//   1. Mostrar status real no painel admin (admin vê is_active=0)
+// Logo, registro vencido com flag de ativo continua "fantasma" no admin
+// mas não vaza pro público nem é aceito no checkout. Esta cleanup serve
+// para:
+//   1. Mostrar status real no painel admin (admin vê ativo=0)
 //   2. Reduzir set de linhas que precisam ser filtradas em runtime
-//   3. Evitar admin se confundir com dezenas de promoções "ativas"
-//      vencidas anos atrás
+//   3. Evitar admin se confundir com dezenas de itens "ativos" vencidos
 //
 // É IDEMPOTENTE: rodar 2x no mesmo dia não faz nada na segunda vez.
 // Cron diário 00:30 BRT por padrão.
@@ -25,17 +27,20 @@ const logger = require("../lib/logger");
 
 /**
  * Roda 1 ciclo de limpeza:
- *   - Marca product_promotions.is_active=0 onde end_at < NOW()
- *   - Marca hero_slides.is_active=0      onde ends_at < NOW()
+ *   - Marca product_promotions.is_active=0 onde end_at    < NOW()
+ *   - Marca hero_slides.is_active=0        onde ends_at   < NOW()
+ *   - Marca cupons.ativo=0                 onde expiracao < NOW()
  *
- * Retorna { promotions: N, slides: N } com a contagem de linhas
- * efetivamente desativadas. Nunca lança — falhas são logadas e
- * o resultado parcial volta zerado pra esse canal.
+ * Cupons SEM expiração (NULL) NUNCA são tocados — campanhas perpétuas
+ * ficam intactas. Idem produtos/slides sem ends_at.
  *
- * @returns {Promise<{promotions: number, slides: number}>}
+ * Retorna contagem de linhas afetadas por canal. Nunca lança — falhas
+ * isoladas são logadas e a contagem do canal volta zerada.
+ *
+ * @returns {Promise<{promotions: number, slides: number, coupons: number}>}
  */
 async function runOnce() {
-  const report = { promotions: 0, slides: 0 };
+  const report = { promotions: 0, slides: 0, coupons: 0 };
 
   try {
     const [r1] = await pool.query(
@@ -63,7 +68,23 @@ async function runOnce() {
     logger.error({ err }, "expired-cleanup.slides.failed");
   }
 
-  if (report.promotions > 0 || report.slides > 0) {
+  // D1 — cupons vencidos. Mantém a validação em couponService.validateCouponRules
+  // como defesa em runtime (cupom expirado é rejeitado no checkout mesmo
+  // se admin marcar ativo=1 manualmente).
+  try {
+    const [r3] = await pool.query(
+      `UPDATE cupons
+          SET ativo = 0
+        WHERE ativo = 1
+          AND expiracao IS NOT NULL
+          AND expiracao < NOW()`,
+    );
+    report.coupons = Number(r3.affectedRows || 0);
+  } catch (err) {
+    logger.error({ err }, "expired-cleanup.coupons.failed");
+  }
+
+  if (report.promotions > 0 || report.slides > 0 || report.coupons > 0) {
     logger.info(report, "expired-cleanup.done");
   }
 
