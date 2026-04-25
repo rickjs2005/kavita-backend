@@ -88,6 +88,10 @@ mount("/admin/carrinhos",  "./admin/adminCarts");
 mount("/admin/stats",      "./admin/adminStats");
 mount("/admin/relatorios", "./admin/adminRelatorios", requirePermission("relatorios.ver"));
 
+// Modulo Rotas de Entrega (Fase 1 backend marketplace)
+mount("/admin/motoristas", "./admin/adminMotoristas", requirePermission("motoristas.view"));
+mount("/admin/rotas",      "./admin/adminRotas",      requirePermission("rotas.view"));
+
 /* ============================================================
  * Configuração da loja
  * ============================================================ */
