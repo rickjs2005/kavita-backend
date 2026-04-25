@@ -54,6 +54,13 @@ try {
   logger.warn({ err }, "abandoned carts scan job not loaded");
 }
 
+let expiredCleanupJob;
+try {
+  expiredCleanupJob = require("../jobs/expiredCleanupJob");
+} catch (err) {
+  logger.warn({ err }, "expired cleanup job not loaded");
+}
+
 function startWorkers() {
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
@@ -106,6 +113,12 @@ function startWorkers() {
   ) {
     abandonedCartsScanJob.register().catch((err) => {
       logger.error({ err }, "abandoned carts scan job registration failed");
+    });
+  }
+
+  if (expiredCleanupJob && typeof expiredCleanupJob.register === "function") {
+    expiredCleanupJob.register().catch((err) => {
+      logger.error({ err }, "expired cleanup job registration failed");
     });
   }
 }
