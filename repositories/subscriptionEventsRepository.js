@@ -92,4 +92,32 @@ async function hasEventWithBucket(subscriptionId, eventType, bucket) {
   return Number(row?.n ?? 0) > 0;
 }
 
-module.exports = { create, listForCorretora, hasEventWithBucket };
+/**
+ * G4 — idempotência do downgrade automático de trial expirado.
+ *
+ * Diferente de hasEventWithBucket, aqui só interessa se já houve QUALQUER
+ * evento do tipo (ex: 'trial_expired_downgrade') para a subscription —
+ * downgrade é uma transição terminal por subscription (a antiga é cancelada
+ * e uma NOVA FREE é criada com outro id), então 1 evento por subscription_id
+ * trialing original é suficiente como guard.
+ *
+ * @param {number} subscriptionId  id da subscription trialing original
+ * @param {string} eventType       ex: 'trial_expired_downgrade'
+ */
+async function hasEventOfType(subscriptionId, eventType) {
+  const [[row]] = await pool.query(
+    `SELECT COUNT(*) AS n
+       FROM subscription_events
+      WHERE subscription_id = ?
+        AND event_type = ?`,
+    [subscriptionId, eventType],
+  );
+  return Number(row?.n ?? 0) > 0;
+}
+
+module.exports = {
+  create,
+  listForCorretora,
+  hasEventWithBucket,
+  hasEventOfType,
+};
