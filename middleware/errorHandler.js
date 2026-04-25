@@ -56,10 +56,38 @@ module.exports = (err, req, res, _next) => {
 
   if (status >= 500) {
     logger.error(logPayload, "request error 5xx");
+
+    // Resolve contexto de usuário entre os 4 tipos de auth do projeto.
+    // Sentry user.id ajuda a agrupar erros do mesmo usuário; type permite
+    // filtrar por área (cliente vs admin vs corretora vs produtor).
+    let user;
+    if (req.adminUser) {
+      user = {
+        id: `admin:${req.adminUser.id}`,
+        email: req.adminUser.email,
+        type: "admin",
+      };
+    } else if (req.corretoraUser) {
+      user = {
+        id: `corretora:${req.corretoraUser.id}`,
+        type: "corretora",
+        corretora_id: req.corretoraUser.corretora_id,
+      };
+    } else if (req.producerUser) {
+      user = { id: `producer:${req.producerUser.id}`, type: "producer" };
+    } else if (req.user) {
+      user = { id: `user:${req.user.id}`, email: req.user.email, type: "user" };
+    }
+
     sentry.captureException(err, {
-      tags: { code, url: req.originalUrl },
-      extra: { status, method: req.method, requestId: req.id },
-      user: req.user ? { id: req.user.id, email: req.user.email } : undefined,
+      tags: {
+        code,
+        url: req.originalUrl,
+        method: req.method,
+        auth_type: user?.type ?? "anonymous",
+      },
+      extra: { status, requestId: req.id },
+      user,
     });
   } else {
     logger.warn(logPayload, "request error 4xx");
