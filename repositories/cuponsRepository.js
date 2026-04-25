@@ -127,10 +127,77 @@ async function remove(id) {
   return result.affectedRows > 0;
 }
 
+/**
+ * C2 — busca cupom existente por código ou cria se não existir.
+ *
+ * Idempotente: chamadas concorrentes para o mesmo código produzem o
+ * mesmo cupom (UNIQUE em `cupons.codigo` garante). Usa INSERT IGNORE
+ * + SELECT — sem race condition.
+ *
+ * Retorna a linha do cupom. NÃO toca em restricoes (cupom de
+ * recuperação é universal).
+ *
+ * @param {object} params
+ * @param {string} params.codigo
+ * @param {string} params.tipo
+ * @param {number} params.valor
+ * @param {number} params.minimo
+ * @param {Date}   params.expiracao
+ * @param {number} params.max_usos
+ * @param {number} params.max_usos_por_usuario
+ * @returns {Promise<{ row: object, created: boolean }>}
+ */
+async function findOrCreateByCodigo({
+  codigo,
+  tipo,
+  valor,
+  minimo,
+  expiracao,
+  max_usos,
+  max_usos_por_usuario,
+}) {
+  // Tenta achar primeiro — caso comum (cupom já existe)
+  const [existing] = await pool.query(
+    "SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, max_usos_por_usuario, ativo FROM cupons WHERE codigo = ? LIMIT 1",
+    [codigo],
+  );
+  if (existing.length > 0) {
+    return { row: existing[0], created: false };
+  }
+
+  // INSERT IGNORE evita erro de UNIQUE em race com outro caller
+  // que conseguiu inserir entre nosso SELECT e nosso INSERT.
+  const [insertResult] = await pool.query(
+    `INSERT IGNORE INTO cupons
+       (codigo, tipo, valor, minimo, expiracao, usos, max_usos, max_usos_por_usuario, ativo)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, 1)`,
+    [codigo, tipo, valor, minimo, expiracao, max_usos, max_usos_por_usuario],
+  );
+
+  // Se affectedRows=0, é porque outro caller venceu a corrida — busca o cupom dele.
+  // Senão, inserimos com sucesso e podemos selecionar pelo id retornado.
+  let row;
+  if (insertResult.affectedRows === 0) {
+    const [[rowAfter]] = await pool.query(
+      "SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, max_usos_por_usuario, ativo FROM cupons WHERE codigo = ? LIMIT 1",
+      [codigo],
+    );
+    row = rowAfter;
+    return { row, created: false };
+  }
+
+  const [[rowNew]] = await pool.query(
+    "SELECT id, codigo, tipo, valor, minimo, expiracao, usos, max_usos, max_usos_por_usuario, ativo FROM cupons WHERE id = ? LIMIT 1",
+    [insertResult.insertId],
+  );
+  return { row: rowNew, created: true };
+}
+
 module.exports = {
   findAll,
   findById,
   create,
   update,
   remove,
+  findOrCreateByCodigo,
 };
