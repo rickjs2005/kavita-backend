@@ -64,6 +64,10 @@ const ProdutoBaseSchema = z.object({
   // Prazo de entrega próprio do produto (em dias) — parseNullablePositiveInt
   // no handler. Se vazio/zero, cai no prazo padrão da região (shippingQuoteService).
   shippingPrazoDiasStr: z.string().optional().default(""),
+
+  // A3 — ponto de reposição. NULL = usa default global (5).
+  // parseNullablePositiveInt no handler aceita "" → null.
+  reorderPoint: z.string().optional().default(""),
 });
 
 /**

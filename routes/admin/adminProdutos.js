@@ -48,6 +48,11 @@ const upload = mediaService.upload;
 // GET /api/admin/produtos
 router.get("/", verifyAdmin, ctrl.list);
 
+// GET /api/admin/produtos/estoque-baixo
+// IMPORTANTE: precisa vir ANTES de /:id senão o regex de id captura
+// "estoque-baixo" e tenta validar como inteiro (falha 400).
+router.get("/estoque-baixo", verifyAdmin, ctrl.listLowStock);
+
 // GET /api/admin/produtos/:id
 router.get("/:id", verifyAdmin, validate(ProdutoIdParamSchema, "params"), ctrl.getById);
 

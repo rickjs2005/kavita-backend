@@ -27,6 +27,7 @@ const CATEGORY_COL = "category_id";
 const SHIPPING_FREE_COL = "shipping_free";
 const SHIPPING_FREE_FROM_QTY_COL = "shipping_free_from_qty";
 const SHIPPING_PRAZO_DIAS_COL = "shipping_prazo_dias";
+const REORDER_POINT_COL = "reorder_point";
 
 // ---------------------------------------------------------------------------
 // Helpers internos
@@ -37,6 +38,7 @@ function normalizeShippingFields(row) {
   const sf = row[SHIPPING_FREE_COL];
   const sfq = row[SHIPPING_FREE_FROM_QTY_COL];
   const spd = row[SHIPPING_PRAZO_DIAS_COL];
+  const rp = row[REORDER_POINT_COL];
   return {
     ...row,
     [SHIPPING_FREE_COL]: sf === null || sf === undefined ? 0 : Number(sf) ? 1 : 0,
@@ -44,6 +46,8 @@ function normalizeShippingFields(row) {
       sfq === null || sfq === undefined || sfq === "" ? null : Number(sfq),
     [SHIPPING_PRAZO_DIAS_COL]:
       spd === null || spd === undefined || spd === "" ? null : Number(spd),
+    [REORDER_POINT_COL]:
+      rp === null || rp === undefined || rp === "" ? null : Number(rp),
   };
 }
 
@@ -114,19 +118,20 @@ async function findImagesByProductId(db, productId) {
 // Mutations (usam connection para rodar dentro de transações)
 // ---------------------------------------------------------------------------
 
-async function insert(conn, { name, description, priceNum, qtyNum, catIdNum, shippingFreeBool, shippingFreeFromQty, shippingPrazoDias }) {
+async function insert(conn, { name, description, priceNum, qtyNum, catIdNum, shippingFreeBool, shippingFreeFromQty, shippingPrazoDias, reorderPoint }) {
   const [result] = await conn.query(
     `INSERT INTO ${PRODUCTS_TABLE} (
       name, description, price, quantity, ${CATEGORY_COL}, ${IMAGE_COL},
-      ${SHIPPING_FREE_COL}, ${SHIPPING_FREE_FROM_QTY_COL}, ${SHIPPING_PRAZO_DIAS_COL}
+      ${SHIPPING_FREE_COL}, ${SHIPPING_FREE_FROM_QTY_COL}, ${SHIPPING_PRAZO_DIAS_COL},
+      ${REORDER_POINT_COL}
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name, description || null, priceNum, qtyNum, catIdNum, null, shippingFreeBool ? 1 : 0, shippingFreeFromQty, shippingPrazoDias ?? null]
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name, description || null, priceNum, qtyNum, catIdNum, null, shippingFreeBool ? 1 : 0, shippingFreeFromQty, shippingPrazoDias ?? null, reorderPoint ?? null]
   );
   return result.insertId;
 }
 
-async function update(conn, id, { name, description, priceNum, qtyNum, catIdNum, shippingFreeBool, shippingFreeFromQty, shippingPrazoDias }) {
+async function update(conn, id, { name, description, priceNum, qtyNum, catIdNum, shippingFreeBool, shippingFreeFromQty, shippingPrazoDias, reorderPoint }) {
   const [result] = await conn.query(
     `UPDATE ${PRODUCTS_TABLE}
      SET
@@ -137,9 +142,10 @@ async function update(conn, id, { name, description, priceNum, qtyNum, catIdNum,
        ${CATEGORY_COL} = ?,
        ${SHIPPING_FREE_COL} = ?,
        ${SHIPPING_FREE_FROM_QTY_COL} = ?,
-       ${SHIPPING_PRAZO_DIAS_COL} = ?
+       ${SHIPPING_PRAZO_DIAS_COL} = ?,
+       ${REORDER_POINT_COL} = ?
      WHERE id = ?`,
-    [name, description || null, priceNum, qtyNum, catIdNum, shippingFreeBool ? 1 : 0, shippingFreeFromQty, shippingPrazoDias ?? null, id]
+    [name, description || null, priceNum, qtyNum, catIdNum, shippingFreeBool ? 1 : 0, shippingFreeFromQty, shippingPrazoDias ?? null, reorderPoint ?? null, id]
   );
   // A1+A2 — após admin alterar quantity, sincroniza is_active. Se admin
   // zerou estoque, sistema desativa. Se admin repôs estoque e produto
@@ -242,6 +248,41 @@ async function attachImages(rows) {
   return rows.map((r) => ({ ...r, images: bucket[r.id] || [] }));
 }
 
+// ---------------------------------------------------------------------------
+// A3 — alerta de estoque baixo
+// ---------------------------------------------------------------------------
+
+/**
+ * Lista produtos com estoque abaixo do ponto de reposição.
+ *
+ * Critério (regra de negócio decidida em 2026-04-25):
+ *   - quantity > 0  (esgotados são tratados por A1+A2 — não duplicar)
+ *   - is_active = 1 (produto inativo não preocupa pra reposição)
+ *   - quantity <= COALESCE(reorder_point, defaultThreshold)
+ *
+ * Retorna ordenado por urgência: menor quantity primeiro.
+ *
+ * @param {number} defaultThreshold  fallback quando reorder_point é NULL
+ * @param {{limit?: number}} [opts]
+ * @returns {Promise<Array>}
+ */
+async function findLowStock(defaultThreshold, opts = {}) {
+  const limit = Math.max(1, Math.min(Number(opts.limit) || 50, 200));
+  const [rows] = await pool.query(
+    `SELECT id, name, ${IMAGE_COL} AS image, price, quantity,
+            ${REORDER_POINT_COL} AS reorder_point,
+            COALESCE(${REORDER_POINT_COL}, ?) AS effective_threshold
+       FROM ${PRODUCTS_TABLE}
+      WHERE is_active = 1
+        AND quantity > 0
+        AND quantity <= COALESCE(${REORDER_POINT_COL}, ?)
+      ORDER BY quantity ASC, id ASC
+      LIMIT ?`,
+    [defaultThreshold, defaultThreshold, limit],
+  );
+  return rows;
+}
+
 module.exports = {
   findAll,
   findById,
@@ -257,4 +298,5 @@ module.exports = {
   insertImages,
   deleteImages,
   setMainImage,
+  findLowStock,
 };

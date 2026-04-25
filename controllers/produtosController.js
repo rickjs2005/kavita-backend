@@ -53,6 +53,33 @@ const updateStatus = async (req, res, next) => {
   }
 };
 
+/**
+ * A3 — Lista produtos com estoque baixo.
+ * Aceita ?limit=N (1..200, default 50).
+ * Resposta: { items, default_threshold, total }
+ */
+const listLowStock = async (req, res, next) => {
+  try {
+    const limit = Number(req.query.limit) || 50;
+    const items = await svc.listLowStock({ limit });
+    return response.ok(res, {
+      items,
+      default_threshold: svc.DEFAULT_REORDER_POINT,
+      total: items.length,
+    });
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao buscar produtos com estoque baixo.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+};
+
 const remove = async (req, res, next) => {
   // req.params.id é coercido para number pelo ProdutoIdParamSchema.
   try {
@@ -74,4 +101,4 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { list, getById, create, update, updateStatus, remove };
+module.exports = { list, getById, create, update, updateStatus, remove, listLowStock };

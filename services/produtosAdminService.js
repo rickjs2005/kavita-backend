@@ -58,6 +58,14 @@ function rawFileTargets(files = []) {
     .map((f) => ({ path: mediaService.toPublicPath(f.filename) }));
 }
 
+// ---------------------------------------------------------------------------
+// A3 — alerta de estoque baixo
+// ---------------------------------------------------------------------------
+// Default global de ponto de reposição: produto com NULL em
+// products.reorder_point é considerado "baixo" quando quantity <= este valor.
+// Admin pode sobrescrever por produto via campo no form.
+const DEFAULT_REORDER_POINT = 5;
+
 /** Valida e converte os campos numéricos comuns a create/update. */
 function parseAndValidateProductFields(data) {
   const {
@@ -69,6 +77,7 @@ function parseAndValidateProductFields(data) {
     shippingFree,
     shippingFreeFromQtyStr,
     shippingPrazoDiasStr,
+    reorderPoint,
   } = data;
 
   const priceNum = parseMoneyBR(price);
@@ -80,6 +89,8 @@ function parseAndValidateProductFields(data) {
     : null;
   // Prazo próprio do produto — NULL quando não informado (cai no prazo da região).
   const shippingPrazoDias = parseNullablePositiveInt(shippingPrazoDiasStr);
+  // A3 — ponto de reposição: NULL = usa default global, inteiro = override.
+  const reorderPointNum = parseNullablePositiveInt(reorderPoint);
 
   if (!name.trim())
     throw new AppError("Nome é obrigatório.", ERROR_CODES.VALIDATION_ERROR, 400);
@@ -99,6 +110,7 @@ function parseAndValidateProductFields(data) {
     shippingFreeBool,
     shippingFreeFromQty,
     shippingPrazoDias,
+    reorderPoint: reorderPointNum,
   };
 }
 
@@ -252,4 +264,27 @@ async function deleteProduct(id) {
   }
 }
 
-module.exports = { listProducts, getProduct, createProduct, updateProduct, updateProductStatus, deleteProduct };
+/**
+ * A3 — Lista produtos com estoque baixo (visual, sem alertas externos).
+ *
+ * Usa DEFAULT_REORDER_POINT como fallback quando produto não tem
+ * reorder_point específico setado. Inclui o threshold efetivo na
+ * resposta para o frontend mostrar "X de Y" no badge.
+ *
+ * @param {{limit?: number}} [opts]
+ * @returns {Promise<Array>}
+ */
+async function listLowStock(opts = {}) {
+  return repo.findLowStock(DEFAULT_REORDER_POINT, opts);
+}
+
+module.exports = {
+  listProducts,
+  getProduct,
+  createProduct,
+  updateProduct,
+  updateProductStatus,
+  deleteProduct,
+  listLowStock,
+  DEFAULT_REORDER_POINT,
+};
