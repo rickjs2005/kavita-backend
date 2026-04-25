@@ -61,6 +61,11 @@ async function findAll() {
 /**
  * Flips the is_active flag for a single product.
  *
+ * A1+A2 — também atualiza `deactivated_by`:
+ *   - desativando (isActive=false): seta 'manual' (admin sabe o que faz,
+ *     marca pra que reposição automática de estoque NÃO reative depois)
+ *   - reativando (isActive=true): seta NULL (limpa flag)
+ *
  * @param {object} conn - Transaction connection
  * @param {number} id
  * @param {boolean} isActive
@@ -68,8 +73,11 @@ async function findAll() {
  */
 async function updateStatus(conn, id, isActive) {
   const [result] = await conn.query(
-    `UPDATE ${PRODUCTS_TABLE} SET is_active = ? WHERE id = ?`,
-    [isActive ? 1 : 0, id]
+    `UPDATE ${PRODUCTS_TABLE}
+        SET is_active      = ?,
+            deactivated_by = ?
+      WHERE id = ?`,
+    [isActive ? 1 : 0, isActive ? null : "manual", id],
   );
   return result.affectedRows;
 }
