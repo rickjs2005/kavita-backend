@@ -7,13 +7,23 @@
 // Adapters:
 //   - manual: gera link wa.me e retorna pra admin clicar
 //             (default — funciona sem credencial nenhuma)
-//   - api:    integração WhatsApp Business Cloud (placeholder hoje)
+//   - api:    integração WhatsApp Business Cloud (B3 — implementação real)
 //
 // API pública:
-//   sendWhatsapp({ telefone, mensagem }) → Promise<SendResult>
+//   sendWhatsapp({ telefone, mensagem, options? }) → Promise<SendResult>
 //   buildWaMeLink({ telefone, mensagem }) → string|null
 //   normalizePhoneBR(raw) → string|null
 //   getProvider() → "manual" | "api"
+//
+// options (opcional, usado SÓ pelo adapter api):
+//   {
+//     templateId?:    string,         // nome do template aprovado pela Meta
+//     templateLang?:  string,         // default "pt_BR"
+//     templateParams?: string[],      // params do body em ordem
+//   }
+//
+//   Sem templateId, adapter api manda texto livre (só funciona dentro
+//   da janela de 24h após cliente responder — fora disso Meta rejeita).
 //
 // SendResult:
 //   {
@@ -21,8 +31,9 @@
 //     status: "sent" | "manual_pending" | "error",
 //     url:     string | null,    // wa.me link (sempre presente em manual)
 //     destino: string,           // telefone normalizado E.164 sem "+"
-//     mensagem: string,          // texto efetivamente enviado
-//     erro:    string | null
+//     mensagem: string,
+//     erro:    string | null,
+//     messageId?: string,        // (api only) id retornado pela Meta
 //   }
 //
 // O service NÃO loga em comunicacoes_enviadas — quem chama (comunicacaoService)
@@ -45,13 +56,13 @@ function getAdapter() {
  * Envia (ou prepara) uma mensagem de WhatsApp.
  *
  * Modo manual (default): NÃO envia mensagem real. Retorna link wa.me
- * e marca status como "manual_pending" — o painel admin mostra o link
- * pro operador clicar e enviar pelo próprio aplicativo.
+ * e marca status como "manual_pending". `options` é ignorado.
  *
- * Modo api: chama WhatsApp Business Cloud (não implementado ainda;
- * lança no try/catch do adapter retornando status="error").
+ * Modo api: chama Meta Cloud API. Se `options.templateId` presente,
+ * envia template aprovado (recomendado fora da janela 24h). Senão,
+ * envia texto livre (limitado a janela 24h pela Meta).
  */
-async function sendWhatsapp({ telefone, mensagem }) {
+async function sendWhatsapp({ telefone, mensagem, options = {} } = {}) {
   const destino = normalizePhoneBR(telefone);
   if (!destino) {
     return {
@@ -64,7 +75,7 @@ async function sendWhatsapp({ telefone, mensagem }) {
     };
   }
   const adapter = getAdapter();
-  return adapter.send({ destino, mensagem });
+  return adapter.send({ destino, mensagem, options });
 }
 
 module.exports = {
