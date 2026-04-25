@@ -256,14 +256,14 @@ async function processBucket(bucket, report) {
       }
 
       // G4 — antes do email, tentamos rebaixar (so' bucket 'expired').
-      // Se falhar, NAO enviamos email/notif: cliente nao pode receber
-      // "voce caiu pro FREE" se na verdade ainda esta em trialing.
+      // Se cancelPlan throw, NAO enviamos email expired (o copy nao reflete
+      // a realidade). Outros caminhos (feature OFF, grace, already_free,
+      // ja' downgradado) seguem para o email — mas com copy condicional
+      // baseado em autoDowngraded.
       let downgradeResult = null;
       if (bucket.key === "expired") {
         downgradeResult = await maybeAutoDowngrade(sub, report);
         if (downgradeResult.error) {
-          // Tecnicamente ainda esta trialing. Skipa email pra evitar
-          // mensagem confusa. Proxima rodada do cron tenta de novo.
           report.failed++;
           continue;
         }
@@ -283,6 +283,14 @@ async function processBucket(bucket, report) {
         corretoraName: sub.corretora_name,
         daysLeft: bucket.daysLeftForEmail,
         trialEndsAt: sub.trial_ends_at,
+        // G4 — copy "FREE ativado" so' quando downgrade efetivamente
+        // aconteceu (ou ja' estava free) nesta rodada. Caso contrario
+        // mantem copy legado generico.
+        autoDowngraded:
+          bucket.key === "expired" &&
+          !!downgradeResult &&
+          (downgradeResult.downgraded ||
+            downgradeResult.skipped_reason === "already_free"),
       });
 
       try {

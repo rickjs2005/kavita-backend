@@ -503,6 +503,7 @@ async function sendCorretoraTrialEndingEmail({
   corretoraName,
   daysLeft,
   trialEndsAt,
+  autoDowngraded = false, // G4: copy especifico se conta foi rebaixada para FREE
 }) {
   const appUrl = config.appUrl.replace(/\/$/, "");
   const planosUrl = `${appUrl}/painel/corretora/planos`;
@@ -524,11 +525,21 @@ async function sendCorretoraTrialEndingEmail({
   let body;
   let ctaLabel;
   let kickerColor;
-  if (expired) {
+  if (expired && autoDowngraded) {
+    // G4 — caminho novo: trial expirou e o sistema ja' rebaixou para FREE.
     subject = `${safeName}: seu teste gratuito expirou — plano FREE ativado`;
     headline = "Seu teste acabou — plano FREE ativado";
     body = `O período gratuito da <strong>${safeName}</strong> terminou${endLabel ? ` em ${endLabel}` : ""} e sua conta foi movida automaticamente para o plano <strong>FREE</strong>. <br/><br/><strong>Seus dados continuam no lugar:</strong> leads, histórico de conversas, contratos emitidos e sua equipe seguem intactos no painel — só algumas funções pagas (como emitir novos contratos e relatórios) ficam pausadas até você escolher um plano. Assine quando quiser para reativar tudo sem perder nada.`;
     ctaLabel = "Escolher meu plano";
+    kickerColor = "#be123c";
+  } else if (expired) {
+    // Caminho legado: trial expirou mas auto-downgrade nao rodou
+    // (feature OFF, dentro do grace, ou caso de borda). Copy generico
+    // sem afirmar que rebaixamento aconteceu.
+    subject = `${safeName}: seu teste gratuito expirou`;
+    headline = "Seu teste gratuito acabou";
+    body = `O período gratuito da <strong>${safeName}</strong> terminou${endLabel ? ` em ${endLabel}` : ""}. Os leads continuam chegando na sua página, mas o painel entra em modo limitado até você escolher um plano. Assine agora para manter o histórico e responder produtores sem interrupção.`;
+    ctaLabel = "Reativar minha conta";
     kickerColor = "#be123c";
   } else if (daysLeft <= 1) {
     subject = `${safeName}: último dia do teste gratuito`;
