@@ -616,6 +616,91 @@ async function sendTransactionalEmail(to, subject, html, text = null) {
   await transporterProxy.sendMail(mailOptions);
 }
 
+/**
+ * G2 — e-mail agregado diário com leads parados de uma corretora.
+ *
+ * Disparado pelo staleLeadsScanService apenas quando
+ * STALE_LEADS_EMAIL_ENABLED=true. Default desligado — notificação
+ * no painel cobre o caso comum sem ruído na caixa de entrada.
+ *
+ * @param {object} params
+ * @param {string} params.toEmail
+ * @param {string} params.corretoraName
+ * @param {number} params.total            total de leads parados
+ * @param {Array}  params.topLeads         até 10 (id, nome, cidade, created_at)
+ * @param {number} params.thresholdHours   threshold usado (ex: 72)
+ */
+async function sendCorretoraStaleLeadsEmail({
+  toEmail,
+  corretoraName,
+  total,
+  topLeads,
+  thresholdHours,
+}) {
+  if (!toEmail) return;
+  const panelUrl = `${config.appUrl.replace(/\/$/, "")}/painel/corretora/leads`;
+  const safeName = corretoraName || "sua corretora";
+  const days = Math.round((thresholdHours || 72) / 24);
+
+  const rows = (topLeads || [])
+    .slice(0, 10)
+    .map((l) => {
+      const created = l.created_at ? new Date(l.created_at) : null;
+      const ageDays = created
+        ? Math.floor((Date.now() - created.getTime()) / (24 * 60 * 60 * 1000))
+        : null;
+      const cidadeStr = l.cidade ? ` · ${l.cidade}` : "";
+      const ageStr = ageDays != null ? ` <span style="color:#a1a1aa;font-size:12px;">há ${ageDays} dias</span>` : "";
+      return `<li style="margin:4px 0;">${l.nome || "Lead sem nome"}${cidadeStr}${ageStr}</li>`;
+    })
+    .join("");
+
+  const headline =
+    total === 1
+      ? `Você tem 1 lead aguardando primeiro contato há mais de ${days} dias`
+      : `Você tem ${total} leads aguardando primeiro contato há mais de ${days} dias`;
+
+  await transporterProxy.sendMail({
+    from: buildFrom("Kavita — Mercado do Café"),
+    to: toEmail,
+    subject: `${total} ${total === 1 ? "lead parado" : "leads parados"} no painel da ${safeName}`,
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px;">
+        <h2 style="color:#b45309;margin:0 0 12px;">⏰ ${headline}</h2>
+        <p>Olá! Um lembrete rápido sobre o painel da <strong>${safeName}</strong>.</p>
+        <p>Estes leads ainda não receberam primeiro contato:</p>
+        <ul style="padding-left:20px;color:#27272a;">
+          ${rows}
+        </ul>
+        <p style="margin:24px 0;">
+          <a href="${panelUrl}"
+             style="display:inline-block;background:#b45309;color:white;
+                    padding:12px 24px;border-radius:8px;text-decoration:none;
+                    font-weight:600;">
+            Abrir painel de leads
+          </a>
+        </p>
+        <p style="color:#71717a;font-size:13px;">
+          Lead parado virou cliente perdido na maioria dos casos. Mesmo que
+          você só consiga mandar uma mensagem rápida no WhatsApp hoje, ela já
+          mantém a conversa quente.
+        </p>
+        <p style="color:#a1a1aa;font-size:11px;margin-top:24px;">
+          Você está recebendo este aviso porque tem leads parados no painel.
+          Para deixar de receber, peça à equipe Kavita para desativar.
+        </p>
+      </div>
+    `,
+    text:
+      `${headline}.\n\n` +
+      (topLeads || [])
+        .slice(0, 10)
+        .map((l) => `- ${l.nome}${l.cidade ? ` (${l.cidade})` : ""}`)
+        .join("\n") +
+      `\n\nAbra o painel: ${panelUrl}\n`,
+  });
+}
+
 module.exports = {
   sendResetPasswordEmail,
   sendCorretoraResetPasswordEmail,
@@ -626,5 +711,6 @@ module.exports = {
   sendCorretoraNewIpAlertEmail,
   sendRegionalBackfillInviteEmail,
   sendCorretoraTrialEndingEmail,
+  sendCorretoraStaleLeadsEmail,
   sendTransactionalEmail,
 };
