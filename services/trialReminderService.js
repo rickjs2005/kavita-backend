@@ -20,10 +20,39 @@
 const subsRepo = require("../repositories/subscriptionsRepository");
 const subEventsRepo = require("../repositories/subscriptionEventsRepository");
 const usersRepo = require("../repositories/corretoraUsersRepository");
+const notifRepo = require("../repositories/corretoraNotificationsRepository");
+const planService = require("./planService");
 const mailService = require("./mailService");
 const logger = require("../lib/logger");
 
 const TAG = "trial-reminder";
+
+// G4 — auto-downgrade no bucket "expired".
+//   - Master switch: TRIAL_AUTO_DOWNGRADE_ENABLED (default false)
+//   - Margem de seguranca: TRIAL_AUTO_DOWNGRADE_GRACE_HOURS (default 1h)
+//     evita rebaixar trial recem-expirado que admin pode estender.
+const AUTO_DOWNGRADE_EVENT_TYPE = "trial_expired_downgrade";
+const NOTIF_TYPE = "trial_expired";
+
+function autoDowngradeEnabled() {
+  return (
+    String(process.env.TRIAL_AUTO_DOWNGRADE_ENABLED || "false").toLowerCase() ===
+    "true"
+  );
+}
+
+function graceMs() {
+  const hours = Number(process.env.TRIAL_AUTO_DOWNGRADE_GRACE_HOURS) || 1;
+  return Math.max(0, hours) * 3600 * 1000;
+}
+
+function pastGracePeriod(trialEndsAt) {
+  if (!trialEndsAt) return false;
+  const ts =
+    trialEndsAt instanceof Date ? trialEndsAt.getTime() : new Date(trialEndsAt).getTime();
+  if (Number.isNaN(ts)) return false;
+  return Date.now() - ts >= graceMs();
+}
 
 // buckets[i] = { days: número, label: string pro log, daysLeftToSend: passado ao e-mail }
 const BUCKETS = [
@@ -58,6 +87,160 @@ async function collectRecipients(corretoraId, institutionalEmail) {
   return list;
 }
 
+/**
+ * G4 — downgrade automatico de trial expirado para FREE.
+ *
+ * So roda no bucket 'expired'. Estrategia:
+ *   1. Margem de seguranca: pula se trial_ends_at < grace (1h padrao)
+ *   2. Idempotencia forte: pula se ja existe trial_expired_downgrade
+ *   3. Chama planService.cancelPlan (transacional, idempotente, ja
+ *      preserva subscription antiga como 'canceled' e cria nova FREE)
+ *   4. Loga subscription_events trial_expired_downgrade
+ *
+ * Retorna { downgraded: bool, skipped_reason?: string, error?: string }.
+ * NUNCA lanca — caller decide se envia email mesmo apos falha.
+ */
+async function maybeAutoDowngrade(sub, report) {
+  if (!autoDowngradeEnabled()) {
+    return { downgraded: false, skipped_reason: "feature_disabled" };
+  }
+  if (!pastGracePeriod(sub.trial_ends_at)) {
+    report.downgrade_skipped_grace++;
+    return { downgraded: false, skipped_reason: "within_grace_period" };
+  }
+  const alreadyDowngraded = await subEventsRepo.hasEventOfType(
+    sub.id,
+    AUTO_DOWNGRADE_EVENT_TYPE,
+  );
+  if (alreadyDowngraded) {
+    report.downgrade_skipped_idempotent++;
+    return { downgraded: false, skipped_reason: "already_downgraded" };
+  }
+  try {
+    const result = await planService.cancelPlan({
+      corretoraId: sub.corretora_id,
+      opts: {
+        actor_type: "system",
+        actor_id: null,
+        reason: "trial_expired_auto_downgrade",
+        source: "trial_reminder_job",
+        targetPlanSlug: "free",
+      },
+    });
+    if (result?.already_free) {
+      // Caso de borda: corretora ja estava no FREE por outro caminho
+      // (cancelamento manual recente). Loga evento ainda assim pra
+      // rastrear a decisao do cron (idempotencia futura).
+      try {
+        await subEventsRepo.create({
+          corretora_id: sub.corretora_id,
+          subscription_id: sub.id,
+          event_type: AUTO_DOWNGRADE_EVENT_TYPE,
+          from_plan_id: sub.plan_id,
+          to_plan_id: sub.plan_id,
+          from_status: "trialing",
+          to_status: "trialing",
+          meta: {
+            reason: "trial_expired_auto_downgrade",
+            source: "trial_reminder_job",
+            already_free: true,
+            trial_ends_at: sub.trial_ends_at,
+          },
+          actor_type: "system",
+          actor_id: null,
+        });
+      } catch (err) {
+        logger.warn(
+          { err: err?.message ?? String(err), subscriptionId: sub.id },
+          `${TAG}: downgrade_event_write_failed`,
+        );
+      }
+      report.downgrade_already_free++;
+      return { downgraded: false, skipped_reason: "already_free" };
+    }
+    // cancelPlan ja' loga 'canceled' event. Aqui logamos um evento
+    // semantico adicional para distinguir auto-downgrade do cancel manual.
+    try {
+      await subEventsRepo.create({
+        corretora_id: sub.corretora_id,
+        subscription_id: sub.id,
+        event_type: AUTO_DOWNGRADE_EVENT_TYPE,
+        from_plan_id: sub.plan_id,
+        to_plan_id: result?.newSubId
+          ? null /* novo plan_id ja' esta no evento canceled emitido por cancelPlan */
+          : null,
+        from_status: "trialing",
+        to_status: "active",
+        meta: {
+          reason: "trial_expired_auto_downgrade",
+          source: "trial_reminder_job",
+          previous_plan_id: sub.plan_id,
+          new_subscription_id: result?.newSubId ?? null,
+          trial_ends_at: sub.trial_ends_at,
+        },
+        actor_type: "system",
+        actor_id: null,
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err?.message ?? String(err), subscriptionId: sub.id },
+        `${TAG}: downgrade_event_write_failed`,
+      );
+    }
+    report.downgraded++;
+    return { downgraded: true, newSubscriptionId: result?.newSubId ?? null };
+  } catch (err) {
+    report.downgrade_failed++;
+    logger.warn(
+      {
+        err: err?.message ?? String(err),
+        subscriptionId: sub.id,
+        corretoraId: sub.corretora_id,
+      },
+      `${TAG}: downgrade_failed`,
+    );
+    return { downgraded: false, error: err?.message ?? String(err) };
+  }
+}
+
+async function notifyExpiredInPanel(sub, report) {
+  try {
+    const dup = await notifRepo.existsTodayByType({
+      corretora_id: sub.corretora_id,
+      type: NOTIF_TYPE,
+    });
+    if (dup) {
+      report.panel_notif_skipped_duplicate++;
+      return;
+    }
+    await notifRepo.create({
+      corretora_id: sub.corretora_id,
+      type: NOTIF_TYPE,
+      title: "Seu teste gratuito acabou — plano FREE ativado",
+      body:
+        "Seu trial expirou e a conta foi movida automaticamente para o plano " +
+        "FREE. Seus leads, contratos e equipe continuam aqui — apenas as " +
+        "funcoes pagas ficam pausadas ate voce escolher um plano.",
+      link: "/painel/corretora/planos",
+      meta: {
+        previous_plan_id: sub.plan_id,
+        trial_ends_at: sub.trial_ends_at,
+        source: "trial_reminder_job",
+      },
+    });
+    report.panel_notif_sent++;
+  } catch (err) {
+    logger.warn(
+      {
+        err: err?.message ?? String(err),
+        subscriptionId: sub.id,
+        corretoraId: sub.corretora_id,
+      },
+      `${TAG}: panel_notif_failed`,
+    );
+  }
+}
+
 async function processBucket(bucket, report) {
   const rows = await subsRepo.listTrialsEndingOn(bucket.days);
   for (const sub of rows) {
@@ -70,6 +253,20 @@ async function processBucket(bucket, report) {
       if (already) {
         report.skipped++;
         continue;
+      }
+
+      // G4 — antes do email, tentamos rebaixar (so' bucket 'expired').
+      // Se falhar, NAO enviamos email/notif: cliente nao pode receber
+      // "voce caiu pro FREE" se na verdade ainda esta em trialing.
+      let downgradeResult = null;
+      if (bucket.key === "expired") {
+        downgradeResult = await maybeAutoDowngrade(sub, report);
+        if (downgradeResult.error) {
+          // Tecnicamente ainda esta trialing. Skipa email pra evitar
+          // mensagem confusa. Proxima rodada do cron tenta de novo.
+          report.failed++;
+          continue;
+        }
       }
 
       const recipients = await collectRecipients(
@@ -101,6 +298,7 @@ async function processBucket(bucket, report) {
             bucket: bucket.key,
             trial_ends_at: sub.trial_ends_at,
             recipients_count: recipients.length,
+            auto_downgraded: !!downgradeResult?.downgraded,
           },
           actor_type: "system",
           actor_id: null,
@@ -111,6 +309,16 @@ async function processBucket(bucket, report) {
           { err: err?.message ?? String(err), subscriptionId: sub.id },
           `${TAG}: event_write_failed`,
         );
+      }
+
+      // G4 — notif no painel da corretora APENAS apos downgrade efetivo
+      // (ou quando ja' estava FREE — significa que o trial encerrou).
+      if (
+        bucket.key === "expired" &&
+        downgradeResult &&
+        (downgradeResult.downgraded || downgradeResult.skipped_reason === "already_free")
+      ) {
+        await notifyExpiredInPanel(sub, report);
       }
 
       report.sent++;
@@ -137,6 +345,15 @@ async function runOnce() {
     no_recipients: 0,
     failed: 0,
     by_bucket: {},
+    // G4 — contadores especificos do auto-downgrade
+    downgraded: 0,
+    downgrade_skipped_grace: 0,
+    downgrade_skipped_idempotent: 0,
+    downgrade_already_free: 0,
+    downgrade_failed: 0,
+    panel_notif_sent: 0,
+    panel_notif_skipped_duplicate: 0,
+    auto_downgrade_enabled: autoDowngradeEnabled(),
     startedAt: new Date().toISOString(),
   };
   for (const bucket of BUCKETS) {
