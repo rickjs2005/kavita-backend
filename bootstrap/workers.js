@@ -61,6 +61,13 @@ try {
   logger.warn({ err }, "expired cleanup job not loaded");
 }
 
+let staleLeadsScanJob;
+try {
+  staleLeadsScanJob = require("../jobs/staleLeadsScanJob");
+} catch (err) {
+  logger.warn({ err }, "stale leads scan job not loaded");
+}
+
 function startWorkers() {
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
@@ -119,6 +126,12 @@ function startWorkers() {
   if (expiredCleanupJob && typeof expiredCleanupJob.register === "function") {
     expiredCleanupJob.register().catch((err) => {
       logger.error({ err }, "expired cleanup job registration failed");
+    });
+  }
+
+  if (staleLeadsScanJob && typeof staleLeadsScanJob.register === "function") {
+    staleLeadsScanJob.register().catch((err) => {
+      logger.error({ err }, "stale leads scan job registration failed");
     });
   }
 }
