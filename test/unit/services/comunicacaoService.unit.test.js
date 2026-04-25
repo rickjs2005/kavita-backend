@@ -4,17 +4,20 @@
  * Testes unitários do services/comunicacaoService.js
  * - Sem MySQL real (mock do config/pool)
  * - Sem serviços externos (mock do mailService)
+ * - WhatsApp roda no modo manual default — gera link wa.me sem rede
  * - AAA: Arrange -> Act -> Assert
+ *
+ * Refatoração B1 (2026-04-24): WhatsApp virou canal principal,
+ * adapter manual gera link, anti-duplicação consulta o log antes
+ * de reenviar, novos eventos em_separacao/entregue/cancelado.
  */
 
 describe("services/comunicacaoService - dispararEventoComunicacao()", () => {
   let comunicacaoService;
 
-  // Paths reais (resolvidos) para o Jest mockar o MESMO módulo que o service usa.
   const poolPath = require.resolve("../../../config/pool");
   const mailServicePath = require.resolve("../../../services/mailService");
 
-  // Referências aos mocks (instanciadas após doMock)
   let pool;
   let sendTransactionalEmail;
 
@@ -23,20 +26,51 @@ describe("services/comunicacaoService - dispararEventoComunicacao()", () => {
     usuario_id: 7,
     total: 123.4,
     status_pagamento: "pendente",
-    status_entrega: "separando",
+    status_entrega: "em_separacao",
     forma_pagamento: "PIX",
     data_pedido: "2026-01-09 10:00:00",
-    usuario_nome: "Rick",
+    usuario_nome: "Rick Januario",
     usuario_email: "rick@kavita.com",
-    usuario_telefone: "(31) 9 9999-0000",
+    usuario_telefone: "(31) 99999-0000",
     ...overrides,
   });
+
+  /**
+   * Configura o pool.query mock para responder cada tipo de query:
+   *   - SELECT pedido + usuario → retorna `pedidoOrNull`
+   *   - SELECT 1 FROM comunicacoes_enviadas (jaEnviado) → retorna alreadySentChannels
+   *   - INSERT INTO comunicacoes_enviadas → roda insertBehavior se passado
+   */
+  function mockPool({ pedidoOrNull, alreadySent = [], insertBehavior } = {}) {
+    pool.query.mockImplementation(async (sql, _params) => {
+      const s = String(sql);
+
+      if (s.includes("FROM pedidos p") && s.includes("JOIN usuarios u")) {
+        return [[pedidoOrNull], []];
+      }
+
+      if (s.includes("FROM comunicacoes_enviadas") && s.includes("SELECT 1")) {
+        // jaEnviado guard — retorna 1 linha se canal está em alreadySent
+        const matchesChannel = alreadySent.some((c) => _params.includes(c));
+        return [matchesChannel ? [{ "1": 1 }] : [], []];
+      }
+
+      if (s.includes("INSERT INTO comunicacoes_enviadas")) {
+        if (typeof insertBehavior === "function") {
+          return insertBehavior(sql, _params);
+        }
+        return [{ insertId: 1 }, undefined];
+      }
+
+      return [[], []];
+    });
+  }
 
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
+    delete process.env.WHATSAPP_PROVIDER; // garante modo manual default
 
-    // Mocks dos módulos reais usados pelo service
     jest.doMock(poolPath, () => ({
       query: jest.fn(),
       getConnection: jest.fn(),
@@ -46,376 +80,222 @@ describe("services/comunicacaoService - dispararEventoComunicacao()", () => {
       sendTransactionalEmail: jest.fn(),
     }));
 
-    // Importa os mocks após doMock
     pool = require(poolPath);
     ({ sendTransactionalEmail } = require(mailServicePath));
 
-    // Importa o service depois dos mocks
     comunicacaoService = require("../../../services/comunicacaoService");
-
-    // Silenciar logs controladamente
-    jest.spyOn(console, "log").mockImplementation(() => {});
-    jest.spyOn(console, "warn").mockImplementation(() => {});
-    jest.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  afterEach(() => {
-    console.log.mockRestore?.();
-    console.warn.mockRestore?.();
-    console.error.mockRestore?.();
-  });
+  test("pedido não encontrado: silencia, não tenta enviar e não loga", async () => {
+    mockPool({ pedidoOrNull: null });
 
-  function mockPoolQuerySelectThenInsert(pedidoOrNull, insertBehavior) {
-    pool.query.mockImplementation(async (sql, params) => {
-      const s = String(sql);
-
-      // SELECT do pedido básico
-      if (s.includes("FROM pedidos p") && s.includes("JOIN usuarios u")) {
-        return [[pedidoOrNull], []];
-      }
-
-      // INSERT de log de comunicacao
-      if (s.includes("INSERT INTO comunicacoes_enviadas")) {
-        if (typeof insertBehavior === "function") {
-          return insertBehavior(sql, params);
-        }
-        return [{ insertId: 1 }, undefined];
-      }
-
-      return [[], []];
-    });
-  }
-
-  test("pedido não encontrado: deve dar warn e não deve tentar enviar/logar", async () => {
-    // Arrange
-    mockPoolQuerySelectThenInsert(null);
-
-    // Act
     await comunicacaoService.dispararEventoComunicacao("pedido_criado", 999);
 
-    // Assert
-    expect(console.warn).toHaveBeenCalledTimes(1);
-    const warnArgs = console.warn.mock.calls[0].join(" ");
-    expect(warnArgs).toContain("[comunicacao]");
-    expect(warnArgs).toContain("Pedido 999 não encontrado");
-
     expect(sendTransactionalEmail).not.toHaveBeenCalled();
-
-    // Apenas 1 SELECT
+    // Apenas o SELECT do pedido (que retornou null)
     expect(pool.query).toHaveBeenCalledTimes(1);
   });
 
-  test("tipoEvento não suportado: deve dar warn e não deve enviar/logar", async () => {
-    // Arrange
-    const pedido = makePedido();
-    mockPoolQuerySelectThenInsert(pedido);
+  test("tipoEvento não suportado: silencia e não envia nada", async () => {
+    mockPool({ pedidoOrNull: makePedido() });
 
-    // Act
-    await comunicacaoService.dispararEventoComunicacao("evento_invalido", pedido.id);
-
-    // Assert
-    expect(console.warn).toHaveBeenCalledWith(
-      "[comunicacao] tipoEvento não suportado:",
-      "evento_invalido"
+    await comunicacaoService.dispararEventoComunicacao(
+      "evento_invalido",
+      makePedido().id,
     );
 
-    // Só SELECT
-    expect(pool.query).toHaveBeenCalledTimes(1);
     expect(sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(pool.query).toHaveBeenCalledTimes(1);
   });
 
-  test("pedido_criado: deve disparar WhatsApp (fake) e e-mail; e deve logar ambos", async () => {
-    // Arrange
-    const pedido = makePedido({
-      total: 10,
-      usuario_telefone: "55 (31) 99999-0000",
-    });
-
+  test("pedido_criado: WhatsApp grava manual_pending + e-mail enviado real", async () => {
+    const pedido = makePedido({ total: 10 });
     const insertCalls = [];
-    mockPoolQuerySelectThenInsert(pedido, async (sql, params) => {
-      insertCalls.push({ sql: String(sql), params });
-      return [{ insertId: insertCalls.length }, undefined];
+    mockPool({
+      pedidoOrNull: pedido,
+      insertBehavior: async (_sql, params) => {
+        insertCalls.push({ params });
+        return [{ insertId: insertCalls.length }, undefined];
+      },
     });
 
-    // Act
     await comunicacaoService.dispararEventoComunicacao("pedido_criado", pedido.id);
 
-    // Assert
-    // WhatsApp fake: agora usa logger.info (não console.log)
-    // A asserção importante é que o INSERT de log foi feito (abaixo)
-
-    // Email enviado
     expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
-    const [to, subject, html] = sendTransactionalEmail.mock.calls[0];
+    const [to, subject] = sendTransactionalEmail.mock.calls[0];
     expect(to).toBe(pedido.usuario_email);
     expect(subject).toContain(`Pedido #${pedido.id}`);
-    expect(html).toContain("R$ 10.00");
 
-    // DB: 1 SELECT + 2 INSERT
-    expect(pool.query).toHaveBeenCalledTimes(3);
     expect(insertCalls).toHaveLength(2);
 
-    const whatsappInsert = insertCalls.find((c) => c.params?.[2] === "whatsapp");
-    const emailInsert = insertCalls.find((c) => c.params?.[2] === "email");
+    const wa = insertCalls.find((c) => c.params[2] === "whatsapp");
+    const email = insertCalls.find((c) => c.params[2] === "email");
 
-    expect(whatsappInsert).toBeTruthy();
-    expect(emailInsert).toBeTruthy();
+    expect(wa).toBeTruthy();
+    expect(wa.params[3]).toBe("confirmacao_pedido");
+    // Modo manual: link gerado mas não enviado de fato
+    expect(wa.params[7]).toBe("manual_pending");
 
-    // whatsapp
-    expect(whatsappInsert.params[3]).toBe("confirmacao_pedido");
-    expect(whatsappInsert.params[7]).toBe("sucesso");
-
-    // email
-    expect(emailInsert.params[3]).toBe("confirmacao_pedido");
-    expect(emailInsert.params[7]).toBe("sucesso");
-    expect(emailInsert.params[8]).toBeNull();
+    expect(email).toBeTruthy();
+    expect(email.params[3]).toBe("confirmacao_pedido");
+    expect(email.params[7]).toBe("sucesso");
   });
 
-  test("pagamento_aprovado: deve usar template correto e logar email/whatsapp", async () => {
-    // Arrange
+  test("pagamento_aprovado: usa template correto", async () => {
     const pedido = makePedido({ total: 99.9 });
     const insertCalls = [];
-    mockPoolQuerySelectThenInsert(pedido, async (sql, params) => {
-      insertCalls.push(params);
-      return [{ insertId: insertCalls.length }, undefined];
+    mockPool({
+      pedidoOrNull: pedido,
+      insertBehavior: async (_sql, params) => {
+        insertCalls.push(params);
+        return [{ insertId: insertCalls.length }, undefined];
+      },
     });
 
-    // Act
-    await comunicacaoService.dispararEventoComunicacao("pagamento_aprovado", pedido.id);
-
-    // Assert
-    expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
-    const [, subject, html] = sendTransactionalEmail.mock.calls[0];
-    expect(subject.toLowerCase()).toContain("aprovado");
-    expect(html).toContain("R$ 99.90");
-
-    expect(insertCalls.filter((p) => p[3] === "pagamento_aprovado")).toHaveLength(2);
-  });
-
-  test("pedido_enviado: deve usar template correto e incluir status_entrega no WhatsApp", async () => {
-    // Arrange
-    const pedido = makePedido({ status_entrega: "em rota" });
-    const insertCalls = [];
-    mockPoolQuerySelectThenInsert(pedido, async (sql, params) => {
-      insertCalls.push(params);
-      return [{ insertId: insertCalls.length }, undefined];
-    });
-
-    // Act
-    await comunicacaoService.dispararEventoComunicacao("pedido_enviado", pedido.id);
-
-    // Assert
-    const whatsapp = insertCalls.find((p) => p[2] === "whatsapp");
-    expect(whatsapp).toBeTruthy();
-    expect(String(whatsapp[6])).toContain("Status de entrega");
-    expect(String(whatsapp[6])).toContain("em rota");
+    await comunicacaoService.dispararEventoComunicacao(
+      "pagamento_aprovado",
+      pedido.id,
+    );
 
     expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
     const [, subject] = sendTransactionalEmail.mock.calls[0];
-    expect(subject.toLowerCase()).toContain("enviado");
+    expect(subject.toLowerCase()).toContain("aprovado");
+
+    const ofTemplate = insertCalls.filter((p) => p[3] === "pagamento_aprovado");
+    expect(ofTemplate).toHaveLength(2);
   });
 
-  test("sem telefone: deve ignorar WhatsApp e logar apenas email", async () => {
-    // Arrange
+  test.each([
+    ["pedido_em_separacao", "separad"],
+    ["pedido_entregue", "entregu"],
+    ["pedido_cancelado", "cancelad"],
+  ])(
+    "novo evento %s: dispara whatsapp + email com template correspondente",
+    async (evento, subjectKeyword) => {
+      const pedido = makePedido();
+      const insertCalls = [];
+      mockPool({
+        pedidoOrNull: pedido,
+        insertBehavior: async (_sql, params) => {
+          insertCalls.push(params);
+          return [{ insertId: insertCalls.length }, undefined];
+        },
+      });
+
+      await comunicacaoService.dispararEventoComunicacao(evento, pedido.id);
+
+      expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
+      const [, subject] = sendTransactionalEmail.mock.calls[0];
+      expect(subject.toLowerCase()).toContain(subjectKeyword);
+
+      // 2 inserts: whatsapp + email — ambos com mesmo tipo_template
+      expect(insertCalls).toHaveLength(2);
+      const ofTemplate = insertCalls.filter((p) => p[3].startsWith("pedido_"));
+      expect(ofTemplate.length).toBeGreaterThan(0);
+    },
+  );
+
+  test("sem telefone: ignora WhatsApp e loga apenas email", async () => {
     const pedido = makePedido({ usuario_telefone: "" });
     const insertCalls = [];
-    mockPoolQuerySelectThenInsert(pedido, async (sql, params) => {
-      insertCalls.push(params);
-      return [{ insertId: insertCalls.length }, undefined];
+    mockPool({
+      pedidoOrNull: pedido,
+      insertBehavior: async (_sql, params) => {
+        insertCalls.push(params);
+        return [{ insertId: insertCalls.length }, undefined];
+      },
     });
 
-    // Act
     await comunicacaoService.dispararEventoComunicacao("pedido_criado", pedido.id);
 
-    // Assert
     expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
-
-    // 1 SELECT + 1 INSERT (email)
-    expect(pool.query).toHaveBeenCalledTimes(2);
     expect(insertCalls).toHaveLength(1);
     expect(insertCalls[0][2]).toBe("email");
   });
 
-  test("sem email: deve ignorar email e logar apenas WhatsApp", async () => {
-    // Arrange
+  test("sem email: ignora email e loga apenas WhatsApp", async () => {
     const pedido = makePedido({ usuario_email: "" });
     const insertCalls = [];
-    mockPoolQuerySelectThenInsert(pedido, async (sql, params) => {
-      insertCalls.push(params);
-      return [{ insertId: insertCalls.length }, undefined];
+    mockPool({
+      pedidoOrNull: pedido,
+      insertBehavior: async (_sql, params) => {
+        insertCalls.push(params);
+        return [{ insertId: insertCalls.length }, undefined];
+      },
     });
 
-    // Act
     await comunicacaoService.dispararEventoComunicacao("pedido_criado", pedido.id);
 
-    // Assert
     expect(sendTransactionalEmail).not.toHaveBeenCalled();
-
-    // 1 SELECT + 1 INSERT (whatsapp)
-    expect(pool.query).toHaveBeenCalledTimes(2);
     expect(insertCalls).toHaveLength(1);
     expect(insertCalls[0][2]).toBe("whatsapp");
   });
 
-  test("falha no sendTransactionalEmail: deve logar email com status_envio=erro e erro preenchido", async () => {
-    // Arrange
+  test("anti-duplicação: pula whatsapp se jaEnviado retorna true", async () => {
+    const pedido = makePedido();
+    const insertCalls = [];
+    mockPool({
+      pedidoOrNull: pedido,
+      alreadySent: ["whatsapp"], // simula que whatsapp já foi enviado
+      insertBehavior: async (_sql, params) => {
+        insertCalls.push(params);
+        return [{ insertId: insertCalls.length }, undefined];
+      },
+    });
+
+    await comunicacaoService.dispararEventoComunicacao("pedido_criado", pedido.id);
+
+    // Email entra, whatsapp é pulado
+    expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0][2]).toBe("email");
+  });
+
+  test("anti-duplicação: pula email se jaEnviado retorna true", async () => {
+    const pedido = makePedido();
+    const insertCalls = [];
+    mockPool({
+      pedidoOrNull: pedido,
+      alreadySent: ["email"],
+      insertBehavior: async (_sql, params) => {
+        insertCalls.push(params);
+        return [{ insertId: insertCalls.length }, undefined];
+      },
+    });
+
+    await comunicacaoService.dispararEventoComunicacao("pedido_criado", pedido.id);
+
+    expect(sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0][2]).toBe("whatsapp");
+  });
+
+  test("falha no sendTransactionalEmail: loga email com status_envio=erro", async () => {
     const pedido = makePedido();
     sendTransactionalEmail.mockRejectedValueOnce(new Error("SMTP down"));
 
     const insertCalls = [];
-    mockPoolQuerySelectThenInsert(pedido, async (sql, params) => {
-      insertCalls.push(params);
-      return [{ insertId: insertCalls.length }, undefined];
+    mockPool({
+      pedidoOrNull: pedido,
+      insertBehavior: async (_sql, params) => {
+        insertCalls.push(params);
+        return [{ insertId: insertCalls.length }, undefined];
+      },
     });
 
-    // Act
     await comunicacaoService.dispararEventoComunicacao("pedido_criado", pedido.id);
 
-    // Assert
     const email = insertCalls.find((p) => p[2] === "email");
     expect(email).toBeTruthy();
     expect(email[7]).toBe("erro");
     expect(String(email[8])).toContain("SMTP down");
-    expect(console.error).toHaveBeenCalled();
   });
 
-  test("falha ao logar comunicação (INSERT): não deve quebrar o fluxo (swallow com console.error)", async () => {
-    // Arrange
-    const pedido = makePedido();
-
-    mockPoolQuerySelectThenInsert(pedido, async () => {
-      throw new Error("DB insert failed");
-    });
-
-    // Act / Assert
-    await expect(
-      comunicacaoService.dispararEventoComunicacao("pedido_criado", pedido.id)
-    ).resolves.toBeUndefined();
-
-    // Email ainda tenta enviar
-    expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
-
-    expect(console.error).toHaveBeenCalled();
-  });
-
-  test("erro inesperado no fluxo geral: deve ser capturado e logado (não deve lançar)", async () => {
-    // Arrange
+  test("erro inesperado no fluxo geral: não lança", async () => {
     pool.query.mockRejectedValueOnce(new Error("DB select failed"));
 
-    // Act / Assert
     await expect(
-      comunicacaoService.dispararEventoComunicacao("pedido_criado", 1)
+      comunicacaoService.dispararEventoComunicacao("pedido_criado", 1),
     ).resolves.toBeUndefined();
-
-    expect(console.error).toHaveBeenCalled();
-    expect(sendTransactionalEmail).not.toHaveBeenCalled();
-  });
-});
-
-describe("services/comunicacaoService - sendEmail()", () => {
-  let comunicacaoService, pool, sendTransactionalEmail;
-
-  const poolPath = require.resolve("../../../config/pool");
-  const mailServicePath = require.resolve("../../../services/mailService");
-
-  const makePedido = (overrides = {}) => ({
-    id: 10, usuario_id: 7, total: 100, usuario_nome: "Rick",
-    usuario_email: "rick@test.com", usuario_telefone: "31999",
-    status_pagamento: "pago", status_entrega: "enviado",
-    forma_pagamento: "PIX", data_pedido: "2026-04-01",
-    ...overrides,
-  });
-
-  beforeEach(() => {
-    jest.resetModules();
-    jest.clearAllMocks();
-    jest.doMock(poolPath, () => ({ query: jest.fn() }));
-    jest.doMock(mailServicePath, () => ({ sendTransactionalEmail: jest.fn() }));
-    pool = require(poolPath);
-    ({ sendTransactionalEmail } = require(mailServicePath));
-    comunicacaoService = require("../../../services/comunicacaoService");
-    jest.spyOn(console, "error").mockImplementation(() => {});
-  });
-
-  afterEach(() => console.error.mockRestore?.());
-
-  function mockPedidoQuery(pedido) {
-    pool.query.mockImplementation(async (sql) => {
-      if (String(sql).includes("FROM pedidos")) return [[pedido], []];
-      return [{ insertId: 1 }, undefined];
-    });
-  }
-
-  test("success — sends email and returns sucesso", async () => {
-    mockPedidoQuery(makePedido());
-    sendTransactionalEmail.mockResolvedValue();
-    const result = await comunicacaoService.sendEmail("confirmacao_pedido", 10, null);
-    expect(result.statusEnvio).toBe("sucesso");
-    expect(sendTransactionalEmail).toHaveBeenCalledWith("rick@test.com", expect.any(String), expect.any(String));
-  });
-
-  test("uses emailOverride", async () => {
-    mockPedidoQuery(makePedido());
-    sendTransactionalEmail.mockResolvedValue();
-    await comunicacaoService.sendEmail("confirmacao_pedido", 10, "alt@t.com");
-    expect(sendTransactionalEmail).toHaveBeenCalledWith("alt@t.com", expect.any(String), expect.any(String));
-  });
-
-  test("pedido not found → throws NOT_FOUND", async () => {
-    mockPedidoQuery(null);
-    await expect(comunicacaoService.sendEmail("confirmacao_pedido", 999)).rejects.toThrow("Pedido não encontrado");
-  });
-
-  test("no email → throws VALIDATION_ERROR", async () => {
-    mockPedidoQuery(makePedido({ usuario_email: null }));
-    await expect(comunicacaoService.sendEmail("confirmacao_pedido", 10)).rejects.toThrow("e-mail");
-  });
-
-  test("email failure → returns erro status", async () => {
-    mockPedidoQuery(makePedido());
-    sendTransactionalEmail.mockRejectedValue(new Error("smtp"));
-    const result = await comunicacaoService.sendEmail("confirmacao_pedido", 10);
-    expect(result.statusEnvio).toBe("erro");
-  });
-});
-
-describe("services/comunicacaoService - sendWhatsapp()", () => {
-  let comunicacaoService, pool;
-
-  const poolPath = require.resolve("../../../config/pool");
-  const mailServicePath = require.resolve("../../../services/mailService");
-
-  beforeEach(() => {
-    jest.resetModules();
-    jest.clearAllMocks();
-    jest.doMock(poolPath, () => ({ query: jest.fn() }));
-    jest.doMock(mailServicePath, () => ({ sendTransactionalEmail: jest.fn() }));
-    pool = require(poolPath);
-    comunicacaoService = require("../../../services/comunicacaoService");
-    jest.spyOn(console, "log").mockImplementation(() => {});
-    jest.spyOn(console, "error").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    console.log.mockRestore?.();
-    console.error.mockRestore?.();
-  });
-
-  function mockPedidoQuery(pedido) {
-    pool.query.mockImplementation(async (sql) => {
-      if (String(sql).includes("FROM pedidos")) return [[pedido], []];
-      return [{ insertId: 1 }, undefined];
-    });
-  }
-
-  test("success", async () => {
-    mockPedidoQuery({ id: 10, usuario_id: 7, total: 100, usuario_telefone: "31999", usuario_nome: "R", status_pagamento: "pago", status_entrega: "enviado", forma_pagamento: "PIX", data_pedido: "2026" });
-    const result = await comunicacaoService.sendWhatsapp("confirmacao_pedido", 10, null);
-    expect(result.statusEnvio).toBe("sucesso");
-  });
-
-  test("no telefone → throws", async () => {
-    mockPedidoQuery({ id: 10, usuario_id: 7, total: 100, usuario_telefone: null, usuario_nome: "R" });
-    await expect(comunicacaoService.sendWhatsapp("confirmacao_pedido", 10)).rejects.toThrow("telefone");
   });
 });

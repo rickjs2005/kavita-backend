@@ -38,4 +38,12 @@ router.post(
   ctrl.enviarWhatsapp
 );
 
+// GET /api/admin/comunicacao/whatsapp/preview?pedidoId=X&template=Y
+// Retorna link wa.me + mensagem renderizada (não envia).
+router.get("/whatsapp/preview", ctrl.previewWhatsapp);
+
+// GET /api/admin/comunicacao/logs/:pedidoId
+// Histórico de envios (ou links manuais gerados) para um pedido.
+router.get("/logs/:pedidoId", ctrl.listLogsPorPedido);
+
 module.exports = router;

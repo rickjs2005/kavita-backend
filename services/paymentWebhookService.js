@@ -153,6 +153,28 @@ async function handleWebhookEvent({
     await repo.updatePedidoPayment(conn, pedidoId, novoStatus, dataId);
     await repo.markWebhookEventProcessed(conn, dbEventId, novoStatus);
 
+    // B1 — webhook MP agora dispara comunicação automática quando o
+    // pagamento é aprovado. O comunicacaoService faz anti-duplicação
+    // por (pedido, template, canal), então webhook que chega 2x com
+    // event_id diferente não vira mensagem duplicada pro cliente.
+    //
+    // Fire-and-forget DEPOIS do commit — falha não reverte o status.
+    // Wrap em setImmediate pra não acoplar ao tempo do webhook handshake.
+    if (novoStatus === "pago") {
+      setImmediate(() => {
+        // Evitar require circular: orderService → comunicacaoService → ...
+        // → paymentWebhookService. Só importamos comunicacaoService aqui dentro.
+        const { dispararEventoComunicacao } = require("./comunicacaoService");
+        dispararEventoComunicacao("pagamento_aprovado", Number(pedidoId)).catch(
+          (err) =>
+            logger.warn(
+              { err, pedidoId },
+              "webhook.payment.notification_failed",
+            ),
+        );
+      });
+    }
+
     return "processed";
   });
 }

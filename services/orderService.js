@@ -137,11 +137,26 @@ async function updateDeliveryStatus(pedidoId, newStatus) {
     if (affectedRows === 0) return { found: false };
   }
 
-  if (newStatus === "enviado") {
+  // B1 — dispara comunicação automática nos 4 estados terminais ou
+  // intermediários relevantes pro cliente. Anti-duplicação fica por
+  // conta do comunicacaoService (consulta jaEnviado).
+  // "processando" não tem mensagem própria — é um detalhe operacional
+  // interno entre "em_separacao" e "enviado".
+  const eventoMap = {
+    em_separacao: "pedido_em_separacao",
+    enviado:      "pedido_enviado",
+    entregue:     "pedido_entregue",
+    cancelado:    "pedido_cancelado",
+  };
+  const evento = eventoMap[newStatus];
+  if (evento) {
     try {
-      await dispararEventoComunicacao("pedido_enviado", Number(pedidoId));
+      await dispararEventoComunicacao(evento, Number(pedidoId));
     } catch (err) {
-      logger.warn({ err, pedidoId }, "order: shipped notification failed");
+      logger.warn(
+        { err, pedidoId, evento },
+        "order: delivery notification failed",
+      );
     }
   }
 

@@ -80,7 +80,65 @@ async function insertLogComunicacao({
   );
 }
 
+/**
+ * Verifica se já existe log de comunicação enviada com sucesso para
+ * o mesmo (pedido, template, canal). Usado por dispararEventoComunicacao
+ * para evitar reenvio em duplicidade — webhook MP pode chegar 2x,
+ * status pode ser atualizado manualmente após webhook etc.
+ *
+ * "Sucesso" inclui o status "manual_pending" (link wa.me gerado), pois
+ * o sistema considera o evento como já comunicado mesmo que o admin
+ * não tenha clicado ainda — o link está disponível no painel.
+ *
+ * @param {object} params
+ * @param {number} params.pedidoId
+ * @param {string} params.tipoTemplate
+ * @param {string} params.canal       "email" | "whatsapp"
+ * @returns {Promise<boolean>}
+ */
+async function jaEnviado({ pedidoId, tipoTemplate, canal }) {
+  if (!pedidoId || !tipoTemplate || !canal) return false;
+  const [rows] = await pool.query(
+    `
+    SELECT 1
+      FROM comunicacoes_enviadas
+     WHERE pedido_id = ?
+       AND tipo_template = ?
+       AND canal = ?
+       AND status_envio IN ('sucesso', 'manual_pending')
+     LIMIT 1
+    `,
+    [pedidoId, tipoTemplate, canal],
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Lista os logs de comunicação de um pedido (ordem mais recente primeiro).
+ * Usado pelo painel admin para mostrar histórico + links wa.me pendentes.
+ *
+ * @param {number} pedidoId
+ * @returns {Promise<Array>}
+ */
+async function listarPorPedido(pedidoId) {
+  const [rows] = await pool.query(
+    `
+    SELECT
+      id, canal, tipo_template, destino, assunto, mensagem,
+      status_envio, erro, criado_em
+      FROM comunicacoes_enviadas
+     WHERE pedido_id = ?
+     ORDER BY criado_em DESC
+     LIMIT 50
+    `,
+    [pedidoId],
+  );
+  return rows;
+}
+
 module.exports = {
   getPedidoBasico,
   insertLogComunicacao,
+  jaEnviado,
+  listarPorPedido,
 };

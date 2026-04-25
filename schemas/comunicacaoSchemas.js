@@ -5,9 +5,14 @@
 const { z } = require("zod");
 
 const TEMPLATE_IDS = [
+  // Ciclo de vida do pedido (B1)
   "confirmacao_pedido",
   "pagamento_aprovado",
+  "pedido_em_separacao",
   "pedido_enviado",
+  "pedido_entregue",
+  "pedido_cancelado",
+  // Ocorrências de endereço/correção
   "ocorrencia_confirmacao",
   "ocorrencia_solicitar_dados",
   "ocorrencia_taxa_extra",
