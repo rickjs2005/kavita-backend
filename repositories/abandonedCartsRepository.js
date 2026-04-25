@@ -148,6 +148,7 @@ async function findAbandonedCartForWhatsApp(id) {
       ca.itens,
       ca.total_estimado,
       ca.recuperado,
+      ca.criado_em,
       u.nome     AS usuario_nome,
       u.telefone AS usuario_telefone
     FROM carrinhos_abandonados ca
