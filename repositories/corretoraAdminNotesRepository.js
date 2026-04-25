@@ -43,4 +43,21 @@ async function deleteById({ id, corretora_id }) {
   return result.affectedRows;
 }
 
-module.exports = { listForCorretora, create, deleteById };
+/**
+ * Anti-spam para alertas automáticos (G5 — kyc_stale_alert e similares).
+ * Retorna true se já existe nota da mesma category criada hoje (date local
+ * do servidor MySQL).
+ */
+async function hasNoteTodayByCategory({ corretora_id, category }) {
+  const [rows] = await pool.query(
+    `SELECT id FROM corretora_admin_notes
+      WHERE corretora_id = ?
+        AND category = ?
+        AND DATE(created_at) = CURDATE()
+      LIMIT 1`,
+    [corretora_id, category],
+  );
+  return rows.length > 0;
+}
+
+module.exports = { listForCorretora, create, deleteById, hasNoteTodayByCategory };

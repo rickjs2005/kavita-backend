@@ -90,4 +90,78 @@ async function findByCorretoraId(corretora_id) {
   return hydrate(rows[0]);
 }
 
-module.exports = { upsert, findByCorretoraId };
+/**
+ * Lista corretoras com KYC parado em um status (G5 — alerta de KYC pendente).
+ *
+ * Regras (status terminais ficam de fora):
+ *   - status='pending_verification': mede idade desde corretoras.created_at
+ *     (corretora cadastrou conta mas nunca submeteu CNPJ).
+ *   - status='under_review': mede idade desde corretora_kyc.updated_at
+ *     (corretora submeteu, admin sentado em cima da revisão). LEFT JOIN
+ *     com fallback pra corretoras.created_at caso o snapshot tenha sumido.
+ *
+ * Filtros conservadores:
+ *   - corretoras.status = 'active'
+ *   - corretoras.deleted_at IS NULL
+ *
+ * Retorna lista ordenada por idade desc (mais antigas primeiro).
+ *
+ * @param {{status: 'pending_verification'|'under_review', olderThanDays: number}} opts
+ * @returns {Promise<Array<{
+ *   corretora_id: number,
+ *   nome: string,
+ *   email: string|null,
+ *   kyc_status: string,
+ *   stale_since: Date,
+ *   age_days: number,
+ * }>>}
+ */
+async function findStaleByStatus({ status, olderThanDays }) {
+  if (status !== "pending_verification" && status !== "under_review") {
+    throw new Error(
+      `findStaleByStatus: status invalido "${status}". ` +
+        "Apenas pending_verification ou under_review.",
+    );
+  }
+  const days = Math.max(1, Number(olderThanDays) || 0);
+
+  if (status === "pending_verification") {
+    const [rows] = await pool.query(
+      `SELECT c.id   AS corretora_id,
+              c.name AS nome,
+              c.email,
+              c.kyc_status,
+              c.created_at AS stale_since,
+              TIMESTAMPDIFF(DAY, c.created_at, NOW()) AS age_days
+         FROM corretoras c
+        WHERE c.kyc_status = 'pending_verification'
+          AND c.status = 'active'
+          AND c.deleted_at IS NULL
+          AND c.created_at < (NOW() - INTERVAL ? DAY)
+        ORDER BY c.created_at ASC`,
+      [days],
+    );
+    return rows;
+  }
+
+  // under_review
+  const [rows] = await pool.query(
+    `SELECT c.id   AS corretora_id,
+            c.name AS nome,
+            c.email,
+            c.kyc_status,
+            COALESCE(k.updated_at, c.created_at) AS stale_since,
+            TIMESTAMPDIFF(DAY, COALESCE(k.updated_at, c.created_at), NOW()) AS age_days
+       FROM corretoras c
+       LEFT JOIN corretora_kyc k ON k.corretora_id = c.id
+      WHERE c.kyc_status = 'under_review'
+        AND c.status = 'active'
+        AND c.deleted_at IS NULL
+        AND COALESCE(k.updated_at, c.created_at) < (NOW() - INTERVAL ? DAY)
+      ORDER BY COALESCE(k.updated_at, c.created_at) ASC`,
+    [days],
+  );
+  return rows;
+}
+
+module.exports = { upsert, findByCorretoraId, findStaleByStatus };
