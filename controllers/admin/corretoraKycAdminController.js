@@ -8,6 +8,7 @@ const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const kycService = require("../../services/corretoraKycService");
+const kycStaleScanService = require("../../services/kycStaleScanService");
 const {
   runProviderCheckSchema,
   approveManualSchema,
@@ -140,10 +141,56 @@ async function reject(req, res, next) {
   }
 }
 
+/**
+ * G5 — lista corretoras com KYC parado, separadas por status.
+ *
+ * Read-only. NAO altera estado de corretora ou snapshot. Endpoint
+ * destinado a widget/dashboard admin (consumo periodico no frontend).
+ *
+ * Query params (opcionais, sobrescrevem env defaults):
+ *   ?pendingDays=7   threshold para pending_verification
+ *   ?reviewDays=3    threshold para under_review
+ */
+async function listStale(req, res, next) {
+  try {
+    const pendingDays = req.query.pendingDays
+      ? Number(req.query.pendingDays)
+      : undefined;
+    const reviewDays = req.query.reviewDays
+      ? Number(req.query.reviewDays)
+      : undefined;
+    const data = await kycStaleScanService.list({
+      pendingDays: Number.isFinite(pendingDays) ? pendingDays : undefined,
+      reviewDays: Number.isFinite(reviewDays) ? reviewDays : undefined,
+    });
+    return response.ok(res, {
+      pending: data.pending,
+      under_review: data.underReview,
+      thresholds: data.thresholds,
+      counts: {
+        pending: data.pending.length,
+        under_review: data.underReview.length,
+        total: data.pending.length + data.underReview.length,
+      },
+    });
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao listar KYC parado.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
 module.exports = {
   getStatus,
   runCheck,
   approve,
   approveManual,
   reject,
+  listStale,
 };

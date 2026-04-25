@@ -33,6 +33,18 @@ const {
 // ─── Corretoras CRUD ────────────────────────────────────────────────────────
 
 router.get("/", ctrl.listCorretoras);
+
+// G5 — KYC parado. Tem que vir ANTES de /corretoras/:id para
+// nao ser interpretado como id="kyc-stale". Read-only, consumido por
+// widget admin futuro.
+const kycAdminCtrl = require("../../controllers/admin/corretoraKycAdminController");
+const requirePermission = require("../../middleware/requirePermission");
+router.get(
+  "/corretoras/kyc-stale",
+  requirePermission("mercado_cafe_view"),
+  kycAdminCtrl.listStale,
+);
+
 router.get("/corretoras/:id", ctrl.getById);
 router.get("/corretoras/:id/audit-logs", ctrl.getCorretoraAuditLogs);
 router.get(
