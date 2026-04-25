@@ -28,6 +28,7 @@
 
 const { sendTransactionalEmail } = require("./mailService");
 const { sendWhatsapp: sendWhatsappRaw, getProvider } = require("./whatsapp");
+const { resolveTemplateForEvent } = require("./whatsapp/templateMap");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const repo = require("../repositories/comunicacaoRepository");
@@ -284,9 +285,21 @@ async function dispararEventoComunicacao(tipoEvento, pedidoId) {
         );
       } else {
         const mensagem = buildWhatsapp(templateId, pedido);
+        // B3 — em modo api, anexa templateId aprovado pela Meta + params
+        // ordenados conforme convenção em services/whatsapp/templateMap.js.
+        // Em modo manual o options é ignorado pelo adapter.
+        // Sem env de template setada, options vai vazio → adapter api
+        // tentaria texto livre (rejeitado fora da janela 24h). Por isso
+        // a doc deixa claro: setar templates antes de WHATSAPP_PROVIDER=api.
+        const tplOptions =
+          getProvider() === "api"
+            ? resolveTemplateForEvent(tipoEvento, pedido) || {}
+            : {};
+
         const result = await sendWhatsappRaw({
           telefone: pedido.usuario_telefone,
           mensagem,
+          options: tplOptions,
         });
         const statusEnvio =
           result.status === "sent" ? "sucesso"
