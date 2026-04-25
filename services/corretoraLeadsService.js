@@ -165,6 +165,47 @@ async function createLeadFromPublic({ slug, data, meta }) {
       ),
     );
 
+  // G3 — notificação no painel da corretora (sino) para LEAD INÉDITO.
+  // Simétrico com a notif `lead.recontato` que já existe pra produtor
+  // que voltou a chamar. Fire-and-forget — falha aqui apenas loga,
+  // não bloqueia criação nem disparo de e-mail.
+  //
+  // Não há risco de duplicar com `lead.recontato`: aquela só é criada
+  // no caminho de dedup (acima, no early return antes desta linha).
+  // Se chegamos aqui, é lead novo de fato e a notif certa é `new_lead`.
+  {
+    const isHighPriority =
+      data.volume_range === "200_500" ||
+      data.volume_range === "500_mais" ||
+      isCorregoEspecial(data.corrego_localidade);
+    const titlePrefix = isHighPriority ? "⚡ Novo lead alta prioridade" : "Novo lead";
+    const cidadeStr = data.cidade ? ` · ${data.cidade}` : "";
+    notificationsRepo
+      .create({
+        corretora_id: corretora.id,
+        type: "new_lead",
+        title: `${titlePrefix} — ${data.nome}`,
+        body: `${data.nome}${cidadeStr} acabou de procurar você.${
+          data.urgencia === "hoje" ? " Marcou urgência: HOJE." : ""
+        } Responder rápido faz diferença.`,
+        link: `/painel/corretora/leads/${leadId}`,
+        meta: {
+          lead_id: leadId,
+          source: "public_form",
+          high_priority: isHighPriority,
+          volume_range: data.volume_range ?? null,
+          objetivo: data.objetivo ?? null,
+          urgencia: data.urgencia ?? null,
+        },
+      })
+      .catch((err) => {
+        logger.warn(
+          { err, leadId, corretoraId: corretora.id },
+          "corretora.lead.notification_create_failed",
+        );
+      });
+  }
+
   // Sprint 7 — Se o produtor enviou e-mail no formulário (canal_preferido
   // = email OU mensagem incluiu e-mail), enviamos um e-mail leve a ele
   // com o link de "lote vendido". Sem e-mail no lead, não há como
@@ -173,8 +214,8 @@ async function createLeadFromPublic({ slug, data, meta }) {
   // (no rodapé como sugestão de URL para passar ao produtor) e fica
   // pronto para a v2 quando capturarmos email do produtor.
 
-  // Notificação fire-and-forget — nunca falha a criação do lead por causa
-  // de um problema de e-mail.
+  // Notificação por e-mail fire-and-forget — nunca falha a criação do
+  // lead por causa de um problema de e-mail.
   notifyCorretoraOfNewLead(corretora, { id: leadId, ...data }).catch((err) => {
     logger.warn(
       {
