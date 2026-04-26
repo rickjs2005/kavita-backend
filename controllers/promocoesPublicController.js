@@ -39,6 +39,16 @@ const listPromocoes = async (_req, res, next) => {
 
 // ---------------------------------------------------------------------------
 // GET /api/public/promocoes/:productId
+//
+// Sem promoção ativa NÃO É erro — e' estado valido. Retornamos 200 + data:null
+// em vez de 404 pra evitar:
+//   - Poluicao de console no frontend (browser loga 404 vermelho mesmo
+//     que o app trate como esperado)
+//   - SWR/cache no client tratando como erro vs sucesso
+//   - Apps externos achando que produto nao existe (404 e' ambiguo:
+//     "produto X nao existe" vs "produto X existe sem promo")
+//
+// Outros codigos (500, etc) continuam erro real.
 // ---------------------------------------------------------------------------
 
 const getPromocao = async (req, res, next) => {
@@ -46,6 +56,12 @@ const getPromocao = async (req, res, next) => {
     const data = await svc.getPromocaoByProductId(req.params.productId);
     return response.ok(res, data);
   } catch (err) {
+    // "Sem promocao" -> 200 + null. Forca campo data:null no envelope
+    // (response.ok omite data quando null — aqui precisamos explicito
+    // pra o apiClient unwrap retornar null e nao o envelope).
+    if (err instanceof AppError && err.code === ERROR_CODES.NOT_FOUND) {
+      return res.status(200).json({ ok: true, data: null });
+    }
     return next(
       err instanceof AppError
         ? err
