@@ -75,6 +75,13 @@ try {
   logger.warn({ err }, "kyc stale scan job not loaded");
 }
 
+let rotasOrfasScanJob;
+try {
+  rotasOrfasScanJob = require("../jobs/rotasOrfasScanJob");
+} catch (err) {
+  logger.warn({ err }, "rotas orfas scan job not loaded");
+}
+
 function startWorkers() {
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
@@ -145,6 +152,12 @@ function startWorkers() {
   if (kycStaleScanJob && typeof kycStaleScanJob.register === "function") {
     kycStaleScanJob.register().catch((err) => {
       logger.error({ err }, "kyc stale scan job registration failed");
+    });
+  }
+
+  if (rotasOrfasScanJob && typeof rotasOrfasScanJob.register === "function") {
+    rotasOrfasScanJob.register().catch((err) => {
+      logger.error({ err }, "rotas orfas scan job registration failed");
     });
   }
 }
