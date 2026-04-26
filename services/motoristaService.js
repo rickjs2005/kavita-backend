@@ -234,6 +234,28 @@ async function marcarEntregue(paradaId, motoristaId, { observacao } = {}, ctx = 
         if (parada.status === "entregue") {
           return paradasRepo.findById(paradaId, conn);
         }
+
+        // Opt-in: exigir comprovante salvo antes de aceitar a entrega.
+        // Endereca o caso onde POST /comprovante falha 500 e o frontend
+        // chama POST /entregue mesmo assim — sem este guard, parada vira
+        // 'entregue' sem nenhuma evidencia salva no banco.
+        // Default OFF (preserva regra de produto da Fase 5: comprovante
+        // opcional). Operacao liga em prod com 1 env var.
+        if (
+          String(process.env.MOTORISTA_REQUIRE_COMPROVANTE || "false")
+            .toLowerCase() === "true"
+        ) {
+          const temFoto = !!parada.comprovante_foto_url;
+          const temAssinatura = !!parada.assinatura_url;
+          if (!temFoto && !temAssinatura) {
+            throw new AppError(
+              "Envie a foto ou assinatura do comprovante antes de marcar como entregue.",
+              ERROR_CODES.CONFLICT,
+              409,
+              { motivo: "comprovante_ausente" },
+            );
+          }
+        }
         await paradasRepo.updateStatus(
           paradaId,
           {
@@ -421,8 +443,13 @@ async function fixarPosicao(
 /**
  * Fase 5 — salva foto de comprovante e/ou assinatura na parada.
  *
- * Aceita ambos opcionais: motorista pode enviar so foto, so assinatura,
- * ambos, ou nenhum (caso em que e' no-op silencioso).
+ * Aceita ambos opcionais (compat Fase 5: motorista pode pular).
+ * O 400 explicito quando ambos vazios e' opt-in via env
+ * MOTORISTA_REQUIRE_COMPROVANTE_PAYLOAD=true.
+ *
+ * Atomicidade: se persistMedia OU updateComprovante falhar, removemos
+ * do disco quaisquer arquivos ja' gravados (best-effort via remove queue),
+ * pra nao deixar lixo / mostrar comprovante orfao no admin.
  *
  * @param {{
  *   foto?: Express.Multer.File,
@@ -447,51 +474,113 @@ async function salvarComprovante(paradaId, motoristaId, payload = {}, ctx = {}) 
         );
       }
 
-      const updates = {};
+      const hasFoto = !!payload.foto;
+      const hasAssinatura = !!(
+        payload.assinaturaPng?.buffer && payload.assinaturaPng.buffer.length > 0
+      );
 
-      if (payload.foto) {
-        const [uploaded] = await mediaService.persistMedia([payload.foto], {
-          folder: "entregas",
-        });
-        if (uploaded?.path) {
-          updates.comprovante_foto_url = uploaded.path;
+      // Opt-in: bloquear payload vazio com 400 amigavel.
+      if (!hasFoto && !hasAssinatura) {
+        if (
+          String(process.env.MOTORISTA_REQUIRE_COMPROVANTE_PAYLOAD || "false")
+            .toLowerCase() === "true"
+        ) {
+          throw new AppError(
+            "Envie ao menos uma foto OU assinatura como comprovante.",
+            ERROR_CODES.VALIDATION_ERROR,
+            400,
+          );
         }
-      }
-
-      if (payload.assinaturaPng?.buffer?.length) {
-        // Reusa o mesmo storage adapter via persistMedia. Constroi um
-        // file-like multer sintetico (so' precisa de buffer + mimetype +
-        // originalname).
-        const fakeFile = {
-          buffer: payload.assinaturaPng.buffer,
-          mimetype: payload.assinaturaPng.mimetype || "image/png",
-          originalname: `assinatura-parada-${paradaId}.png`,
-          size: payload.assinaturaPng.buffer.length,
-        };
-        const [uploaded] = await mediaService.persistMedia([fakeFile], {
-          folder: "entregas",
-        });
-        if (uploaded?.path) {
-          updates.assinatura_url = uploaded.path;
-        }
-      }
-
-      if (Object.keys(updates).length === 0) {
-        // Nada pra atualizar — devolve a parada atual sem mexer
+        // Fase 5 default: no-op silencioso (preserva comportamento atual).
         return paradasRepo.findById(paradaId);
       }
 
-      await paradasRepo.updateComprovante(paradaId, updates);
-      logger.info(
-        {
-          paradaId,
-          motoristaId,
-          temFoto: !!updates.comprovante_foto_url,
-          temAssinatura: !!updates.assinatura_url,
-        },
-        "motorista.parada.comprovante",
-      );
-      return paradasRepo.findById(paradaId);
+      const updates = {};
+      const persistedTargets = []; // pra rollback se DB falhar
+
+      try {
+        if (hasFoto) {
+          const [uploaded] = await mediaService.persistMedia([payload.foto], {
+            folder: "entregas",
+          });
+          if (!uploaded?.path) {
+            throw new AppError(
+              "Falha ao salvar a foto do comprovante.",
+              ERROR_CODES.SERVER_ERROR,
+              500,
+            );
+          }
+          updates.comprovante_foto_url = uploaded.path;
+          persistedTargets.push(uploaded);
+        }
+
+        if (hasAssinatura) {
+          // Reusa o mesmo storage adapter via persistMedia. Constroi um
+          // file-like sintetico — diskAdapter aceita buffer (in-memory).
+          const fakeFile = {
+            buffer: payload.assinaturaPng.buffer,
+            mimetype: payload.assinaturaPng.mimetype || "image/png",
+            originalname: `assinatura-parada-${paradaId}.png`,
+            size: payload.assinaturaPng.buffer.length,
+          };
+          const [uploaded] = await mediaService.persistMedia([fakeFile], {
+            folder: "entregas",
+          });
+          if (!uploaded?.path) {
+            throw new AppError(
+              "Falha ao salvar a assinatura do comprovante.",
+              ERROR_CODES.SERVER_ERROR,
+              500,
+            );
+          }
+          updates.assinatura_url = uploaded.path;
+          persistedTargets.push(uploaded);
+        }
+
+        await paradasRepo.updateComprovante(paradaId, updates);
+        logger.info(
+          {
+            paradaId,
+            motoristaId,
+            temFoto: !!updates.comprovante_foto_url,
+            temAssinatura: !!updates.assinatura_url,
+          },
+          "motorista.parada.comprovante",
+        );
+        return paradasRepo.findById(paradaId);
+      } catch (err) {
+        // Rollback de midia: o que ja' foi gravado em disco vira orfao
+        // se o UPDATE falhar (ou se a 2a midia falhar e a 1a ja' gravou).
+        // enqueueOrphanCleanup e' fire-and-forget seguro.
+        if (persistedTargets.length > 0) {
+          mediaService
+            .enqueueOrphanCleanup(persistedTargets)
+            .catch((cleanErr) =>
+              logger.warn(
+                { err: cleanErr?.message, paradaId, motoristaId },
+                "motorista.parada.comprovante.cleanup_failed",
+              ),
+            );
+        }
+        // Re-classifica TypeError cru (defesa-em-profundidade caso outro
+        // adapter envie undefined em algum path) como erro 500 controlado.
+        if (
+          err &&
+          err.name === "TypeError" &&
+          /must be of type string/i.test(err.message || "")
+        ) {
+          logger.error(
+            { err: err.message, paradaId, motoristaId },
+            "motorista.parada.comprovante.path_undefined",
+          );
+          throw new AppError(
+            "Configuracao de upload de midia invalida. Contate o suporte.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          );
+        }
+        throw err;
+      }
     },
   );
   if (result && result.__replayed) {

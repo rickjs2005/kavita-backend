@@ -431,6 +431,122 @@ describe("persistMedia — disk adapter", () => {
   });
 });
 
+// ===========================================================================
+// 3.b persistMedia — caminho in-memory (buffer)
+// Bug original: salvarComprovante construia fakeFile com buffer mas SEM
+// filename — diskAdapter usava path.join(uploadRoot, file.filename) e
+// quebrava com TypeError: path argument must be of type string. Received
+// undefined. Os tests abaixo travam o fix.
+// ===========================================================================
+
+describe("persistMedia — in-memory (buffer, sem filename)", () => {
+  function loadWithWriteFile() {
+    return loadModule({
+      fsOverrides: {
+        existsSync: jest.fn().mockReturnValue(true),
+        mkdirSync: jest.fn(),
+        renameSync: jest.fn(),
+        writeFileSync: jest.fn(),
+        unlinkSync: jest.fn(),
+      },
+    });
+  }
+
+  test("file com buffer (sem filename): NAO lanca TypeError + grava via writeFileSync", async () => {
+    const { svc, mockFs } = loadWithWriteFile();
+    const file = {
+      buffer: Buffer.from("fake png bytes"),
+      mimetype: "image/png",
+      originalname: "assinatura.png",
+      size: 14,
+    };
+    const [r] = await svc.persistMedia([file], { folder: "entregas" });
+
+    expect(mockFs.writeFileSync).toHaveBeenCalledTimes(1);
+    expect(mockFs.writeFileSync).toHaveBeenCalledWith(
+      expect.stringContaining("entregas"),
+      file.buffer,
+      expect.objectContaining({ flag: "wx" }),
+    );
+    expect(r.path).toMatch(/^\/uploads\/entregas\/.+\.png$/);
+    // NAO deve renomear — vem direto do buffer
+    expect(mockFs.renameSync).not.toHaveBeenCalled();
+  });
+
+  test("file sem buffer E sem filename: erro CLARO (sem TypeError node:path)", async () => {
+    const { svc } = loadWithWriteFile();
+    const file = { mimetype: "image/png", originalname: "x.png" };
+    await expect(
+      svc.persistMedia([file], { folder: "entregas" }),
+    ).rejects.toThrow(/precisa de buffer.*ou filename/i);
+  });
+
+  test("file null no array: erro CLARO em vez de TypeError", async () => {
+    const { svc } = loadWithWriteFile();
+    await expect(
+      svc.persistMedia([null], { folder: "entregas" }),
+    ).rejects.toThrow(/Arquivo invalido/i);
+  });
+
+  test("file com buffer vazio: tratado como invalido (precisa buffer ou filename)", async () => {
+    const { svc } = loadWithWriteFile();
+    const file = {
+      buffer: Buffer.alloc(0),
+      mimetype: "image/png",
+      originalname: "empty.png",
+    };
+    await expect(
+      svc.persistMedia([file], { folder: "entregas" }),
+    ).rejects.toThrow(/precisa de buffer.*ou filename/i);
+  });
+
+  test("rollback: 1o arquivo grava, 2o falha → 1o e' removido (best-effort)", async () => {
+    const writeFileSync = jest
+      .fn()
+      .mockImplementationOnce(() => {})
+      .mockImplementationOnce(() => {
+        throw new Error("EIO disk full");
+      });
+    const unlinkSync = jest.fn();
+    const { svc } = loadModule({
+      fsOverrides: {
+        existsSync: jest.fn().mockReturnValue(true),
+        mkdirSync: jest.fn(),
+        renameSync: jest.fn(),
+        writeFileSync,
+        unlinkSync,
+      },
+    });
+
+    const file1 = {
+      buffer: Buffer.from("a"),
+      mimetype: "image/png",
+      originalname: "a.png",
+    };
+    const file2 = {
+      buffer: Buffer.from("b"),
+      mimetype: "image/png",
+      originalname: "b.png",
+    };
+
+    await expect(
+      svc.persistMedia([file1, file2], { folder: "entregas" }),
+    ).rejects.toThrow(/EIO disk full/);
+
+    // O 1o que ja' tinha gravado deve ser removido pra nao deixar lixo
+    expect(unlinkSync).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ===========================================================================
+// 3.c MEDIA_UPLOAD_DIR vazio: fail-fast no boot
+// Note: o guard explicito no createDiskAdapter (`if (UPLOAD_DIR vazio)
+// throw`) e' cobertura defensiva contra MEDIA_UPLOAD_DIR=" " ou injecao
+// de string com so' espacos. Em runtime normal o storageUtils ja' tem
+// fallback "uploads" via `||`. Nao testamos com jest.doMock aqui pra evitar
+// poluir o module registry dos outros tests deste arquivo.
+// ===========================================================================
+
 // ---------------------------------------------------------------------------
 // path é necessário para isAbsolute no teste "com folder: key é caminho absoluto"
 // ---------------------------------------------------------------------------

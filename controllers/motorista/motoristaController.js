@@ -136,9 +136,19 @@ async function fixarPosicao(req, res, next) {
 
 /**
  * Fase 5 — comprovante de entrega.
- * Aceita multipart com `foto` (Express.Multer.File) e/ou `assinatura`
- * como base64 dataURL no body string `assinaturaBase64` (PNG canvas).
+ * Aceita multipart com `foto` (Express.Multer.File via multer.single) e/ou
+ * `assinatura` como base64 dataURL no body string `assinaturaBase64`
+ * (PNG canvas, gerado pelo SignaturePad no frontend).
+ *
+ * Limites:
+ *   - foto: imagem (jpeg/png/webp/gif), 100 MB (filter+limit do multer).
+ *     Multer rejeita field-name diferente de "foto" com Unexpected field.
+ *   - assinaturaBase64: string base64 de no maximo ~3 MB (4 MB de base64).
+ *     Valor maior e' rejeitado com 400 amigavel — payload de canvas tipico
+ *     fica em <100 KB, qualquer coisa muito acima e' suspeito ou erro.
  */
+const MAX_ASSINATURA_BASE64_BYTES = 4 * 1024 * 1024; // 4 MB de base64 ≈ 3 MB de PNG
+
 async function salvarComprovante(req, res, next) {
   try {
     const id = _parseId(req.params.id);
@@ -147,16 +157,48 @@ async function salvarComprovante(req, res, next) {
     if (req.file) {
       payload.foto = req.file;
     }
+
     const assinaturaB64 = req.body?.assinaturaBase64;
-    if (typeof assinaturaB64 === "string" && assinaturaB64.length > 100) {
-      // Aceita 'data:image/png;base64,XXXXX' ou base64 puro
-      const match = /^data:image\/(png|jpeg|jpg);base64,(.+)$/i.exec(assinaturaB64);
-      const raw = match ? match[2] : assinaturaB64;
-      const mime = match ? `image/${match[1].toLowerCase()}` : "image/png";
-      payload.assinaturaPng = {
-        buffer: Buffer.from(raw, "base64"),
-        mimetype: mime,
-      };
+    if (assinaturaB64 != null) {
+      if (typeof assinaturaB64 !== "string") {
+        throw new AppError(
+          "assinaturaBase64 deve ser string base64 ou data URL.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400,
+        );
+      }
+      if (assinaturaB64.length > MAX_ASSINATURA_BASE64_BYTES) {
+        throw new AppError(
+          "Assinatura muito grande. Reduza a area do canvas e tente novamente.",
+          ERROR_CODES.VALIDATION_ERROR,
+          413,
+        );
+      }
+      // Aceita 'data:image/png;base64,XXXXX' ou base64 puro. Strings curtas
+      // demais sao tratadas como ausencia (canvas vazio).
+      if (assinaturaB64.length > 100) {
+        const match = /^data:image\/(png|jpeg|jpg);base64,(.+)$/i.exec(assinaturaB64);
+        const raw = match ? match[2] : assinaturaB64;
+        const mime = match ? `image/${match[1].toLowerCase()}` : "image/png";
+        let buffer;
+        try {
+          buffer = Buffer.from(raw, "base64");
+        } catch {
+          throw new AppError(
+            "assinaturaBase64 invalida: nao decodifica como base64.",
+            ERROR_CODES.VALIDATION_ERROR,
+            400,
+          );
+        }
+        if (!buffer || buffer.length === 0) {
+          throw new AppError(
+            "assinaturaBase64 invalida ou vazia.",
+            ERROR_CODES.VALIDATION_ERROR,
+            400,
+          );
+        }
+        payload.assinaturaPng = { buffer, mimetype: mime };
+      }
     }
 
     const data = await motoristaService.salvarComprovante(

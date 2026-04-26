@@ -314,6 +314,317 @@ describe("services/motoristaService", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // salvarComprovante (Fase 5) + atomicidade
+  // ---------------------------------------------------------------------------
+
+  function loadComprovanteMocks({
+    paradaStub,
+    persistMediaStub = jest.fn().mockResolvedValue([
+      { path: "/uploads/entregas/123-uuid.png", key: "/abs/123-uuid.png" },
+    ]),
+    enqueueOrphanCleanupStub = jest.fn().mockResolvedValue(),
+    updateComprovanteStub = jest.fn().mockResolvedValue(1),
+    requireComprovante,
+    requireComprovantePayload,
+  } = {}) {
+    jest.resetModules();
+    if (requireComprovante === undefined) {
+      delete process.env.MOTORISTA_REQUIRE_COMPROVANTE;
+    } else {
+      process.env.MOTORISTA_REQUIRE_COMPROVANTE = requireComprovante;
+    }
+    if (requireComprovantePayload === undefined) {
+      delete process.env.MOTORISTA_REQUIRE_COMPROVANTE_PAYLOAD;
+    } else {
+      process.env.MOTORISTA_REQUIRE_COMPROVANTE_PAYLOAD = requireComprovantePayload;
+    }
+
+    const txConn = {
+      query: jest.fn(async () => [[]]),
+    };
+    jest.doMock(require.resolve("../../../config/pool"), () => ({
+      query: jest.fn().mockResolvedValue([[], []]),
+      getConnection: jest.fn().mockResolvedValue({
+        query: txConn.query,
+        beginTransaction: jest.fn().mockResolvedValue(),
+        commit: jest.fn().mockResolvedValue(),
+        rollback: jest.fn().mockResolvedValue(),
+        release: jest.fn(),
+      }),
+    }));
+    jest.doMock(require.resolve("../../../repositories/rotasRepository"), () => ({
+      findById: jest.fn().mockResolvedValue(null),
+      recalcTotals: jest.fn().mockResolvedValue(),
+    }));
+    jest.doMock(
+      require.resolve("../../../repositories/rotaParadasRepository"),
+      () => ({
+        findById: jest.fn().mockResolvedValue(paradaStub),
+        listByRotaId: jest.fn().mockResolvedValue([]),
+        listItensDoPedido: jest.fn().mockResolvedValue([]),
+        updateStatus: jest.fn().mockResolvedValue(1),
+        updateComprovante: updateComprovanteStub,
+      }),
+    );
+    jest.doMock(
+      require.resolve("../../../repositories/pedidoPosicoesRepository"),
+      () => ({}),
+    );
+    jest.doMock(
+      require.resolve("../../../repositories/motoristasRepository"),
+      () => ({ findById: jest.fn().mockResolvedValue({ id: 5, ativo: 1 }) }),
+    );
+    jest.doMock(require.resolve("../../../services/rotasService"), () => ({
+      obterRotaCompleta: jest.fn().mockResolvedValue({ paradas: [] }),
+      alterarStatus: jest.fn(),
+    }));
+    jest.doMock(require.resolve("../../../services/mediaService"), () => ({
+      persistMedia: persistMediaStub,
+      enqueueOrphanCleanup: enqueueOrphanCleanupStub,
+      removeMedia: jest.fn().mockResolvedValue(),
+    }));
+    const loggerStub = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    jest.doMock(require.resolve("../../../lib/logger"), () => loggerStub);
+    return Object.assign(require("../../../services/motoristaService"), {
+      _loggerStub: loggerStub,
+      _persistMediaStub: persistMediaStub,
+      _enqueueOrphanCleanupStub: enqueueOrphanCleanupStub,
+      _updateComprovanteStub: updateComprovanteStub,
+    });
+  }
+
+  test("salvarComprovante: happy path com foto + assinatura", async () => {
+    const persistMediaStub = jest
+      .fn()
+      .mockResolvedValueOnce([{ path: "/uploads/entregas/foto.jpg", key: "/abs/foto.jpg" }])
+      .mockResolvedValueOnce([{ path: "/uploads/entregas/sig.png", key: "/abs/sig.png" }]);
+    const updateComprovanteStub = jest.fn().mockResolvedValue(1);
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, pedido_id: 73, rota_motorista_id: 6,
+        rota_status: "em_rota", status: "em_andamento",
+      },
+      persistMediaStub,
+      updateComprovanteStub,
+    });
+
+    await svc.salvarComprovante(
+      17, 6,
+      {
+        foto: { filename: "foto.jpg", originalname: "foto.jpg", mimetype: "image/jpeg" },
+        assinaturaPng: { buffer: Buffer.from("png-bytes"), mimetype: "image/png" },
+      },
+      {},
+    );
+
+    expect(persistMediaStub).toHaveBeenCalledTimes(2);
+    expect(updateComprovanteStub).toHaveBeenCalledWith(17, {
+      comprovante_foto_url: "/uploads/entregas/foto.jpg",
+      assinatura_url: "/uploads/entregas/sig.png",
+    });
+  });
+
+  test("salvarComprovante: payload vazio + flag default OFF = no-op (preserva Fase 5)", async () => {
+    const persistMediaStub = jest.fn();
+    const updateComprovanteStub = jest.fn();
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, rota_motorista_id: 6,
+        rota_status: "em_rota", status: "em_andamento",
+      },
+      persistMediaStub,
+      updateComprovanteStub,
+    });
+    await svc.salvarComprovante(17, 6, {}, {});
+    expect(persistMediaStub).not.toHaveBeenCalled();
+    expect(updateComprovanteStub).not.toHaveBeenCalled();
+  });
+
+  test("salvarComprovante: payload vazio + REQUIRE_PAYLOAD=true = 400 amigavel", async () => {
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, rota_motorista_id: 6,
+        rota_status: "em_rota", status: "em_andamento",
+      },
+      requireComprovantePayload: "true",
+    });
+    await expect(svc.salvarComprovante(17, 6, {}, {})).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+
+  test("salvarComprovante: rota nao em_rota = 409 (sem persistir nada)", async () => {
+    const persistMediaStub = jest.fn();
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, rota_motorista_id: 6,
+        rota_status: "pronta", status: "pendente",
+      },
+      persistMediaStub,
+    });
+    await expect(
+      svc.salvarComprovante(
+        17, 6,
+        { foto: { filename: "foto.jpg", originalname: "f.jpg", mimetype: "image/jpeg" } },
+        {},
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(persistMediaStub).not.toHaveBeenCalled();
+  });
+
+  test("salvarComprovante: persistMedia da assinatura FALHA -> rollback da foto + UPDATE NAO ocorre", async () => {
+    // Foto persiste, assinatura falha. Sem rollback, ficaria foto orfa no
+    // disco + comprovante_foto_url no banco apontando pra URL valida.
+    const persistMediaStub = jest
+      .fn()
+      .mockResolvedValueOnce([{ path: "/uploads/entregas/foto.jpg", key: "/abs/foto.jpg" }])
+      .mockRejectedValueOnce(new Error("EIO disk full"));
+    const updateComprovanteStub = jest.fn();
+    const enqueueOrphanCleanupStub = jest.fn().mockResolvedValue();
+
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, rota_motorista_id: 6,
+        rota_status: "em_rota", status: "em_andamento",
+      },
+      persistMediaStub,
+      updateComprovanteStub,
+      enqueueOrphanCleanupStub,
+    });
+
+    await expect(
+      svc.salvarComprovante(
+        17, 6,
+        {
+          foto: { filename: "foto.jpg", originalname: "f.jpg", mimetype: "image/jpeg" },
+          assinaturaPng: { buffer: Buffer.from("png"), mimetype: "image/png" },
+        },
+        {},
+      ),
+    ).rejects.toThrow(/EIO disk full/);
+
+    // CRITICO: foto orfa precisa ser removida
+    expect(enqueueOrphanCleanupStub).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "/uploads/entregas/foto.jpg" }),
+      ]),
+    );
+    // E o UPDATE NUNCA foi chamado
+    expect(updateComprovanteStub).not.toHaveBeenCalled();
+  });
+
+  test("salvarComprovante: TypeError do path.join e' reclassificado como AppError 500 amigavel", async () => {
+    const persistMediaStub = jest.fn().mockImplementation(() => {
+      const err = new TypeError(
+        'The "path" argument must be of type string. Received undefined',
+      );
+      throw err;
+    });
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, rota_motorista_id: 6,
+        rota_status: "em_rota", status: "em_andamento",
+      },
+      persistMediaStub,
+    });
+
+    const err = await svc
+      .salvarComprovante(
+        17, 6,
+        { assinaturaPng: { buffer: Buffer.from("x"), mimetype: "image/png" } },
+        {},
+      )
+      .catch((e) => e);
+    expect(err).toMatchObject({ status: 500 });
+    expect(err.message).toMatch(/midia invalida|Configuracao de upload/i);
+    expect(svc._loggerStub.error).toHaveBeenCalledWith(
+      expect.any(Object),
+      "motorista.parada.comprovante.path_undefined",
+    );
+  });
+
+  test("salvarComprovante: updateComprovante FALHA -> rollback de TODAS as midias", async () => {
+    const persistMediaStub = jest
+      .fn()
+      .mockResolvedValueOnce([{ path: "/uploads/entregas/foto.jpg", key: "/abs/foto.jpg" }])
+      .mockResolvedValueOnce([{ path: "/uploads/entregas/sig.png", key: "/abs/sig.png" }]);
+    const updateComprovanteStub = jest.fn().mockRejectedValue(new Error("DB down"));
+    const enqueueOrphanCleanupStub = jest.fn().mockResolvedValue();
+
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, rota_motorista_id: 6,
+        rota_status: "em_rota", status: "em_andamento",
+      },
+      persistMediaStub,
+      updateComprovanteStub,
+      enqueueOrphanCleanupStub,
+    });
+
+    await expect(
+      svc.salvarComprovante(
+        17, 6,
+        {
+          foto: { filename: "foto.jpg", originalname: "f.jpg", mimetype: "image/jpeg" },
+          assinaturaPng: { buffer: Buffer.from("p"), mimetype: "image/png" },
+        },
+        {},
+      ),
+    ).rejects.toThrow(/DB down/);
+
+    expect(enqueueOrphanCleanupStub).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "/uploads/entregas/foto.jpg" }),
+        expect.objectContaining({ path: "/uploads/entregas/sig.png" }),
+      ]),
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // marcarEntregue + REQUIRE_COMPROVANTE
+  // ---------------------------------------------------------------------------
+
+  test("marcarEntregue: REQUIRE_COMPROVANTE=true + parada SEM comprovante -> 409", async () => {
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, pedido_id: 73, rota_motorista_id: 6,
+        rota_status: "em_rota", status: "em_andamento",
+        comprovante_foto_url: null, assinatura_url: null,
+      },
+      requireComprovante: "true",
+    });
+    await expect(svc.marcarEntregue(17, 6, {}, {})).rejects.toMatchObject({
+      status: 409,
+      details: { motivo: "comprovante_ausente" },
+    });
+  });
+
+  test("marcarEntregue: REQUIRE_COMPROVANTE=true + parada com foto = passa", async () => {
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, pedido_id: 73, rota_motorista_id: 6,
+        rota_status: "em_rota", status: "em_andamento",
+        comprovante_foto_url: "/uploads/entregas/foto.jpg", assinatura_url: null,
+      },
+      requireComprovante: "true",
+    });
+    // Nao deve lancar — segue ate updateStatus
+    await expect(svc.marcarEntregue(17, 6, {}, {})).resolves.toBeDefined();
+  });
+
+  test("marcarEntregue: REQUIRE_COMPROVANTE default OFF = permite sem comprovante (Fase 5)", async () => {
+    const svc = loadComprovanteMocks({
+      paradaStub: {
+        id: 17, rota_id: 12, pedido_id: 73, rota_motorista_id: 6,
+        rota_status: "em_rota", status: "em_andamento",
+        comprovante_foto_url: null, assinatura_url: null,
+      },
+      // sem requireComprovante = default OFF
+    });
+    await expect(svc.marcarEntregue(17, 6, {}, {})).resolves.toBeDefined();
+  });
+
+  // ---------------------------------------------------------------------------
   // getRotaHoje: passa today em BRT pro repo (TZ-safe)
   // ---------------------------------------------------------------------------
 
