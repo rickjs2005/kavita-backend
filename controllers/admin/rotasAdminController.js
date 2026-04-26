@@ -8,6 +8,7 @@ const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const rotasService = require("../../services/rotasService");
+const rotaStaleScanService = require("../../services/rotaStaleScanService");
 
 function _parseId(raw) {
   const id = Number(raw);
@@ -131,6 +132,28 @@ async function listarPedidosDisponiveis(req, res, next) {
   }
 }
 
+/**
+ * Fase 4 — alerta de rota parada (em_rota sem update ha > N horas).
+ * READ-ONLY. Frontend usa pra mostrar banner em /admin/rotas.
+ */
+async function listarStale(req, res, next) {
+  try {
+    const olderThanHours = req.query.olderThanHours
+      ? Number(req.query.olderThanHours)
+      : undefined;
+    const data = await rotaStaleScanService.list({
+      olderThanHours: Number.isFinite(olderThanHours) ? olderThanHours : undefined,
+    });
+    return response.ok(res, {
+      items: data.items,
+      threshold_hours: data.threshold_hours,
+      count: data.items.length,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   listar,
   detalhe,
@@ -142,4 +165,5 @@ module.exports = {
   removerParada,
   reordenarParadas,
   listarPedidosDisponiveis,
+  listarStale,
 };

@@ -22,6 +22,8 @@ const {
 // conflitar com rota.id="disponiveis" (Number(...) -> NaN bate em _parseId,
 // mas e' melhor evitar o trafego na rota errada).
 router.get("/disponiveis", ctrl.listarPedidosDisponiveis);
+// Fase 4 — alerta de rota parada (em_rota sem update ha > 6h)
+router.get("/stale", ctrl.listarStale);
 
 router.get("/", ctrl.listar);
 router.post("/", validate(createRotaSchema), ctrl.criar);
