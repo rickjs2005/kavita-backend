@@ -305,6 +305,22 @@ describe("services/rotasService", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // listarPedidosDisponiveis — Bug 2: filtra pedidos ja' entregues/cancelados
+  // ---------------------------------------------------------------------------
+
+  test("listarPedidosDisponiveis: SQL filtra status_entrega NOT IN ('entregue','cancelado')", async () => {
+    const poolQueryStub = jest.fn().mockResolvedValue([[], []]);
+    const svc = loadWithMocks({ poolQueryStub });
+    await svc.listarPedidosDisponiveis({});
+    expect(poolQueryStub).toHaveBeenCalled();
+    const sql = poolQueryStub.mock.calls[0][0];
+    expect(sql).toMatch(/p\.status_pagamento\s*=\s*'pago'/);
+    expect(sql).toMatch(
+      /p\.status_entrega\s+NOT IN\s*\(\s*'entregue'\s*,\s*'cancelado'\s*\)/,
+    );
+  });
+
+  // ---------------------------------------------------------------------------
   // deletarRota
   // ---------------------------------------------------------------------------
 

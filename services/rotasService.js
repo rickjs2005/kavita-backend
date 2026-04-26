@@ -132,10 +132,23 @@ async function obterRotaCompleta(id) {
  * Pedidos elegiveis para entrar numa rota:
  *   - status_pagamento='pago'
  *   - sem parada em rota ATIVA
+ *   - status_entrega NOT IN ('entregue','cancelado')   ← Bug 2 fix
+ *
+ * Sem o filtro de status_entrega, pedidos JA ENTREGUES voltavam ao
+ * pool de disponiveis quando a rota deles era finalizada — admin
+ * podia adicionar de novo numa rota nova e o motorista entregava 2x.
+ *
+ * "enviado" e "em_separacao" continuam elegiveis (estados pre-entrega
+ * legacy do fluxo antigo). "cancelado" e' raro mas cobre cancelamento
+ * pos-pagamento.
+ *
  * Filtros opcionais: cidade, bairro, ate' data X.
  */
 async function listarPedidosDisponiveis({ cidade, bairro, ate } = {}) {
-  const where = ["p.status_pagamento = 'pago'"];
+  const where = [
+    "p.status_pagamento = 'pago'",
+    "p.status_entrega NOT IN ('entregue','cancelado')",
+  ];
   const params = [];
   if (ate) {
     where.push("p.data_pedido <= ?");
