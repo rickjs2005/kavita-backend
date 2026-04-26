@@ -227,9 +227,22 @@ async function marcarEntregue(paradaId, motoristaId, { observacao } = {}, ctx = 
           },
           conn,
         );
+        // Bug 1 fix — sincroniza pedidos.status_entrega na MESMA tx.
+        // Sem isso, /admin/pedidos e /pedidos do cliente continuam mostrando
+        // "enviado"/"em_separacao" mesmo apos motorista marcar entregue.
+        // Tambem evita que o pedido volte ao pool de disponiveis (Bug 2).
+        await conn.query(
+          `UPDATE pedidos SET status_entrega = 'entregue' WHERE id = ?`,
+          [parada.pedido_id],
+        );
         await rotasRepo.recalcTotals(parada.rota_id, conn);
         logger.info(
-          { paradaId, motoristaId, rotaId: parada.rota_id },
+          {
+            paradaId,
+            motoristaId,
+            rotaId: parada.rota_id,
+            pedidoId: parada.pedido_id,
+          },
           "motorista.parada.entregue",
         );
         return paradasRepo.findById(paradaId, conn);

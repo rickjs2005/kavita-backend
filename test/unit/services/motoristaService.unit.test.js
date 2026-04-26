@@ -188,9 +188,10 @@ describe("services/motoristaService", () => {
     expect(paradaUpdateStub).not.toHaveBeenCalled();
   });
 
-  test("marcarEntregue: happy path -> updateStatus + recalc", async () => {
+  test("marcarEntregue: happy path -> updateStatus + recalc + sync pedidos.status_entrega", async () => {
     const paradaUpdateStub = jest.fn().mockResolvedValue(1);
     const recalcStub = jest.fn().mockResolvedValue();
+    const txQueryStub = jest.fn(async () => [[]]);
     const svc = loadWithMocks({
       paradaStub: {
         id: 50, rota_id: 1, pedido_id: 100, status: "pendente",
@@ -198,6 +199,7 @@ describe("services/motoristaService", () => {
       },
       paradaUpdateStub,
       rotasRecalcStub: recalcStub,
+      txQueryStub,
     });
     await svc.marcarEntregue(50, 5, { observacao: "Entregue na porteira" }, {});
     expect(paradaUpdateStub).toHaveBeenCalledWith(
@@ -206,6 +208,13 @@ describe("services/motoristaService", () => {
       expect.anything(),
     );
     expect(recalcStub).toHaveBeenCalledWith(1, expect.anything());
+
+    // Bug 1 — sincroniza pedidos.status_entrega na MESMA tx
+    const updatePedidoCall = txQueryStub.mock.calls.find((c) =>
+      /UPDATE pedidos SET status_entrega = 'entregue'/.test(c[0]),
+    );
+    expect(updatePedidoCall).toBeTruthy();
+    expect(updatePedidoCall[1]).toEqual([100]); // pedido_id
   });
 
   // ---------------------------------------------------------------------------
