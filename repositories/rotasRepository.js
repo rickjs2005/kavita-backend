@@ -166,18 +166,29 @@ async function recalcTotals(rotaId, conn = pool) {
  *
  * Ordenacao: em_rota primeiro (status DESC = 'em_rota' > 'pronta'
  * em ordem alfabetica reversa), depois id DESC pra desempate.
+ *
+ * `today` (YYYY-MM-DD) e' obrigatorio e computado em BRT lado servico —
+ * NAO usar CURDATE() do MySQL, porque o pool em prod pode estar em UTC
+ * e isso faria o motorista perder a rota entre 21:00–23:59 BRT (CURDATE
+ * em UTC ja' retorna o dia seguinte). Ver motoristaService.getRotaHoje.
  */
-async function findActiveTodayForMotorista(motoristaId, conn = pool) {
+async function findActiveTodayForMotorista(motoristaId, opts = {}) {
+  const { today, conn = pool } = opts;
+  if (!today || typeof today !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(today)) {
+    throw new Error(
+      "findActiveTodayForMotorista: opts.today (YYYY-MM-DD) e' obrigatorio.",
+    );
+  }
   const [rows] = await conn.query(
     `SELECT * FROM rotas
       WHERE motorista_id = ?
         AND (
-              (status = 'pronta'  AND data_programada = CURDATE())
-           OR (status = 'em_rota' AND data_programada <= CURDATE())
+              (status = 'pronta'  AND data_programada = ?)
+           OR (status = 'em_rota' AND data_programada <= ?)
             )
       ORDER BY status DESC, id DESC
       LIMIT 1`,
-    [motoristaId],
+    [motoristaId, today, today],
   );
   return rows[0] || null;
 }

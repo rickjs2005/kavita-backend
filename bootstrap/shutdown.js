@@ -17,6 +17,11 @@ try {
   cotacoesSyncJob = require("../jobs/cotacoesSyncJob");
 } catch { /* optional dependency */ }
 
+let rotasService;
+try {
+  rotasService = require("../services/rotasService");
+} catch { /* optional dependency */ }
+
 function registerShutdownHandlers(server) {
   const shutdown = async (signal) => {
     logger.info({ signal }, "graceful shutdown initiated");
@@ -37,6 +42,16 @@ function registerShutdownHandlers(server) {
 
     server.close(async () => {
       logger.info("HTTP server closed");
+
+      // Aguarda envios de auto-magic-link em curso terminarem (logs +
+      // chamada do WhatsApp) — sem isso, fire-and-forget perde rastros.
+      if (rotasService && typeof rotasService.drainInFlight === "function") {
+        try {
+          await rotasService.drainInFlight(5_000);
+        } catch (err) {
+          logger.error({ err }, "drain in-flight magic-links failed");
+        }
+      }
 
       try {
         await pool.end();

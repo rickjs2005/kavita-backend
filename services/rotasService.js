@@ -37,30 +37,88 @@ function _autoSendMagicLinkEnabled() {
   );
 }
 
+function _autoSendRequiresApi() {
+  // Default OFF. Quando ON, auto-send so' dispara se WHATSAPP_PROVIDER=api.
+  // Util pra prod onde 'manual' significa "nao envia mensagem nenhuma" — sem
+  // o flag, auto-send em modo manual gera link sem entregar e da' a
+  // ilusao de que o motorista recebeu. Com o flag, auto-send pula e loga.
+  return (
+    String(process.env.MOTORISTA_AUTO_SEND_REQUIRES_API || "false").toLowerCase() ===
+    "true"
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Tracker de envios em curso. Auto-send roda fora da request original
+// (fire-and-forget) — sem isso, um SIGTERM entre a transicao de status e
+// o logger.info perde o registro. drainInFlight() e' chamado no shutdown
+// pra dar oportunidade dos logs e do envio terminarem.
+// ----------------------------------------------------------------------------
+const _inFlightAutoSends = new Set();
+
+async function drainInFlight(timeoutMs = 5000) {
+  if (_inFlightAutoSends.size === 0) return;
+  const all = Promise.allSettled([..._inFlightAutoSends]);
+  const timeout = new Promise((resolve) =>
+    setTimeout(() => resolve("timeout"), Math.max(0, timeoutMs)).unref?.(),
+  );
+  const result = await Promise.race([all.then(() => "drained"), timeout]);
+  logger.info(
+    { pending: _inFlightAutoSends.size, result },
+    "rotas.auto_magic_link.drain",
+  );
+}
+
 function _maybeAutoSendMagicLink(rotaId, motoristaId, trigger) {
   if (!motoristaId) return;
   if (!_autoSendMagicLinkEnabled()) return;
+
   // Lazy require evita ciclo potencial e custo no boot.
   const motoristaAuthService = require("./motoristaAuthService");
-  Promise.resolve()
-    .then(() => motoristaAuthService.requestMagicLink({ motoristaId }))
-    .then((r) =>
-      logger.info(
-        {
-          rotaId,
-          motoristaId,
-          trigger,
-          whatsappStatus: r?.whatsapp?.status || "unknown",
-        },
-        "rotas.auto_magic_link.sent",
-      ),
-    )
-    .catch((err) =>
-      logger.warn(
-        { err: err?.message, rotaId, motoristaId, trigger },
-        "rotas.auto_magic_link.failed",
-      ),
+  const whatsapp = require("./whatsapp");
+  const provider = whatsapp.getProvider();
+
+  // Bloqueio defensivo: em modo manual, nenhuma mensagem e' efetivamente
+  // entregue ao motorista — auto-send vira teatro. Com a flag ligada,
+  // pulamos cedo e logamos pro admin saber.
+  if (_autoSendRequiresApi() && provider !== "api") {
+    logger.warn(
+      { rotaId, motoristaId, trigger, provider },
+      "rotas.auto_magic_link.skipped_provider_manual",
     );
+    return;
+  }
+
+  const promise = (async () => {
+    try {
+      const r = await motoristaAuthService.requestMagicLink({ motoristaId });
+      const ev = {
+        rotaId,
+        motoristaId,
+        trigger,
+        provider: r?.whatsapp?.provider || provider,
+        whatsappStatus: r?.whatsapp?.status || "unknown",
+        delivered: r?.delivered === true,
+      };
+      logger.info(ev, "rotas.auto_magic_link.sent");
+      // Aviso explicito quando provider=manual: link foi gerado mas NAO
+      // entregue. Admin precisa clicar wa.me no painel pra mensagem
+      // chegar ao motorista.
+      if (!ev.delivered && (ev.provider === "manual" || ev.whatsappStatus === "manual_pending")) {
+        logger.warn(
+          ev,
+          "rotas.auto_magic_link.manual_pending_action_required",
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        { err: err?.message, rotaId, motoristaId, trigger, provider },
+        "rotas.auto_magic_link.failed",
+      );
+    }
+  })();
+  _inFlightAutoSends.add(promise);
+  promise.finally(() => _inFlightAutoSends.delete(promise));
 }
 
 const ATIVA_STATUSES = ["rascunho", "pronta", "em_rota"];
@@ -464,6 +522,8 @@ module.exports = {
   reordenarParadas,
   // status
   alterarStatus,
+  // shutdown
+  drainInFlight,
   // constantes
   ATIVA_STATUSES,
   TERMINAL_STATUSES,

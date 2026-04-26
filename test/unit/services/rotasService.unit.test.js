@@ -31,15 +31,23 @@ describe("services/rotasService", () => {
     poolQueryStub,
     txQueryStub,
     requestMagicLinkStub = jest.fn().mockResolvedValue({
-      whatsapp: { status: "ok", url: "wa.me/...", erro: null },
+      whatsapp: { provider: "manual", status: "manual_pending", url: "wa.me/...", erro: null },
+      delivered: false,
     }),
+    whatsappProviderStub = jest.fn(() => "manual"),
     autoSendEnv,
+    requiresApiEnv,
   } = {}) {
     jest.resetModules();
     if (autoSendEnv === undefined) {
       delete process.env.MOTORISTA_MAGIC_LINK_AUTO_SEND;
     } else {
       process.env.MOTORISTA_MAGIC_LINK_AUTO_SEND = autoSendEnv;
+    }
+    if (requiresApiEnv === undefined) {
+      delete process.env.MOTORISTA_AUTO_SEND_REQUIRES_API;
+    } else {
+      process.env.MOTORISTA_AUTO_SEND_REQUIRES_API = requiresApiEnv;
     }
 
     // Mock conn.query usado nas tx (assertPedidoElegivel etc)
@@ -100,11 +108,8 @@ describe("services/rotasService", () => {
       }),
     );
 
-    jest.doMock(require.resolve("../../../lib/logger"), () => ({
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-    }));
+    const loggerStub = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    jest.doMock(require.resolve("../../../lib/logger"), () => loggerStub);
 
     jest.doMock(
       require.resolve("../../../services/motoristaAuthService"),
@@ -113,8 +118,20 @@ describe("services/rotasService", () => {
       }),
     );
 
+    jest.doMock(require.resolve("../../../services/whatsapp"), () => ({
+      sendWhatsapp: jest.fn(),
+      getProvider: whatsappProviderStub,
+      buildWaMeLink: jest.fn(),
+      normalizePhoneBR: jest.fn(),
+    }));
+
     const svc = require("../../../services/rotasService");
-    return { ...svc, _requestMagicLinkStub: requestMagicLinkStub };
+    return {
+      ...svc,
+      _requestMagicLinkStub: requestMagicLinkStub,
+      _loggerStub: loggerStub,
+      _providerStub: whatsappProviderStub,
+    };
   }
 
   // Espera o microtask do fire-and-forget do _maybeAutoSendMagicLink
@@ -427,6 +444,166 @@ describe("services/rotasService", () => {
     await svc.atualizarRota(1, { motorista_id: 7, veiculo: "Outro" });
     await flushMicrotasks();
     expect(requestMagicLinkStub).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Auto-envio: provider awareness (Etapa 2 da correcao)
+  // ---------------------------------------------------------------------------
+
+  test("auto-send em provider=manual: dispara mas loga warn explicito (mensagem nao entregue)", async () => {
+    const requestMagicLinkStub = jest.fn().mockResolvedValue({
+      whatsapp: { provider: "manual", status: "manual_pending" },
+      delivered: false,
+    });
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+      whatsappProviderStub: jest.fn(() => "manual"),
+    });
+    await svc.alterarStatus(1, "pronta");
+    await flushMicrotasks();
+
+    expect(requestMagicLinkStub).toHaveBeenCalledTimes(1);
+    expect(svc._loggerStub.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rotaId: 1,
+        motoristaId: 7,
+        provider: "manual",
+        delivered: false,
+      }),
+      "rotas.auto_magic_link.sent",
+    );
+    expect(svc._loggerStub.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "manual" }),
+      "rotas.auto_magic_link.manual_pending_action_required",
+    );
+  });
+
+  test("auto-send em provider=api com delivered=true: SO log info, sem warn", async () => {
+    const requestMagicLinkStub = jest.fn().mockResolvedValue({
+      whatsapp: { provider: "api", status: "sent" },
+      delivered: true,
+    });
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+      whatsappProviderStub: jest.fn(() => "api"),
+    });
+    await svc.alterarStatus(1, "pronta");
+    await flushMicrotasks();
+
+    expect(svc._loggerStub.info).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "api", delivered: true }),
+      "rotas.auto_magic_link.sent",
+    );
+    expect(svc._loggerStub.warn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "rotas.auto_magic_link.manual_pending_action_required",
+    );
+  });
+
+  test("auto-send com REQUIRES_API=true e provider=manual: PULA + loga skipped", async () => {
+    const requestMagicLinkStub = jest.fn();
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+      whatsappProviderStub: jest.fn(() => "manual"),
+      requiresApiEnv: "true",
+    });
+    await svc.alterarStatus(1, "pronta");
+    await flushMicrotasks();
+
+    expect(requestMagicLinkStub).not.toHaveBeenCalled();
+    expect(svc._loggerStub.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ rotaId: 1, motoristaId: 7, provider: "manual" }),
+      "rotas.auto_magic_link.skipped_provider_manual",
+    );
+  });
+
+  test("auto-send com REQUIRES_API=true e provider=api: dispara normal", async () => {
+    const requestMagicLinkStub = jest.fn().mockResolvedValue({
+      whatsapp: { provider: "api", status: "sent" },
+      delivered: true,
+    });
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+      whatsappProviderStub: jest.fn(() => "api"),
+      requiresApiEnv: "true",
+    });
+    await svc.alterarStatus(1, "pronta");
+    await flushMicrotasks();
+    expect(requestMagicLinkStub).toHaveBeenCalledWith({ motoristaId: 7 });
+  });
+
+  // ---------------------------------------------------------------------------
+  // drainInFlight: protege logs em SIGTERM (Etapa 3)
+  // ---------------------------------------------------------------------------
+
+  test("drainInFlight: retorna imediato quando nao ha envios em curso", async () => {
+    const svc = loadWithMocks({});
+    await expect(svc.drainInFlight(1000)).resolves.toBeUndefined();
+  });
+
+  test("drainInFlight: aguarda envio em curso completar antes de resolver", async () => {
+    let resolveSend;
+    const requestMagicLinkStub = jest.fn(
+      () =>
+        new Promise((res) => {
+          resolveSend = () =>
+            res({
+              whatsapp: { provider: "api", status: "sent" },
+              delivered: true,
+            });
+        }),
+    );
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+      whatsappProviderStub: jest.fn(() => "api"),
+    });
+    await svc.alterarStatus(1, "pronta");
+
+    let drained = false;
+    const drainPromise = svc.drainInFlight(2000).then(() => {
+      drained = true;
+    });
+
+    // Sem o resolve, drain ainda nao completou
+    await new Promise((r) => setImmediate(r));
+    expect(drained).toBe(false);
+
+    resolveSend();
+    await drainPromise;
+    expect(drained).toBe(true);
+
+    // Logs sucesso registrado depois do drain
+    expect(svc._loggerStub.info).toHaveBeenCalledWith(
+      expect.objectContaining({ rotaId: 1, motoristaId: 7 }),
+      "rotas.auto_magic_link.sent",
+    );
+  });
+
+  test("drainInFlight: respeita timeout quando envio trava", async () => {
+    const requestMagicLinkStub = jest.fn(
+      () => new Promise(() => { /* nunca resolve */ }),
+    );
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+      whatsappProviderStub: jest.fn(() => "api"),
+    });
+    await svc.alterarStatus(1, "pronta");
+    await new Promise((r) => setImmediate(r));
+
+    const start = Date.now();
+    await svc.drainInFlight(60); // 60ms timeout
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(500); // nao trava 5s default
+    expect(svc._loggerStub.info).toHaveBeenCalledWith(
+      expect.objectContaining({ result: "timeout" }),
+      "rotas.auto_magic_link.drain",
+    );
   });
 
   // ---------------------------------------------------------------------------

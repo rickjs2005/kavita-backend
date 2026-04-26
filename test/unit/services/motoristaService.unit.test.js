@@ -312,4 +312,52 @@ describe("services/motoristaService", () => {
     const r = await svc.fixarPosicao(50, 5, { latitude: -20, longitude: -42 }, {});
     expect(r.promovido_para_pedido).toBe(false);
   });
+
+  // ---------------------------------------------------------------------------
+  // getRotaHoje: passa today em BRT pro repo (TZ-safe)
+  // ---------------------------------------------------------------------------
+
+  test("getRotaHoje: passa opts.today (YYYY-MM-DD em BRT) ao repo", async () => {
+    // Spy no findActiveTodayForMotorista pra capturar opts.today
+    jest.resetModules();
+    const findActiveStub = jest.fn().mockResolvedValue(null);
+    jest.doMock(require.resolve("../../../config/pool"), () => ({
+      query: jest.fn().mockResolvedValue([[], []]),
+      getConnection: jest.fn(),
+    }));
+    jest.doMock(require.resolve("../../../repositories/rotasRepository"), () => ({
+      findActiveTodayForMotorista: findActiveStub,
+      findById: jest.fn(),
+    }));
+    jest.doMock(
+      require.resolve("../../../repositories/rotaParadasRepository"),
+      () => ({}),
+    );
+    jest.doMock(
+      require.resolve("../../../repositories/pedidoPosicoesRepository"),
+      () => ({}),
+    );
+    jest.doMock(require.resolve("../../../services/rotasService"), () => ({
+      obterRotaCompleta: jest.fn(),
+    }));
+    jest.doMock(require.resolve("../../../lib/logger"), () => ({
+      info: jest.fn(), warn: jest.fn(), error: jest.fn(),
+    }));
+    const svc = require("../../../services/motoristaService");
+    await svc.getRotaHoje(6);
+
+    expect(findActiveStub).toHaveBeenCalledTimes(1);
+    const [motoristaId, opts] = findActiveStub.mock.calls[0];
+    expect(motoristaId).toBe(6);
+    expect(opts).toBeDefined();
+    expect(opts.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    // Sanidade: data calculada deve casar com a data BRT computada agora.
+    // Tolerancia de ±1 dia (caso o teste cruze meia-noite na propria run).
+    const expected = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    expect(opts.today).toBe(expected);
+  });
 });

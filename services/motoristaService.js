@@ -37,6 +37,21 @@ const PROBLEMA_TIPOS = new Set([
   "outro_motivo",
 ]);
 
+// Data "hoje" em horario de Brasilia (BRT/BRST). NAO usar CURDATE() do
+// MySQL — pool em prod pode estar em UTC, e CURDATE em UTC vira o dia
+// seguinte das 21:00 as 23:59 BRT, fazendo o motorista perder rota a
+// noite. Sao_Paulo cobre todo Brasil exceto Acre/parte do AM (ambos
+// fora da area atendida pelo Kavita hoje).
+function _todayBR() {
+  // Intl com en-CA garante formato YYYY-MM-DD canonico.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 // ----------------------------------------------------------------------------
 // Idempotencia
 // ----------------------------------------------------------------------------
@@ -126,7 +141,8 @@ async function _findParadaDoMotorista(paradaId, motoristaId) {
 // ----------------------------------------------------------------------------
 
 async function getRotaHoje(motoristaId) {
-  const rota = await rotasRepo.findActiveTodayForMotorista(motoristaId);
+  const today = _todayBR();
+  const rota = await rotasRepo.findActiveTodayForMotorista(motoristaId, { today });
   if (!rota) return null;
   return rotasService.obterRotaCompleta(rota.id);
 }

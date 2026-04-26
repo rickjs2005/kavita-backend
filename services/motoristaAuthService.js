@@ -9,12 +9,17 @@
 //      -> gera 1 magic-link (JWT short-lived) + tenta enviar via
 //         services/whatsapp.sendWhatsapp; sempre devolve { link } pra
 //         admin poder copiar manualmente caso WhatsApp falhe
-//      -> bumpa motorista.token_version para invalidar links anteriores
+//      -> NAO bumpa token_version (garante que sessao ativa do motorista
+//         continue valida quando admin gera novo link — comum no auto-send
+//         do rotasService). Multiplos magic-links coexistem ate um ser
+//         consumido ou expirar (8h).
 //   2. Motorista clica → frontend chama
 //      consumeMagicLink({ token })
 //      -> valida JWT (scope='motorista_magic') + bate token_version
-//      -> emite JWT de sessao (kind='motorista', TTL 4h)
-//      -> revoga futuros consumes do MESMO link via token_version bump
+//      -> bumpa token_version → invalida (a) o proprio link em re-uso,
+//         (b) qualquer outro magic-link emitido em paralelo, (c) sessoes
+//         anteriores deste motorista (so 1 dispositivo logado por vez)
+//      -> emite JWT de sessao (kind='motorista_session', TTL 4h)
 //   3. Cookie motoristaToken usado pelo middleware verifyMotorista
 //
 // JWT_SECRET compartilhado (mesmo dos outros contextos).
@@ -24,7 +29,7 @@ const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const motoristasRepo = require("../repositories/motoristasRepository");
 const { normalizePhoneBR } = require("../lib/waLink");
-const { sendWhatsapp } = require("./whatsapp");
+const { sendWhatsapp, getProvider: getWhatsappProvider } = require("./whatsapp");
 const logger = require("../lib/logger");
 
 const SCOPE_MAGIC = "motorista_magic";
@@ -84,11 +89,30 @@ function _buildLink(token) {
   return `${_appUrl()}/motorista/verificar?token=${encodeURIComponent(token)}`;
 }
 
+/**
+ * Formata o TTL do link em hh/min de forma humana.
+ *   480 -> "8 horas"
+ *   60  -> "1 hora"
+ *   90  -> "1h30min"
+ *   15  -> "15 minutos"
+ */
+function _formatTtl(minutos) {
+  const m = Math.max(1, Math.round(Number(minutos) || 0));
+  if (m % 60 === 0) {
+    const h = m / 60;
+    return h === 1 ? "1 hora" : `${h} horas`;
+  }
+  if (m < 60) return `${m} minutos`;
+  const h = Math.floor(m / 60);
+  const rem = m - h * 60;
+  return `${h}h${rem.toString().padStart(2, "0")}min`;
+}
+
 function _buildWhatsappMessage(motorista, link) {
   const nome = motorista.nome?.split(/\s+/)[0] || "motorista";
   return (
     `Ola ${nome}! Seu acesso ao painel de entregas Kavita esta pronto.\n\n` +
-    `Acesse pelo link (valido por ${MAGIC_TTL_MIN} minutos):\n${link}\n\n` +
+    `Acesse pelo link (valido por ${_formatTtl(MAGIC_TTL_MIN)}):\n${link}\n\n` +
     `Se nao foi voce que pediu, ignore esta mensagem.`
   );
 }
@@ -96,11 +120,25 @@ function _buildWhatsappMessage(motorista, link) {
 /**
  * Gera magic-link e tenta enviar via WhatsApp.
  *
+ * NAO bumpa token_version — sessao ativa do motorista permanece valida
+ * apos a emissao de um novo link (essencial pro auto-send do rotasService
+ * nao deslogar motorista no meio do turno). O bump acontece apenas no
+ * consumeMagicLink, que ainda garante:
+ *   - uso unico real do link (re-consumo do mesmo token falha)
+ *   - sessoes anteriores cessam quando outro magic-link e' consumido
+ *
  * @param {{telefone?: string, motoristaId?: number}} input
  *   - se telefone: usa pra achar motorista pelo numero
  *   - se motoristaId: usa direto (admin clicando "enviar link" no painel)
- * @returns {Promise<{ link, telefone, whatsapp: { status, url, erro } }>}
- *   link sempre presente (admin pode copiar manualmente).
+ * @returns {Promise<{
+ *   link: string|null,
+ *   telefone: string,
+ *   whatsapp: { provider: string, status: string, url: string|null, erro: string|null },
+ *   delivered: boolean,   // true SO se a mensagem foi efetivamente entregue
+ *   sent: boolean,        // true se chegou a tentar (false em telefone desconhecido)
+ * }>}
+ *   link sempre presente (admin pode copiar manualmente) — exceto quando
+ *   sent=false (telefone nao cadastrado).
  */
 async function requestMagicLink({ telefone, motoristaId } = {}) {
   let motorista = null;
@@ -126,7 +164,13 @@ async function requestMagicLink({ telefone, motoristaId } = {}) {
       return {
         link: null,
         telefone: tel,
-        whatsapp: { status: "skipped", url: null, erro: "Motorista nao cadastrado" },
+        whatsapp: {
+          provider: getWhatsappProvider(),
+          status: "skipped",
+          url: null,
+          erro: "Motorista nao cadastrado",
+        },
+        delivered: false,
         sent: false,
       };
     }
@@ -140,50 +184,56 @@ async function requestMagicLink({ telefone, motoristaId } = {}) {
     );
   }
 
-  // Bumpa token_version: invalida QUALQUER magic-link anterior + sessoes
-  // ativas (motorista vai precisar logar de novo). Isso e' uso unico.
-  await motoristasRepo.bumpTokenVersion(motorista.id);
-  const fresh = await motoristasRepo.findById(motorista.id);
-
-  const magicJwt = _signMagicJwt(fresh);
+  const magicJwt = _signMagicJwt(motorista);
   const link = _buildLink(magicJwt);
+  const provider = getWhatsappProvider();
 
-  // Envio WhatsApp: fire-and-forget, sempre devolve resultado pro admin.
-  let whatsappResult = { status: "skipped", url: null, erro: null };
+  // Envio WhatsApp: erro NAO falha o request (admin pode copiar o link).
+  let whatsappResult = { provider, status: "skipped", url: null, erro: null };
   try {
     const result = await sendWhatsapp({
-      telefone: fresh.telefone,
-      mensagem: _buildWhatsappMessage(fresh, link),
+      telefone: motorista.telefone,
+      mensagem: _buildWhatsappMessage(motorista, link),
     });
     whatsappResult = {
+      provider: result.provider || provider,
       status: result.status,
       url: result.url || null,
       erro: result.erro || null,
     };
   } catch (err) {
     logger.warn(
-      { err: err?.message, motoristaId: fresh.id },
+      { err: err?.message, motoristaId: motorista.id },
       "motorista.magic_link.whatsapp_failed",
     );
     whatsappResult = {
+      provider,
       status: "error",
       url: null,
       erro: err?.message || "Falha ao enviar WhatsApp",
     };
   }
 
+  // delivered=true SO em entrega real pela API. manual_pending = link
+  // gerado mas nao entregue (admin precisa clicar wa.me); skipped/error
+  // tambem nao sao entrega.
+  const delivered = whatsappResult.status === "sent";
+
   logger.info(
     {
-      motoristaId: fresh.id,
+      motoristaId: motorista.id,
+      provider: whatsappResult.provider,
       whatsappStatus: whatsappResult.status,
+      delivered,
     },
     "motorista.magic_link.issued",
   );
 
   return {
     link,
-    telefone: fresh.telefone,
+    telefone: motorista.telefone,
     whatsapp: whatsappResult,
+    delivered,
     sent: true,
   };
 }
@@ -191,9 +241,10 @@ async function requestMagicLink({ telefone, motoristaId } = {}) {
 /**
  * Consome magic-link e devolve sessao.
  *
- * Uso unico real: token_version foi bumpada no requestMagicLink.
- * Quando consumimos, bumpamos DE NOVO -> qualquer outro magic-link
- * gerado em paralelo + qualquer sessao anterior viram invalidos.
+ * Uso unico: bumpamos token_version aqui (e somente aqui). Apos esse
+ * bump, qualquer outro magic-link emitido com a versao antiga rejeita,
+ * e qualquer sessao anterior do mesmo motorista expira (somente 1
+ * dispositivo logado por vez).
  */
 async function consumeMagicLink({ token }) {
   if (!token || typeof token !== "string") {
