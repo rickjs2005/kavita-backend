@@ -154,15 +154,27 @@ async function recalcTotals(rotaId, conn = pool) {
 }
 
 /**
- * Lista rotas que estao no dia atual e prontas/em_rota — usado pelo
- * motorista pra encontrar "minha rota de hoje".
+ * Lista a rota "ativa" do motorista pra exibir em /motorista/rota-hoje.
+ *
+ * Regra:
+ *   - rota PRONTA so' aparece no dia exato (evita motorista pegar
+ *     uma rota futura sem querer)
+ *   - rota EM_ROTA aparece mesmo se data_programada < hoje — caso
+ *     classico do motorista que iniciou ontem e nao finalizou; sem
+ *     isso, ao virar meia-noite a rota some do app e o motorista ve
+ *     "nao tem entrega" enquanto ainda tem paradas pendentes
+ *
+ * Ordenacao: em_rota primeiro (status DESC = 'em_rota' > 'pronta'
+ * em ordem alfabetica reversa), depois id DESC pra desempate.
  */
 async function findActiveTodayForMotorista(motoristaId, conn = pool) {
   const [rows] = await conn.query(
     `SELECT * FROM rotas
       WHERE motorista_id = ?
-        AND data_programada = CURDATE()
-        AND status IN ('pronta','em_rota')
+        AND (
+              (status = 'pronta'  AND data_programada = CURDATE())
+           OR (status = 'em_rota' AND data_programada <= CURDATE())
+            )
       ORDER BY status DESC, id DESC
       LIMIT 1`,
     [motoristaId],
