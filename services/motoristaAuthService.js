@@ -29,7 +29,11 @@ const logger = require("../lib/logger");
 
 const SCOPE_MAGIC = "motorista_magic";
 const SCOPE_SESSION = "motorista_session";
-const MAGIC_TTL_MIN = Number(process.env.MOTORISTA_MAGIC_TTL_MIN) || 15;
+// Default 8h (480min) — cobre o turno completo do motorista. Antes era
+// 15min, mas com o auto-envio de link na transicao rascunho->pronta
+// (rotasService) o admin atribui rota cedo e motorista pode entrar
+// horas depois. Override via env pra ambientes sensiveis a seguranca.
+const MAGIC_TTL_MIN = Number(process.env.MOTORISTA_MAGIC_TTL_MIN) || 480;
 const SESSION_TTL_HOURS = Number(process.env.MOTORISTA_SESSION_TTL_HOURS) || 4;
 
 function _jwtSecret() {

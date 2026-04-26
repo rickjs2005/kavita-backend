@@ -27,6 +27,42 @@ const rotasRepo = require("../repositories/rotasRepository");
 const paradasRepo = require("../repositories/rotaParadasRepository");
 const motoristasRepo = require("../repositories/motoristasRepository");
 
+function _autoSendMagicLinkEnabled() {
+  // Default ON. Desliga via env=false caso WhatsApp esteja com problema
+  // ou admin queira controlar manual. Falha de envio nao bloqueia
+  // a transicao de status — sempre fire-and-forget com .catch.
+  return (
+    String(process.env.MOTORISTA_MAGIC_LINK_AUTO_SEND || "true").toLowerCase() !==
+    "false"
+  );
+}
+
+function _maybeAutoSendMagicLink(rotaId, motoristaId, trigger) {
+  if (!motoristaId) return;
+  if (!_autoSendMagicLinkEnabled()) return;
+  // Lazy require evita ciclo potencial e custo no boot.
+  const motoristaAuthService = require("./motoristaAuthService");
+  Promise.resolve()
+    .then(() => motoristaAuthService.requestMagicLink({ motoristaId }))
+    .then((r) =>
+      logger.info(
+        {
+          rotaId,
+          motoristaId,
+          trigger,
+          whatsappStatus: r?.whatsapp?.status || "unknown",
+        },
+        "rotas.auto_magic_link.sent",
+      ),
+    )
+    .catch((err) =>
+      logger.warn(
+        { err: err?.message, rotaId, motoristaId, trigger },
+        "rotas.auto_magic_link.failed",
+      ),
+    );
+}
+
 const ATIVA_STATUSES = ["rascunho", "pronta", "em_rota"];
 const TERMINAL_STATUSES = ["finalizada", "cancelada"];
 const ALL_STATUSES = [...ATIVA_STATUSES, ...TERMINAL_STATUSES];
@@ -227,6 +263,18 @@ async function atualizarRota(id, patch) {
     await _assertMotoristaAtivo(patch.motorista_id);
   }
   await rotasRepo.update(id, patch);
+
+  // Troca de motorista em rota ja' pronta -> reenvia magic-link pro novo.
+  // (FSM bloqueia atualizar em em_rota, entao so' rascunho/pronta chegam aqui.
+  //  Em rascunho ainda nao faz sentido enviar; so' em pronta.)
+  const trocouMotorista =
+    patch.motorista_id !== undefined &&
+    patch.motorista_id !== null &&
+    Number(patch.motorista_id) !== Number(rota.motorista_id);
+  if (trocouMotorista && rota.status === "pronta") {
+    _maybeAutoSendMagicLink(id, patch.motorista_id, "atualizarRota.troca_motorista");
+  }
+
   return obterRotaCompleta(id);
 }
 
@@ -390,6 +438,14 @@ async function alterarStatus(rotaId, novoStatus, opts = {}) {
     { rotaId, from: rota.status, to: novoStatus, extras },
     "rotas.status_changed",
   );
+
+  // Auto-envio do magic-link ao motorista quando rota fica 'pronta'.
+  // Disparado só na transicao -> pronta (rascunho ou em_rota -> pronta);
+  // pronta -> em_rota nao re-envia (motorista ja autenticou pra iniciar).
+  if (novoStatus === "pronta" && rota.status !== "pronta") {
+    _maybeAutoSendMagicLink(rotaId, rota.motorista_id, "alterarStatus.pronta");
+  }
+
   return obterRotaCompleta(rotaId);
 }
 

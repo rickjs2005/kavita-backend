@@ -30,8 +30,17 @@ describe("services/rotasService", () => {
     deletaParadaStub = jest.fn().mockResolvedValue(1),
     poolQueryStub,
     txQueryStub,
+    requestMagicLinkStub = jest.fn().mockResolvedValue({
+      whatsapp: { status: "ok", url: "wa.me/...", erro: null },
+    }),
+    autoSendEnv,
   } = {}) {
     jest.resetModules();
+    if (autoSendEnv === undefined) {
+      delete process.env.MOTORISTA_MAGIC_LINK_AUTO_SEND;
+    } else {
+      process.env.MOTORISTA_MAGIC_LINK_AUTO_SEND = autoSendEnv;
+    }
 
     // Mock conn.query usado nas tx (assertPedidoElegivel etc)
     const txConn = {
@@ -97,7 +106,21 @@ describe("services/rotasService", () => {
       error: jest.fn(),
     }));
 
-    return require("../../../services/rotasService");
+    jest.doMock(
+      require.resolve("../../../services/motoristaAuthService"),
+      () => ({
+        requestMagicLink: requestMagicLinkStub,
+      }),
+    );
+
+    const svc = require("../../../services/rotasService");
+    return { ...svc, _requestMagicLinkStub: requestMagicLinkStub };
+  }
+
+  // Espera o microtask do fire-and-forget do _maybeAutoSendMagicLink
+  // resolver antes de inspecionar o stub.
+  function flushMicrotasks() {
+    return new Promise((r) => setImmediate(r));
   }
 
   // ---------------------------------------------------------------------------
@@ -302,6 +325,108 @@ describe("services/rotasService", () => {
         { pedido_id: 200, ordem: 1 },
       ]),
     ).rejects.toMatchObject({ status: 400 });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Auto-envio de magic-link ao motorista (rascunho -> pronta)
+  // ---------------------------------------------------------------------------
+
+  test("alterarStatus -> pronta dispara requestMagicLink({motoristaId}) por default", async () => {
+    const requestMagicLinkStub = jest.fn().mockResolvedValue({
+      whatsapp: { status: "ok" },
+    });
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+    });
+    await svc.alterarStatus(1, "pronta");
+    await flushMicrotasks();
+    expect(requestMagicLinkStub).toHaveBeenCalledTimes(1);
+    expect(requestMagicLinkStub).toHaveBeenCalledWith({ motoristaId: 7 });
+  });
+
+  test("alterarStatus -> pronta sem motorista NAO dispara magic-link", async () => {
+    const requestMagicLinkStub = jest.fn();
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: null, total_paradas: 2 },
+      requestMagicLinkStub,
+    });
+    await svc.alterarStatus(1, "pronta");
+    await flushMicrotasks();
+    expect(requestMagicLinkStub).not.toHaveBeenCalled();
+  });
+
+  test("alterarStatus pronta -> em_rota NAO re-envia magic-link", async () => {
+    const requestMagicLinkStub = jest.fn();
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "pronta", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+    });
+    await svc.alterarStatus(1, "em_rota");
+    await flushMicrotasks();
+    expect(requestMagicLinkStub).not.toHaveBeenCalled();
+  });
+
+  test("alterarStatus -> pronta com env=false NAO dispara", async () => {
+    const requestMagicLinkStub = jest.fn();
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+      autoSendEnv: "false",
+    });
+    await svc.alterarStatus(1, "pronta");
+    await flushMicrotasks();
+    expect(requestMagicLinkStub).not.toHaveBeenCalled();
+  });
+
+  test("alterarStatus -> pronta nao falha quando requestMagicLink rejeita", async () => {
+    const requestMagicLinkStub = jest
+      .fn()
+      .mockRejectedValue(new Error("WhatsApp down"));
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 2 },
+      requestMagicLinkStub,
+    });
+    // Nao deve lancar — fire-and-forget com .catch
+    await expect(svc.alterarStatus(1, "pronta")).resolves.toBeDefined();
+    await flushMicrotasks();
+    expect(requestMagicLinkStub).toHaveBeenCalled();
+  });
+
+  test("atualizarRota: troca de motorista numa rota PRONTA dispara magic-link", async () => {
+    const requestMagicLinkStub = jest.fn().mockResolvedValue({ whatsapp: { status: "ok" } });
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "pronta", motorista_id: 7, total_paradas: 2 },
+      motoristaStub: { id: 9, ativo: 1, nome: "novo" },
+      requestMagicLinkStub,
+    });
+    await svc.atualizarRota(1, { motorista_id: 9 });
+    await flushMicrotasks();
+    expect(requestMagicLinkStub).toHaveBeenCalledWith({ motoristaId: 9 });
+  });
+
+  test("atualizarRota: troca de motorista em RASCUNHO NAO dispara (admin ainda editando)", async () => {
+    const requestMagicLinkStub = jest.fn();
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "rascunho", motorista_id: 7, total_paradas: 0 },
+      motoristaStub: { id: 9, ativo: 1, nome: "novo" },
+      requestMagicLinkStub,
+    });
+    await svc.atualizarRota(1, { motorista_id: 9 });
+    await flushMicrotasks();
+    expect(requestMagicLinkStub).not.toHaveBeenCalled();
+  });
+
+  test("atualizarRota: mesmo motorista_id (no-op) NAO dispara", async () => {
+    const requestMagicLinkStub = jest.fn();
+    const svc = loadWithMocks({
+      rotaStub: { id: 1, status: "pronta", motorista_id: 7, total_paradas: 2 },
+      motoristaStub: { id: 7, ativo: 1, nome: "mesmo" },
+      requestMagicLinkStub,
+    });
+    await svc.atualizarRota(1, { motorista_id: 7, veiculo: "Outro" });
+    await flushMicrotasks();
+    expect(requestMagicLinkStub).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
