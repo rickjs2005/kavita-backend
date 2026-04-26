@@ -8,6 +8,10 @@
 # =========================
 .env
 .env.local
+.env.development
+.env.production
+.env.test
+.env.staging
 .env.*.local
 .env.*.backup
 .env.*.bak
@@ -16,6 +20,18 @@
 
 # Permitir versionar exemplo (sem segredos)
 !.env.example
+
+# Certificados / chaves privadas — NUNCA commitar
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.cer
+secrets/
+credentials/
+serviceAccount*.json
+gcp-key*.json
 
 # =========================
 # DEPENDÊNCIAS
@@ -52,6 +68,7 @@ out/
 .tmp/
 temp/
 .cache/
+.turbo/
 .eslintcache
 *.tsbuildinfo
 
@@ -74,11 +91,20 @@ public/uploads/
 storage/
 
 # =========================
-# BACKUPS DE BANCO (scripts/backup-mysql.js)
+# BACKUPS / DUMPS DE BANCO (scripts/backup-mysql.js)
 # =========================
 backups/
 *.sql.gz
 *.sql.bak
+*.sql.dump
+*.dump
+*.dump.gz
+
+# Banco local SQLite (caso seja usado em algum cenario de dev)
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
 
 # =========================
 # IDE / OS
