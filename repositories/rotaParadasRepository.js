@@ -26,6 +26,7 @@ async function listByRotaId(rotaId, conn = pool) {
   const [rows] = await conn.query(
     `SELECT p.id, p.rota_id, p.pedido_id, p.ordem, p.status,
             p.entregue_em, p.observacao_motorista, p.ocorrencia_id,
+            p.comprovante_foto_url, p.assinatura_url,
             p.created_at, p.updated_at,
             ped.endereco        AS pedido_endereco,
             ped.tipo_endereco   AS pedido_tipo_endereco,
@@ -131,6 +132,29 @@ async function updateOrdensBulk(rotaId, ordens, conn = pool) {
   }
 }
 
+/**
+ * Fase 5 — atualiza colunas de comprovante (foto + assinatura).
+ * Aceita patch parcial: so' atualiza colunas que vierem em `updates`.
+ */
+async function updateComprovante(id, updates, conn = pool) {
+  const allowed = ["comprovante_foto_url", "assinatura_url"];
+  const sets = [];
+  const params = [];
+  for (const k of allowed) {
+    if (Object.prototype.hasOwnProperty.call(updates, k)) {
+      sets.push(`${k} = ?`);
+      params.push(updates[k]);
+    }
+  }
+  if (sets.length === 0) return 0;
+  params.push(id);
+  const [r] = await conn.query(
+    `UPDATE rota_paradas SET ${sets.join(", ")} WHERE id = ?`,
+    params,
+  );
+  return r.affectedRows;
+}
+
 async function updateStatus(id, patch, conn = pool) {
   const allowed = [
     "status",
@@ -167,4 +191,5 @@ module.exports = {
   deleteByRotaAndPedido,
   updateOrdensBulk,
   updateStatus,
+  updateComprovante,
 };

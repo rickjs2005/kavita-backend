@@ -26,6 +26,7 @@ const rotasRepo = require("../repositories/rotasRepository");
 const paradasRepo = require("../repositories/rotaParadasRepository");
 const posicoesRepo = require("../repositories/pedidoPosicoesRepository");
 const rotasService = require("./rotasService");
+const mediaService = require("./mediaService");
 
 const PROBLEMA_TIPOS = new Set([
   "endereco_incorreto",
@@ -388,6 +389,88 @@ async function fixarPosicao(
   return result;
 }
 
+/**
+ * Fase 5 — salva foto de comprovante e/ou assinatura na parada.
+ *
+ * Aceita ambos opcionais: motorista pode enviar so foto, so assinatura,
+ * ambos, ou nenhum (caso em que e' no-op silencioso).
+ *
+ * @param {{
+ *   foto?: Express.Multer.File,
+ *   assinaturaPng?: { buffer: Buffer, mimetype: string }
+ * }} payload
+ * @param {{ idempotencyKey?: string }} [ctx]
+ */
+async function salvarComprovante(paradaId, motoristaId, payload = {}, ctx = {}) {
+  const result = await withIdempotency(
+    {
+      motoristaId,
+      idempotencyKey: ctx.idempotencyKey,
+      endpoint: `POST /api/motorista/paradas/${paradaId}/comprovante`,
+    },
+    async () => {
+      const parada = await _findParadaDoMotorista(paradaId, motoristaId);
+      if (parada.rota_status !== "em_rota") {
+        throw new AppError(
+          "Inicie a rota antes de enviar comprovante.",
+          ERROR_CODES.CONFLICT,
+          409,
+        );
+      }
+
+      const updates = {};
+
+      if (payload.foto) {
+        const [uploaded] = await mediaService.persistMedia([payload.foto], {
+          folder: "entregas",
+        });
+        if (uploaded?.path) {
+          updates.comprovante_foto_url = uploaded.path;
+        }
+      }
+
+      if (payload.assinaturaPng?.buffer?.length) {
+        // Reusa o mesmo storage adapter via persistMedia. Constroi um
+        // file-like multer sintetico (so' precisa de buffer + mimetype +
+        // originalname).
+        const fakeFile = {
+          buffer: payload.assinaturaPng.buffer,
+          mimetype: payload.assinaturaPng.mimetype || "image/png",
+          originalname: `assinatura-parada-${paradaId}.png`,
+          size: payload.assinaturaPng.buffer.length,
+        };
+        const [uploaded] = await mediaService.persistMedia([fakeFile], {
+          folder: "entregas",
+        });
+        if (uploaded?.path) {
+          updates.assinatura_url = uploaded.path;
+        }
+      }
+
+      if (Object.keys(updates).length === 0) {
+        // Nada pra atualizar — devolve a parada atual sem mexer
+        return paradasRepo.findById(paradaId);
+      }
+
+      await paradasRepo.updateComprovante(paradaId, updates);
+      logger.info(
+        {
+          paradaId,
+          motoristaId,
+          temFoto: !!updates.comprovante_foto_url,
+          temAssinatura: !!updates.assinatura_url,
+        },
+        "motorista.parada.comprovante",
+      );
+      return paradasRepo.findById(paradaId);
+    },
+  );
+  if (result && result.__replayed) {
+    return paradasRepo.findById(paradaId);
+  }
+  return result;
+}
+
 module.exports = {
   // leitura
   getRotaHoje,
@@ -400,6 +483,7 @@ module.exports = {
   marcarEntregue,
   reportarProblema,
   fixarPosicao,
+  salvarComprovante,
   // export
   PROBLEMA_TIPOS: Array.from(PROBLEMA_TIPOS),
   withIdempotency,

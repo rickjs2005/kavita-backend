@@ -9,6 +9,7 @@ const router = express.Router();
 
 const { validate } = require("../../middleware/validate");
 const ctrl = require("../../controllers/motorista/motoristaController");
+const mediaService = require("../../services/mediaService");
 const {
   finalizarRotaSchema,
   reportarProblemaSchema,
@@ -42,6 +43,14 @@ router.post(
   "/paradas/:id/posicao",
   validate(fixarPosicaoSchema),
   ctrl.fixarPosicao,
+);
+
+// Fase 5 — comprovante (foto + assinatura). Multipart com 1 arquivo
+// 'foto' (opcional) + body string 'assinaturaBase64' (opcional, PNG canvas).
+router.post(
+  "/paradas/:id/comprovante",
+  mediaService.upload.single("foto"),
+  ctrl.salvarComprovante,
 );
 
 module.exports = router;

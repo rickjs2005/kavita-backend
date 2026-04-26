@@ -134,6 +134,43 @@ async function fixarPosicao(req, res, next) {
   }
 }
 
+/**
+ * Fase 5 — comprovante de entrega.
+ * Aceita multipart com `foto` (Express.Multer.File) e/ou `assinatura`
+ * como base64 dataURL no body string `assinaturaBase64` (PNG canvas).
+ */
+async function salvarComprovante(req, res, next) {
+  try {
+    const id = _parseId(req.params.id);
+
+    const payload = {};
+    if (req.file) {
+      payload.foto = req.file;
+    }
+    const assinaturaB64 = req.body?.assinaturaBase64;
+    if (typeof assinaturaB64 === "string" && assinaturaB64.length > 100) {
+      // Aceita 'data:image/png;base64,XXXXX' ou base64 puro
+      const match = /^data:image\/(png|jpeg|jpg);base64,(.+)$/i.exec(assinaturaB64);
+      const raw = match ? match[2] : assinaturaB64;
+      const mime = match ? `image/${match[1].toLowerCase()}` : "image/png";
+      payload.assinaturaPng = {
+        buffer: Buffer.from(raw, "base64"),
+        mimetype: mime,
+      };
+    }
+
+    const data = await motoristaService.salvarComprovante(
+      id,
+      req.motorista.id,
+      payload,
+      { idempotencyKey: _idemKey(req) },
+    );
+    return response.ok(res, data, "Comprovante registrado.");
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   me,
   rotaHoje,
@@ -144,4 +181,5 @@ module.exports = {
   marcarEntregue,
   reportarProblema,
   fixarPosicao,
+  salvarComprovante,
 };
