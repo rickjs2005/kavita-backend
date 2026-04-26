@@ -262,13 +262,18 @@ async function listarPedidosDisponiveis({ cidade, bairro, ate } = {}) {
     `SELECT p.id, p.usuario_id, p.endereco, p.tipo_endereco,
             p.endereco_latitude, p.endereco_longitude, p.observacao_entrega,
             p.total, p.shipping_price, p.data_pedido,
+            p.forma_pagamento, p.status_entrega,
             u.nome AS usuario_nome, u.telefone AS usuario_telefone,
             (
               SELECT COUNT(*) FROM rota_paradas rp
               JOIN rotas r2 ON r2.id = rp.rota_id
               WHERE rp.pedido_id = p.id
                 AND r2.status NOT IN ('cancelada','finalizada')
-            ) AS em_rota_ativa
+            ) AS em_rota_ativa,
+            (
+              SELECT COUNT(*) FROM pedido_ocorrencias oc
+              WHERE oc.pedido_id = p.id
+            ) AS ocorrencias_anteriores
        FROM pedidos p
        LEFT JOIN usuarios u ON u.id = p.usuario_id
       WHERE ${where.join(" AND ")}

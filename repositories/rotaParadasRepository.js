@@ -28,19 +28,26 @@ async function listByRotaId(rotaId, conn = pool) {
             p.entregue_em, p.observacao_motorista, p.ocorrencia_id,
             p.comprovante_foto_url, p.assinatura_url,
             p.created_at, p.updated_at,
-            ped.endereco        AS pedido_endereco,
-            ped.tipo_endereco   AS pedido_tipo_endereco,
-            ped.endereco_latitude  AS pedido_lat,
-            ped.endereco_longitude AS pedido_lng,
-            ped.observacao_entrega AS pedido_observacao_entrega,
-            ped.total           AS pedido_total,
+            ped.endereco         AS pedido_endereco,
+            ped.tipo_endereco    AS pedido_tipo_endereco,
+            ped.endereco_latitude   AS pedido_lat,
+            ped.endereco_longitude  AS pedido_lng,
+            ped.observacao_entrega  AS pedido_observacao_entrega,
+            ped.total            AS pedido_total,
+            ped.forma_pagamento  AS pedido_forma_pagamento,
+            ped.data_pedido      AS pedido_criado_em,
             u.id     AS usuario_id,
             u.nome   AS usuario_nome,
             u.email  AS usuario_email,
-            u.telefone AS usuario_telefone
+            u.telefone AS usuario_telefone,
+            oc.tipo       AS ocorrencia_tipo,
+            oc.motivo     AS ocorrencia_motivo,
+            oc.observacao AS ocorrencia_observacao,
+            oc.created_at AS ocorrencia_criado_em
        FROM rota_paradas p
        JOIN pedidos ped ON ped.id = p.pedido_id
        LEFT JOIN usuarios u ON u.id = ped.usuario_id
+       LEFT JOIN pedido_ocorrencias oc ON oc.id = p.ocorrencia_id
       WHERE p.rota_id = ?
       ORDER BY p.ordem ASC, p.id ASC`,
     [rotaId],

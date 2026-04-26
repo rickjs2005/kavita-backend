@@ -35,15 +35,28 @@ async function list({ data, status, motoristaId } = {}, conn = pool) {
     where.push("r.motorista_id = ?");
     params.push(motoristaId);
   }
+  // SUM(CASE...) por status da parada — 1 round-trip ao banco e cobre
+  // os 3 estados que o admin precisa diferenciar visualmente:
+  //   * paradas_pendentes  -> ainda nao entregues nem com problema
+  //   * paradas_entregues  -> redundante com r.total_entregues, mas mantemos
+  //                           pra consistencia (caso recalcTotals fique stale)
+  //   * paradas_problema   -> motorista reportou ocorrencia
+  // Tambem trazemos motorista_telefone pra evitar request extra no FE.
   const [rows] = await conn.query(
     `SELECT r.id, r.data_programada, r.motorista_id, r.veiculo,
             r.regiao_label, r.status, r.total_paradas, r.total_entregues,
             r.iniciada_em, r.finalizada_em, r.tempo_total_minutos,
-            r.km_estimado, r.km_real, r.created_at,
-            m.nome AS motorista_nome
+            r.km_estimado, r.km_real, r.created_at, r.updated_at,
+            m.nome     AS motorista_nome,
+            m.telefone AS motorista_telefone,
+            COALESCE(SUM(CASE WHEN p.status IN ('pendente','em_andamento') THEN 1 ELSE 0 END), 0) AS paradas_pendentes,
+            COALESCE(SUM(CASE WHEN p.status = 'entregue' THEN 1 ELSE 0 END), 0) AS paradas_entregues,
+            COALESCE(SUM(CASE WHEN p.status = 'problema' THEN 1 ELSE 0 END), 0) AS paradas_problema
        FROM rotas r
        LEFT JOIN motoristas m ON m.id = r.motorista_id
+       LEFT JOIN rota_paradas p ON p.rota_id = r.id
       WHERE ${where.join(" AND ")}
+      GROUP BY r.id
       ORDER BY r.data_programada DESC, r.id DESC`,
     params,
   );
