@@ -77,6 +77,7 @@ describe("statsController", () => {
 
   describe("getAlertas", () => {
     test("returns empty array", async () => {
+      repo.getAlertas.mockResolvedValue([]);
       await ctrl.getAlertas(makeReq(), makeRes(), makeNext());
       expect(response.ok).toHaveBeenCalledWith(expect.anything(), []);
     });

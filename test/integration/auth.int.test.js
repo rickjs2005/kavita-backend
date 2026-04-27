@@ -252,7 +252,7 @@ describe("POST /api/users/register", () => {
     ]);
 
     const res = await request(app).post("/api/users/register").send({
-      nome: "Rick", email: "r@t.com", senha: "123456", cpf: "111.444.777-35",
+      nome: "Rick", email: "r@t.com", senha: "12345678", cpf: "111.444.777-35",
     });
 
     expect(res.status).toBe(409);
@@ -267,7 +267,7 @@ describe("POST /api/users/register", () => {
     ]);
 
     const res = await request(app).post("/api/users/register").send({
-      nome: "Rick", email: "new@t.com", senha: "123456", cpf: "111.444.777-35",
+      nome: "Rick", email: "new@t.com", senha: "12345678", cpf: "111.444.777-35",
     });
 
     expect(res.status).toBe(409);
@@ -279,7 +279,7 @@ describe("POST /api/users/register", () => {
     userRepoMock.findUserByEmailOrCpf.mockResolvedValue([]);
 
     const res = await request(app).post("/api/users/register").send({
-      nome: "Rick", email: "r@t.com", senha: "123456", cpf: "111.444.777-35",
+      nome: "Rick", email: "r@t.com", senha: "12345678", cpf: "111.444.777-35",
     });
 
     expect(res.status).toBe(201);

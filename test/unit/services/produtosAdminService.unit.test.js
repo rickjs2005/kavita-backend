@@ -106,6 +106,8 @@ describe("produtosAdminService", () => {
 
   describe("deleteProduct", () => {
     test("deletes product and cleans up media", async () => {
+      repo.findById.mockResolvedValue({ id: 1, name: "Produto A" });
+      repo.countCartReferences.mockResolvedValue({ activeCount: 0, closedCount: 0 });
       repo.findImagesByProductId.mockResolvedValue([{ path: "/uploads/a.jpg" }]);
       repo.remove.mockResolvedValue(1);
 
@@ -116,8 +118,7 @@ describe("produtosAdminService", () => {
     });
 
     test("throws NOT_FOUND", async () => {
-      repo.findImagesByProductId.mockResolvedValue([]);
-      repo.remove.mockResolvedValue(0);
+      repo.findById.mockResolvedValue(null);
 
       await expect(service.deleteProduct(999)).rejects.toMatchObject({ code: "NOT_FOUND" });
     });

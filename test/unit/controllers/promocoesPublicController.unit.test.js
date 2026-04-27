@@ -30,12 +30,15 @@ describe("promocoesPublicController", () => {
     expect(response.ok).toHaveBeenCalledWith(expect.anything(), { id: 1 });
   });
 
-  test("getPromocao AppError passes through", async () => {
+  test("getPromocao AppError NOT_FOUND devolve 200 com data: null (sem chamar next)", async () => {
     const err = new AppError("Nope", "NOT_FOUND", 404);
     svc.getPromocaoByProductId.mockRejectedValue(err);
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     const next = jest.fn();
-    await ctrl.getPromocao({ params: { productId: 999 } }, {}, next);
-    expect(next).toHaveBeenCalledWith(err);
+    await ctrl.getPromocao({ params: { productId: 999 } }, res, next);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ ok: true, data: null });
+    expect(next).not.toHaveBeenCalled();
   });
 
   test("getPromocao generic error wraps in 500", async () => {
