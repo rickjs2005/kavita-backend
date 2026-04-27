@@ -143,7 +143,7 @@ function enrichPayloadWithSignature(payload, signature) {
   } catch {
     body = payload;
   }
-  return JSON.stringify({ _signature: signature ?? null, body });
+  return JSON.stringify({ _meta: { signature: signature ?? null }, body });
 }
 
 /**
@@ -277,6 +277,80 @@ async function markWebhookEventProcessed(conn, dbEventId, outcome) {
 }
 
 /**
+ * Marca evento como parqueado: aguarda condição (pedido existir) para retry
+ * futuro. `processed_at` FICA `NULL` para um job de retry posterior poder
+ * reprocessar quando o pedido aparecer no banco.
+ *
+ * Marker no formato `PARKED:PENDING_ORDER_MATCH:pedidoId=<id>` —
+ * convenção `PARKED:*` sinaliza que NÃO é erro, é estado intencional.
+ *
+ * Incrementa `retry_count` para visibilidade de quantas vezes o evento
+ * foi reprocessado nesse estado.
+ *
+ * @param {import("mysql2").PoolConnection} conn
+ * @param {number} dbEventId
+ * @param {number|string} pedidoIdRef  ID referenciado em metadata.pedidoId
+ */
+async function markWebhookEventParkedPendingMatch(conn, dbEventId, pedidoIdRef) {
+  const marker = `PARKED:PENDING_ORDER_MATCH:pedidoId=${pedidoIdRef}`;
+  await conn.query(
+    `UPDATE webhook_events
+        SET processing_error = ?,
+            retry_count      = retry_count + 1
+      WHERE id = ?`,
+    [marker, dbEventId]
+  );
+}
+
+/**
+ * Lista eventos parqueados aguardando match de pedido. Para um job de retry
+ * futuro reprocessá-los quando o pedido aparecer no banco.
+ *
+ * Filtros: `processed_at IS NULL` + marker `PARKED:PENDING_ORDER_MATCH:%`
+ * + provider canônico do MP.
+ *
+ * @param {number} [limit=100]
+ * @returns {Promise<Array<{id, provider_event_id, event_type, payload, processing_error, retry_count, created_at}>>}
+ */
+async function findParkedPendingOrderMatch(limit = 100) {
+  const safeLimit =
+    Number.isFinite(Number(limit)) && Number(limit) > 0
+      ? Math.floor(Number(limit))
+      : 100;
+  const [rows] = await pool.query(
+    `SELECT id, provider_event_id, event_type, payload, processing_error,
+            retry_count, created_at
+       FROM webhook_events
+      WHERE provider = ?
+        AND processed_at IS NULL
+        AND processing_error LIKE 'PARKED:PENDING_ORDER_MATCH:%'
+      ORDER BY created_at ASC
+      LIMIT ?`,
+    [MP_PROVIDER, safeLimit]
+  );
+  return rows;
+}
+
+/**
+ * Returns the order row locked FOR UPDATE if found, or null.
+ * Caller decides whether absence is an error or expected — no implicit fallback.
+ *
+ * @param {import("mysql2").PoolConnection} conn
+ * @param {number|string} pedidoId
+ * @returns {Promise<{id: number, status_pagamento: string}|null>}
+ */
+async function findPedidoForUpdate(conn, pedidoId) {
+  const [[row]] = await conn.query(
+    `SELECT id, status_pagamento
+       FROM pedidos
+      WHERE id = ?
+      FOR UPDATE`,
+    [pedidoId]
+  );
+  return row || null;
+}
+
+/**
  * Atualiza status_pagamento, status e pagamento_id de forma idempotente.
  * Só executa se o estado ou pagamento_id mudou.
  * @param {import("mysql2").PoolConnection} conn
@@ -303,11 +377,14 @@ module.exports = {
   getTotalPedido,
   getPedidoById,
   setPedidoStatusPendente,
+  findPedidoForUpdate,
+  updatePedidoPayment,
   // Webhook events
   findWebhookEventForUpdate,
   insertWebhookEvent,
   markWebhookEventReceived,
   markWebhookEventIgnored,
   markWebhookEventProcessed,
-  updatePedidoPayment,
+  markWebhookEventParkedPendingMatch,
+  findParkedPendingOrderMatch,
 };
