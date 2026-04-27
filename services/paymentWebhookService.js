@@ -7,6 +7,7 @@ const { withTransaction } = require("../lib/withTransaction");
 const repo = require("../repositories/paymentRepository");
 const orderRepo = require("../repositories/orderRepository");
 const logger = require("../lib/logger");
+const sentry = require("../lib/sentry");
 
 // ---------------------------------------------------------------------------
 // Status mapping
@@ -65,7 +66,12 @@ function isStatusTransitionSafe(currentStatus, newStatus) {
  * @param {string}  opts.payload        JSON.stringify(req.body)
  * @param {string}  opts.signatureHeader req.get("x-signature")
  *
- * @returns {Promise<"processed"|"idempotent"|"ignored">}
+ * @returns {Promise<"processed"|"idempotent"|"ignored"|"parked">}
+ *   - "processed": evento aplicado (status atualizado ou bloqueado por guard)
+ *   - "idempotent": já estava processado, no-op
+ *   - "ignored": evento sem informação útil, descartado
+ *   - "parked": pedido referenciado em metadata.pedidoId não existe;
+ *     evento aguarda retry futuro via marker PARKED:PENDING_ORDER_MATCH:*
  */
 async function handleWebhookEvent({
   eventId,
@@ -130,13 +136,38 @@ async function handleWebhookEvent({
 
     const novoStatus = mapMPStatusToDomain(payment.status);
 
+    // Lookup do pedido referenciado em metadata.pedidoId. Pode ser null se
+    // o pedido foi cancelado/deletado entre /payment/start e o webhook, se
+    // o metadata.pedidoId está corrompido, ou se o webhook chegou antes do
+    // pedido aparecer (race em ambiente de testes).
+    const pedido = await repo.findPedidoForUpdate(conn, pedidoId);
+
+    // Bug A — pedido órfão. Antes do fix, o código caía em fallback
+    // `currentStatus = "pendente"` e fazia UPDATE com 0 affected rows
+    // silenciosamente (cliente pagou, sistema "esqueceu"). Agora parqueamos
+    // o evento via marker PARKED:PENDING_ORDER_MATCH:* e alertamos via
+    // Sentry. processed_at fica NULL — um retry job futuro reprocessa
+    // quando o pedido aparecer no banco.
+    if (!pedido) {
+      logger.warn(
+        { pedidoId, dataId, eventId, novoStatus },
+        "payment.race_check pedido_inexistente"
+      );
+      sentry.captureMessage(
+        "Webhook MP referenciou pedido inexistente — evento parqueado",
+        "warning",
+        {
+          tags: { domain: "payment.webhook.parked_pending_order" },
+          extra: { pedidoId, dataId, eventId, novoStatus },
+        }
+      );
+      await repo.markWebhookEventParkedPendingMatch(conn, dbEventId, pedidoId);
+      return "parked";
+    }
+
     // Guard: check current order status and block dangerous backward transitions.
     // Prevents edge cases where a stale API response could regress a "pago" order.
-    const pedidoRow = await conn.query(
-      "SELECT status_pagamento FROM pedidos WHERE id = ? FOR UPDATE",
-      [pedidoId]
-    );
-    const currentStatus = pedidoRow[0]?.[0]?.status_pagamento || "pendente";
+    const currentStatus = pedido.status_pagamento || "pendente";
 
     if (!isStatusTransitionSafe(currentStatus, novoStatus)) {
       logger.warn({ pedidoId, currentStatus, novoStatus, dataId }, "status transition blocked");

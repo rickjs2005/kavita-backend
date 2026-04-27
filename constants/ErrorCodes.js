@@ -1,3 +1,16 @@
+/**
+ * Webhook processing markers stored in webhook_events.processing_error
+ *
+ * NULL                       → processed successfully
+ * IGNORED:<reason>           → discarded intentionally, will NOT retry
+ * BLOCKED:<from>-><to>       → invalid status transition, will NOT retry
+ * PARKED:<reason>:<context>  → awaiting condition, eligible for retry
+ *
+ * Dashboards listing real errors should filter:
+ *   WHERE processing_error NOT LIKE 'IGNORED:%'
+ *     AND processing_error NOT LIKE 'BLOCKED:%'
+ *     AND processing_error NOT LIKE 'PARKED:%'
+ */
 const ERROR_CODES = {
   // Auth / Permissões
   // AUTH_ERROR    → credenciais inválidas (senha errada, token inválido) — HTTP 401
@@ -37,6 +50,19 @@ const ERROR_CODES = {
   GEOCODING_ERROR: "GEOCODING_ERROR",
   GEOCODE_NOT_FOUND: "GEOCODE_NOT_FOUND",
   PROVIDER_NOT_IMPLEMENTED: "PROVIDER_NOT_IMPLEMENTED",
+
+  // ---------------------------------------------------------------------------
+  // Webhook event markers — NÃO são códigos de erro HTTP.
+  //
+  // Usados como prefixo no campo `processing_error` da tabela `webhook_events`
+  // para distinguir parqueamento intencional de erros reais. Dashboards de
+  // erro devem filtrar:  WHERE processing_error NOT LIKE 'PARKED:%'
+  //
+  // Marker completo de pedido órfão:
+  //   PARKED:PENDING_ORDER_MATCH:pedidoId=<id>
+  // ---------------------------------------------------------------------------
+  PARKED_PREFIX: "PARKED:",
+  PENDING_ORDER_MATCH: "PENDING_ORDER_MATCH",
 };
 
 module.exports = ERROR_CODES;

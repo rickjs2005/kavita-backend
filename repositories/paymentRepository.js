@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 const pool = require("../config/pool");
+const logger = require("../lib/logger");
 
 /* ---- Payment methods --------------------------------------------------- */
 
@@ -113,67 +114,240 @@ async function setPedidoStatusPendente(pedidoId) {
 
 /* ---- Webhook events ------------------------------------------------------- */
 
+// TODO(sprint-pos-go-live): conciliar schemas conflitantes de webhook_events.
+// As migrations 2026022420502108 (event_id/signature/status enum) e
+// 2026041800000002 (provider/provider_event_id/processing_error/retry_count)
+// criam a mesma tabela com colunas diferentes. A segunda faz DROP TABLE IF
+// EXISTS antes de recriar, portanto o schema vivente é o multi-provider —
+// ver ADR docs/decisions/0001-webhook-events-unified-schema.md. Esta camada
+// está alinhada com o schema vivente; a primeira migration deve ser marcada
+// obsoleta ou removida em sprint pós-go-live, junto com squash de migrations.
+
 /**
- * Busca evento com FOR UPDATE (uso dentro de transação).
+ * Provider canônico do MP nesta tabela. Hardcoded — todos os webhooks MP
+ * gravam com este valor para coexistir com Asaas/ClickSign no mesmo schema.
+ */
+const MP_PROVIDER = "mercadopago";
+
+/**
+ * Embute a assinatura HMAC do header dentro do JSON `payload` para
+ * preservar auditoria — o schema multi-provider não tem coluna dedicada.
+ *
+ * Resultado: `{ "_signature": "<header>", "body": <body original> }`.
+ * Se `payload` não for JSON parseável, mantém como string crua em `body`.
+ */
+function enrichPayloadWithSignature(payload, signature) {
+  let body;
+  try {
+    body = typeof payload === "string" ? JSON.parse(payload) : payload;
+  } catch {
+    body = payload;
+  }
+  return JSON.stringify({ _meta: { signature: signature ?? null }, body });
+}
+
+/**
+ * Busca evento já recebido (com FOR UPDATE para serializar duplicatas).
+ *
+ * No schema multi-provider, a chave única é (provider, provider_event_id).
+ * O parâmetro `eventId` mantém o nome legado para preservar a assinatura
+ * do método — internamente bate em `provider_event_id` filtrado por
+ * `provider = 'mercadopago'`.
+ *
+ * Retorna `{ id, processed_at, processing_error, retry_count } | null`.
+ *
  * @param {import("mysql2").PoolConnection} conn
+ * @param {string} eventId
  */
 async function findWebhookEventForUpdate(conn, eventId) {
   const [[row]] = await conn.query(
-    `SELECT id, status, processed_at
+    `SELECT id, processed_at, processing_error, retry_count
        FROM webhook_events
-      WHERE event_id = ?
+      WHERE provider = ? AND provider_event_id = ?
       FOR UPDATE`,
-    [eventId]
+    [MP_PROVIDER, eventId]
   );
   return row || null;
 }
 
 /**
+ * Insere evento novo. A coluna `signature` não existe no schema
+ * multi-provider — a assinatura HMAC é embutida no JSON `payload`
+ * (chave `_signature`) para preservar auditoria sem alterar schema.
+ *
  * @param {import("mysql2").PoolConnection} conn
+ * @param {{ eventId: string, signature: string|null, type: string|null, payload: string }} args
+ *   `payload` é a string JSON do body original (req.body stringificado).
  */
 async function insertWebhookEvent(conn, { eventId, signature, type, payload }) {
+  const eventType = type || "unknown";
+
+  // Caller didn't pass a type → distinguishable in dashboards from legitimate
+  // unknown values. Helps spot bugs in upstream wiring (router/controller).
+  if (eventType === "unknown") {
+    const preview =
+      typeof payload === "string"
+        ? payload.slice(0, 200)
+        : String(payload ?? "").slice(0, 200);
+    logger.warn(
+      { provider: MP_PROVIDER, eventId, payloadPreview: preview },
+      "webhook.event_type.missing"
+    );
+  }
+
+  const enriched = enrichPayloadWithSignature(payload, signature);
   const [result] = await conn.query(
-    `INSERT INTO webhook_events (event_id, signature, event_type, payload, status, created_at)
-     VALUES (?, ?, ?, ?, 'received', NOW())`,
-    [eventId, signature, type || null, payload]
+    `INSERT INTO webhook_events
+        (provider, provider_event_id, event_type, payload, created_at)
+     VALUES (?, ?, ?, ?, NOW())`,
+    [MP_PROVIDER, eventId, eventType, enriched]
   );
   return result.insertId;
 }
 
 /**
+ * Atualiza um evento que JÁ existia mas ainda não foi processado
+ * (re-delivery do gateway). Atualiza o payload — uma re-delivery pode
+ * trazer body ligeiramente diferente — e incrementa `retry_count` para
+ * visibilidade. NÃO mexe em `processed_at`: o evento continua pendente
+ * até ser processado de fato.
+ *
  * @param {import("mysql2").PoolConnection} conn
  */
 async function markWebhookEventReceived(conn, dbEventId, { signature, type, payload }) {
+  const enriched = enrichPayloadWithSignature(payload, signature);
   await conn.query(
     `UPDATE webhook_events
-        SET signature = ?, event_type = ?, payload = ?, status = 'received', updated_at = NOW()
+        SET event_type   = COALESCE(?, event_type),
+            payload      = ?,
+            retry_count  = retry_count + 1
       WHERE id = ?`,
-    [signature, type || null, payload, dbEventId]
+    [type || null, enriched, dbEventId]
   );
 }
 
 /**
+ * Marca evento como ignorado (sem dados úteis: type != payment, sem
+ * dataId, sem metadata.pedidoId, etc.). `reason` é opcional e fica
+ * gravada em `processing_error` no formato `IGNORED:<reason>` para
+ * auditoria.
+ *
+ * Usar `IGNORED:` (sem prefixo `PARKED:`) sinaliza que NÃO deve ser
+ * reprocessado — é descartável. Diferente de `PARKED:`, que aguarda retry.
+ *
  * @param {import("mysql2").PoolConnection} conn
+ * @param {number} dbEventId
+ * @param {string|null} [reason]
  */
-async function markWebhookEventIgnored(conn, dbEventId) {
+async function markWebhookEventIgnored(conn, dbEventId, reason = null) {
+  const marker = reason ? `IGNORED:${reason}` : "IGNORED";
   await conn.query(
     `UPDATE webhook_events
-        SET status = 'ignored', processed_at = NOW(), updated_at = NOW()
+        SET processed_at     = NOW(),
+            processing_error = ?
       WHERE id = ?`,
-    [dbEventId]
+    [marker, dbEventId]
   );
 }
 
 /**
+ * Marca evento como processado.
+ *
+ * `outcome` aceita:
+ *   - "pago" / "falhou" / "pendente" / "estornado" — caminho feliz,
+ *     `processing_error` fica `NULL`.
+ *   - "blocked:<from>-><to>" — transição rejeitada pelo guard
+ *     `isStatusTransitionSafe`; `processing_error` grava como
+ *     `BLOCKED:<from>-><to>` para auditoria. NÃO é `PARKED:` — não retentar.
+ *
  * @param {import("mysql2").PoolConnection} conn
+ * @param {number} dbEventId
+ * @param {string} outcome
  */
-async function markWebhookEventProcessed(conn, dbEventId, status) {
+async function markWebhookEventProcessed(conn, dbEventId, outcome) {
+  const isBlocked = typeof outcome === "string" && outcome.startsWith("blocked:");
+  const procError = isBlocked ? `BLOCKED:${outcome.slice("blocked:".length)}` : null;
   await conn.query(
     `UPDATE webhook_events
-        SET status = ?, processed_at = NOW(), updated_at = NOW()
+        SET processed_at     = NOW(),
+            processing_error = ?
       WHERE id = ?`,
-    [status, dbEventId]
+    [procError, dbEventId]
   );
+}
+
+/**
+ * Marca evento como parqueado: aguarda condição (pedido existir) para retry
+ * futuro. `processed_at` FICA `NULL` para um job de retry posterior poder
+ * reprocessar quando o pedido aparecer no banco.
+ *
+ * Marker no formato `PARKED:PENDING_ORDER_MATCH:pedidoId=<id>` —
+ * convenção `PARKED:*` sinaliza que NÃO é erro, é estado intencional.
+ *
+ * Incrementa `retry_count` para visibilidade de quantas vezes o evento
+ * foi reprocessado nesse estado.
+ *
+ * @param {import("mysql2").PoolConnection} conn
+ * @param {number} dbEventId
+ * @param {number|string} pedidoIdRef  ID referenciado em metadata.pedidoId
+ */
+async function markWebhookEventParkedPendingMatch(conn, dbEventId, pedidoIdRef) {
+  const marker = `PARKED:PENDING_ORDER_MATCH:pedidoId=${pedidoIdRef}`;
+  await conn.query(
+    `UPDATE webhook_events
+        SET processing_error = ?,
+            retry_count      = retry_count + 1
+      WHERE id = ?`,
+    [marker, dbEventId]
+  );
+}
+
+/**
+ * Lista eventos parqueados aguardando match de pedido. Para um job de retry
+ * futuro reprocessá-los quando o pedido aparecer no banco.
+ *
+ * Filtros: `processed_at IS NULL` + marker `PARKED:PENDING_ORDER_MATCH:%`
+ * + provider canônico do MP.
+ *
+ * @param {number} [limit=100]
+ * @returns {Promise<Array<{id, provider_event_id, event_type, payload, processing_error, retry_count, created_at}>>}
+ */
+async function findParkedPendingOrderMatch(limit = 100) {
+  const safeLimit =
+    Number.isFinite(Number(limit)) && Number(limit) > 0
+      ? Math.floor(Number(limit))
+      : 100;
+  const [rows] = await pool.query(
+    `SELECT id, provider_event_id, event_type, payload, processing_error,
+            retry_count, created_at
+       FROM webhook_events
+      WHERE provider = ?
+        AND processed_at IS NULL
+        AND processing_error LIKE 'PARKED:PENDING_ORDER_MATCH:%'
+      ORDER BY created_at ASC
+      LIMIT ?`,
+    [MP_PROVIDER, safeLimit]
+  );
+  return rows;
+}
+
+/**
+ * Returns the order row locked FOR UPDATE if found, or null.
+ * Caller decides whether absence is an error or expected — no implicit fallback.
+ *
+ * @param {import("mysql2").PoolConnection} conn
+ * @param {number|string} pedidoId
+ * @returns {Promise<{id: number, status_pagamento: string}|null>}
+ */
+async function findPedidoForUpdate(conn, pedidoId) {
+  const [[row]] = await conn.query(
+    `SELECT id, status_pagamento
+       FROM pedidos
+      WHERE id = ?
+      FOR UPDATE`,
+    [pedidoId]
+  );
+  return row || null;
 }
 
 /**
@@ -203,11 +377,14 @@ module.exports = {
   getTotalPedido,
   getPedidoById,
   setPedidoStatusPendente,
+  findPedidoForUpdate,
+  updatePedidoPayment,
   // Webhook events
   findWebhookEventForUpdate,
   insertWebhookEvent,
   markWebhookEventReceived,
   markWebhookEventIgnored,
   markWebhookEventProcessed,
-  updatePedidoPayment,
+  markWebhookEventParkedPendingMatch,
+  findParkedPendingOrderMatch,
 };
