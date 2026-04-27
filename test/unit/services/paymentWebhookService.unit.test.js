@@ -4,6 +4,20 @@ jest.mock("../../../config/pool");
 jest.mock("../../../repositories/paymentRepository");
 jest.mock("../../../repositories/orderRepository");
 jest.mock("../../../config/mercadopago", () => ({ getMPClient: jest.fn() }));
+jest.mock("../../../lib/logger", () => ({
+  info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(),
+}));
+jest.mock("../../../lib/sentry", () => ({
+  init: jest.fn(),
+  captureMessage: jest.fn(),
+  captureException: jest.fn(),
+}));
+// O service usa setImmediate + require lazy de comunicacaoService quando o
+// pagamento é aprovado. Sem este mock, a notificação real é executada DEPOIS
+// do teardown do Jest e crasha o process com TypeError. Mockamos para isolar.
+jest.mock("../../../services/comunicacaoService", () => ({
+  dispararEventoComunicacao: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock("mercadopago", () => ({
   Payment: jest.fn().mockImplementation(() => ({ get: jest.fn() })),
 }));
@@ -11,24 +25,35 @@ jest.mock("mercadopago", () => ({
 const pool = require("../../../config/pool");
 const repo = require("../../../repositories/paymentRepository");
 const orderRepo = require("../../../repositories/orderRepository");
+const sentry = require("../../../lib/sentry");
 const { handleWebhookEvent, mapMPStatusToDomain, isStatusTransitionSafe } = require("../../../services/paymentWebhookService");
 
 describe("paymentWebhookService", () => {
   let conn;
+
+  // Drains any setImmediate queued by the "pago" notification path inside
+  // handleWebhookEvent. Without this, the lazy require for comunicacaoService
+  // can fire after Jest tears down the environment and crash the process.
+  afterEach(async () => {
+    await new Promise((resolve) => setImmediate(resolve));
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
 
     conn = {
       beginTransaction: jest.fn().mockResolvedValue(undefined),
-      // Default: conn.query returns a row with status_pagamento = "pendente"
-      // (used by the status transition guard in handleWebhookEvent).
-      query: jest.fn().mockResolvedValue([[{ status_pagamento: "pendente" }]]),
+      query: jest.fn().mockResolvedValue([[]]),
       commit: jest.fn().mockResolvedValue(undefined),
       rollback: jest.fn().mockResolvedValue(undefined),
       release: jest.fn(),
     };
     pool.getConnection.mockResolvedValue(conn);
+
+    // Default: order exists with status_pagamento = "pendente"
+    // Tests that need a different status override this in-place.
+    // Tests that simulate orphan order set this to null.
+    repo.findPedidoForUpdate.mockResolvedValue({ id: 42, status_pagamento: "pendente" });
   });
 
   // -----------------------------------------------------------------------
@@ -144,7 +169,7 @@ describe("paymentWebhookService", () => {
     test("blocked transition — pago → falhou is prevented", async () => {
       repo.findWebhookEventForUpdate.mockResolvedValue(null);
       repo.insertWebhookEvent.mockResolvedValue(20);
-      conn.query.mockResolvedValue([[{ status_pagamento: "pago" }]]);
+      repo.findPedidoForUpdate.mockResolvedValue({ id: 99, status_pagamento: "pago" });
       const { Payment } = require("mercadopago");
       Payment.mockImplementation(() => ({
         get: jest.fn().mockResolvedValue({ status: "rejected", metadata: { pedidoId: 99 } }),
@@ -155,6 +180,42 @@ describe("paymentWebhookService", () => {
       expect(orderRepo.restoreStockOnFailure).not.toHaveBeenCalled();
       expect(repo.markWebhookEventProcessed).toHaveBeenCalledWith(
         conn, 20, "blocked:pago->falhou"
+      );
+    });
+
+    test("parked — pedido inexistente vira PARKED:PENDING_ORDER_MATCH", async () => {
+      repo.findWebhookEventForUpdate.mockResolvedValue(null);
+      repo.insertWebhookEvent.mockResolvedValue(30);
+      // Chave do teste: pedido referenciado em metadata não existe.
+      repo.findPedidoForUpdate.mockResolvedValue(null);
+      const { Payment } = require("mercadopago");
+      Payment.mockImplementation(() => ({
+        get: jest.fn().mockResolvedValue({
+          status: "approved",
+          metadata: { pedidoId: 999999 },
+        }),
+      }));
+
+      const result = await handleWebhookEvent(baseOpts);
+
+      expect(result).toBe("parked");
+      expect(repo.markWebhookEventParkedPendingMatch).toHaveBeenCalledWith(
+        conn, 30, 999999
+      );
+      // Caminho normal de update NÃO deve ter sido tocado.
+      expect(repo.updatePedidoPayment).not.toHaveBeenCalled();
+      expect(repo.markWebhookEventProcessed).not.toHaveBeenCalled();
+      expect(orderRepo.restoreStockOnFailure).not.toHaveBeenCalled();
+      // Sentry alertado com tag canônica de domínio.
+      expect(sentry.captureMessage).toHaveBeenCalledWith(
+        expect.stringContaining("inexistente"),
+        "warning",
+        expect.objectContaining({
+          tags: expect.objectContaining({
+            domain: "payment.webhook.parked_pending_order",
+          }),
+          extra: expect.objectContaining({ pedidoId: 999999 }),
+        })
       );
     });
 
