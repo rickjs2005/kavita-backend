@@ -7,6 +7,8 @@
 "use strict";
 
 const { validateCSRF } = require("../../../middleware/csrfProtection");
+const AppError = require("../../../errors/AppError");
+const ERROR_CODES = require("../../../constants/ErrorCodes");
 
 function makeReq(method, cookieToken, headerToken) {
   return {
@@ -62,39 +64,51 @@ describe("validateCSRF", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  test("returns 403 on POST when cookie token is missing", () => {
+  test("calls next(AppError 403 FORBIDDEN) on POST when cookie token is missing", () => {
     const req = makeReq("POST", undefined, "some-token");
     const res = makeRes();
     const next = jest.fn();
 
     validateCSRF(req, res, next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
-    expect(res.body.message).toContain("CSRF");
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.statusCode).toBe(403);
+    expect(err.code).toBe(ERROR_CODES.FORBIDDEN);
+    expect(err.message).toContain("CSRF");
+    expect(res.statusCode).toBeNull();
   });
 
-  test("returns 403 on POST when header token is missing", () => {
+  test("calls next(AppError 403 FORBIDDEN) on POST when header token is missing", () => {
     const req = makeReq("POST", "some-token", undefined);
     const res = makeRes();
     const next = jest.fn();
 
     validateCSRF(req, res, next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.statusCode).toBe(403);
+    expect(err.code).toBe(ERROR_CODES.FORBIDDEN);
+    expect(res.statusCode).toBeNull();
   });
 
-  test("returns 403 on POST when tokens do not match", () => {
+  test("calls next(AppError 403 FORBIDDEN) on POST when tokens do not match", () => {
     const req = makeReq("POST", "token-A", "token-B");
     const res = makeRes();
     const next = jest.fn();
 
     validateCSRF(req, res, next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
-    expect(res.body.message).toContain("inválido");
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.statusCode).toBe(403);
+    expect(err.code).toBe(ERROR_CODES.FORBIDDEN);
+    expect(err.message).toContain("inválido");
+    expect(res.statusCode).toBeNull();
   });
 
   test("calls next() on POST when cookie and header tokens match", () => {
@@ -109,15 +123,19 @@ describe("validateCSRF", () => {
     expect(res.statusCode).toBeNull();
   });
 
-  test("returns 403 on DELETE when tokens do not match", () => {
+  test("calls next(AppError 403 FORBIDDEN) on DELETE when tokens do not match", () => {
     const req = makeReq("DELETE", "token-X", "token-Y");
     const res = makeRes();
     const next = jest.fn();
 
     validateCSRF(req, res, next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.statusCode).toBe(403);
+    expect(err.code).toBe(ERROR_CODES.FORBIDDEN);
+    expect(res.statusCode).toBeNull();
   });
 
   test("calls next() on PUT when cookie and header tokens match", () => {

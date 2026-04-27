@@ -40,7 +40,11 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
 
     // Mocks dos repositórios usados pelo service
     publicRepo = { findBySlug: jest.fn() };
-    leadsRepo = { create: jest.fn().mockResolvedValue(777) };
+    leadsRepo = {
+      create: jest.fn().mockResolvedValue(777),
+      findRecentByCorretoraAndPhone: jest.fn().mockResolvedValue(null),
+      markRecontactAttempt: jest.fn().mockResolvedValue(undefined),
+    };
     notificationsRepo = { create: jest.fn().mockResolvedValue(undefined) };
 
     // Silencia turnstile em modo dev (sem TURNSTILE_SECRET_KEY)
@@ -105,6 +109,7 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
     canal_preferido: "whatsapp",
     corrego_localidade: "Córrego Pedra Bonita",
     safra_tipo: "atual",
+    consentimento_contato: true,
   };
 
   it("aceita payload completo do frontend (cenário feliz)", async () => {
@@ -138,7 +143,7 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
 
     const res = await request(app)
       .post(`${MOUNT_PATH}/cafe-do-joao/leads`)
-      .send({ nome: "Ana Silva", telefone: "33988887777" });
+      .send({ nome: "Ana Silva", telefone: "33988887777", consentimento_contato: true });
 
     expect(res.status).toBe(201);
     expect(leadsRepo.create).toHaveBeenCalledTimes(1);
@@ -149,7 +154,7 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
 
     const res = await request(app)
       .post(`${MOUNT_PATH}/nao-existe/leads`)
-      .send({ nome: "Ana Silva", telefone: "33988887777" });
+      .send({ nome: "Ana Silva", telefone: "33988887777", consentimento_contato: true });
 
     expect(res.status).toBe(404);
     expect(leadsRepo.create).not.toHaveBeenCalled();
@@ -163,7 +168,7 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
 
     const res = await request(app)
       .post(`${MOUNT_PATH}/cafe-do-joao/leads`)
-      .send({ nome: "Ana Silva", telefone: "33988887777" });
+      .send({ nome: "Ana Silva", telefone: "33988887777", consentimento_contato: true });
 
     expect(res.status).toBe(409);
     expect(leadsRepo.create).not.toHaveBeenCalled();
@@ -188,7 +193,7 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
 
     const res = await request(app)
       .post(`${MOUNT_PATH}/cafe-do-joao/leads`)
-      .send({ nome: "", telefone: "33988887777" });
+      .send({ nome: "", telefone: "33988887777", consentimento_contato: true });
 
     expect(res.status).toBe(400);
   });
@@ -198,7 +203,7 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
 
     const res = await request(app)
       .post(`${MOUNT_PATH}/cafe-do-joao/leads`)
-      .send({ nome: "Ana Silva", telefone: "123" });
+      .send({ nome: "Ana Silva", telefone: "123", consentimento_contato: true });
 
     expect(res.status).toBe(400);
   });
@@ -222,7 +227,7 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
 
     const res = await request(app)
       .post(`${MOUNT_PATH}/cafe-do-joao/leads`)
-      .send({ nome: "Ana Silva", telefone: "33988887777" });
+      .send({ nome: "Ana Silva", telefone: "33988887777", consentimento_contato: true });
 
     expect(res.status).toBe(201);
     expect(leadsRepo.create).toHaveBeenCalledTimes(1);
@@ -236,6 +241,7 @@ describe("POST /api/public/corretoras/:slug/leads", () => {
       .send({
         nome: "Ana Silva",
         telefone: "33988887777",
+        consentimento_contato: true,
         "cf-turnstile-response": "fake-token-ignored-in-dev",
       });
 

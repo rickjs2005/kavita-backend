@@ -73,6 +73,8 @@ describe("CSRF Enforcement", () => {
 
   test("validateCSRF middleware rejects POST with mismatched tokens", async () => {
     const { validateCSRF } = require("../../middleware/csrfProtection");
+    const AppError = require("../../errors/AppError");
+    const ERROR_CODES = require("../../constants/ErrorCodes");
     const req = {
       method: "POST",
       cookies: { csrf_token: "token-a" },
@@ -86,8 +88,12 @@ describe("CSRF Enforcement", () => {
     };
     const next = jest.fn();
     validateCSRF(req, res, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res._status).toBe(403);
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = next.mock.calls[0][0];
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.statusCode).toBe(403);
+    expect(err.code).toBe(ERROR_CODES.FORBIDDEN);
+    expect(res._status).toBeNull();
   });
 
   test("validateCSRF middleware passes POST with matching tokens", async () => {
