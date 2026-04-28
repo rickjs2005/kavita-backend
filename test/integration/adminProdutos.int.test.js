@@ -341,10 +341,13 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
         .send({ ...CREATE_BODY, shippingPrazoDiasStr: "5" });
 
       expect(res.status).toBe(201);
-      // Último argumento ? do INSERT = shippingPrazoDias (5)
-      const insertCall = mockConn.query.mock.calls[0];
-      const sqlArgs = insertCall[1];
-      expect(sqlArgs[sqlArgs.length - 1]).toBe(5);
+      // INSERT tem 10 params: name, description, price, quantity, category_id,
+      // image (null), shipping_free, shipping_free_from_qty, shipping_prazo_dias, reorder_point.
+      // toHaveLength quebra se alguém adicionar coluna sem atualizar este teste.
+      const sqlArgs = mockConn.query.mock.calls[0][1];
+      expect(sqlArgs[8]).toBe(5);          // shipping_prazo_dias
+      expect(sqlArgs[9]).toBeNull();       // reorder_point (não enviado em CREATE_BODY)
+      expect(sqlArgs).toHaveLength(10);
     });
 
     test("201: shipping_prazo_dias ausente persiste NULL (cai no prazo da região)", async () => {
@@ -375,8 +378,14 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
       // O UPDATE principal tem newline entre "UPDATE products" e "SET name = ?...",
       // então discriminamos pelos campos específicos da query.
       mockConn.query.mockImplementation(async (sql) => {
-        // UPDATE principal: contém "shipping_free_from_qty" (último campo do SET)
+        // UPDATE principal: contém "shipping_free_from_qty" (último campo do SET, pré-reorder_point)
         if (String(sql).includes("shipping_free_from_qty")) return [{ affectedRows: 1 }];
+        // productStockSyncService.syncActiveByStock — SELECT FOR UPDATE acionado
+        // após repo.update quando affectedRows > 0. Devolve produto consistente
+        // (qty>0, ativo) → noop, sem queries adicionais.
+        if (String(sql).includes("is_active") && String(sql).includes("deactivated_by") && String(sql).toUpperCase().includes("FOR UPDATE")) {
+          return [[{ id: 10, quantity: 5, is_active: 1, deactivated_by: null }]];
+        }
         // SELECT imagens atuais
         if (String(sql).includes("SELECT path FROM product_images"))
           return [[{ path: keepPath }, { path: removePath }]];
@@ -452,9 +461,12 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
 
   describe("DELETE /api/admin/produtos/:id", () => {
     test("204: remove produto e agenda exclusão das mídias", async () => {
-      const { app, mockConn, mediaServiceMock } = setupModuleWithMocks();
+      const { app, mockConn, poolMock, mediaServiceMock } = setupModuleWithMocks();
 
+      // findById usa pool.query (fora da transação) — early-return 404 sem abrir conn.
+      poolMock.query.mockResolvedValueOnce([[{ id: 10 }]]);
       mockConn.query
+        .mockResolvedValueOnce([[{ activeCount: 0, closedCount: 0 }]]) // countCartReferences
         .mockResolvedValueOnce([[{ path: "/uploads/products/img1.webp" }, { path: "/uploads/products/img2.webp" }]]) // findImagesByProductId
         .mockResolvedValueOnce([{ affectedRows: 1 }]); // DELETE produto
 
@@ -471,11 +483,13 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
     });
 
     test("204: remove produto sem imagens — removeMedia não é chamado", async () => {
-      const { app, mockConn, mediaServiceMock } = setupModuleWithMocks();
+      const { app, mockConn, poolMock, mediaServiceMock } = setupModuleWithMocks();
 
+      poolMock.query.mockResolvedValueOnce([[{ id: 10 }]]);
       mockConn.query
-        .mockResolvedValueOnce([[]])                   // findImagesByProductId: sem imagens
-        .mockResolvedValueOnce([{ affectedRows: 1 }]); // DELETE produto
+        .mockResolvedValueOnce([[{ activeCount: 0, closedCount: 0 }]]) // countCartReferences
+        .mockResolvedValueOnce([[]])                                    // findImagesByProductId: sem imagens
+        .mockResolvedValueOnce([{ affectedRows: 1 }]);                  // DELETE produto
 
       const res = await request(app).delete("/api/admin/produtos/10");
 
@@ -495,13 +509,11 @@ describe("AdminProdutos routes (routes/admin/adminProdutos.js)", () => {
     });
 
     test("404: produto não encontrado (affectedRows=0) — faz rollback", async () => {
-      const { app, mockConn } = setupModuleWithMocks();
+      const { app, mockConn, poolMock } = setupModuleWithMocks();
 
-      // findImagesByProductId → vazio; DELETE → 0 → service lança NOT_FOUND
-      // catch faz rollback; finally libera conn
-      mockConn.query
-        .mockResolvedValueOnce([[]])                   // findImagesByProductId
-        .mockResolvedValueOnce([{ affectedRows: 0 }]); // DELETE retorna 0
+      // findById (pool.query) retorna vazio → service lança NOT_FOUND DENTRO da
+      // transação. catch faz rollback; finally libera conn.
+      poolMock.query.mockResolvedValueOnce([[]]);
 
       const res = await request(app).delete("/api/admin/produtos/999");
 
