@@ -355,6 +355,8 @@ describe("authAdminController", () => {
       expect(res.body.message).toBe("Sessão de verificação inválida.");
     });
 
+    // TODO(sprint-pos-go-live): Flaky - see
+    // docs/decisions/MFA-flaky-investigation-pending.md
     test("200 — fluxo completo MFA (login → mfa)", async () => {
       // Arrange: carregar UMA instância compartilhada do controller
       // para que o mfaChallenges Map persista entre os dois requests.
