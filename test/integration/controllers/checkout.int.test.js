@@ -190,6 +190,17 @@ describe("POST /api/checkout (integration)", () => {
           reply: async () => [[], {}],
         },
         {
+          // productStockSyncService.syncActiveByStock — SELECT FOR UPDATE
+          // após cada debitStock (A1+A2). Devolve produto em estado consistente
+          // (qty>0, ativo) → noop, sem UPDATE de is_active.
+          match: (s) =>
+            s.includes("select id") &&
+            s.includes("is_active") &&
+            s.includes("deactivated_by") &&
+            s.includes("for update"),
+          reply: async () => [[{ id: 1, quantity: 999, is_active: 1, deactivated_by: null }]],
+        },
+        {
           match: (s) => s.startsWith("update pedidos set total"),
           reply: async () => [[], {}],
         },
