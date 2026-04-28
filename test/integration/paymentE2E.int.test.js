@@ -80,6 +80,8 @@ function buildApp({ user = null } = {}) {
     markWebhookEventReceived: jest.fn(),
     markWebhookEventIgnored: jest.fn(),
     markWebhookEventProcessed: jest.fn(),
+    markWebhookEventParkedPendingMatch: jest.fn().mockResolvedValue(),
+    findPedidoForUpdate: jest.fn().mockResolvedValue({ status_pagamento: "pendente" }),
     updatePedidoPayment: jest.fn().mockResolvedValue(),
   };
   jest.doMock(PAYMENT_REPO_PATH, () => paymentRepoMock);

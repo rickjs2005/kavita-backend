@@ -145,7 +145,9 @@ describe("checkoutRepository — insertOrderItem", () => {
 describe("checkoutRepository — debitStock", () => {
   test("quantidade é o primeiro param, productId é o segundo", async () => {
     const conn = makeMockConn();
-    conn.query.mockResolvedValueOnce([{ affectedRows: 1 }]);
+    conn.query
+      .mockResolvedValueOnce([{ affectedRows: 1 }])                                       // UPDATE products SET quantity = quantity - ?
+      .mockResolvedValueOnce([[{ id: 7, quantity: 999, is_active: 1, deactivated_by: null }]]); // syncActiveByStock SELECT FOR UPDATE → noop
 
     await repo.debitStock(conn, 7, 3); // productId=7, quantidade=3
 

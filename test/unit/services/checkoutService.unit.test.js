@@ -32,6 +32,8 @@ describe("checkoutService", () => {
     jest.doMock(couponSvcPath, () => ({
       applyCoupon: jest.fn(),
       validateCouponRules: jest.fn(),
+      previewCoupon: jest.fn(),
+      validateRestrictions: jest.fn(),
     }));
 
     jest.doMock(notifSvcPath, () => ({
@@ -101,7 +103,7 @@ describe("checkoutService", () => {
       checkoutRepo.getProductPrices.mockResolvedValue([{ id: 1, price: 100 }]);
       checkoutRepo.getActivePromotions.mockResolvedValue([]);
       checkoutRepo.findCouponByCode.mockResolvedValue({ id: 5, tipo: "percentual", valor: 10 });
-      couponService.validateCouponRules.mockReturnValue({
+      couponService.previewCoupon.mockResolvedValue({
         desconto: 10,
         cupomAplicado: { id: 5 },
       });
@@ -120,7 +122,7 @@ describe("checkoutService", () => {
       checkoutRepo.getProductPrices.mockResolvedValue([{ id: 1, price: 200 }]);
       checkoutRepo.getActivePromotions.mockResolvedValue([{ product_id: 1, final_price: 150 }]);
       checkoutRepo.findCouponByCode.mockResolvedValue({ id: 5 });
-      couponService.validateCouponRules.mockReturnValue({
+      couponService.previewCoupon.mockResolvedValue({
         desconto: 15,
         cupomAplicado: { id: 5 },
       });
@@ -142,7 +144,7 @@ describe("checkoutService", () => {
       ]);
       checkoutRepo.getActivePromotions.mockResolvedValue([]);
       checkoutRepo.findCouponByCode.mockResolvedValue({ id: 1 });
-      couponService.validateCouponRules.mockReturnValue({
+      couponService.previewCoupon.mockResolvedValue({
         desconto: 5,
         cupomAplicado: { id: 1 },
       });

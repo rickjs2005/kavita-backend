@@ -78,6 +78,17 @@ describe("checkoutController.create (unit)", () => {
         match: (s) => s.startsWith("update pedidos set") && s.includes("shipping_price"),
         reply: async () => [[], {}],
       },
+      // productStockSyncService.syncActiveByStock — SELECT FOR UPDATE
+      // após cada debitStock (A1+A2). Devolve produto em estado consistente
+      // (qty>0, ativo) → noop, sem UPDATE de is_active.
+      {
+        match: (s) =>
+          s.includes("select id") &&
+          s.includes("is_active") &&
+          s.includes("deactivated_by") &&
+          s.includes("for update"),
+        reply: async () => [[{ id: 1, quantity: 999, is_active: 1, deactivated_by: null }], {}],
+      },
     ];
   }
 
@@ -489,7 +500,9 @@ describe("checkoutController.create (unit)", () => {
             {},
           ],
         },
+        { match: (s) => s.includes("from cupom_restricoes"), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("update cupons set usos = usos + 1"), reply: async () => [[], {}] },
+        { match: (s) => s.startsWith("insert into cupom_usos"), reply: async () => [{ affectedRows: 1 }, {}] },
         { match: (s) => s.startsWith("update pedidos set total"), reply: async () => [[], {}] },
       ])
     );
@@ -556,7 +569,9 @@ describe("checkoutController.create (unit)", () => {
             {},
           ],
         },
+        { match: (s) => s.includes("from cupom_restricoes"), reply: async () => [[], {}] },
         { match: (s) => s.startsWith("update cupons set usos = usos + 1"), reply: async () => [[], {}] },
+        { match: (s) => s.startsWith("insert into cupom_usos"), reply: async () => [{ affectedRows: 1 }, {}] },
         { match: (s) => s.startsWith("update pedidos set total"), reply: async () => [[], {}] },
       ])
     );

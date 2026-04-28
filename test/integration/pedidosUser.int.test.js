@@ -20,6 +20,8 @@ const express = require("express");
 
 const AUTH_PATH = require.resolve("../../middleware/authenticateToken");
 const REPO_PATH = require.resolve("../../repositories/pedidosUserRepository");
+const OCORRENCIAS_REPO_PATH = require.resolve("../../repositories/pedidoOcorrenciasRepository");
+const FEEDBACK_REPO_PATH = require.resolve("../../repositories/ocorrenciaFeedbackRepository");
 const POOL_PATH = require.resolve("../../config/pool");
 const ROUTER_PATH = require.resolve("../../routes/ecommerce/pedidos");
 const ERROR_HANDLER_PATH = require.resolve("../../middleware/errorHandler");
@@ -37,6 +39,16 @@ function setup({ user = null } = {}) {
     findItemsByPedidoId: jest.fn().mockResolvedValue([]),
   };
   jest.doMock(REPO_PATH, () => repoMock);
+
+  const ocorrenciasRepoMock = {
+    findByPedidoId: jest.fn().mockResolvedValue([]),
+  };
+  jest.doMock(OCORRENCIAS_REPO_PATH, () => ocorrenciasRepoMock);
+
+  const feedbackRepoMock = {
+    findByOcorrenciaId: jest.fn().mockResolvedValue(null),
+  };
+  jest.doMock(FEEDBACK_REPO_PATH, () => feedbackRepoMock);
 
   jest.doMock(AUTH_PATH, () =>
     jest.fn((req, res, next) => {
@@ -122,7 +134,7 @@ describe("GET /api/pedidos/:id", () => {
       id: 1, usuario_id: 7, forma_pagamento: "pix",
       status: "pago", status_pagamento: "pago",
       data_pedido: "2026-04-01", endereco: "{}",
-      total_produtos: 200, shipping_price: 15,
+      subtotal_itens: 200, total_com_desconto: 200, shipping_price: 15,
     });
     repoMock.findItemsByPedidoId.mockResolvedValue([
       { id: 10, produto_id: 5, nome: "P1", preco: 100, quantidade: 2, imagem: "/img/p1.jpg" },

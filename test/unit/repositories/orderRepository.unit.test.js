@@ -162,7 +162,13 @@ describe("orderRepository", () => {
   // -----------------------------------------------------------------------
 
   test("restoreStock executa UPDATE JOIN no db passado", async () => {
-    const db = { query: jest.fn().mockResolvedValue([{}]) };
+    // listProductIdsByOrder SELECT (rows vazias → syncActiveByStockBatch retorna early sem queries)
+    // seguido pelo UPDATE JOIN.
+    const db = {
+      query: jest.fn()
+        .mockResolvedValueOnce([[]])     // SELECT DISTINCT produto_id ...
+        .mockResolvedValueOnce([{}]),    // UPDATE products JOIN ...
+    };
 
     await repo.restoreStock(db, 10);
 
@@ -173,7 +179,11 @@ describe("orderRepository", () => {
   });
 
   test("restoreStockOnFailure executa UPDATE com guard de status_pagamento", async () => {
-    const conn = { query: jest.fn().mockResolvedValue([{}]) };
+    const conn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([[]])     // SELECT DISTINCT produto_id ...
+        .mockResolvedValueOnce([{}]),    // UPDATE com guard
+    };
 
     await repo.restoreStockOnFailure(conn, 10);
 
