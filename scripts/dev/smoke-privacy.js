@@ -214,7 +214,7 @@ function fail(msg, status, json) {
     [producer.id],
   );
   await pool.query(
-    `UPDATE producer_accounts SET pending_deletion_at=NULL WHERE id=?`,
+    "UPDATE producer_accounts SET pending_deletion_at=NULL WHERE id=?",
     [producer.id],
   );
 

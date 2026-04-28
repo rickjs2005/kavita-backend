@@ -90,7 +90,7 @@ module.exports = {
         { replacements: [p.chave] },
       );
       await queryInterface.sequelize.query(
-        `DELETE FROM admin_permissions WHERE chave = ?`,
+        "DELETE FROM admin_permissions WHERE chave = ?",
         { replacements: [p.chave] },
       );
     }

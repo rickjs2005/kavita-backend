@@ -98,7 +98,7 @@ async function findByRotaAndPedido(rotaId, pedidoId, conn = pool) {
 
 async function nextOrdem(rotaId, conn = pool) {
   const [[row]] = await conn.query(
-    `SELECT COALESCE(MAX(ordem), 0) + 1 AS next FROM rota_paradas WHERE rota_id = ?`,
+    "SELECT COALESCE(MAX(ordem), 0) + 1 AS next FROM rota_paradas WHERE rota_id = ?",
     [rotaId],
   );
   return Number(row?.next || 1);
@@ -106,20 +106,20 @@ async function nextOrdem(rotaId, conn = pool) {
 
 async function create({ rota_id, pedido_id, ordem }, conn = pool) {
   const [r] = await conn.query(
-    `INSERT INTO rota_paradas (rota_id, pedido_id, ordem) VALUES (?, ?, ?)`,
+    "INSERT INTO rota_paradas (rota_id, pedido_id, ordem) VALUES (?, ?, ?)",
     [rota_id, pedido_id, ordem],
   );
   return r.insertId;
 }
 
 async function deleteById(id, conn = pool) {
-  const [r] = await conn.query(`DELETE FROM rota_paradas WHERE id = ?`, [id]);
+  const [r] = await conn.query("DELETE FROM rota_paradas WHERE id = ?", [id]);
   return r.affectedRows;
 }
 
 async function deleteByRotaAndPedido(rotaId, pedidoId, conn = pool) {
   const [r] = await conn.query(
-    `DELETE FROM rota_paradas WHERE rota_id = ? AND pedido_id = ?`,
+    "DELETE FROM rota_paradas WHERE rota_id = ? AND pedido_id = ?",
     [rotaId, pedidoId],
   );
   return r.affectedRows;

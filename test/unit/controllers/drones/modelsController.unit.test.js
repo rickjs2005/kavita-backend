@@ -96,7 +96,7 @@ describe("modelsController", () => {
 
   describe("getModelAggregate", () => {
     test("success", async () => {
-      dronesService.getPageSettings.mockResolvedValue({ models_json: '{}' });
+      dronesService.getPageSettings.mockResolvedValue({ models_json: "{}" });
       dronesService.listGalleryAdmin.mockResolvedValue({ items: [] });
       await ctrl.getModelAggregate(makeReq({ params: { modelKey: "agras" } }), makeRes(), makeNext());
       expect(response.ok).toHaveBeenCalled();
@@ -105,8 +105,8 @@ describe("modelsController", () => {
 
   describe("upsertModelInfo", () => {
     test("success with patch fields", async () => {
-      dronesService.getPageSettings.mockResolvedValue({ models_json: '{}' });
-      dronesService.upsertPageSettings.mockResolvedValue({ models_json: '{}' });
+      dronesService.getPageSettings.mockResolvedValue({ models_json: "{}" });
+      dronesService.upsertPageSettings.mockResolvedValue({ models_json: "{}" });
       await ctrl.upsertModelInfo(
         makeReq({ params: { modelKey: "agras" }, body: { specs_title: "Specs", specs_items_json: [{ t: "a" }] } }),
         makeRes(), makeNext()

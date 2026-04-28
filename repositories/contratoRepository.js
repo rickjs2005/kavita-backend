@@ -55,7 +55,7 @@ async function create({
 
 async function findById(id, corretora_id) {
   const [rows] = await pool.query(
-    `SELECT * FROM contratos WHERE id = ? AND corretora_id = ? LIMIT 1`,
+    "SELECT * FROM contratos WHERE id = ? AND corretora_id = ? LIMIT 1",
     [id, corretora_id],
   );
   return hydrate(rows[0]);
@@ -63,7 +63,7 @@ async function findById(id, corretora_id) {
 
 async function findByIdUnscoped(id) {
   const [rows] = await pool.query(
-    `SELECT * FROM contratos WHERE id = ? LIMIT 1`,
+    "SELECT * FROM contratos WHERE id = ? LIMIT 1",
     [id],
   );
   return hydrate(rows[0]);
@@ -138,7 +138,7 @@ async function updateStatus(id, status, patch = {}) {
 
 async function findBySignerDocumentId(documentId) {
   const [rows] = await pool.query(
-    `SELECT * FROM contratos WHERE signer_document_id = ? LIMIT 1`,
+    "SELECT * FROM contratos WHERE signer_document_id = ? LIMIT 1",
     [documentId],
   );
   return hydrate(rows[0]);

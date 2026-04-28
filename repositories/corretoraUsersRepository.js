@@ -135,7 +135,7 @@ async function countOwnersByCorretoraId(corretoraId) {
 /** Atualiza role. Controller deve garantir que nunca reduza o último owner. */
 async function updateRole(id, corretoraId, role) {
   const [result] = await pool.query(
-    `UPDATE corretora_users SET role = ? WHERE id = ? AND corretora_id = ?`,
+    "UPDATE corretora_users SET role = ? WHERE id = ? AND corretora_id = ?",
     [role, id, corretoraId],
   );
   return result.affectedRows;
@@ -169,7 +169,7 @@ async function findByIdInCorretora(id, corretoraId) {
  */
 async function updateContactFields(id, { nome, email }, conn = pool) {
   const [result] = await conn.query(
-    `UPDATE corretora_users SET nome = ?, email = ? WHERE id = ?`,
+    "UPDATE corretora_users SET nome = ?, email = ? WHERE id = ?",
     [nome, email, id]
   );
   return result.affectedRows;

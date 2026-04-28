@@ -13,7 +13,7 @@ module.exports = function pagamentoAprovadoWhatsapp(pedido) {
   return [
     `Olá, ${nome}! O pagamento do seu pedido #${pedido.id} foi confirmado.`,
     `Valor: R$ ${total.toFixed(2).replace(".", ",")}.`,
-    `Nossa equipe já começou a separar seus produtos.`,
-    `Avisamos por aqui assim que sair pra entrega.`,
+    "Nossa equipe já começou a separar seus produtos.",
+    "Avisamos por aqui assim que sair pra entrega.",
   ].join("\n");
 };

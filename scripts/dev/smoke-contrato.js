@@ -182,10 +182,10 @@ function fail(label, status, json) {
   console.log("\n──────────────────────────────────────────────");
   console.log("✅ Envio concluído. Próximos passos MANUAIS:");
   console.log(`   1) Abra o email ${EMAIL} — devem chegar 2 convites da ClickSign`);
-  console.log(`      (um como corretora, outro como produtor)`);
-  console.log(`   2) Clique nos links e assine as duas partes`);
-  console.log(`   3) Olhe o log do 'npm run dev' procurando por:`);
-  console.log(`        clicksign.webhook.applied   transition: sent → signed`);
+  console.log("      (um como corretora, outro como produtor)");
+  console.log("   2) Clique nos links e assine as duas partes");
+  console.log("   3) Olhe o log do 'npm run dev' procurando por:");
+  console.log("        clicksign.webhook.applied   transition: sent → signed");
   console.log(`   4) Confirme no banco: status = 'signed' em contratos.id = ${contrato.id}`);
   console.log("──────────────────────────────────────────────");
   process.exit(0);

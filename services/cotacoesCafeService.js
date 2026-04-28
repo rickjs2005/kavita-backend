@@ -37,7 +37,7 @@ const logger = require("../lib/logger");
 const ADAPTERS = {};
 try {
   // Dinamicamente registrados apenas se o arquivo existir.
-  // eslint-disable-next-line global-require
+   
   ADAPTERS.noticias_agricolas = require("./cotacoes/noticiasAgricolasAdapter");
 } catch {
   // arquivo não existe — sem adapter concreto por padrão (OK)

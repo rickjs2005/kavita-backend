@@ -78,7 +78,7 @@ function setup(svcOverrides = {}) {
     next();
   });
   app.use(MOUNT, router);
-  // eslint-disable-next-line no-unused-vars
+   
   app.use((err, _req, res, _next) => {
     const status = err?.status || err?.statusCode || 500;
     const code = err?.code || "SERVER_ERROR";

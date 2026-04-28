@@ -50,7 +50,7 @@ async function create({
 
 async function findById(id) {
   const [rows] = await pool.query(
-    `SELECT * FROM privacy_requests WHERE id = ? LIMIT 1`,
+    "SELECT * FROM privacy_requests WHERE id = ? LIMIT 1",
     [id],
   );
   return hydrate(rows[0]);

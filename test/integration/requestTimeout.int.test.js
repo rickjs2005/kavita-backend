@@ -28,7 +28,7 @@ function buildApp(timeoutMs = 100) {
   });
 
   // Error handler
-  // eslint-disable-next-line no-unused-vars
+   
   app.use((err, _req, res, _next) => {
     res.status(err.status || 500).json({ ok: false, code: err.code, message: err.message });
   });

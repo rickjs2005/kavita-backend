@@ -28,7 +28,7 @@ module.exports = {
     // (idempotente — qualquer user também vira owner por causa do
     // defaultValue, mas rodamos explicitamente para clareza).
     await queryInterface.sequelize.query(
-      `UPDATE corretora_users SET role = 'owner' WHERE role IS NULL`,
+      "UPDATE corretora_users SET role = 'owner' WHERE role IS NULL",
     );
 
     await queryInterface.addIndex("corretora_users", ["corretora_id", "role"], {

@@ -113,7 +113,7 @@ function _buildWhatsappMessage(motorista, link) {
   return (
     `Ola ${nome}! Seu acesso ao painel de entregas Kavita esta pronto.\n\n` +
     `Acesse pelo link (valido por ${_formatTtl(MAGIC_TTL_MIN)}):\n${link}\n\n` +
-    `Se nao foi voce que pediu, ignore esta mensagem.`
+    "Se nao foi voce que pediu, ignore esta mensagem."
   );
 }
 

@@ -208,7 +208,7 @@ async function sendTeamInviteEmail({ email, nome, corretoraNome, role, token }) 
   `;
   const text = [
     `Convite de equipe — ${corretoraNome}`,
-    ``,
+    "",
     `Você foi convidado para a equipe com perfil: ${roleLabel}.`,
     `Ativar conta: ${link}`,
     `O link expira em ${INVITE_TTL_DAYS} dias.`,

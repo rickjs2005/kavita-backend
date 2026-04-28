@@ -13,7 +13,7 @@ const pool = require("../config/pool");
 
 async function findByEmail(email) {
   const [[row]] = await pool.query(
-    `SELECT * FROM producer_accounts WHERE email = ? LIMIT 1`,
+    "SELECT * FROM producer_accounts WHERE email = ? LIMIT 1",
     [email],
   );
   return row ?? null;
@@ -21,7 +21,7 @@ async function findByEmail(email) {
 
 async function findById(id) {
   const [[row]] = await pool.query(
-    `SELECT * FROM producer_accounts WHERE id = ? LIMIT 1`,
+    "SELECT * FROM producer_accounts WHERE id = ? LIMIT 1",
     [id],
   );
   return row ?? null;
@@ -73,7 +73,7 @@ async function updateProfile(id, { nome, cidade, telefone, telefone_normalizado 
 
 async function touchLastLogin(id) {
   await pool.query(
-    `UPDATE producer_accounts SET last_login_at = NOW() WHERE id = ?`,
+    "UPDATE producer_accounts SET last_login_at = NOW() WHERE id = ?",
     [id],
   );
 }
@@ -84,7 +84,7 @@ async function touchLastLogin(id) {
  */
 async function setPendingDeletion(id, whenOrNull) {
   await pool.query(
-    `UPDATE producer_accounts SET pending_deletion_at = ? WHERE id = ?`,
+    "UPDATE producer_accounts SET pending_deletion_at = ? WHERE id = ?",
     [whenOrNull, id],
   );
 }
@@ -104,7 +104,7 @@ async function setPrivacyPolicyAccepted(id, version) {
 
 async function bumpTokenVersion(id) {
   await pool.query(
-    `UPDATE producer_accounts SET token_version = token_version + 1 WHERE id = ?`,
+    "UPDATE producer_accounts SET token_version = token_version + 1 WHERE id = ?",
     [id],
   );
 }

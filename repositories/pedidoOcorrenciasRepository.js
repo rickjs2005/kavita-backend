@@ -111,7 +111,7 @@ async function replyByClient(id, { respostaCliente, enderecoSugerido }) {
  */
 async function findByIdAndUserId(id, usuarioId) {
   const [[row]] = await pool.query(
-    `SELECT * FROM pedido_ocorrencias WHERE id = ? AND usuario_id = ?`,
+    "SELECT * FROM pedido_ocorrencias WHERE id = ? AND usuario_id = ?",
     [id, usuarioId]
   );
   return row ?? null;
@@ -136,7 +136,7 @@ async function updateByAdmin(id, { status, respostaAdmin, taxaExtra, adminId, en
  */
 async function findById(id) {
   const [[row]] = await pool.query(
-    `SELECT * FROM pedido_ocorrencias WHERE id = ?`,
+    "SELECT * FROM pedido_ocorrencias WHERE id = ?",
     [id]
   );
   return row ?? null;

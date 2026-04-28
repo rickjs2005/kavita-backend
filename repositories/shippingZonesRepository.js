@@ -40,7 +40,7 @@ async function findAll() {
 async function findCitiesBatch(ids) {
   if (!ids.length) return [];
   const [rows] = await pool.query(
-    `SELECT zone_id, city FROM shipping_zone_cities WHERE zone_id IN (?)`,
+    "SELECT zone_id, city FROM shipping_zone_cities WHERE zone_id IN (?)",
     [ids]
   );
   return rows;

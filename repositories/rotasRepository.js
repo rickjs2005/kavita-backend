@@ -146,7 +146,7 @@ async function updateStatus(id, status, extras = {}, conn = pool) {
 }
 
 async function deleteById(id, conn = pool) {
-  const [r] = await conn.query(`DELETE FROM rotas WHERE id = ?`, [id]);
+  const [r] = await conn.query("DELETE FROM rotas WHERE id = ?", [id]);
   return r.affectedRows;
 }
 

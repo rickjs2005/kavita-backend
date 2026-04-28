@@ -79,7 +79,7 @@ async function update(id, patch, conn = pool) {
 
 async function setAtivo(id, ativo, conn = pool) {
   const [r] = await conn.query(
-    `UPDATE motoristas SET ativo = ? WHERE id = ?`,
+    "UPDATE motoristas SET ativo = ? WHERE id = ?",
     [ativo ? 1 : 0, id],
   );
   return r.affectedRows;
@@ -87,14 +87,14 @@ async function setAtivo(id, ativo, conn = pool) {
 
 async function touchLogin(id, conn = pool) {
   await conn.query(
-    `UPDATE motoristas SET ultimo_login_em = NOW() WHERE id = ?`,
+    "UPDATE motoristas SET ultimo_login_em = NOW() WHERE id = ?",
     [id],
   );
 }
 
 async function bumpTokenVersion(id, conn = pool) {
   await conn.query(
-    `UPDATE motoristas SET token_version = token_version + 1 WHERE id = ?`,
+    "UPDATE motoristas SET token_version = token_version + 1 WHERE id = ?",
     [id],
   );
 }

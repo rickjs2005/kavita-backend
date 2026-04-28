@@ -62,7 +62,7 @@ async function create(data) {
 
 async function deactivate(id) {
   const [result] = await pool.query(
-    `UPDATE corretora_city_promotions SET is_active = 0 WHERE id = ?`,
+    "UPDATE corretora_city_promotions SET is_active = 0 WHERE id = ?",
     [id],
   );
   return result.affectedRows;

@@ -74,10 +74,10 @@ function buildEmail({ leadNome, corretoraNome, corretoraSlug, producerEmail }) {
   `;
   const text = [
     `${saudacao},`,
-    ``,
+    "",
     `Há cerca de uma semana você contatou ${corretoraNome} pelo Kavita — Mercado do Café.`,
     `Sua avaliação ajuda outros produtores: ${reviewUrl}`,
-    ``,
+    "",
     `Descadastrar: ${unsubUrl}`,
   ].join("\n");
   return { subject, html, text };

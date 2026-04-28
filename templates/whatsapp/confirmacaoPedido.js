@@ -15,7 +15,7 @@ module.exports = function confirmacaoPedidoWhatsapp(pedido) {
   return [
     `Olá, ${nome}! Recebemos seu pedido #${pedido.id} aqui na Kavita.`,
     `Valor total: R$ ${total.toFixed(2).replace(".", ",")}.`,
-    `Assim que o pagamento for confirmado, começamos a separar.`,
-    `Qualquer dúvida, estamos por aqui.`,
+    "Assim que o pagamento for confirmado, começamos a separar.",
+    "Qualquer dúvida, estamos por aqui.",
   ].join("\n");
 };

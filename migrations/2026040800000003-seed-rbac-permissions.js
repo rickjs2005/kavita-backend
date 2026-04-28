@@ -56,7 +56,7 @@ module.exports = {
 
     // Remove permissions
     await queryInterface.sequelize.query(
-      `DELETE FROM admin_permissions WHERE chave IN (:chaves)`,
+      "DELETE FROM admin_permissions WHERE chave IN (:chaves)",
       { replacements: { chaves } }
     );
   },

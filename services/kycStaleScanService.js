@@ -77,13 +77,13 @@ function _buildBody(item) {
   if (item.kyc_status === "pending_verification") {
     return (
       `KYC parado em pending_verification ha ${ageStr} ` +
-      `(corretora cadastrou mas nao submeteu CNPJ). ` +
-      `Considerar contato proativo via WhatsApp/email.`
+      "(corretora cadastrou mas nao submeteu CNPJ). " +
+      "Considerar contato proativo via WhatsApp/email."
     );
   }
   return (
     `KYC parado em under_review ha ${ageStr} ` +
-    `(snapshot ja existe, falta aprovacao/rejeicao do admin).`
+    "(snapshot ja existe, falta aprovacao/rejeicao do admin)."
   );
 }
 

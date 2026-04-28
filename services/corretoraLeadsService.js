@@ -493,7 +493,7 @@ async function notifyCorretoraOfNewLead(corretora, lead) {
 
       <div style="background:#f5f5f4;border-radius:12px;padding:14px 16px;margin:16px 0;">
         <p style="margin:4px 0;font-size:14px;"><strong>Telefone:</strong> ${escapeHtml(lead.telefone)}</p>
-        ${qualHtml.replace('margin:12px 0;padding-top:12px;border-top:1px solid #e4e4e7;', 'margin:8px 0 0;padding-top:8px;border-top:1px solid #e7e5e4;')}
+        ${qualHtml.replace("margin:12px 0;padding-top:12px;border-top:1px solid #e4e4e7;", "margin:8px 0 0;padding-top:8px;border-top:1px solid #e7e5e4;")}
         ${lead.mensagem ? `<p style="margin:12px 0 4px;font-size:13px;"><strong>O que o produtor escreveu:</strong><br/>${escapeHtml(lead.mensagem)}</p>` : ""}
       </div>
 

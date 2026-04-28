@@ -34,7 +34,7 @@ async function listPublic() {
 
 async function listAll() {
   const [rows] = await pool.query(
-    `SELECT * FROM plans ORDER BY sort_order ASC, price_cents ASC`,
+    "SELECT * FROM plans ORDER BY sort_order ASC, price_cents ASC",
   );
   return rows.map(normalizePlan);
 }

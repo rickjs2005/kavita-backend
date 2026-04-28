@@ -105,12 +105,12 @@ async function sendMagicLinkEmail({ email, token }) {
     </div>
   `;
   const text = [
-    `Entrar no Kavita · Mercado do Café`,
-    ``,
+    "Entrar no Kavita · Mercado do Café",
+    "",
     `Clique para entrar: ${link}`,
     `Link válido por ${MAGIC_TTL_MINUTES} minutos. Uso único.`,
-    ``,
-    `Se não pediu, ignore.`,
+    "",
+    "Se não pediu, ignore.",
   ].join("\n");
 
   await mailService.sendTransactionalEmail(email, subject, html, text);

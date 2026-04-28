@@ -92,7 +92,7 @@ function loadModule({
   jest.doMock("fs/promises", () => mockFsPromises);
   jest.doMock("multer", () => multerMock);
 
-  // eslint-disable-next-line global-require
+   
   const svc = require("../../../services/mediaService");
 
   return {

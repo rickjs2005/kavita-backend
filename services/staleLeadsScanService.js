@@ -40,7 +40,7 @@ function emailEnabled() {
  */
 async function getCorretoraInfo(corretoraId) {
   const [[row]] = await pool.query(
-    `SELECT id, name, email, status FROM corretoras WHERE id = ? LIMIT 1`,
+    "SELECT id, name, email, status FROM corretoras WHERE id = ? LIMIT 1",
     [corretoraId],
   );
   if (!row || row.status !== "active") return null;

@@ -32,7 +32,7 @@ async function suppress({ email, scope = "marketing", reason = "user_unsubscribe
 async function unsuppress({ email, scope = "marketing" }) {
   const normalized = String(email).trim().toLowerCase();
   await pool.query(
-    `DELETE FROM email_suppressions WHERE email = ? AND scope = ?`,
+    "DELETE FROM email_suppressions WHERE email = ? AND scope = ?",
     [normalized, scope],
   );
 }

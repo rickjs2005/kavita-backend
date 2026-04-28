@@ -84,7 +84,7 @@ async function upsert({
 
 async function findByCorretoraId(corretora_id) {
   const [rows] = await pool.query(
-    `SELECT * FROM corretora_kyc WHERE corretora_id = ? LIMIT 1`,
+    "SELECT * FROM corretora_kyc WHERE corretora_id = ? LIMIT 1",
     [corretora_id],
   );
   return hydrate(rows[0]);

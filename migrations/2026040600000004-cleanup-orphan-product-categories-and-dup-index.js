@@ -4,17 +4,17 @@
 module.exports = {
   async up(queryInterface) {
     // Drop orphan junction table — not used; products.category_id is the active FK.
-    await queryInterface.sequelize.query(`DROP TABLE IF EXISTS product_categories`);
+    await queryInterface.sequelize.query("DROP TABLE IF EXISTS product_categories");
 
     // Drop duplicate index on products.category_id
     // idx_products_category and idx_products_category_id both index the same column.
     // Keep idx_products_category_id (created by FK migration), drop the older one.
     const [indexes] = await queryInterface.sequelize.query(
-      `SHOW INDEX FROM products WHERE Key_name = 'idx_products_category'`
+      "SHOW INDEX FROM products WHERE Key_name = 'idx_products_category'"
     );
     if (indexes.length > 0) {
       await queryInterface.sequelize.query(
-        `DROP INDEX idx_products_category ON products`
+        "DROP INDEX idx_products_category ON products"
       );
     }
   },
@@ -22,7 +22,7 @@ module.exports = {
   async down(queryInterface) {
     // Recreate the duplicate index
     await queryInterface.sequelize.query(
-      `CREATE INDEX idx_products_category ON products (category_id)`
+      "CREATE INDEX idx_products_category ON products (category_id)"
     );
 
     // Recreate the orphan table (original structure)

@@ -64,7 +64,7 @@ async function upsert({
 
 async function findByKey(source, symbol) {
   const [rows] = await pool.query(
-    `SELECT * FROM market_quotes WHERE source = ? AND symbol = ? LIMIT 1`,
+    "SELECT * FROM market_quotes WHERE source = ? AND symbol = ? LIMIT 1",
     [source, symbol],
   );
   return hydrate(rows[0]);
@@ -72,7 +72,7 @@ async function findByKey(source, symbol) {
 
 async function findAll() {
   const [rows] = await pool.query(
-    `SELECT * FROM market_quotes ORDER BY source, symbol`,
+    "SELECT * FROM market_quotes ORDER BY source, symbol",
   );
   return rows.map(hydrate);
 }

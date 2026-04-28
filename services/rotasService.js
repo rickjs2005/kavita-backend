@@ -188,7 +188,7 @@ async function _assertMotoristaAtivo(motoristaId) {
 
 async function _assertPedidoElegivel(pedidoId, conn) {
   const [[ped]] = await conn.query(
-    `SELECT id, status_pagamento FROM pedidos WHERE id = ? LIMIT 1`,
+    "SELECT id, status_pagamento FROM pedidos WHERE id = ? LIMIT 1",
     [pedidoId],
   );
   if (!ped) {

@@ -146,7 +146,7 @@ function fail(msg, status, json) {
   ok("csrf obtido");
 
   // 2. GET status — pending_verification, snapshot null
-  h(`GET kyc status (esperado: pending_verification)`);
+  h("GET kyc status (esperado: pending_verification)");
   const s1 = await api(`/api/admin/mercado-do-cafe/corretoras/${CORRETORA_ID}/kyc`);
   if (s1.status !== 200 || s1.json?.data?.kyc_status !== "pending_verification") {
     fail("estado inicial inválido", s1.status, s1.json);

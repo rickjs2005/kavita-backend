@@ -270,7 +270,7 @@ async function marcarEntregue(paradaId, motoristaId, { observacao } = {}, ctx = 
         // "enviado"/"em_separacao" mesmo apos motorista marcar entregue.
         // Tambem evita que o pedido volte ao pool de disponiveis (Bug 2).
         await conn.query(
-          `UPDATE pedidos SET status_entrega = 'entregue' WHERE id = ?`,
+          "UPDATE pedidos SET status_entrega = 'entregue' WHERE id = ?",
           [parada.pedido_id],
         );
         await rotasRepo.recalcTotals(parada.rota_id, conn);
@@ -330,7 +330,7 @@ async function reportarProblema(
 
         // Busca usuario_id do pedido (necessario pra ocorrencia)
         const [[ped]] = await conn.query(
-          `SELECT usuario_id FROM pedidos WHERE id = ? LIMIT 1`,
+          "SELECT usuario_id FROM pedidos WHERE id = ? LIMIT 1",
           [parada.pedido_id],
         );
         if (!ped) {

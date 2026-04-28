@@ -273,7 +273,7 @@ async function cancelActiveForCorretora(corretoraId, conn = pool) {
 
 async function updateStatus(id, status) {
   const [result] = await pool.query(
-    `UPDATE corretora_subscriptions SET status = ? WHERE id = ?`,
+    "UPDATE corretora_subscriptions SET status = ? WHERE id = ?",
     [status, id],
   );
   return result.affectedRows;
