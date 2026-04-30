@@ -73,6 +73,34 @@ function ensureRequiredEnv() {
         throw new Error(`⚠️  ${v.key} inválida: ${v.errorMsg}`);
       }
     }
+
+    // Bloco específico de assinatura digital — em produção EXIGIR ClickSign.
+    // Stub gera contratos com signer_document_id="stub-<uuid>" sem validade
+    // jurídica. Aceitar stub em prod = vender produto enganoso.
+    const signerProvider = (process.env.CONTRATO_SIGNER_PROVIDER || "").trim().toLowerCase();
+    if (signerProvider !== "clicksign") {
+      throw new Error(
+        "⚠️  CONTRATO_SIGNER_PROVIDER deve ser 'clicksign' em produção " +
+          `(atual: '${process.env.CONTRATO_SIGNER_PROVIDER || "(vazio)"}'). ` +
+          "Modo 'stub' gera contratos sem validade jurídica e está bloqueado em prod."
+      );
+    }
+
+    const clicksignToken = (process.env.CLICKSIGN_API_TOKEN || "").trim();
+    if (!clicksignToken) {
+      throw new Error(
+        "⚠️  CLICKSIGN_API_TOKEN ausente em produção. " +
+          "Obtenha em: ClickSign painel → Configurações → API Access."
+      );
+    }
+
+    const clicksignHmac = (process.env.CLICKSIGN_HMAC_SECRET || "").trim();
+    if (!clicksignHmac) {
+      throw new Error(
+        "⚠️  CLICKSIGN_HMAC_SECRET ausente em produção. " +
+          "Configure no ClickSign painel → Webhooks → segredo HMAC e copie aqui."
+      );
+    }
   }
 
   // Aviso para módulos opcionais com gate de configuração.
