@@ -95,10 +95,65 @@ async function incrementTokenVersion(adminId) {
   );
 }
 
+/* ---- F1 — 2FA admin -------------------------------------------------- */
+
+/**
+ * Busca admin por id incluindo campos de MFA. Diferente de findAdminById,
+ * retorna mfa_secret e mfa_active (sensíveis — usar apenas no fluxo de
+ * setup/confirm/disable do TOTP).
+ */
+async function findAdminWithMfaById(adminId) {
+  const [rows] = await pool.query(
+    `SELECT id, nome, email, role, ativo, mfa_secret, mfa_active, tokenVersion
+       FROM admins
+      WHERE id = ?`,
+    [adminId]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Atualiza o secret TOTP do admin. mfa_active permanece 0 — só vira 1
+ * em enableMfa após confirmação do primeiro código.
+ */
+async function setMfaSecret(adminId, secretBase32) {
+  await pool.query(
+    "UPDATE admins SET mfa_secret = ?, mfa_active = 0 WHERE id = ?",
+    [secretBase32, adminId]
+  );
+}
+
+/**
+ * Liga 2FA. Pré-condição: mfa_secret populado e código confirmado pelo
+ * service. Não toca tokenVersion — a sessão atual permanece válida.
+ */
+async function enableMfa(adminId) {
+  await pool.query(
+    "UPDATE admins SET mfa_active = 1 WHERE id = ?",
+    [adminId]
+  );
+}
+
+/**
+ * Desliga 2FA — limpa secret + zera flag. Caller (service) também deve
+ * apagar backup codes e bumpar tokenVersion.
+ */
+async function disableMfa(adminId) {
+  await pool.query(
+    "UPDATE admins SET mfa_secret = NULL, mfa_active = 0 WHERE id = ?",
+    [adminId]
+  );
+}
+
 module.exports = {
   findAdminByEmail,
   findAdminById,
   findAdminPermissions,
   updateLastLogin,
   incrementTokenVersion,
+  // F1 — 2FA admin
+  findAdminWithMfaById,
+  setMfaSecret,
+  enableMfa,
+  disableMfa,
 };
