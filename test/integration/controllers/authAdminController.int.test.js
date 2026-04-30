@@ -337,7 +337,9 @@ describe("authAdminController", () => {
 
       // Assert
       expect(res.status).toBe(400);
-      expect(res.body.message).toBe("challengeId e código são obrigatórios.");
+      // F1 — mensagem expandida para refletir suporte a backupCode além
+      // do código TOTP do app autenticador.
+      expect(res.body.message).toBe("challengeId e (código TOTP ou backup code) são obrigatórios.");
     });
 
     test("401 — challengeId não existe no Map", async () => {

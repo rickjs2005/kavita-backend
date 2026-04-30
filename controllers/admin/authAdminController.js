@@ -112,10 +112,14 @@ async function login(req, res, next) {
 }
 
 async function loginMfa(req, res, next) {
-  const { challengeId, code } = req.body || {};
+  const { challengeId, code, backupCode } = req.body || {};
 
-  if (!challengeId || !code) {
-    return next(new AppError("challengeId e código são obrigatórios.", ERROR_CODES.VALIDATION_ERROR, 400));
+  if (!challengeId || (!code && !backupCode)) {
+    return next(new AppError(
+      "challengeId e (código TOTP ou backup code) são obrigatórios.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+    ));
   }
 
   const challenge = await authAdminService.getMfaChallenge(challengeId);
@@ -139,12 +143,33 @@ async function loginMfa(req, res, next) {
     return next(new AppError("Erro interno ao validar MFA.", ERROR_CODES.SERVER_ERROR, 500));
   }
 
-  const codeValid = speakeasy.totp.verify({
-    secret: challenge.mfaSecret,
-    encoding: "base32",
-    token: String(code).replace(/\s/g, ""),
-    window: 1,
-  });
+  // F1 — fluxo principal: código TOTP do app autenticador.
+  // Fallback: backup code (admin perdeu o celular).
+  //
+  // F1.6: o secret no challenge vem cifrado (formato cryptoVault v1:...).
+  // Decifra apenas em memória, durante esta request, antes de passar
+  // para speakeasy.totp.verify. Em dev/test o decryptString é
+  // transparente caso ainda haja plaintext legado.
+  let codeValid = false;
+  if (code) {
+    const cryptoVault = require("../../lib/cryptoVault");
+    let secretPlain;
+    try {
+      secretPlain = cryptoVault.decryptString(challenge.mfaSecret);
+    } catch (err) {
+      logger.error({ err, adminId: challenge.adminId }, "loginMfa: failed to decrypt mfa_secret");
+      return next(new AppError("Erro interno ao validar MFA.", ERROR_CODES.SERVER_ERROR, 500));
+    }
+    codeValid = speakeasy.totp.verify({
+      secret: secretPlain,
+      encoding: "base32",
+      token: String(code).replace(/\s/g, ""),
+      window: 1,
+    });
+  } else if (backupCode) {
+    const adminTotp = require("../../services/adminTotpService");
+    codeValid = await adminTotp.consumeBackupCode(challenge.adminId, backupCode);
+  }
 
   if (!codeValid) {
     req.rateLimit?.fail?.();

@@ -53,6 +53,10 @@ jobs:
       MP_ACCESS_TOKEN: "TEST_MP_ACCESS_TOKEN"
       MP_WEBHOOK_SECRET: "TEST_MP_WEBHOOK_SECRET"
 
+      # F1.6 — migration `encrypt-existing-mfa-secrets` requer a key.
+      # Configurar como repository secret (Settings → Secrets → Actions).
+      # Valor sugerido: base64 de 32 bytes random — pode ser fixo, CI
+      # roda contra DB efêmero.
       MFA_ENCRYPTION_KEY: ${{ secrets.MFA_ENCRYPTION_KEY }}
 
       DISABLE_NOTIFICATIONS: "true"

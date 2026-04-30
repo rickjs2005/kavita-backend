@@ -40,6 +40,7 @@ function loadEnv(extraEnv = {}) {
     "MP_WEBHOOK_SECRET",
     "MP_WEBHOOK_URL",          // Fase 1 go-live (B1)
     "CPF_ENCRYPTION_KEY",
+    "MFA_ENCRYPTION_KEY",      // F1.6 go-live
     "CONTRATO_SIGNER_PROVIDER", // Fase 1 go-live (B3)
     "CLICKSIGN_API_TOKEN",      // Fase 1 go-live (B3)
     "CLICKSIGN_HMAC_SECRET",    // Fase 1 go-live (B3)
@@ -100,6 +101,7 @@ describe("config/env.js — startup validation", () => {
       MP_WEBHOOK_SECRET: "super-secret-webhook-key",
       MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
       CPF_ENCRYPTION_KEY: "test-cpf-key-32-chars-minimum!!!",
+      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       CONTRATO_SIGNER_PROVIDER: "clicksign",
       CLICKSIGN_API_TOKEN: "test-clicksign-token",
       CLICKSIGN_HMAC_SECRET: "test-clicksign-hmac",
@@ -113,6 +115,7 @@ describe("config/env.js — startup validation", () => {
       MP_ACCESS_TOKEN: "x",
       MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
       CPF_ENCRYPTION_KEY: "x",
+      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       CONTRATO_SIGNER_PROVIDER: "clicksign",
       CLICKSIGN_API_TOKEN: "x",
       CLICKSIGN_HMAC_SECRET: "x",
@@ -128,6 +131,7 @@ describe("config/env.js — startup validation", () => {
       MP_ACCESS_TOKEN: "x",
       MP_WEBHOOK_SECRET: "x",
       CPF_ENCRYPTION_KEY: "x",
+      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       CONTRATO_SIGNER_PROVIDER: "clicksign",
       CLICKSIGN_API_TOKEN: "x",
       CLICKSIGN_HMAC_SECRET: "x",
@@ -143,6 +147,7 @@ describe("config/env.js — startup validation", () => {
       MP_WEBHOOK_SECRET: "x",
       MP_WEBHOOK_URL: "http://insecure.com/webhook",
       CPF_ENCRYPTION_KEY: "x",
+      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       CONTRATO_SIGNER_PROVIDER: "clicksign",
       CLICKSIGN_API_TOKEN: "x",
       CLICKSIGN_HMAC_SECRET: "x",
@@ -159,6 +164,7 @@ describe("config/env.js — startup validation", () => {
       MP_WEBHOOK_SECRET: "x",
       MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
       CPF_ENCRYPTION_KEY: "x",
+      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       CONTRATO_SIGNER_PROVIDER: "stub",
       CLICKSIGN_API_TOKEN: "x",
       CLICKSIGN_HMAC_SECRET: "x",
@@ -175,11 +181,28 @@ describe("config/env.js — startup validation", () => {
       MP_WEBHOOK_SECRET: "x",
       MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
       CPF_ENCRYPTION_KEY: "x",
+      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       CONTRATO_SIGNER_PROVIDER: "clicksign",
       CLICKSIGN_HMAC_SECRET: "x",
     });
     expect(error).not.toBeNull();
     expect(error.message).toMatch(/CLICKSIGN_API_TOKEN/);
+  });
+
+  test("F1.6 — lança em produção quando MFA_ENCRYPTION_KEY está ausente", () => {
+    const { error } = loadEnv({
+      NODE_ENV: "production",
+      MP_ACCESS_TOKEN: "x",
+      MP_WEBHOOK_SECRET: "x",
+      MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
+      CPF_ENCRYPTION_KEY: "x",
+      // MFA_ENCRYPTION_KEY ausente intencionalmente
+      CONTRATO_SIGNER_PROVIDER: "clicksign",
+      CLICKSIGN_API_TOKEN: "x",
+      CLICKSIGN_HMAC_SECRET: "x",
+    });
+    expect(error).not.toBeNull();
+    expect(error.message).toMatch(/MFA_ENCRYPTION_KEY/);
   });
 
   test("Fase 1 B3 — lança em produção quando CLICKSIGN_HMAC_SECRET está ausente", () => {
@@ -189,6 +212,7 @@ describe("config/env.js — startup validation", () => {
       MP_WEBHOOK_SECRET: "x",
       MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
       CPF_ENCRYPTION_KEY: "x",
+      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       CONTRATO_SIGNER_PROVIDER: "clicksign",
       CLICKSIGN_API_TOKEN: "x",
     });

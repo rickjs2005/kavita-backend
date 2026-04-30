@@ -18,6 +18,7 @@ const router = require("express").Router();
 const verifyAdmin = require("../middleware/verifyAdmin");
 const { validateCSRF } = require("../middleware/csrfProtection");
 const requirePermission = require("../middleware/requirePermission");
+const requireTotpForSensitiveOps = require("../middleware/requireTotpForSensitiveOps");
 const { handleRouteLoadError } = require("./routeLoader");
 
 // Helper local: todas as rotas admin levam verifyAdmin + validateCSRF.
@@ -29,6 +30,10 @@ function mount(path, moduleName, ...extra) {
     handleRouteLoadError(moduleName, err);
   }
 }
+
+// F1 — middleware compartilhado para rotas sensíveis. Em prod bloqueia
+// admin sem 2FA com 403; em dev só avisa (facilita smoke local).
+const _requireTotp = requireTotpForSensitiveOps();
 
 /* ============================================================
  * Catálogo
@@ -59,31 +64,42 @@ mount("/admin/drones",          "./admin/adminDrones");
 // no controller/router individual via requirePermission. Quem tem a
 // super-permissão legada `mercado_cafe_manage` continua passando tudo
 // (ver middleware/requirePermission.js -> MODULE_SUPER_PERMISSIONS).
+// F1.7 — mercado-do-cafe (corretoras, KYC, leads). Aprovação de corretora
+// fantasma ou alteração de KYC tem impacto financeiro indireto: 2FA
+// obrigatório.
 mount(
   "/admin/mercado-do-cafe",
   "./admin/adminCorretoras",
   requirePermission("mercado_cafe_view"),
+  _requireTotp,
 );
+// Metrics é read-only mas expõe agregados financeiros sensíveis;
+// proteger junto pra simplificar o modelo (qualquer rota de
+// mercado-do-cafe exige 2FA).
 mount(
   "/admin/mercado-do-cafe/metrics",
   "./admin/adminCorretorasMetrics",
   requirePermission("mercado_cafe_view"),
+  _requireTotp,
 );
 mount(
   "/admin/monetization",
   "./admin/adminPlans",
   requirePermission("mercado_cafe_view"),
+  _requireTotp,
 );
 mount("/admin/audit", "./admin/adminAudit");
 // Fase 10.1 — stub de simulação de assinatura de contrato. Inerte em
 // produção (service valida CONTRATO_SIGNER_PROVIDER=stub).
-mount("/admin/contratos", "./admin/adminContratos");
+mount("/admin/contratos", "./admin/adminContratos", _requireTotp);
 
 /* ============================================================
  * Operações de negócio
  * ============================================================ */
 
-mount("/admin/pedidos",    "./admin/adminPedidos",   requirePermission("pedidos.ver"));
+// F1.7 — pedidos. Admin pode marcar pedido como pago/cancelado/devolvido
+// → fraude direta. 2FA obrigatório.
+mount("/admin/pedidos",    "./admin/adminPedidos",   requirePermission("pedidos.ver"), _requireTotp);
 mount("/admin/carrinhos",  "./admin/adminCarts");
 mount("/admin/stats",      "./admin/adminStats");
 mount("/admin/relatorios", "./admin/adminRelatorios", requirePermission("relatorios.ver"));
@@ -96,8 +112,11 @@ mount("/admin/rotas",      "./admin/adminRotas",      requirePermission("rotas.v
  * Configuração da loja
  * ============================================================ */
 
-mount("/admin/config",            "./admin/adminConfig",              requirePermission("config.editar"));
-mount("/admin/shop-config/upload","./admin/adminConfigUpload", requirePermission("config.editar"));
+// F1.7 — /admin/config: alteração de mp_access_token, e-mail, segredos
+// gerais via UI. Vetor de fraude #1 do sistema (admin comprometido troca
+// MP token e desvia pagamentos). 2FA obrigatório SEMPRE.
+mount("/admin/config",            "./admin/adminConfig",              requirePermission("config.editar"), _requireTotp);
+mount("/admin/shop-config/upload","./admin/adminConfigUpload", requirePermission("config.editar"), _requireTotp);
 mount("/admin/shipping",          "./admin/adminShippingZones");
 
 /* ============================================================
@@ -107,10 +126,13 @@ mount("/admin/shipping",          "./admin/adminShippingZones");
 mount("/admin/comunicacao",         "./admin/adminComunicacao");
 mount("/admin/support-config",     "./admin/adminSupportConfig");
 mount("/admin/contato-mensagens",  "./admin/adminContatoMensagens");
-mount("/admin/users",        "./admin/adminUsers",       requirePermission("usuarios.ver"));
-mount("/admin/admins",       "./admin/adminAdmins");
-mount("/admin/roles",        "./admin/adminRoles");
-mount("/admin/permissions",  "./admin/adminPermissions");
+mount("/admin/users",        "./admin/adminUsers",       requirePermission("usuarios.ver"), _requireTotp);
+mount("/admin/admins",       "./admin/adminAdmins",      _requireTotp);
+mount("/admin/roles",        "./admin/adminRoles",       _requireTotp);
+mount("/admin/permissions",  "./admin/adminPermissions", _requireTotp);
 mount("/admin/logs",         "./admin/adminLogs");
+// F1 — 2FA admin (setup/confirm/regen/disable). Login MFA challenge
+// é em routes/auth/adminLogin.js (sem CSRF, sem verifyAdmin).
+mount("/admin/totp",         "./admin/adminTotp");
 
 module.exports = router;
