@@ -22,6 +22,7 @@ const authenticateToken = require("../../middleware/authenticateToken");
 const verifyAdmin = require("../../middleware/verifyAdmin");
 const validateMPSignature = require("../../middleware/validateMPSignature");
 const { validateCSRF } = require("../../middleware/csrfProtection");
+const { webhookLimiter } = require("../../middleware/absoluteRateLimit");
 
 const ctrl = require("../../controllers/paymentController");
 
@@ -36,6 +37,8 @@ router.delete("/admin/payment-methods/:id", authenticateToken, verifyAdmin, ctrl
 
 // MERCADO PAGO
 router.post("/start", authenticateToken, validateCSRF, ctrl.startPayment);
-router.post("/webhook", validateMPSignature, ctrl.handleWebhook);
+// webhook: rate limit absoluto por IP antes do HMAC, para evitar flood de
+// signature-mismatch (cada miss é caro em CPU).
+router.post("/webhook", webhookLimiter, validateMPSignature, ctrl.handleWebhook);
 
 module.exports = router;

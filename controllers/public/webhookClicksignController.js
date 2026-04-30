@@ -29,22 +29,51 @@ async function ingest(req, res) {
     req.get("X-Hub-Signature-256") ||
     "";
 
-  const rawBody = Buffer.isBuffer(req.body)
-    ? req.body
-    : Buffer.from(typeof req.body === "string" ? req.body : JSON.stringify(req.body ?? {}), "utf8");
+  // Resolve raw body em ordem de preferência:
+  //   1. req.rawBody — preenchido por express.json({verify}) global
+  //      (caminho normal em produção quando Content-Type=application/json)
+  //   2. req.body Buffer — caminho de express.raw caso content-type não-JSON
+  //   3. req.body string — caminho de express.text (defensivo)
+  //
+  // O fallback JSON.stringify(req.body) FOI REMOVIDO intencionalmente:
+  // ele reordena chaves e quebra HMAC. Se nenhuma das opções acima entregar
+  // bytes brutos, a assinatura falhará — e isso é o comportamento correto:
+  // melhor 401 do que aceitar webhook que não conseguimos verificar.
+  let rawBody;
+  if (Buffer.isBuffer(req.rawBody)) {
+    rawBody = req.rawBody;
+  } else if (Buffer.isBuffer(req.body)) {
+    rawBody = req.body;
+  } else if (typeof req.body === "string") {
+    rawBody = Buffer.from(req.body, "utf8");
+  } else {
+    rawBody = Buffer.alloc(0);
+  }
 
   if (!clicksignAdapter.verifySignature({ rawBody, signatureHeader: signature })) {
-    logger.warn({ ip: req.ip }, "clicksign.webhook.signature_invalid");
+    logger.warn(
+      {
+        ip: req.ip,
+        rawBodyBytes: rawBody.length,
+        rawBodySource: Buffer.isBuffer(req.rawBody) ? "rawBody" : Buffer.isBuffer(req.body) ? "body-buffer" : "body-other",
+      },
+      "clicksign.webhook.signature_invalid",
+    );
     return res.status(401).json({ ok: false, code: "AUTH_ERROR" });
   }
 
-  // Parse após validação — garante que só JSON autenticado chega aqui
+  // Parse após validação — garante que só JSON autenticado chega aqui.
+  // Reutiliza req.body se express.json já parseou; senão parseia rawBody.
   let body;
-  try {
-    body = JSON.parse(rawBody.toString("utf8"));
-  } catch (err) {
-    logger.warn({ err: err?.message }, "clicksign.webhook.invalid_json");
-    return res.status(400).json({ ok: false, code: "VALIDATION_ERROR" });
+  if (req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)) {
+    body = req.body;
+  } else {
+    try {
+      body = JSON.parse(rawBody.toString("utf8"));
+    } catch (err) {
+      logger.warn({ err: err?.message }, "clicksign.webhook.invalid_json");
+      return res.status(400).json({ ok: false, code: "VALIDATION_ERROR" });
+    }
   }
 
   const domainEvent = clicksignAdapter.translateWebhookEvent(body);

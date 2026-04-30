@@ -17,7 +17,20 @@ const REQUIRED_VARS = [
 const REQUIRED_IN_PRODUCTION = [
   "MP_ACCESS_TOKEN",        // sem isso payment/start falha — não inicia pagamentos
   "MP_WEBHOOK_SECRET",      // sem isso o webhook falha fechado (401) — não processa pagamentos
+  "MP_WEBHOOK_URL",         // sem isso, MP não envia webhook — pedidos pagos ficam "pendente" para sempre
   "CPF_ENCRYPTION_KEY",     // sem isso CPFs ficam em plaintext — risco LGPD
+];
+
+// Validações de formato para envs obrigatórias em produção.
+// Cada entrada: { key, predicate, errorMsg }. Predicate retorna true se o valor é válido.
+const PRODUCTION_FORMAT_VALIDATORS = [
+  {
+    key: "MP_WEBHOOK_URL",
+    predicate: (v) => typeof v === "string" && /^https:\/\//i.test(v.trim()),
+    errorMsg:
+      "MP_WEBHOOK_URL deve começar com 'https://' (ex.: https://api.kavita.com.br/api/payment/webhook). " +
+      "Sem URL pública HTTPS, o Mercado Pago não consegue entregar webhooks.",
+  },
 ];
 
 function ensureRequiredEnv() {
@@ -34,9 +47,12 @@ function ensureRequiredEnv() {
 
   const isProduction = process.env.NODE_ENV === "production";
 
-  const missingProd = REQUIRED_IN_PRODUCTION.filter((key) =>
-    typeof process.env[key] === "undefined"
-  );
+  // Considera ausente também se a string estiver vazia/whitespace —
+  // em prod, "" é tão perigoso quanto undefined (silently breaks payments).
+  const missingProd = REQUIRED_IN_PRODUCTION.filter((key) => {
+    const v = process.env[key];
+    return typeof v === "undefined" || (typeof v === "string" && v.trim() === "");
+  });
 
   if (missingProd.length > 0) {
     const msg =
@@ -45,6 +61,45 @@ function ensureRequiredEnv() {
       throw new Error(msg + " Configure antes de iniciar em produção.");
     } else {
       console.warn(msg + " Em produção o servidor irá recusar o startup.");
+    }
+  }
+
+  // Em produção, valida formato de envs sensíveis. Falha rápida no boot.
+  if (isProduction) {
+    for (const v of PRODUCTION_FORMAT_VALIDATORS) {
+      const value = process.env[v.key];
+      if (typeof value === "undefined") continue; // já capturado acima
+      if (!v.predicate(value)) {
+        throw new Error(`⚠️  ${v.key} inválida: ${v.errorMsg}`);
+      }
+    }
+
+    // Bloco específico de assinatura digital — em produção EXIGIR ClickSign.
+    // Stub gera contratos com signer_document_id="stub-<uuid>" sem validade
+    // jurídica. Aceitar stub em prod = vender produto enganoso.
+    const signerProvider = (process.env.CONTRATO_SIGNER_PROVIDER || "").trim().toLowerCase();
+    if (signerProvider !== "clicksign") {
+      throw new Error(
+        "⚠️  CONTRATO_SIGNER_PROVIDER deve ser 'clicksign' em produção " +
+          `(atual: '${process.env.CONTRATO_SIGNER_PROVIDER || "(vazio)"}'). ` +
+          "Modo 'stub' gera contratos sem validade jurídica e está bloqueado em prod."
+      );
+    }
+
+    const clicksignToken = (process.env.CLICKSIGN_API_TOKEN || "").trim();
+    if (!clicksignToken) {
+      throw new Error(
+        "⚠️  CLICKSIGN_API_TOKEN ausente em produção. " +
+          "Obtenha em: ClickSign painel → Configurações → API Access."
+      );
+    }
+
+    const clicksignHmac = (process.env.CLICKSIGN_HMAC_SECRET || "").trim();
+    if (!clicksignHmac) {
+      throw new Error(
+        "⚠️  CLICKSIGN_HMAC_SECRET ausente em produção. " +
+          "Configure no ClickSign painel → Webhooks → segredo HMAC e copie aqui."
+      );
     }
   }
 

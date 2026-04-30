@@ -82,6 +82,13 @@ try {
   logger.warn({ err }, "rotas orfas scan job not loaded");
 }
 
+let webhookRetryJob;
+try {
+  webhookRetryJob = require("../jobs/webhookRetryJob");
+} catch (err) {
+  logger.warn({ err }, "webhook retry job not loaded");
+}
+
 function startWorkers() {
   const disableNotifs =
     String(process.env.DISABLE_NOTIFICATIONS || "false") === "true";
@@ -158,6 +165,12 @@ function startWorkers() {
   if (rotasOrfasScanJob && typeof rotasOrfasScanJob.register === "function") {
     rotasOrfasScanJob.register().catch((err) => {
       logger.error({ err }, "rotas orfas scan job registration failed");
+    });
+  }
+
+  if (webhookRetryJob && typeof webhookRetryJob.register === "function") {
+    webhookRetryJob.register().catch((err) => {
+      logger.error({ err }, "webhook retry job registration failed");
     });
   }
 }

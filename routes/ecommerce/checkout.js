@@ -16,6 +16,7 @@ const { validate } = require("../../middleware/validate");
 const { checkoutBodySchema } = require("../../schemas/checkoutSchemas");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
 const { CHECKOUT_SCHEDULE, COUPON_PREVIEW_SCHEDULE } = require("../../config/rateLimitSchedules");
+const { checkoutLimiter: absoluteCheckoutLimiter } = require("../../middleware/absoluteRateLimit");
 
 const checkoutRateLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => req.user?.id ? `checkout:${req.user.id}` : null,
@@ -47,6 +48,7 @@ router.post("/preview-cupom", validateCSRF, couponPreviewRateLimiter, controller
 router.post(
   "/",
   validateCSRF,
+  absoluteCheckoutLimiter,
   checkoutRateLimiter,
   validate(checkoutBodySchema),
   recalcShipping,
