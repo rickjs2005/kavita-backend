@@ -112,10 +112,14 @@ async function login(req, res, next) {
 }
 
 async function loginMfa(req, res, next) {
-  const { challengeId, code } = req.body || {};
+  const { challengeId, code, backupCode } = req.body || {};
 
-  if (!challengeId || !code) {
-    return next(new AppError("challengeId e código são obrigatórios.", ERROR_CODES.VALIDATION_ERROR, 400));
+  if (!challengeId || (!code && !backupCode)) {
+    return next(new AppError(
+      "challengeId e (código TOTP ou backup code) são obrigatórios.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+    ));
   }
 
   const challenge = await authAdminService.getMfaChallenge(challengeId);
@@ -139,12 +143,20 @@ async function loginMfa(req, res, next) {
     return next(new AppError("Erro interno ao validar MFA.", ERROR_CODES.SERVER_ERROR, 500));
   }
 
-  const codeValid = speakeasy.totp.verify({
-    secret: challenge.mfaSecret,
-    encoding: "base32",
-    token: String(code).replace(/\s/g, ""),
-    window: 1,
-  });
+  // F1 — fluxo principal: código TOTP do app autenticador.
+  // Fallback: backup code (admin perdeu o celular).
+  let codeValid = false;
+  if (code) {
+    codeValid = speakeasy.totp.verify({
+      secret: challenge.mfaSecret,
+      encoding: "base32",
+      token: String(code).replace(/\s/g, ""),
+      window: 1,
+    });
+  } else if (backupCode) {
+    const adminTotp = require("../../services/adminTotpService");
+    codeValid = await adminTotp.consumeBackupCode(challenge.adminId, backupCode);
+  }
 
   if (!codeValid) {
     req.rateLimit?.fail?.();

@@ -112,5 +112,8 @@ mount("/admin/admins",       "./admin/adminAdmins");
 mount("/admin/roles",        "./admin/adminRoles");
 mount("/admin/permissions",  "./admin/adminPermissions");
 mount("/admin/logs",         "./admin/adminLogs");
+// F1 — 2FA admin (setup/confirm/regen/disable). Login MFA challenge
+// é em routes/auth/adminLogin.js (sem CSRF, sem verifyAdmin).
+mount("/admin/totp",         "./admin/adminTotp");
 
 module.exports = router;
