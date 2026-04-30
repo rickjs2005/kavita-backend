@@ -96,11 +96,20 @@ async function incrementTokenVersion(adminId) {
 }
 
 /* ---- F1 — 2FA admin -------------------------------------------------- */
+//
+// F1.6: mfa_secret é gravado SEMPRE no formato v1:... (cryptoVault).
+// Quem precisa do plaintext (verifyToken / loginMfa) chama
+// `findDecryptedMfaSecret(adminId)`. Demais consultas que retornam
+// mfa_secret bruto (findAdminWithMfaById) trazem o blob cifrado e
+// devem cuidar do decrypt no caller — isso é intencional para que
+// usos sem necessidade de plaintext não vazem o secret.
+
+const cryptoVault = require("../lib/cryptoVault");
 
 /**
  * Busca admin por id incluindo campos de MFA. Diferente de findAdminById,
- * retorna mfa_secret e mfa_active (sensíveis — usar apenas no fluxo de
- * setup/confirm/disable do TOTP).
+ * retorna mfa_secret (cifrado) e mfa_active. Quem precisa do secret em
+ * claro deve usar findDecryptedMfaSecret.
  */
 async function findAdminWithMfaById(adminId) {
   const [rows] = await pool.query(
@@ -113,13 +122,35 @@ async function findAdminWithMfaById(adminId) {
 }
 
 /**
- * Atualiza o secret TOTP do admin. mfa_active permanece 0 — só vira 1
+ * Devolve o segredo TOTP do admin EM CLARO. Faz decrypt via cryptoVault.
+ * Em produção, throw se valor armazenado vier em plaintext (defense
+ * em profundidade contra escrita direta no DB).
+ *
+ * @returns {Promise<string|null>} secret base32, ou null se admin não
+ *   tem MFA configurado.
+ */
+async function findDecryptedMfaSecret(adminId) {
+  const [[row]] = await pool.query(
+    "SELECT mfa_secret FROM admins WHERE id = ?",
+    [adminId]
+  );
+  if (!row || !row.mfa_secret) return null;
+  return cryptoVault.decryptString(row.mfa_secret);
+}
+
+/**
+ * Atualiza o secret TOTP do admin. F1.6: o valor em claro é cifrado
+ * com cryptoVault antes do UPDATE. mfa_active permanece 0 — só vira 1
  * em enableMfa após confirmação do primeiro código.
+ *
+ * @param {number} adminId
+ * @param {string} secretBase32  segredo em CLARO; este método cifra antes de gravar
  */
 async function setMfaSecret(adminId, secretBase32) {
+  const encrypted = cryptoVault.encryptString(secretBase32);
   await pool.query(
     "UPDATE admins SET mfa_secret = ?, mfa_active = 0 WHERE id = ?",
-    [secretBase32, adminId]
+    [encrypted, adminId]
   );
 }
 
@@ -153,6 +184,7 @@ module.exports = {
   incrementTokenVersion,
   // F1 — 2FA admin
   findAdminWithMfaById,
+  findDecryptedMfaSecret,
   setMfaSecret,
   enableMfa,
   disableMfa,

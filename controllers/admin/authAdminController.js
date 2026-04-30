@@ -145,10 +145,23 @@ async function loginMfa(req, res, next) {
 
   // F1 — fluxo principal: código TOTP do app autenticador.
   // Fallback: backup code (admin perdeu o celular).
+  //
+  // F1.6: o secret no challenge vem cifrado (formato cryptoVault v1:...).
+  // Decifra apenas em memória, durante esta request, antes de passar
+  // para speakeasy.totp.verify. Em dev/test o decryptString é
+  // transparente caso ainda haja plaintext legado.
   let codeValid = false;
   if (code) {
+    const cryptoVault = require("../../lib/cryptoVault");
+    let secretPlain;
+    try {
+      secretPlain = cryptoVault.decryptString(challenge.mfaSecret);
+    } catch (err) {
+      logger.error({ err, adminId: challenge.adminId }, "loginMfa: failed to decrypt mfa_secret");
+      return next(new AppError("Erro interno ao validar MFA.", ERROR_CODES.SERVER_ERROR, 500));
+    }
     codeValid = speakeasy.totp.verify({
-      secret: challenge.mfaSecret,
+      secret: secretPlain,
       encoding: "base32",
       token: String(code).replace(/\s/g, ""),
       window: 1,

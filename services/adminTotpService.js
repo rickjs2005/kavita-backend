@@ -93,7 +93,10 @@ async function confirmTotpSetup(admin, code) {
     );
   }
 
-  const ok = totp.verifyToken({ secret: fresh.mfa_secret, code });
+  // F1.6 — secret está cifrado em fresh.mfa_secret. Decifra em memória
+  // só pra validar o primeiro código.
+  const secretPlain = await adminRepo.findDecryptedMfaSecret(admin.id);
+  const ok = totp.verifyToken({ secret: secretPlain, code });
   if (!ok) {
     throw new AppError(
       "Código inválido. Tente novamente.",

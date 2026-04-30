@@ -147,8 +147,10 @@ async function disable(req, res, next) {
       );
     }
 
-    // Step-up: re-validar TOTP antes de permitir disable
-    const adminFull = await require("../../repositories/adminRepository").findAdminWithMfaById(admin.id);
+    // Step-up: re-validar TOTP antes de permitir disable.
+    // F1.6 — buscar secret em CLARO via repo helper (decrypt em memória).
+    const adminRepoMod = require("../../repositories/adminRepository");
+    const adminFull = await adminRepoMod.findAdminWithMfaById(admin.id);
     if (!adminFull?.mfa_active) {
       throw new AppError(
         "2FA não está ativo nesta conta.",
@@ -156,8 +158,9 @@ async function disable(req, res, next) {
         409,
       );
     }
+    const secretPlain = await adminRepoMod.findDecryptedMfaSecret(admin.id);
     const totp = require("../../lib/totp");
-    if (!totp.verifyToken({ secret: adminFull.mfa_secret, code })) {
+    if (!totp.verifyToken({ secret: secretPlain, code })) {
       throw new AppError("Código inválido.", ERROR_CODES.AUTH_ERROR, 401);
     }
 

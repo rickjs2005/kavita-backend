@@ -69,7 +69,11 @@ describe("adminTotpService", () => {
 
     test("liga MFA + grava 10 hashes e devolve 10 codes plaintext", async () => {
       const secret = speakeasy.generateSecret({ length: 20 }).base32;
-      adminRepo.findAdminWithMfaById.mockResolvedValue({ id: 1, mfa_secret: secret, mfa_active: 0 });
+      // F1.6 — service agora pega o secret EM CLARO via findDecryptedMfaSecret.
+      // findAdminWithMfaById só checa flags; o secret retornado dele
+      // representa o blob cifrado (qualquer string aqui basta).
+      adminRepo.findAdminWithMfaById.mockResolvedValue({ id: 1, mfa_secret: "v1:dummy:dummy:dummy", mfa_active: 0 });
+      adminRepo.findDecryptedMfaSecret.mockResolvedValue(secret);
       adminRepo.enableMfa.mockResolvedValue();
       backupRepo.replaceAllForAdmin.mockResolvedValue();
 
