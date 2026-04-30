@@ -54,6 +54,10 @@ jobs:
       MP_ACCESS_TOKEN: "TEST_MP_ACCESS_TOKEN"
       MP_WEBHOOK_SECRET: "TEST_MP_WEBHOOK_SECRET"
 
+      # F1.6 — migration `encrypt-existing-mfa-secrets` requer a key.
+      # Valor de teste fixo (32 bytes em base64) — não é secret real.
+      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
       DISABLE_NOTIFICATIONS: "true"
       NODE_ENV: test
 
