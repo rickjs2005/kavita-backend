@@ -80,6 +80,8 @@ jobs:
 
       - name: Migrate (test DB)
         run: npx sequelize-cli db:migrate --env test
+        env:
+          MFA_ENCRYPTION_KEY: ${{ secrets.MFA_ENCRYPTION_KEY }}
 
       - name: Lint
         run: npm run lint
