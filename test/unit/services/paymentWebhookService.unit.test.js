@@ -166,6 +166,50 @@ describe("paymentWebhookService", () => {
       expect(conn.release).toHaveBeenCalled();
     });
 
+    test("R7 — replay 'falhou' não chama restoreStock duas vezes (no-op)", async () => {
+      // Cenário: webhook MP entrega um evento com event_id NOVO (não duplicado
+      // no banco), mas o pedido já está em status_pagamento='falhou' por causa
+      // de um webhook anterior. O service deve detectar o no-op via comparação
+      // currentStatus===novoStatus e PULAR restoreStockOnFailure inteiramente,
+      // evitando que o estoque seja incrementado de novo.
+      repo.findWebhookEventForUpdate.mockResolvedValue(null);
+      repo.insertWebhookEvent.mockResolvedValue(50);
+      repo.findPedidoForUpdate.mockResolvedValue({ id: 60, status_pagamento: "falhou" });
+      const { Payment } = require("mercadopago");
+      Payment.mockImplementation(() => ({
+        get: jest.fn().mockResolvedValue({
+          status: "rejected",
+          metadata: { pedidoId: 60 },
+        }),
+      }));
+
+      const result = await handleWebhookEvent({ ...baseOpts, eventId: "evt-replay" });
+
+      expect(result).toBe("processed");
+      expect(orderRepo.restoreStockOnFailure).not.toHaveBeenCalled();
+      expect(repo.updatePedidoPayment).not.toHaveBeenCalled();
+      expect(repo.markWebhookEventProcessed).toHaveBeenCalledWith(conn, 50, "falhou");
+    });
+
+    test("R7 — replay 'pago' também é no-op (não dispara comunicação duplicada)", async () => {
+      repo.findWebhookEventForUpdate.mockResolvedValue(null);
+      repo.insertWebhookEvent.mockResolvedValue(51);
+      repo.findPedidoForUpdate.mockResolvedValue({ id: 70, status_pagamento: "pago" });
+      const { Payment } = require("mercadopago");
+      Payment.mockImplementation(() => ({
+        get: jest.fn().mockResolvedValue({
+          status: "approved",
+          metadata: { pedidoId: 70 },
+        }),
+      }));
+
+      const result = await handleWebhookEvent({ ...baseOpts, eventId: "evt-replay-pago" });
+
+      expect(result).toBe("processed");
+      expect(repo.updatePedidoPayment).not.toHaveBeenCalled();
+      expect(repo.markWebhookEventProcessed).toHaveBeenCalledWith(conn, 51, "pago");
+    });
+
     test("blocked transition — pago → falhou is prevented", async () => {
       repo.findWebhookEventForUpdate.mockResolvedValue(null);
       repo.insertWebhookEvent.mockResolvedValue(20);

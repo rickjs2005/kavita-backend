@@ -175,8 +175,26 @@ async function handleWebhookEvent({
       return "processed";
     }
 
-    // Restaura estoque ANTES de atualizar status para que a guarda de idempotência
-    // funcione corretamente em duplicatas com event_id diferente.
+    // R7 (Fase 1 go-live) — idempotência defensiva.
+    //
+    // Quando o webhook chega com event_id diferente (re-delivery do MP) MAS
+    // o status já é o alvo, isStatusTransitionSafe retorna true (no-op
+    // harmless). Sem a guarda abaixo, restoreStockOnFailure rodaria de
+    // novo. A SQL guard interna `AND ped.status_pagamento <> 'falhou'`
+    // já protege na BASE, mas evitamos a chamada inteira aqui pra que o
+    // log/alocação de query não confunda auditoria.
+    if (currentStatus === novoStatus) {
+      logger.info(
+        { pedidoId, status: novoStatus, dataId },
+        "webhook.payment.no_op_replay",
+      );
+      await repo.markWebhookEventProcessed(conn, dbEventId, novoStatus);
+      return "processed";
+    }
+
+    // Restaura estoque ANTES de atualizar status para que a guarda SQL
+    // (status_pagamento <> 'falhou') filtre corretamente em duplicatas
+    // raras que escapem do no-op acima.
     if (novoStatus === "falhou") {
       await orderRepo.restoreStockOnFailure(conn, pedidoId);
     }
