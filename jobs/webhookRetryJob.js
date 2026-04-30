@@ -317,10 +317,34 @@ async function register(opts = {}) {
   _state.maxAttempts = cfg.maxAttempts;
 
   if (!cfg.enabled) {
-    logger.info(
-      { tag: TAG },
-      `${TAG}: disabled (WEBHOOK_RETRY_JOB_ENABLED!=true)`,
-    );
+    // Em produção, retry job DESLIGADO é regressão silenciosa do B6:
+    // qualquer evento que cair no marker PARKED:PENDING_ORDER_MATCH fica
+    // pendurado para sempre. Loga em ERROR + tenta Sentry pra que o sinal
+    // seja impossível de ignorar em logs de boot.
+    if (process.env.NODE_ENV === "production") {
+      const msg =
+        `${TAG}: DISABLED in production — webhook events parked by ` +
+        "MP race conditions will NEVER be retried. " +
+        "Set WEBHOOK_RETRY_JOB_ENABLED=true to enable. " +
+        "Refs: go-live tracker B6, troubleshooting-fase1.md.";
+      logger.error({ tag: TAG }, msg);
+      try {
+        // Best-effort: lib/sentry retorna no-op se SENTRY_DSN não setado.
+        const sentry = require("../lib/sentry");
+        if (sentry && typeof sentry.captureMessage === "function") {
+          sentry.captureMessage(msg, "warning", {
+            tags: { domain: "payment.webhook.retry_job_disabled_in_prod" },
+          });
+        }
+      } catch {
+        // sentry indisponível — log já registrou
+      }
+    } else {
+      logger.info(
+        { tag: TAG },
+        `${TAG}: disabled (WEBHOOK_RETRY_JOB_ENABLED!=true)`,
+      );
+    }
     return;
   }
 

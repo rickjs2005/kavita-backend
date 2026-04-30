@@ -20,6 +20,14 @@ jest.mock("../../../lib/sentry", () => ({
   captureMessage: jest.fn(),
 }));
 
+const mockLogger = {
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+  debug: jest.fn(),
+};
+jest.mock("../../../lib/logger", () => mockLogger);
+
 const job = require("../../../jobs/webhookRetryJob");
 const sentry = require("../../../lib/sentry");
 
@@ -167,5 +175,59 @@ describe("webhookRetryJob (B6 fix)", () => {
     const state = job.getState();
     expect(state.lastStatus).toBe("success");
     expect(state.lastReport.scanned).toBe(0);
+  });
+
+  describe("register() warning de produção", () => {
+    const ORIG_NODE_ENV = process.env.NODE_ENV;
+    const ORIG_ENABLED = process.env.WEBHOOK_RETRY_JOB_ENABLED;
+
+    afterEach(() => {
+      // Para o timer que possa ter sido criado em testes que mudaram NODE_ENV
+      job.stop();
+      if (ORIG_NODE_ENV === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = ORIG_NODE_ENV;
+      if (ORIG_ENABLED === undefined) delete process.env.WEBHOOK_RETRY_JOB_ENABLED;
+      else process.env.WEBHOOK_RETRY_JOB_ENABLED = ORIG_ENABLED;
+    });
+
+    test("em produção com job desligado → logger.error + sentry.captureMessage", async () => {
+      process.env.NODE_ENV = "production";
+      process.env.WEBHOOK_RETRY_JOB_ENABLED = "false";
+
+      await job.register();
+
+      const errorCalls = mockLogger.error.mock.calls.map((c) => c[1] || c[0]);
+      const matched = errorCalls.find((msg) =>
+        typeof msg === "string" &&
+        /DISABLED in production/.test(msg) &&
+        /WEBHOOK_RETRY_JOB_ENABLED=true/.test(msg),
+      );
+      expect(matched).toBeDefined();
+
+      expect(sentry.captureMessage).toHaveBeenCalledWith(
+        expect.stringContaining("DISABLED in production"),
+        "warning",
+        expect.objectContaining({
+          tags: expect.objectContaining({
+            domain: "payment.webhook.retry_job_disabled_in_prod",
+          }),
+        }),
+      );
+    });
+
+    test("em dev com job desligado → logger.info silencioso, sem sentry", async () => {
+      process.env.NODE_ENV = "development";
+      process.env.WEBHOOK_RETRY_JOB_ENABLED = "false";
+
+      await job.register();
+
+      const infoCalls = mockLogger.info.mock.calls.map((c) => c[1] || c[0]);
+      const matched = infoCalls.find((msg) =>
+        typeof msg === "string" && /disabled/.test(msg),
+      );
+      expect(matched).toBeDefined();
+      expect(mockLogger.error).not.toHaveBeenCalled();
+      expect(sentry.captureMessage).not.toHaveBeenCalled();
+    });
   });
 });
