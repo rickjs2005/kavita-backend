@@ -18,6 +18,7 @@ const router = require("express").Router();
 const verifyAdmin = require("../middleware/verifyAdmin");
 const { validateCSRF } = require("../middleware/csrfProtection");
 const requirePermission = require("../middleware/requirePermission");
+const requireTotpForSensitiveOps = require("../middleware/requireTotpForSensitiveOps");
 const { handleRouteLoadError } = require("./routeLoader");
 
 // Helper local: todas as rotas admin levam verifyAdmin + validateCSRF.
@@ -29,6 +30,10 @@ function mount(path, moduleName, ...extra) {
     handleRouteLoadError(moduleName, err);
   }
 }
+
+// F1 — middleware compartilhado para rotas sensíveis. Em prod bloqueia
+// admin sem 2FA com 403; em dev só avisa (facilita smoke local).
+const _requireTotp = requireTotpForSensitiveOps();
 
 /* ============================================================
  * Catálogo
@@ -73,11 +78,12 @@ mount(
   "/admin/monetization",
   "./admin/adminPlans",
   requirePermission("mercado_cafe_view"),
+  _requireTotp,
 );
 mount("/admin/audit", "./admin/adminAudit");
 // Fase 10.1 — stub de simulação de assinatura de contrato. Inerte em
 // produção (service valida CONTRATO_SIGNER_PROVIDER=stub).
-mount("/admin/contratos", "./admin/adminContratos");
+mount("/admin/contratos", "./admin/adminContratos", _requireTotp);
 
 /* ============================================================
  * Operações de negócio
@@ -107,10 +113,10 @@ mount("/admin/shipping",          "./admin/adminShippingZones");
 mount("/admin/comunicacao",         "./admin/adminComunicacao");
 mount("/admin/support-config",     "./admin/adminSupportConfig");
 mount("/admin/contato-mensagens",  "./admin/adminContatoMensagens");
-mount("/admin/users",        "./admin/adminUsers",       requirePermission("usuarios.ver"));
-mount("/admin/admins",       "./admin/adminAdmins");
-mount("/admin/roles",        "./admin/adminRoles");
-mount("/admin/permissions",  "./admin/adminPermissions");
+mount("/admin/users",        "./admin/adminUsers",       requirePermission("usuarios.ver"), _requireTotp);
+mount("/admin/admins",       "./admin/adminAdmins",      _requireTotp);
+mount("/admin/roles",        "./admin/adminRoles",       _requireTotp);
+mount("/admin/permissions",  "./admin/adminPermissions", _requireTotp);
 mount("/admin/logs",         "./admin/adminLogs");
 // F1 — 2FA admin (setup/confirm/regen/disable). Login MFA challenge
 // é em routes/auth/adminLogin.js (sem CSRF, sem verifyAdmin).

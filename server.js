@@ -36,6 +36,7 @@ const corsConfig = require("./config/cors");
 const helmetConfig = require("./config/helmet");
 const { startWorkers } = require("./bootstrap/workers");
 const { registerShutdownHandlers } = require("./bootstrap/shutdown");
+const { runStartupSecurityChecks } = require("./bootstrap/securityChecks");
 const { setupDocs } = require("./docs/swagger");
 const redis = require("./lib/redis");
 const RedisRateLimiterStore = require("./lib/redisRateLimiterStore");
@@ -293,6 +294,12 @@ if (process.env.NODE_ENV !== "test") {
     }
 
     startWorkers();
+
+    // F1 — checagens de segurança no boot (admins sem 2FA, etc).
+    // Não bloqueia o boot mesmo se falhar; só loga + Sentry.
+    runStartupSecurityChecks().catch((err) => {
+      _logger.warn({ err }, "startup security checks failed");
+    });
   });
 
   registerShutdownHandlers(server);
