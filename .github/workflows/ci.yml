@@ -46,7 +46,6 @@ jobs:
       DB_PASSWORD: root
       DB_PORT: "3306"
 
-      # ✅ deixe DB_NAME e DB_NAME_TEST iguais no CI pra simplificar
       DB_NAME: kavita_test
       DB_NAME_TEST: kavita_test
       DB_REAL: kavita_test
@@ -55,8 +54,10 @@ jobs:
       MP_WEBHOOK_SECRET: "TEST_MP_WEBHOOK_SECRET"
 
       # F1.6 — migration `encrypt-existing-mfa-secrets` requer a key.
-      # Valor de teste fixo (32 bytes em base64) — não é secret real.
-      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      # Configurar como repository secret (Settings → Secrets → Actions).
+      # Valor sugerido: base64 de 32 bytes random — pode ser fixo, CI
+      # roda contra DB efêmero.
+      MFA_ENCRYPTION_KEY: ${{ secrets.MFA_ENCRYPTION_KEY }}
 
       DISABLE_NOTIFICATIONS: "true"
       NODE_ENV: test
@@ -68,7 +69,6 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          # ✅ recomendo igualar ao seu local (você está usando Node 22.x)
           node-version: "22"
           cache: "npm"
 
@@ -84,6 +84,8 @@ jobs:
 
       - name: Migrate (test DB)
         run: npx sequelize-cli db:migrate --env test
+        env:
+          MFA_ENCRYPTION_KEY: ${{ secrets.MFA_ENCRYPTION_KEY }}
 
       - name: Lint
         run: npm run lint
