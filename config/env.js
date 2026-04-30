@@ -19,6 +19,7 @@ const REQUIRED_IN_PRODUCTION = [
   "MP_WEBHOOK_SECRET",      // sem isso o webhook falha fechado (401) — não processa pagamentos
   "MP_WEBHOOK_URL",         // sem isso, MP não envia webhook — pedidos pagos ficam "pendente" para sempre
   "CPF_ENCRYPTION_KEY",     // sem isso CPFs ficam em plaintext — risco LGPD
+  "MFA_ENCRYPTION_KEY",     // F1.6 — cifra admins.mfa_secret em repouso (AES-256-GCM)
 ];
 
 // Validações de formato para envs obrigatórias em produção.
