@@ -100,8 +100,20 @@ app.use(requestLogger);
 
 /* ============================
  * Middlewares Globais
- * ============================ */
-app.use(express.json({ limit: "5mb" }));
+ * ============================
+ * express.json `verify` preserva o body bruto em req.rawBody. Webhooks
+ * que validam HMAC sobre os bytes exatos (ClickSign, possivelmente outros)
+ * dependem disso — sem rawBody, JSON.stringify(req.body) reordena chaves
+ * e quebra a assinatura. Limit reduzido para 1MB; uploads de arquivo
+ * passam por multer/diskStorage, não por JSON.
+ */
+app.use(express.json({
+  limit: "1mb",
+  verify: (req, _res, buf) => {
+    // Buffer pode ser vazio (GET, body-less POST) — preservamos como Buffer.alloc(0).
+    req.rawBody = buf && buf.length ? Buffer.from(buf) : Buffer.alloc(0);
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
