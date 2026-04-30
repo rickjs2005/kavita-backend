@@ -20,9 +20,10 @@ const express = require("express");
 const router = express.Router();
 const paymentService = require("../../services/corretoraPaymentService");
 const domainHandler = require("../../services/payment/asaasDomainHandler");
+const { webhookLimiter } = require("../../middleware/absoluteRateLimit");
 const logger = require("../../lib/logger");
 
-router.post("/", async (req, res) => {
+router.post("/", webhookLimiter, async (req, res) => {
   try {
     const result = await paymentService.ingestWebhook({
       provider: "asaas",

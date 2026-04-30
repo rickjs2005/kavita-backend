@@ -15,6 +15,7 @@ const {
   magicLinkConsumeSchema,
 } = require("../../schemas/producerSchemas");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
+const { producerMagicLinkLimiter } = require("../../middleware/absoluteRateLimit");
 
 const magicRateLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) =>
@@ -23,6 +24,7 @@ const magicRateLimiter = createAdaptiveRateLimiter({
 
 router.post(
   "/magic-link",
+  producerMagicLinkLimiter,
   magicRateLimiter,
   validate(magicLinkRequestSchema),
   ctrl.requestMagicLink,

@@ -8,6 +8,7 @@ const express = require("express");
 const router = express.Router();
 
 const { validate } = require("../../middleware/validate");
+const { motoristaMagicLinkLimiter } = require("../../middleware/absoluteRateLimit");
 const ctrl = require("../../controllers/motorista/motoristaAuthController");
 const {
   requestMagicLinkSchema,
@@ -16,6 +17,7 @@ const {
 
 router.post(
   "/magic-link",
+  motoristaMagicLinkLimiter,
   validate(requestMagicLinkSchema),
   ctrl.requestMagicLink,
 );

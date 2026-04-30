@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const verifyAdmin = require("../../middleware/verifyAdmin");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
+const { loginLimiter: absoluteLoginLimiter } = require("../../middleware/absoluteRateLimit");
 const { ADMIN_LOGIN_SCHEDULE } = require("../../config/rateLimitSchedules");
 const {
   login,
@@ -33,8 +34,8 @@ const mfaRateLimiter = createAdaptiveRateLimiter({
   schedule: ADMIN_LOGIN_SCHEDULE,
 });
 
-router.post("/login", adminLoginRateLimiter, login);
-router.post("/login/mfa", mfaRateLimiter, loginMfa);
+router.post("/login", absoluteLoginLimiter, adminLoginRateLimiter, login);
+router.post("/login/mfa", absoluteLoginLimiter, mfaRateLimiter, loginMfa);
 router.get("/me", verifyAdmin, getMe);
 router.post("/logout", adminLoginRateLimiter, verifyAdmin, logout);
 

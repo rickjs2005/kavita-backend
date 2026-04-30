@@ -15,6 +15,7 @@ const { validate } = require("../../middleware/validate");
 const verifyCorretora = require("../../middleware/verifyCorretora");
 const verifyTurnstile = require("../../middleware/verifyTurnstile");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
+const { loginLimiter: absoluteLoginLimiter } = require("../../middleware/absoluteRateLimit");
 const {
   corretoraLoginSchema,
   forgotPasswordSchema,
@@ -59,6 +60,7 @@ const resetRateLimiter = createAdaptiveRateLimiter({
 // middleware é bypass silencioso.
 router.post(
   "/login",
+  absoluteLoginLimiter,
   loginRateLimiter,
   verifyTurnstile,
   validate(corretoraLoginSchema),
@@ -68,6 +70,7 @@ router.post(
 // token (emitido em /login) + OTP de 6 dígitos OU backup code.
 router.post(
   "/login/totp",
+  absoluteLoginLimiter,
   loginRateLimiter,
   validate(verifyTotpStepSchema),
   ctrl.verifyTotpStep,

@@ -11,6 +11,7 @@
 
 const express = require("express");
 const createAdaptiveRateLimiter = require("../../middleware/adaptiveRateLimiter");
+const { registerLimiter: absoluteRegisterLimiter } = require("../../middleware/absoluteRateLimit");
 const { register, forgotPassword, resetPassword } = require("../../controllers/authController");
 const { validate } = require("../../middleware/validate");
 const {
@@ -68,7 +69,7 @@ const resetPasswordLimiter = createAdaptiveRateLimiter({
  *       409:
  *         description: E-mail ou CPF já cadastrado
  */
-router.post("/register", registerLimiter, validate(registerSchema), register);
+router.post("/register", absoluteRegisterLimiter, registerLimiter, validate(registerSchema), register);
 
 /**
  * @openapi

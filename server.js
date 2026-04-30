@@ -42,6 +42,7 @@ const RedisRateLimiterStore = require("./lib/redisRateLimiterStore");
 
 const apiRoutes = require("./routes");
 const createAdaptiveRateLimiter = require("./middleware/adaptiveRateLimiter");
+const { globalLimiter: absoluteGlobalLimiter } = require("./middleware/absoluteRateLimit");
 const { issueCsrfToken } = require("./middleware/csrfProtection");
 const requestLogger = require("./middleware/requestLogger");
 const requestTimeout = require("./middleware/requestTimeout");
@@ -203,6 +204,13 @@ const rateLimiter = createAdaptiveRateLimiter({
   keyGenerator: (req) => req.ip || crypto.randomUUID(),
   store: rateLimiterStore,
 });
+
+// B5 (Fase 1 go-live) — rate limit ABSOLUTO global por IP (Redis quando
+// disponível; memory fallback). Roda ANTES do adaptive limiter: se o
+// IP está acima do teto absoluto, retorna 429 sem chegar a contar
+// failures. Skip /health para não quebrar healthcheck do load balancer.
+app.use(absoluteGlobalLimiter);
+
 app.use(rateLimiter);
 
 /* ============================
