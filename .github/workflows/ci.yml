@@ -46,13 +46,14 @@ jobs:
       DB_PASSWORD: root
       DB_PORT: "3306"
 
-      # ✅ deixe DB_NAME e DB_NAME_TEST iguais no CI pra simplificar
       DB_NAME: kavita_test
       DB_NAME_TEST: kavita_test
       DB_REAL: kavita_test
 
       MP_ACCESS_TOKEN: "TEST_MP_ACCESS_TOKEN"
       MP_WEBHOOK_SECRET: "TEST_MP_WEBHOOK_SECRET"
+
+      MFA_ENCRYPTION_KEY: ${{ secrets.MFA_ENCRYPTION_KEY }}
 
       DISABLE_NOTIFICATIONS: "true"
       NODE_ENV: test
@@ -64,7 +65,6 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          # ✅ recomendo igualar ao seu local (você está usando Node 22.x)
           node-version: "22"
           cache: "npm"
 
