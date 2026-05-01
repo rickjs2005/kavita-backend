@@ -13,7 +13,11 @@ COPY package.json package-lock.json ./
 # Install production dependencies only (no devDependencies).
 # sequelize-cli fica disponível pra migrations no entrypoint porque
 # é dependency regular (não dev).
-RUN npm ci --omit=dev --ignore-scripts
+#
+# NÃO usar --ignore-scripts: bcrypt precisa do postinstall pra
+# baixar/compilar o binding nativo (.node). Sem isso, server.js
+# crasha em "Cannot find module bcrypt_lib.node".
+RUN npm ci --omit=dev
 
 # ── Stage 2: production runtime ────────────────────────────────────────
 FROM node:22-slim AS runtime
