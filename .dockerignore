@@ -5,7 +5,16 @@ npm-debug.log*
 .env.*.local
 coverage
 test
-docs
+# docs/ tem .md (texto) e docs/swagger/*.js (código consumido por
+# server.js). Excluir só os .md; manter o código.
+docs/*.md
+docs/**/*.md
+docs/compliance
+docs/decisions
+docs/history
+docs/diagrams
+docs/architecture
+docs/runbooks
 .github
 .git
 *.md
