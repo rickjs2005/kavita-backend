@@ -213,10 +213,26 @@ function parsePrice(raw) {
   return Number.isFinite(n) ? n : NaN;
 }
 
-async function createProduto(row, catMap, csrfToken) {
+async function loadExistingProductNames() {
+  const { ok, status, data } = await call("GET", "/api/admin/produtos");
+  if (!ok) {
+    throw new Error(`Falha ao listar produtos (${status}): ${JSON.stringify(data)}`);
+  }
+  const lista = Array.isArray(data?.data) ? data.data : [];
+  const set = new Set();
+  for (const p of lista) if (p?.name) set.add(normalizeName(p.name));
+  return set;
+}
+
+async function createProduto(row, catMap, existingNames, csrfToken) {
   const { nome, preco, categoria, estoque, descricao } = row;
 
   if (!nome) return { ok: false, nome: `(linha ${row._line})`, motivo: "nome vazio" };
+
+  const nomeKey = normalizeName(nome);
+  if (existingNames.has(nomeKey)) {
+    return { ok: true, skipped: true, nome };
+  }
 
   const priceNum = parsePrice(preco);
   if (!Number.isFinite(priceNum) || priceNum <= 0) {
@@ -252,6 +268,7 @@ async function createProduto(row, catMap, csrfToken) {
   if (!r.ok) {
     return { ok: false, nome, motivo: `${r.status} ${JSON.stringify(r.data)}` };
   }
+  existingNames.add(nomeKey);
   return { ok: true, nome, id: r.data?.data?.id };
 }
 
@@ -284,14 +301,21 @@ async function createProduto(row, catMap, csrfToken) {
   const catMap = await ensureCategorias(csrf);
   console.log("");
 
+  const existingNames = await loadExistingProductNames();
+  console.log(`Produtos já existentes: ${existingNames.size}\n`);
+
   const rows = loadCsv(CSV_PATH);
   console.log(`Lidas ${rows.length} linhas do CSV.\n`);
 
   const fails = [];
   let created = 0;
+  let skipped = 0;
   for (const row of rows) {
-    const r = await createProduto(row, catMap, csrf);
-    if (r.ok) {
+    const r = await createProduto(row, catMap, existingNames, csrf);
+    if (r.ok && r.skipped) {
+      console.log(`[SKIP] ${r.nome} — já existe`);
+      skipped++;
+    } else if (r.ok) {
       console.log(`[OK] ${r.nome} (id ${r.id})`);
       created++;
     } else {
@@ -300,7 +324,7 @@ async function createProduto(row, catMap, csrfToken) {
     }
   }
 
-  console.log(`\nResumo: ${created} criados, ${fails.length} falhos`);
+  console.log(`\nResumo: ${created} criados, ${skipped} pulados, ${fails.length} falhos`);
   if (fails.length) {
     console.log("Falhos:");
     for (const f of fails) console.log(`  - ${f.nome}: ${f.motivo}`);
