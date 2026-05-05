@@ -173,10 +173,175 @@ async function getMessageById(id) {
   return rows[0] || null;
 }
 
+// ---------------------------------------------------------------------------
+// Webhook Meta — status updates + inbound (Etapa 4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Localiza uma mensagem outbound pelo provider_message_id retornado
+ * pela Meta. Usado pelo webhook de status (sent → delivered → read).
+ * Retorna null quando o id nao e' nosso (ex.: webhook chegando antes
+ * de termos persistido o envio, ou id de teste da Meta).
+ *
+ * @param {string} providerMessageId
+ * @returns {Promise<object|null>}
+ */
+async function findMessageByProviderId(providerMessageId) {
+  if (!providerMessageId) return null;
+  const [rows] = await pool.query(
+    "SELECT id, status, sent_at, delivered_at, read_at, failed_at " +
+      "FROM whatsapp_messages WHERE provider_message_id = ? LIMIT 1",
+    [providerMessageId],
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Atualiza status + timestamp granular de uma mensagem identificada
+ * por provider_message_id. Idempotente: status novo so' substitui o
+ * antigo se a transicao fizer sentido (delivered nao volta para sent;
+ * read nao volta para delivered).
+ *
+ * Estados terminais: read | failed. Webhooks duplicados depois desses
+ * sao no-op silencioso.
+ *
+ * @param {string} providerMessageId
+ * @param {"sent"|"delivered"|"read"|"failed"} nextStatus
+ * @param {object} [opts]
+ * @param {Date} [opts.timestamp]   timestamp do evento Meta
+ * @param {string|null} [opts.error_message]
+ * @returns {Promise<{ updated: boolean, fromStatus: string|null, toStatus: string|null }>}
+ */
+async function updateMessageStatusByProviderId(
+  providerMessageId,
+  nextStatus,
+  opts = {},
+) {
+  const ORDER = { sent: 1, delivered: 2, read: 3, failed: 99 };
+  const current = await findMessageByProviderId(providerMessageId);
+  if (!current) return { updated: false, fromStatus: null, toStatus: null };
+
+  // Idempotencia / FSM:
+  // - read e' terminal: nao reverter para delivered/sent.
+  // - failed e' terminal: nao reverter.
+  // - delivered nao reverte para sent.
+  // - mesmo status: no-op.
+  const cur = ORDER[current.status] ?? 0;
+  const nxt = ORDER[nextStatus] ?? 0;
+
+  if (current.status === "failed" || current.status === "read") {
+    return {
+      updated: false,
+      fromStatus: current.status,
+      toStatus: current.status,
+    };
+  }
+  if (nxt < cur) {
+    return {
+      updated: false,
+      fromStatus: current.status,
+      toStatus: current.status,
+    };
+  }
+  if (nxt === cur) {
+    return {
+      updated: false,
+      fromStatus: current.status,
+      toStatus: current.status,
+    };
+  }
+
+  const ts = opts.timestamp instanceof Date ? opts.timestamp : new Date();
+  const fields = ["status = ?"];
+  const params = [nextStatus];
+
+  if (nextStatus === "sent" && !current.sent_at) {
+    fields.push("sent_at = ?");
+    params.push(ts);
+  } else if (nextStatus === "delivered") {
+    fields.push("delivered_at = ?");
+    params.push(ts);
+  } else if (nextStatus === "read") {
+    fields.push("read_at = ?");
+    params.push(ts);
+  } else if (nextStatus === "failed") {
+    fields.push("failed_at = ?");
+    params.push(ts);
+    if (opts.error_message != null) {
+      fields.push("error_message = ?");
+      params.push(opts.error_message);
+    }
+  }
+
+  params.push(current.id);
+  await pool.query(
+    `UPDATE whatsapp_messages SET ${fields.join(", ")} WHERE id = ?`,
+    params,
+  );
+  return { updated: true, fromStatus: current.status, toStatus: nextStatus };
+}
+
+/**
+ * Localiza inbound pelo provider_message_id (idempotencia do webhook).
+ *
+ * @param {string} providerMessageId
+ * @returns {Promise<object|null>}
+ */
+async function findInboundByProviderId(providerMessageId) {
+  if (!providerMessageId) return null;
+  const [rows] = await pool.query(
+    "SELECT id, sender_phone, received_at FROM whatsapp_inbound " +
+      "WHERE provider_message_id = ? LIMIT 1",
+    [providerMessageId],
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Insere uma mensagem inbound (recebida do produtor/cliente).
+ *
+ * @param {object} m
+ * @param {string} m.sender_phone        E.164 sem "+"
+ * @param {string|null} m.body
+ * @param {string|null} m.media_url
+ * @param {string} m.provider_message_id
+ * @param {object|null} m.raw_payload    JSON inteiro do webhook para auditoria
+ * @param {Date} m.received_at
+ * @param {number|null} [m.lead_id]
+ * @param {number|null} [m.contract_id]
+ * @param {number|null} [m.corretora_id]
+ * @returns {Promise<{ id: number }>}
+ */
+async function insertInbound(m) {
+  const sql =
+    "INSERT INTO whatsapp_inbound (" +
+    "  sender_phone, body, media_url, lead_id, contract_id, corretora_id," +
+    "  raw_payload, provider_message_id, received_at" +
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+  const [res] = await pool.query(sql, [
+    m.sender_phone,
+    m.body ?? null,
+    m.media_url ?? null,
+    m.lead_id ?? null,
+    m.contract_id ?? null,
+    m.corretora_id ?? null,
+    m.raw_payload ? JSON.stringify(m.raw_payload) : null,
+    m.provider_message_id,
+    m.received_at,
+  ]);
+  return { id: res.insertId };
+}
+
 module.exports = {
   findActiveTemplate,
   findAnyTemplate,
   insertMessage,
   updateMessageResult,
   getMessageById,
+  // Etapa 4
+  findMessageByProviderId,
+  updateMessageStatusByProviderId,
+  findInboundByProviderId,
+  insertInbound,
 };

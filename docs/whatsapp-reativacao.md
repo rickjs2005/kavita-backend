@@ -7,8 +7,8 @@
 > Decisões de produto associadas: ver [[corretora-modulo.md]] e
 > registros em `kavita-os/02 - Pendências.md` / `05 - Decisões Técnicas.md`.
 
-**Etapa atual:** 3 — Send service + adapter stub + retry (concluída).
-**Próxima etapa:** 4 — Webhook `POST /api/webhooks/whatsapp` com HMAC + inbound.
+**Etapa atual:** 4 — Webhook + HMAC + inbound (concluída).
+**Próxima etapa:** 5 — Frontend (`<WhatsAppStatusBadge>`, ação contextual nos cards de contrato, painel `/painel/corretora/whatsapp`).
 
 ---
 
@@ -677,3 +677,131 @@ Pedidos (`comunicacaoService.sendWhatsapp`) continua funcionando:
 ---
 
 Aguardando OK para Etapa 4 (webhook + inbound + HMAC).
+
+---
+
+## 9. Etapa 4 — Webhook + HMAC + inbound (concluída)
+
+### 9.1 Arquivos novos
+
+| Arquivo | Função |
+|---|---|
+| `services/whatsapp/whatsappWebhookService.js` | `verifySubscription` (GET hub.challenge), `verifySignature` (HMAC-SHA256 timing-safe), `processWebhookPayload` (status updates + inbound). |
+| `controllers/public/webhookWhatsappController.js` | `verify` (GET) + `ingest` (POST). Valida HMAC sobre `req.rawBody` antes de delegar ao processador. |
+| `routes/public/webhookWhatsapp.js` | Rota pública: GET sem rate limit, POST com `webhookLimiter` + `express.raw` defensivo. |
+| `test/unit/services/whatsapp/whatsappWebhookService.unit.test.js` | 20 testes. |
+| `test/unit/controllers/webhookWhatsappController.unit.test.js` | 7 testes. |
+
+### 9.2 Arquivos modificados
+
+| Arquivo | O que mudou |
+|---|---|
+| `repositories/whatsappRepository.js` | + `findMessageByProviderId`, `updateMessageStatusByProviderId` (com FSM idempotente sent→delivered→read), `findInboundByProviderId`, `insertInbound`. |
+| `routes/publicRoutes.js` | Registra `/webhooks/whatsapp`. |
+| `.env.example` | + `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_WEBHOOK_SECRET`. |
+
+### 9.3 Endpoints
+
+#### `GET /api/webhooks/whatsapp`
+Verificação de subscrição da Meta. Resposta:
+- `?hub.mode=subscribe&hub.verify_token=...&hub.challenge=N` → `200 text/plain` com `N` cru se token bater.
+- Token errado / mode errado / token não configurado → `403 forbidden`.
+
+#### `POST /api/webhooks/whatsapp`
+Eventos (status updates + inbound). Cabeçalho obrigatório:
+```
+X-Hub-Signature-256: sha256=<hex>
+```
+Validação HMAC-SHA256 sobre `req.rawBody` (bytes exatos preservados pelo `express.json({ verify })` global). Comparação **timing-safe** via `crypto.timingSafeEqual`.
+
+| Caso | Resposta |
+|---|---|
+| HMAC válido | `200 { ok:true, summary:{...} }` |
+| HMAC inválido / ausente | `401 { code: AUTH_ERROR }` |
+| JSON inválido (após HMAC ok) | `200 { ok:false, reason: invalid_json }` |
+| Exceção no processador | `200 { ok:false, reason: process_failed }` |
+
+**Por que 200 em erro de domínio**: a Meta marca o webhook como falho e dispara backoff agressivo se receber 4xx/5xx repetidos. Com 200 + log + Sentry, conseguimos debugar sem perder o stream de eventos.
+
+### 9.4 Status FSM (em `whatsapp_messages`)
+
+`updateMessageStatusByProviderId` aplica FSM idempotente:
+
+```
+sent  →  delivered  →  read   (terminal)
+   ↘                    ↗
+              failed          (terminal)
+```
+
+- Mesmo status: no-op.
+- Status anterior na ordem: no-op (delivered não volta para sent).
+- Estados terminais (`read`, `failed`): qualquer evento posterior é no-op.
+- Cada transição válida atualiza `status` + timestamp granular (`sent_at`, `delivered_at`, `read_at`, `failed_at`).
+- `failed` extrai `error_message` do payload Meta (`errors[0].title|message + code`).
+
+### 9.5 Inbound
+
+Tipos de mensagem suportados:
+- `text` → `body`
+- `image`, `video`, `document`, `audio` → `media_url = meta://media/<id>` + caption opcional em `body`
+- `button` → `body = button.text`
+- `interactive` → `body = JSON.stringify(payload)`
+
+**Idempotência**: lookup por `provider_message_id` (UNIQUE em `whatsapp_inbound`). Reentrega Meta vira `duplicateInbound++`.
+
+**Lookup contextual** (lead/contract/corretora) ainda não implementado nesta etapa — campos ficam `NULL`. Próxima sprint pode resolver via `sender_phone` (correlacionar com `corretora_leads.telefone_normalized`).
+
+`raw_payload` JSON guarda o webhook inteiro para auditoria — útil quando Meta evolui formato e queremos reprocessar.
+
+### 9.6 Logs estruturados
+
+| Evento | Quando |
+|---|---|
+| `whatsapp.webhook.verify_failed` | GET com token errado/ausente |
+| `whatsapp.webhook.signature_invalid` | POST com HMAC quebrado |
+| `whatsapp.webhook.invalid_json` | HMAC ok mas body não é JSON |
+| `whatsapp.webhook.status_updated` / `_skipped` | Status FSM aplicado ou no-op |
+| `whatsapp.webhook.inbound_received` | Nova mensagem inbound persistida |
+| `whatsapp.webhook.processed` | Sumário final do POST |
+| `whatsapp.webhook.partial_errors` | POST teve erros parciais nos itens |
+| `whatsapp.webhook.process_failed` | Exceção no processador |
+
+PII mascarada: `recipient_masked` / `sender_masked` (nunca o número completo).
+
+### 9.7 Operação Meta — onboarding
+
+1. No painel Meta (Developers → WhatsApp → Configuration):
+   - Callback URL: `https://api.kavita.com.br/api/webhooks/whatsapp`
+   - Verify Token: o valor que você setar em `WHATSAPP_WEBHOOK_VERIFY_TOKEN`
+   - Subscribe nos campos: `messages` (mínimo)
+2. No `.env` de produção:
+   ```
+   WHATSAPP_WEBHOOK_VERIFY_TOKEN=<32+ chars random>
+   WHATSAPP_WEBHOOK_SECRET=<App Secret do app Meta>
+   ```
+3. Meta dispara `GET` para verificar — controller responde `200 + challenge`.
+4. Eventos passam a chegar via `POST` assinado.
+
+### 9.8 Limites — o que ainda não entrou
+
+- ❌ Frontend `<WhatsAppStatusBadge>` + cards contextuais + página de inbox → **Etapa 5**.
+- ❌ Lookup automático de `lead_id`/`contract_id`/`corretora_id` em inbound a partir de `sender_phone` → próxima sprint.
+- ❌ Resposta automática a inbound — fluxo manual via painel da corretora (a corretora vê e responde via `sendFreeText` ou template).
+- ❌ Templates ainda `active=0` — webhook funciona mas service de envio bloqueia em modo `api`.
+
+### 9.9 Validação
+
+- **Lint** nos 7 arquivos: 0 erros.
+- **Tests**: **1869/1869 unit verde** (27 novos: 20 webhook service + 7 controller).
+- Cenários cobertos:
+  - GET verify ok / token errado / mode errado / token não configurado
+  - HMAC válido / inválido / sem header / secret não configurado / timing-safe
+  - Status: delivered / read / failed (com error_message extraído) / duplicado / desconhecido
+  - Inbound texto / imagem com caption / idempotência por `provider_message_id`
+  - Payload `object != whatsapp_business_account` / payload null
+  - Exceção no processador → 200 com `reason: process_failed`
+  - JSON inválido com HMAC ok → 200 com `reason: invalid_json`
+
+---
+
+Aguardando OK para Etapa 5 (frontend).
