@@ -7,8 +7,8 @@
 > Decisões de produto associadas: ver [[corretora-modulo.md]] e
 > registros em `kavita-os/02 - Pendências.md` / `05 - Decisões Técnicas.md`.
 
-**Etapa atual:** 1 — Auditoria (este documento).
-**Próxima etapa:** 2 — Schema + migrations.
+**Etapa atual:** 2 — Schema + migrations + seed (concluída).
+**Próxima etapa:** 3 — `whatsappService.js` consolidado + adapter `stub` + retry.
 
 ---
 
@@ -237,10 +237,228 @@ Ajuste do briefing original (botão genérico → ação por estado):
 
 ---
 
-## 6. Status final desta etapa
+## 6. Etapa 1 — concluída
 
 ✅ Auditoria concluída. Inventário completo, gaps mapeados, decisões
-registradas, riscos documentados. **Nenhum arquivo de código foi
-alterado nesta etapa.**
+registradas, riscos documentados. Commit `87d8d34`.
 
-Aguardando OK para prosseguir para a Etapa 2 (migrations + seed).
+---
+
+## 7. Etapa 2 — Schema + migrations + seed (concluída)
+
+Migration única: `migrations/2026050500000001-create-whatsapp-tables-and-seed-corretora-templates.js`.
+
+### 7.1 Ajustes obrigatórios travados antes da migration
+
+#### A) `whatsapp_messages.provider`
+- Tipo: `ENUM('manual', 'api', 'stub')`
+- Default: `'stub'`
+- Motivo: distinguir mensagens simuladas (sprint atual), manuais (link `wa.me`) e reais (Meta Cloud) é crítico para auditoria, relatórios e cutover.
+- Valor inicial em todos os registros novos do sprint = `'stub'`. Cutover muda só o default no service, não o histórico.
+
+#### B) `whatsapp_inbound.handled_by_user_id` (era `handled_by_admin_id`)
+- Tipo: `INT.UNSIGNED NULL` (sem FK referencial).
+- Comentário no código fonte: "usuário responsável pelo tratamento da mensagem inbound — pode ser admin, corretora_user ou usuário interno".
+- Motivo: o tratamento pode ser feito por qualquer um dos perfis. Restringir via FK a uma única tabela de usuários trava o domínio. Convenção semântica fica no service que escreve (`handled_at` + `handled_by_user_id` juntos).
+
+#### C) Templates como rascunho
+- Todos os 7 templates entram com:
+  - `key` com prefixo `corretora_`
+  - `category = 'UTILITY'` (decisão registrada: nenhum é MARKETING nesta fase)
+  - `active = 0`
+  - `approved_at = NULL`
+  - `meta_template_name = NULL` (preenchido só após aprovação Meta + cutover)
+  - `version = 1`
+- Cutover futuro: definir `meta_template_name`, `approved_at = NOW()`, `active = 1` via UPDATE manual ou painel admin.
+
+### 7.2 Schema entregue
+
+#### `whatsapp_templates`
+| Coluna | Tipo | Notas |
+|---|---|---|
+| id | INT.UNSIGNED PK auto | |
+| key | VARCHAR(120) | identificador lógico, com prefixo `corretora_` |
+| version | INT.UNSIGNED default 1 | múltiplas versões da mesma key convivem |
+| language | VARCHAR(10) default `pt_BR` | |
+| category | ENUM(`UTILITY`,`MARKETING`,`AUTHENTICATION`) default UTILITY | |
+| body | TEXT | render com placeholders `{{var}}` |
+| variables | JSON | array de strings com nomes das variáveis |
+| meta_template_name | VARCHAR(160) NULL | nome aprovado Meta — preenchido pós-cutover |
+| active | TINYINT default 0 | 0 = rascunho |
+| approved_at | DATETIME NULL | |
+| created_at / updated_at | DATETIME | auto |
+
+Índices: `UNIQUE(key, version)`, `(active, key)`.
+
+#### `whatsapp_messages`
+| Coluna | Tipo | Notas |
+|---|---|---|
+| id | INT.UNSIGNED PK auto | |
+| lead_id | INT.UNSIGNED NULL FK→`corretora_leads.id` SET NULL | |
+| contract_id | INT.UNSIGNED NULL FK→`contratos.id` SET NULL | |
+| corretora_id | INT.UNSIGNED NULL FK→`corretoras.id` SET NULL | |
+| recipient_phone | VARCHAR(20) | E.164 sem `+` (ex.: `5533999991234`) |
+| template_key | VARCHAR(120) NULL | FK lógica (não referencial) com `whatsapp_templates.key` |
+| body | TEXT NULL | snapshot do que foi enviado |
+| **provider** | **ENUM(`manual`,`api`,`stub`) default `stub`** | **ajuste A** |
+| status | ENUM(`queued`,`queued_stub`,`manual_pending`,`sent`,`delivered`,`read`,`failed`) default `queued` | |
+| provider_message_id | VARCHAR(120) UNIQUE NULL | id Meta — chave de idempotência no webhook |
+| error_message | TEXT NULL | |
+| retry_count | INT.UNSIGNED default 0 | |
+| sent_at / delivered_at / read_at / failed_at | DATETIME NULL | timeline |
+| created_at / updated_at | DATETIME | auto |
+
+Índices: `recipient_phone`, `(lead_id, created_at)`, `(contract_id, created_at)`, `(corretora_id, created_at)`, `(status, created_at)`, `UNIQUE(provider_message_id)`.
+
+#### `whatsapp_inbound`
+| Coluna | Tipo | Notas |
+|---|---|---|
+| id | INT.UNSIGNED PK auto | |
+| sender_phone | VARCHAR(20) | |
+| body | TEXT NULL | |
+| media_url | TEXT NULL | |
+| lead_id | INT.UNSIGNED NULL FK→`corretora_leads.id` SET NULL | |
+| contract_id | INT.UNSIGNED NULL FK→`contratos.id` SET NULL | |
+| corretora_id | INT.UNSIGNED NULL FK→`corretoras.id` SET NULL | |
+| raw_payload | JSON NULL | payload bruto Meta para auditoria |
+| provider_message_id | VARCHAR(120) UNIQUE NULL | |
+| received_at | DATETIME default NOW | |
+| **handled_by_user_id** | **INT.UNSIGNED NULL (sem FK)** | **ajuste B** |
+| handled_at | DATETIME NULL | |
+| created_at / updated_at | DATETIME | auto |
+
+Índices: `sender_phone`, `(lead_id, received_at)`, `(corretora_id, received_at)`, `UNIQUE(provider_message_id)`.
+
+### 7.3 Templates definitivos no seed
+
+Os 7 textos foram travados pelo comercial e entram **literalmente** no
+seed. **Sem emojis. Sem links encurtados. Sem promessa de preço. Sem
+afirmar que negociação está fechada antes do contrato.** Todos
+UTILITY (transacionais).
+
+#### 1. `corretora_lead_recebido`
+**Variáveis**: `nome_corretora`, `nome_produtor`, `cidade_produtor`, `volume_cafe`, `tipo_cafe`
+
+```
+Olá, {{nome_corretora}}.
+
+Você recebeu um novo interesse de venda de café pelo Kavita Mercado do Café.
+
+Produtor: {{nome_produtor}}
+Cidade: {{cidade_produtor}}
+Volume informado: {{volume_cafe}}
+Tipo de café: {{tipo_cafe}}
+
+Acesse seu painel para analisar o contato e responder o produtor.
+
+Mensagem automática do Kavita Mercado do Café.
+```
+
+#### 2. `corretora_corretor_designado`
+**Variáveis**: `nome_produtor`, `nome_corretora`, `nome_corretor`
+
+```
+Olá, {{nome_produtor}}.
+
+Seu atendimento no Kavita Mercado do Café foi direcionado para a corretora {{nome_corretora}}.
+
+Responsável pelo contato: {{nome_corretor}}
+
+A corretora poderá falar com você para entender melhor o café disponível, volume, localização e condições da negociação.
+
+Mensagem automática do Kavita Mercado do Café.
+```
+
+#### 3. `corretora_proposta_enviada`
+**Variáveis**: `nome_produtor`, `nome_corretora`, `volume_cafe`, `valor_proposta`, `condicao_pagamento`
+
+```
+Olá, {{nome_produtor}}.
+
+A corretora {{nome_corretora}} registrou uma proposta para sua negociação de café no Kavita Mercado do Café.
+
+Resumo da proposta:
+Volume: {{volume_cafe}}
+Valor informado: {{valor_proposta}}
+Condição: {{condicao_pagamento}}
+
+Acesse o atendimento ou fale com a corretora para conferir os detalhes antes de confirmar qualquer negociação.
+
+Mensagem automática do Kavita Mercado do Café.
+```
+
+#### 4. `corretora_contrato_gerado`
+**Variáveis**: `nome_produtor`, `numero_contrato`, `nome_corretora`, `volume_cafe`
+
+```
+Olá, {{nome_produtor}}.
+
+O contrato da sua negociação de café foi gerado no Kavita Mercado do Café.
+
+Contrato: {{numero_contrato}}
+Corretora: {{nome_corretora}}
+Volume: {{volume_cafe}}
+
+Confira as informações com atenção antes de seguir para a assinatura.
+
+Mensagem automática do Kavita Mercado do Café.
+```
+
+#### 5. `corretora_contrato_assinatura_pendente`
+**Variáveis**: `nome_produtor`, `numero_contrato`, `nome_corretora`, `volume_cafe`
+
+```
+Olá, {{nome_produtor}}.
+
+O contrato {{numero_contrato}} está aguardando sua assinatura.
+
+Corretora: {{nome_corretora}}
+Volume: {{volume_cafe}}
+
+Acesse o link enviado pela corretora ou entre em contato com ela para finalizar esta etapa.
+
+Mensagem automática do Kavita Mercado do Café.
+```
+
+#### 6. `corretora_contrato_assinado`
+**Variáveis**: `nome_produtor`, `numero_contrato`, `nome_corretora`, `volume_cafe`
+
+```
+Olá, {{nome_produtor}}.
+
+O contrato {{numero_contrato}} foi marcado como assinado no Kavita Mercado do Café.
+
+Corretora: {{nome_corretora}}
+Volume: {{volume_cafe}}
+
+Guarde essa informação para acompanhar a negociação com mais segurança.
+
+Mensagem automática do Kavita Mercado do Café.
+```
+
+#### 7. `corretora_lembrete_retorno_produtor`
+**Variáveis**: `nome_produtor`, `nome_corretora`
+
+```
+Olá, {{nome_produtor}}.
+
+Passando para lembrar que existe um atendimento em aberto no Kavita Mercado do Café com a corretora {{nome_corretora}}.
+
+Caso ainda tenha interesse na negociação, responda a corretora ou acesse seu atendimento para continuar.
+
+Mensagem automática do Kavita Mercado do Café.
+```
+
+> Observação: a key 7 ficou `corretora_lembrete_retorno_produtor`
+> (não `corretora_lembrete_assinatura_pendente` da auditoria
+> original). O briefing final renomeou o template — agora ele é um
+> lembrete genérico de retorno, não específico de assinatura.
+> Atualizada no seed e nesta seção.
+
+### 7.4 Status final da Etapa 2
+
+✅ Migration criada com 3 tabelas + 7 templates como rascunho (active=0).
+✅ Conviver com `comunicacoes_enviadas` (não foi tocada).
+✅ Aplicação não foi integrada ainda (próxima etapa).
+
+Aguardando OK para Etapa 3 (`whatsappService.js` + adapter `stub` + retry).
