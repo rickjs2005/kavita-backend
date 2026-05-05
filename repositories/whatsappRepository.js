@@ -333,6 +333,83 @@ async function insertInbound(m) {
   return { id: res.insertId };
 }
 
+// ---------------------------------------------------------------------------
+// Listings escopados por corretora — Etapa 5 (painel)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lista mensagens outbound de uma corretora, com filtros opcionais
+ * por lead_id ou contract_id. Ordenado por created_at DESC. Limite
+ * default 50, max 200.
+ *
+ * @param {number} corretoraId
+ * @param {object} [opts]
+ * @param {number|null} [opts.leadId]
+ * @param {number|null} [opts.contractId]
+ * @param {number} [opts.limit=50]
+ * @param {number} [opts.offset=0]
+ * @returns {Promise<Array>}
+ */
+async function listMessagesForCorretora(corretoraId, opts = {}) {
+  const limit = Math.min(Math.max(Number(opts.limit) || 50, 1), 200);
+  const offset = Math.max(Number(opts.offset) || 0, 0);
+
+  const where = ["corretora_id = ?"];
+  const params = [corretoraId];
+
+  if (opts.leadId != null) {
+    where.push("lead_id = ?");
+    params.push(Number(opts.leadId));
+  }
+  if (opts.contractId != null) {
+    where.push("contract_id = ?");
+    params.push(Number(opts.contractId));
+  }
+
+  params.push(limit, offset);
+
+  const [rows] = await pool.query(
+    `SELECT id, lead_id, contract_id, corretora_id, recipient_phone,
+            template_key, body, provider, status, language_code,
+            provider_message_id, error_message, retry_count,
+            sent_at, delivered_at, read_at, failed_at, created_at, updated_at
+       FROM whatsapp_messages
+      WHERE ${where.join(" AND ")}
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?`,
+    params,
+  );
+  return rows;
+}
+
+/**
+ * Lista inbound de uma corretora. Hoje filtra estritamente por
+ * corretora_id populado — lookup contextual via sender_phone vem em
+ * sprint posterior (cf. docs §9.5).
+ *
+ * @param {number} corretoraId
+ * @param {object} [opts]
+ * @param {number} [opts.limit=50]
+ * @param {number} [opts.offset=0]
+ * @returns {Promise<Array>}
+ */
+async function listInboundForCorretora(corretoraId, opts = {}) {
+  const limit = Math.min(Math.max(Number(opts.limit) || 50, 1), 200);
+  const offset = Math.max(Number(opts.offset) || 0, 0);
+
+  const [rows] = await pool.query(
+    `SELECT id, sender_phone, body, media_url, lead_id, contract_id,
+            corretora_id, provider_message_id, received_at, handled_at,
+            handled_by_user_id, created_at
+       FROM whatsapp_inbound
+      WHERE corretora_id = ?
+      ORDER BY received_at DESC
+      LIMIT ? OFFSET ?`,
+    [corretoraId, limit, offset],
+  );
+  return rows;
+}
+
 module.exports = {
   findActiveTemplate,
   findAnyTemplate,
@@ -344,4 +421,7 @@ module.exports = {
   updateMessageStatusByProviderId,
   findInboundByProviderId,
   insertInbound,
+  // Etapa 5
+  listMessagesForCorretora,
+  listInboundForCorretora,
 };

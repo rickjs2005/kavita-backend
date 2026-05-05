@@ -7,8 +7,8 @@
 > Decisões de produto associadas: ver [[corretora-modulo.md]] e
 > registros em `kavita-os/02 - Pendências.md` / `05 - Decisões Técnicas.md`.
 
-**Etapa atual:** 4 — Webhook + HMAC + inbound (concluída).
-**Próxima etapa:** 5 — Frontend (`<WhatsAppStatusBadge>`, ação contextual nos cards de contrato, painel `/painel/corretora/whatsapp`).
+**Etapa atual:** 5 — Frontend painel da corretora (concluída).
+**Próxima etapa:** 6 — Testes adicionais + ajustes pontuais conforme feedback do piloto.
 
 ---
 
@@ -805,3 +805,92 @@ PII mascarada: `recipient_masked` / `sender_masked` (nunca o número completo).
 ---
 
 Aguardando OK para Etapa 5 (frontend).
+
+---
+
+## 10. Etapa 5 — Frontend painel da corretora (concluída)
+
+### 10.1 Endpoints novos `/api/corretora/whatsapp/*`
+
+Todos protegidos por `verifyCorretora + validateCSRF` (herda do
+`corretoraPanelRoutes`). `corretora_id` SEMPRE vem da sessão, nunca
+do body.
+
+| Verbo | Path | Função |
+|---|---|---|
+| `GET`  | `/messages?lead_id=&contract_id=&limit=&offset=` | Lista enviadas, filtros opcionais por lead/contrato. Limite máx 200. Ordenado por `created_at DESC`. |
+| `GET`  | `/inbound?limit=&offset=` | Lista recebidas. Hoje filtra estritamente por `corretora_id` populado — lookup contextual por `sender_phone` sai em sprint posterior. |
+| `POST` | `/send` | Dispara `whatsappService.sendMessage`. Body: `{ key, variables?, to, lead_id?, contract_id?, language_code? }`. |
+
+**Backend novo**:
+- `routes/corretoraPanel/corretoraWhatsapp.js`
+- `controllers/corretoraPanel/whatsappCorretoraController.js`
+- `schemas/whatsappCorretoraSchemas.js`
+- `repositories/whatsappRepository.js` (+ `listMessagesForCorretora`, `listInboundForCorretora`)
+- `routes/corretoraPanelRoutes.js` (registro)
+
+### 10.2 Frontend novo
+
+| Arquivo | Função |
+|---|---|
+| `src/components/painel-corretora/WhatsAppStatusBadge.tsx` | Badge reusável, 7 estados: queued, queued_stub, manual_pending, sent, delivered, read, failed. Aria-label acessível, ponto pulsante em estados não-terminais. |
+| `src/app/painel/corretora/whatsapp/page.tsx` | Inbox em **cards (não tabela)**. Duas seções: enviadas e recebidas. Filtros via query string `?lead_id=…&contract_id=…`. Skeleton, empty states e link "Limpar filtros". |
+| `src/components/painel-corretora/CorretoraPanelNav.tsx` | + item "WhatsApp" na seção "Operação" (ícone dedicado). |
+| `src/components/painel-corretora/ContratoCard.tsx` | Botão **contextual** ao status: amber "Enviar para assinatura via WhatsApp" (status=sent) → template `corretora_contrato_assinatura_pendente`; green "Reenviar comprovante via WhatsApp" (status=signed) → template `corretora_contrato_assinado`. Outros status: sem botão WhatsApp. |
+| `src/__tests__/components/WhatsAppStatusBadge.test.tsx` | 3 testes (labels, a11y, compact). |
+
+### 10.3 Decisão de design — ações contextuais por status (alinhada com OK do user)
+
+Em vez de um botão genérico "Enviar por WhatsApp" no `ContratoCard`,
+cada estado do contrato tem **uma única ação WhatsApp pertinente**:
+
+| Status | Cor da ação | Label | Template Meta |
+|---|---|---|---|
+| `draft` | — | (sem ação WA) | — |
+| `sent` (amber) | amber | "Enviar para assinatura via WhatsApp" | `corretora_contrato_assinatura_pendente` |
+| `signed` (green) | emerald | "Reenviar comprovante via WhatsApp" | `corretora_contrato_assinado` |
+| `cancelled` (red) | — | (sem ação WA) | — |
+
+A ação preenche `numero_contrato` automaticamente; outras variáveis
+ficam vazias até o backend resolver lookup completo de produtor por
+contrato. O template da Meta tolera variável vazia (renderiza como
+string vazia).
+
+### 10.4 Empty states
+
+- **Enviadas vazia**: "Quando a corretora disparar uma mensagem (manual ou via templates aprovados), ela aparece aqui."
+- **Recebidas vazia**: "Mensagens que o produtor enviar pelo WhatsApp aparecem aqui assim que o webhook estiver ligado em produção."
+- **Filtro sem resultado**: "Não há mensagens para os filtros selecionados."
+
+### 10.5 PII / segurança visual
+
+- Telefones renderizados mascarados (`5533*****1234`) tanto em mensagens quanto em inbound — mesmo padrão do log estruturado backend.
+- Body completo da mensagem aparece (com `line-clamp-6`) — admin precisa ler conteúdo para suporte.
+- `error_message` aparece quando status=failed, em texto vermelho discreto.
+
+### 10.6 Validação
+
+- **Lint** nos 8 arquivos editados/novos: 0 erros (backend 5 + frontend 4 + ajuste em `ContratoCard`).
+- **Tests backend**: 1869/1869 unit verde (sem novos testes — mudanças foram só de fan-out do service existente).
+- **Tests frontend**: 1574/1574 verde (3 novos do `WhatsAppStatusBadge`).
+- **Build frontend**: ✓ Compiled. Rota `/painel/corretora/whatsapp` registrada (3.01 KB / 193 KB First Load JS).
+
+### 10.7 O que ainda não entrou
+
+- ❌ Lookup automático de `lead_id`/`contract_id`/`corretora_id` em inbound a partir de `sender_phone` → próxima sprint.
+- ❌ Resposta inline a inbound pelo painel (composer de texto livre) → próxima sprint.
+- ❌ Cutover Meta — todos os 7 templates ainda `active=0` e `meta_template_name=NULL`. Service de envio bloqueia em modo `api`.
+- ❌ Webhook em prod — Meta ainda não plugada (Etapa 4 entregou o endpoint; setup operacional Meta + deploy fica fora desta etapa).
+
+---
+
+## 11. Próximos passos (fora deste sprint)
+
+| Item | Etapa sugerida |
+|---|---|
+| Lookup contextual em inbound (sender_phone × `corretora_leads.telefone_normalized`) | sprint posterior — backend |
+| Composer inline na página de inbound (responder direto pelo painel) | sprint posterior — frontend |
+| Submeter os 7 templates à Meta para aprovação | operacional, fora de código |
+| Cutover provider stub → api (após Meta aprovar) | operacional + 1 commit `chore` |
+| Painel admin de templates (edit/version/active) | sprint posterior — full-stack |
+| Convergência `comunicacoes_enviadas` ↔ `whatsapp_messages` | dívida técnica P2 |

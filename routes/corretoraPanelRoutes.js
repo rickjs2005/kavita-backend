@@ -36,5 +36,7 @@ mount("/corretora/account", "./corretoraPanel/corretoraAccount");
 mount("/corretora/contratos", "./corretoraPanel/corretoraContratos");
 // Fase 10.2 — status KYC da própria corretora (leitura).
 mount("/corretora/kyc", "./corretoraPanel/corretoraKycStatus");
+// Etapa 5 da reativacao WhatsApp — painel de mensagens.
+mount("/corretora/whatsapp", "./corretoraPanel/corretoraWhatsapp");
 
 module.exports = router;
