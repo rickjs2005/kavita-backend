@@ -17,6 +17,9 @@ describe("services/whatsapp/adapters/api", () => {
   beforeEach(() => {
     jest.resetModules();
     originalFetch = global.fetch;
+    // Backoff zero em todos os testes para nao acumular 5s. O retry
+    // logico e' validado normalmente — so' nao tem o sleep.
+    process.env.WHATSAPP_API_RETRY_BACKOFF_MS = "0,0,0";
   });
 
   afterEach(() => {
@@ -25,6 +28,8 @@ describe("services/whatsapp/adapters/api", () => {
     delete process.env.WHATSAPP_PHONE_NUMBER_ID;
     delete process.env.WHATSAPP_API_VERSION;
     delete process.env.WHATSAPP_API_TIMEOUT_MS;
+    delete process.env.WHATSAPP_API_MAX_ATTEMPTS;
+    delete process.env.WHATSAPP_API_RETRY_BACKOFF_MS;
   });
 
   function loadAdapter() {
@@ -245,6 +250,119 @@ describe("services/whatsapp/adapters/api", () => {
     });
 
     expect(r.url).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Etapa 3 — retry exponencial em falhas transitórias.
+  // -------------------------------------------------------------------------
+
+  test("retry: 429 dispara nova tentativa, sucesso na 2a tentativa", async () => {
+    process.env.WHATSAPP_API_TOKEN = "tok";
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "ph";
+    let calls = 0;
+    global.fetch = jest.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          ok: false,
+          status: 429,
+          json: async () => ({ error: { message: "Rate limit" } }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.retry" }] }) };
+    });
+    const adapter = loadAdapter();
+
+    const r = await adapter.send({ destino: "5533999991234", mensagem: "x" });
+    expect(r.status).toBe("sent");
+    expect(r.messageId).toBe("wamid.retry");
+    expect(r.attempts).toBe(2);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("retry: 5xx esgota MAX_ATTEMPTS=3 e retorna error", async () => {
+    process.env.WHATSAPP_API_TOKEN = "tok";
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "ph";
+    process.env.WHATSAPP_API_MAX_ATTEMPTS = "3";
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: { message: "Service unavailable" } }),
+    }));
+    const adapter = loadAdapter();
+
+    const r = await adapter.send({ destino: "5533999991234", mensagem: "x" });
+    expect(r.status).toBe("error");
+    expect(r.attempts).toBe(3);
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  test("retry: timeout retentado, depois sucesso", async () => {
+    process.env.WHATSAPP_API_TOKEN = "tok";
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "ph";
+    let calls = 0;
+    global.fetch = jest.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        const e = new Error("aborted");
+        e.name = "AbortError";
+        throw e;
+      }
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: "wamid.afterTimeout" }] }) };
+    });
+    const adapter = loadAdapter();
+
+    const r = await adapter.send({ destino: "5533999991234", mensagem: "x" });
+    expect(r.status).toBe("sent");
+    expect(r.attempts).toBe(2);
+  });
+
+  test("no-retry: 400 não retenta (template/validação)", async () => {
+    process.env.WHATSAPP_API_TOKEN = "tok";
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "ph";
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { message: "Bad payload", code: 100 } }),
+    }));
+    const adapter = loadAdapter();
+
+    const r = await adapter.send({ destino: "5533999991234", mensagem: "x" });
+    expect(r.status).toBe("error");
+    expect(r.attempts).toBe(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("no-retry: 401 não retenta (autorização)", async () => {
+    process.env.WHATSAPP_API_TOKEN = "tok";
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "ph";
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: { message: "Unauthorized" } }),
+    }));
+    const adapter = loadAdapter();
+
+    const r = await adapter.send({ destino: "5533999991234", mensagem: "x" });
+    expect(r.status).toBe("error");
+    expect(r.attempts).toBe(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("no-retry: 403 não retenta", async () => {
+    process.env.WHATSAPP_API_TOKEN = "tok";
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "ph";
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: { message: "Forbidden" } }),
+    }));
+    const adapter = loadAdapter();
+
+    const r = await adapter.send({ destino: "5533999991234", mensagem: "x" });
+    expect(r.status).toBe("error");
+    expect(r.attempts).toBe(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -7,8 +7,8 @@
 > Decisões de produto associadas: ver [[corretora-modulo.md]] e
 > registros em `kavita-os/02 - Pendências.md` / `05 - Decisões Técnicas.md`.
 
-**Etapa atual:** 2 — Schema + migrations + seed (concluída).
-**Próxima etapa:** 3 — `whatsappService.js` consolidado + adapter `stub` + retry.
+**Etapa atual:** 3 — Send service + adapter stub + retry (concluída).
+**Próxima etapa:** 4 — Webhook `POST /api/webhooks/whatsapp` com HMAC + inbound.
 
 ---
 
@@ -539,3 +539,141 @@ Os 7 templates após o rename: language_code = 'pt_BR' (todos).
 ---
 
 Aguardando OK para Etapa 3 (`whatsappService.js` + adapter `stub` + retry).
+
+---
+
+## 8. Etapa 3 — Send service + adapter stub + retry (concluída)
+
+### 8.1 Arquivos novos
+
+| Arquivo | Função |
+|---|---|
+| `services/whatsapp/whatsappService.js` | Service consolidado da corretora. `sendMessage` + `sendFreeText`. |
+| `services/whatsapp/adapters/stub.js` | Adapter `stub` — não envia nada, retorna `provider_message_id` determinístico `stub_<ts>_<rand>`. |
+| `repositories/whatsappRepository.js` | Acesso SQL puro a `whatsapp_templates` + `whatsapp_messages`. |
+| `utils/phone.js` | Wrapper sobre `lib/waLink.js`: `toE164`, `validateBR`, `maskPhone` (mascarar PII em logs). |
+
+### 8.2 Arquivos modificados
+
+| Arquivo | O que mudou |
+|---|---|
+| `services/whatsapp/index.js` | `getProvider()` agora aceita `manual | api | stub`. Quando provider=stub, traduz `queued_stub` → `manual_pending` no retorno para preservar contrato dos callers historicos (modulo Pedidos). |
+| `services/whatsapp/adapters/api.js` | Retry exponencial 3× para falhas transitórias (timeout, 429, 5xx). 4xx (400/401/403) não retenta. Backoff 500/1500/3000 ms (override via `WHATSAPP_API_RETRY_BACKOFF_MS` para testes). |
+| `.env.example` | `WHATSAPP_PROVIDER=stub` (default no sprint). Adicionadas `WHATSAPP_API_MAX_ATTEMPTS=3` e `WHATSAPP_STUB_FORCE_FAIL=false`. |
+
+### 8.3 Contrato do `whatsappService`
+
+```js
+// Sucesso
+{ ok: true, message_id, status, provider, provider_message_id, language_code }
+
+// Erro de domínio (antes do adapter)
+{ ok: false, code, message }
+//   code:
+//     VALIDATION_ERROR — telefone inválido / key vazia / text vazio
+//     NOT_FOUND        — template inexistente
+//     CONFLICT         — template inativo OU api sem meta_template_name
+//     SERVER_ERROR     — adapter falhou após retries
+```
+
+### 8.4 Fluxo de status
+
+```
+                     ┌────────────────────────┐
+sendMessage(...)  →  │ valida phone + key     │
+                     │ valida template ativo  │  → CONFLICT/NOT_FOUND
+                     └──────────┬─────────────┘
+                                │
+                     ┌──────────▼─────────────┐
+                     │ insertMessage(queued/  │
+                     │   queued_stub/         │  ← whatsapp_messages.status = pre-status
+                     │   manual_pending)      │
+                     └──────────┬─────────────┘
+                                │
+                     ┌──────────▼─────────────┐
+                     │ adapter.send(...)      │
+                     └──────────┬─────────────┘
+                                │
+                ┌───────────────┼───────────────┐
+                ▼               ▼               ▼
+           queued_stub    manual_pending      sent
+        (provider=stub) (provider=manual) (provider=api)
+                                                │
+                                              error
+                                                │
+                                              failed
+                                                │
+                                          retry_count++
+                                                │
+                                          + error_message
+                                          + failed_at
+```
+
+### 8.5 Política de retry (adapter API)
+
+- **Retentar**: timeout (status 0), 429, 5xx.
+- **Não retentar**: 400, 401, 403 e qualquer outro 4xx.
+- **Tentativas**: até `WHATSAPP_API_MAX_ATTEMPTS` (default 3).
+- **Backoff**: 500ms → 1500ms → 3000ms.
+- **Logging**: cada tentativa loga `whatsapp.api.attempt_failed` com status code, retryable, attempt/max. Sucesso final loga `whatsapp.api.sent` com `attempts`.
+
+### 8.6 Stub adapter — propósito e uso
+
+- **Default no sprint** (`WHATSAPP_PROVIDER=stub`).
+- Retorna `{ status: "queued_stub", messageId: "stub_<ts>_<rand>" }`.
+- Não chama Meta. Não gera link wa.me.
+- `WHATSAPP_STUB_FORCE_FAIL=true` → retorna `status="error"` para validar caminho de falha sem precisar de provider real.
+- Útil em CI, dev local, staging, e como guardrail antes do cutover Meta (templates ainda `active=0`).
+
+### 8.7 Contrato do `language_code` (consolidação §7.5)
+
+- `sendMessage` lê `whatsapp_templates.language_code` e copia para `whatsapp_messages.language_code` no INSERT.
+- Override via `language_code` no input prevalece se for válido.
+- `sendFreeText` usa override quando passado, senão `pt_BR`.
+- Service NÃO consulta `whatsapp_templates` no momento do retorno — `whatsapp_messages.language_code` é a verdade auditável imutável.
+
+### 8.8 Logs estruturados — convenção
+
+Cada envio gera 2–3 entradas:
+1. `whatsapp.send.queued` (após INSERT pré-envio)
+2. `whatsapp.api.attempt_failed` (quando aplicável, uma por tentativa)
+3. `whatsapp.send.completed` (sucesso) ou `whatsapp.send.failed` (erro)
+
+Campos sempre presentes:
+- `correlation` (ex.: `wa_<ts>_<rand>`)
+- `provider`
+- `template_key` ou `null` (free text)
+- `language_code`
+- `lead_id`, `contract_id`, `corretora_id`
+- `recipient_masked` (nunca o número completo — `5533*****1234`)
+- `body_len` (nunca o body completo)
+- `message_id` (PK em `whatsapp_messages`)
+- `provider_message_id` quando disponível
+- `attempts` (api retry)
+- `err` sanitizado quando `failed`
+
+### 8.9 Compatibilidade — modulo Pedidos
+
+Pedidos (`comunicacaoService.sendWhatsapp`) continua funcionando:
+- Lê `WHATSAPP_PROVIDER`. Se `stub`, recebe `status="manual_pending"` com `url=null` (traduzido pelo facade legado).
+- `comunicacoes_enviadas` registra como `manual_pending`.
+- 11 templates hardcoded de pedidos não são tocados.
+
+### 8.10 Limites — o que ainda não entrou
+
+- ❌ Webhook `POST /api/webhooks/whatsapp` — Etapa 4.
+- ❌ Inbound do produtor → `whatsapp_inbound` — Etapa 4.
+- ❌ HMAC de webhook + verify token — Etapa 4.
+- ❌ Frontend `<WhatsAppStatusBadge>` + cards de contrato + página `/painel/corretora/whatsapp` — Etapa 5.
+- ❌ Envio real à Meta — bloqueado por design: todos os 7 templates da corretora estão `active=0` E sem `meta_template_name`. Service retorna `CONFLICT` se alguém tentar `WHATSAPP_PROVIDER=api` antes do cutover.
+
+### 8.11 Validação
+
+- **Lint** nos 8 arquivos editados/novos: 0 erros.
+- **Testes**: 1842/1842 unit verde (32 novos: 12 do whatsappService, 4 do stub, 6 retry adapter, 10 utils/phone).
+- Rodando `WHATSAPP_PROVIDER=stub`, módulo Pedidos não quebra (testes legados de `comunicacaoService` permanecem verdes).
+- Retry exponencial validado com cenários 429 → sucesso (2 tentativas), 5xx esgotado (3 tentativas), timeout retentado.
+
+---
+
+Aguardando OK para Etapa 4 (webhook + inbound + HMAC).

@@ -29,6 +29,39 @@ const META_API_VERSION = process.env.WHATSAPP_API_VERSION || "v22.0";
 const META_BASE_URL = "https://graph.facebook.com";
 const REQUEST_TIMEOUT_MS = Number(process.env.WHATSAPP_API_TIMEOUT_MS) || 8000;
 
+// Retry exponencial — Etapa 3 da reativacao.
+// Politica: re-tentar APENAS em falhas transitorias (timeout, 429,
+// 5xx). Nao re-tentar em 400/401/403 — sao erros de payload ou
+// credencial; insistir so' aumenta consumo de quota.
+const MAX_ATTEMPTS = Math.max(
+  1,
+  Number(process.env.WHATSAPP_API_MAX_ATTEMPTS) || 3,
+);
+
+// Backoff padrao 500/1500/3000 ms. Override via env para testes
+// (WHATSAPP_API_RETRY_BACKOFF_MS="0,0,0") evita que a suite Jest
+// trave por 5s acumulando o backoff real.
+function parseBackoff() {
+  const raw = String(process.env.WHATSAPP_API_RETRY_BACKOFF_MS || "").trim();
+  if (!raw) return [500, 1500, 3000];
+  const parts = raw
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n >= 0);
+  return parts.length ? parts : [500, 1500, 3000];
+}
+const RETRY_BACKOFF_MS = parseBackoff();
+
+function isRetryable(status) {
+  // status === 0 é erro de rede / timeout (postWithTimeout retorna 0
+  // nesses casos). 429 = rate limit. >= 500 = falha do servidor Meta.
+  return status === 0 || status === 429 || (status >= 500 && status < 600);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function getCredentials() {
   return {
     token: process.env.WHATSAPP_API_TOKEN || "",
@@ -184,12 +217,41 @@ async function send({ destino, mensagem, options = {} } = {}) {
   const url = `${META_BASE_URL}/${META_API_VERSION}/${phoneNumberId}/messages`;
   const body = buildBody(destino, mensagem, options);
 
-  const result = await postWithTimeout(url, body, token);
+  // Retry exponencial — bate Meta ate' MAX_ATTEMPTS, parando antes em
+  // erros 4xx (nao-retriaveis). Cada tentativa loga separadamente
+  // para que o painel/Sentry consigam reconstruir a sequencia.
+  let result = null;
+  let attempt = 0;
+  while (attempt < MAX_ATTEMPTS) {
+    attempt += 1;
+    result = await postWithTimeout(url, body, token);
+    if (result.ok) break;
+
+    const retryable = isRetryable(result.status);
+    logger.warn(
+      {
+        destino,
+        attempt,
+        max: MAX_ATTEMPTS,
+        statusCode: result.status,
+        retryable,
+        templateId: options.templateId || null,
+        err: result.errorMessage,
+      },
+      "whatsapp.api.attempt_failed",
+    );
+
+    if (!retryable || attempt >= MAX_ATTEMPTS) break;
+
+    const wait = RETRY_BACKOFF_MS[attempt - 1] ?? RETRY_BACKOFF_MS.at(-1);
+    await delay(wait);
+  }
 
   if (!result.ok) {
     logger.warn(
       {
         destino,
+        attempts: attempt,
         statusCode: result.status,
         templateId: options.templateId || null,
         err: result.errorMessage,
@@ -203,6 +265,7 @@ async function send({ destino, mensagem, options = {} } = {}) {
       destino,
       mensagem,
       erro: result.errorMessage,
+      attempts: attempt,
     };
   }
 
@@ -211,6 +274,7 @@ async function send({ destino, mensagem, options = {} } = {}) {
     {
       destino,
       messageId,
+      attempts: attempt,
       templateId: options.templateId || null,
     },
     "whatsapp.api.sent",
@@ -225,6 +289,7 @@ async function send({ destino, mensagem, options = {} } = {}) {
     erro: null,
     // Extra info exposta pra o caller persistir/debugar
     messageId,
+    attempts: attempt,
   };
 }
 
