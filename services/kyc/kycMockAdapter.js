@@ -58,16 +58,16 @@ async function verifyCnpj(cnpj) {
     situacao = "SUSPENSA";
   }
 
-  const razaoSocial = `MOCK — Corretora Teste ${normalized.slice(-4)} LTDA`;
+  const razaoSocial = `Corretora ${normalized.slice(-4)} LTDA`;
   const qsa = [
     {
-      nome: "José da Silva (Mock)",
+      nome: "José da Silva",
       cpf_cnpj: "***.***.***-00",
       qualificacao: "Administrador",
       entrada_em: "2020-01-15",
     },
     {
-      nome: "Maria Souza (Mock)",
+      nome: "Maria Souza",
       cpf_cnpj: "***.***.***-11",
       qualificacao: "Sócio",
       entrada_em: "2020-01-15",

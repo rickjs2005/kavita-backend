@@ -2,20 +2,34 @@
 
 // scripts/seed-produtos-demo.js
 //
-// Popula o backend de demo com produtos a partir de
+// Popula o backend (dev) com produtos a partir de
 // scripts/data/produtos-demo.csv. Faz login admin, garante categorias,
 // cria produtos.
 //
-// Uso:
-//   ADMIN_EMAIL=... ADMIN_PASSWORD=... node scripts/seed-produtos-demo.js
+// Uso (dev local):
+//   ADMIN_EMAIL=... ADMIN_PASSWORD=... API_BASE=http://localhost:5000 \
+//     node scripts/seed-produtos-demo.js
 //
-// Variáveis opcionais:
-//   API_BASE  — default "https://kavita-backend.up.railway.app"
+// BLOQUEADO em produção: aborta se NODE_ENV=production OU se API_BASE
+// apontar para domínio kavita.com.br.
+
+if (process.env.NODE_ENV === "production") {
+  console.error("Seed bloqueado em produção (NODE_ENV=production).");
+  process.exit(1);
+}
 
 const fs = require("node:fs");
 const path = require("node:path");
 
-const API_BASE = process.env.API_BASE || "https://kavita-backend.up.railway.app";
+const API_BASE = process.env.API_BASE || "http://localhost:5000";
+
+if (/(^|\.)kavita\.com\.br/i.test(API_BASE)) {
+  console.error(
+    `Seed bloqueado: API_BASE=${API_BASE} aponta para produção. ` +
+      "Use http://localhost:5000 ou um host de dev/staging.",
+  );
+  process.exit(1);
+}
 const CSV_PATH = path.join(__dirname, "data", "produtos-demo.csv");
 
 const CATEGORIAS_FIXAS = [

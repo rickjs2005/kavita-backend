@@ -3,14 +3,13 @@
  *
  * Testa o comportamento de startup do config/env.js:
  * - Variáveis obrigatórias ausentes → throw
- * - MP_WEBHOOK_SECRET ausente em produção → throw
- * - MP_WEBHOOK_SECRET ausente em dev → warn (sem throw)
- * - Todas as vars presentes → sem throw
+ * - Variáveis sensíveis em produção → throw quando inválidas
+ * - Em dev, ausência de obrigatórias-em-prod → warn (sem throw)
  */
 
 "use strict";
 
-// Vars mínimas para que ensureRequiredEnv não lance por elas
+// Vars mínimas para que ensureRequiredEnv não lance por elas em DEV.
 const BASE_ENV = {
   JWT_SECRET: "test-secret-min-32-chars-xxxxxxxxxx",
   EMAIL_USER: "test@test.com",
@@ -23,32 +22,58 @@ const BASE_ENV = {
   DB_NAME: "kavita_test",
 };
 
-function loadEnv(extraEnv = {}) {
-  jest.resetModules();
+// Conjunto que satisfaz TODAS as validações de produção. Cada teste de
+// produção parte daqui e remove/sobrescreve apenas a var que pretende
+// testar — assim adicionar uma validação nova não exige reescrever todos
+// os testes.
+const PROD_OK = {
+  ...BASE_ENV,
+  NODE_ENV: "production",
+  APP_URL: "https://kavita.com.br",
+  BACKEND_URL: "https://api.kavita.com.br",
+  PUBLIC_SITE_URL: "https://kavita.com.br",
+  MP_ACCESS_TOKEN: "APP_USR-test-token-123",
+  MP_WEBHOOK_SECRET: "super-secret-webhook-key",
+  MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
+  CPF_ENCRYPTION_KEY: "test-cpf-key-32-chars-minimum!!!",
+  MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  CONTRATO_SIGNER_PROVIDER: "clicksign",
+  CLICKSIGN_API_TOKEN: "test-clicksign-token",
+  CLICKSIGN_HMAC_SECRET: "test-clicksign-hmac",
+  CLICKSIGN_API_URL: "https://app.clicksign.com",
+  MAIL_PROVIDER: "smtp",
+  KYC_PROVIDER: "bigdatacorp",
+};
 
-  // Limpar dotenv para não interferir
+const RELEVANT_KEYS = [
+  ...Object.keys(BASE_ENV),
+  "PUBLIC_SITE_URL",
+  "MP_ACCESS_TOKEN",
+  "MP_WEBHOOK_SECRET",
+  "MP_WEBHOOK_URL",
+  "CPF_ENCRYPTION_KEY",
+  "MFA_ENCRYPTION_KEY",
+  "CONTRATO_SIGNER_PROVIDER",
+  "CLICKSIGN_API_TOKEN",
+  "CLICKSIGN_HMAC_SECRET",
+  "CLICKSIGN_API_URL",
+  "MAIL_PROVIDER",
+  "KYC_PROVIDER",
+  "NODE_ENV",
+];
+
+function loadEnv(extraEnv = {}, removeKeys = []) {
+  jest.resetModules();
   jest.doMock("dotenv", () => ({ config: () => {} }));
 
-  // Aplicar env vars para o contexto do teste
   const saved = {};
-  const allEnv = { ...BASE_ENV, ...extraEnv };
+  const allEnv = { ...extraEnv };
 
-  // Remove vars que não estamos passando (garante isolamento)
-  const relevant = [
-    ...Object.keys(BASE_ENV),
-    "MP_ACCESS_TOKEN",
-    "MP_WEBHOOK_SECRET",
-    "MP_WEBHOOK_URL",          // Fase 1 go-live (B1)
-    "CPF_ENCRYPTION_KEY",
-    "MFA_ENCRYPTION_KEY",      // F1.6 go-live
-    "CONTRATO_SIGNER_PROVIDER", // Fase 1 go-live (B3)
-    "CLICKSIGN_API_TOKEN",      // Fase 1 go-live (B3)
-    "CLICKSIGN_HMAC_SECRET",    // Fase 1 go-live (B3)
-    "NODE_ENV",
-  ];
-  for (const k of relevant) {
+  for (const k of RELEVANT_KEYS) {
     saved[k] = process.env[k];
-    if (k in allEnv) {
+    if (removeKeys.includes(k)) {
+      delete process.env[k];
+    } else if (k in allEnv) {
       process.env[k] = allEnv[k];
     } else {
       delete process.env[k];
@@ -63,8 +88,7 @@ function loadEnv(extraEnv = {}) {
     error = e;
   }
 
-  // Restaurar env
-  for (const k of relevant) {
+  for (const k of RELEVANT_KEYS) {
     if (saved[k] === undefined) {
       delete process.env[k];
     } else {
@@ -88,86 +112,53 @@ describe("config/env.js — startup validation", () => {
     jest.resetModules();
   });
 
-  test("não lança quando todas as vars obrigatórias estão presentes (sem MP_WEBHOOK_SECRET em dev)", () => {
-    const { error } = loadEnv({ NODE_ENV: "development" });
-    // Em dev, ausência de MP_WEBHOOK_SECRET é warn, não erro
+  test("não lança em dev quando vars de prod ausentes (apenas warn)", () => {
+    const { error } = loadEnv({ ...BASE_ENV, NODE_ENV: "development" });
     expect(error).toBeNull();
   });
 
-  test("não lança quando todas as vars incluindo MP_WEBHOOK_SECRET estão presentes em produção", () => {
-    const { error } = loadEnv({
-      NODE_ENV: "production",
-      MP_ACCESS_TOKEN: "test-mp-access-token",
-      MP_WEBHOOK_SECRET: "super-secret-webhook-key",
-      MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
-      CPF_ENCRYPTION_KEY: "test-cpf-key-32-chars-minimum!!!",
-      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      CONTRATO_SIGNER_PROVIDER: "clicksign",
-      CLICKSIGN_API_TOKEN: "test-clicksign-token",
-      CLICKSIGN_HMAC_SECRET: "test-clicksign-hmac",
-    });
+  test("não lança em produção quando todas as vars válidas estão presentes", () => {
+    const { error } = loadEnv(PROD_OK);
     expect(error).toBeNull();
   });
 
   test("lança em produção quando MP_WEBHOOK_SECRET está ausente", () => {
-    const { error } = loadEnv({
-      NODE_ENV: "production",
-      MP_ACCESS_TOKEN: "x",
-      MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
-      CPF_ENCRYPTION_KEY: "x",
-      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      CONTRATO_SIGNER_PROVIDER: "clicksign",
-      CLICKSIGN_API_TOKEN: "x",
-      CLICKSIGN_HMAC_SECRET: "x",
-    });
+    const { error } = loadEnv(PROD_OK, ["MP_WEBHOOK_SECRET"]);
     expect(error).not.toBeNull();
     expect(error.message).toMatch(/MP_WEBHOOK_SECRET/);
     expect(error.message).toMatch(/produção/);
   });
 
   test("Fase 1 B1 — lança em produção quando MP_WEBHOOK_URL está ausente", () => {
-    const { error } = loadEnv({
-      NODE_ENV: "production",
-      MP_ACCESS_TOKEN: "x",
-      MP_WEBHOOK_SECRET: "x",
-      CPF_ENCRYPTION_KEY: "x",
-      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      CONTRATO_SIGNER_PROVIDER: "clicksign",
-      CLICKSIGN_API_TOKEN: "x",
-      CLICKSIGN_HMAC_SECRET: "x",
-    });
+    const { error } = loadEnv(PROD_OK, ["MP_WEBHOOK_URL"]);
     expect(error).not.toBeNull();
     expect(error.message).toMatch(/MP_WEBHOOK_URL/);
   });
 
   test("Fase 1 B1 — lança em produção quando MP_WEBHOOK_URL não é HTTPS", () => {
     const { error } = loadEnv({
-      NODE_ENV: "production",
-      MP_ACCESS_TOKEN: "x",
-      MP_WEBHOOK_SECRET: "x",
+      ...PROD_OK,
       MP_WEBHOOK_URL: "http://insecure.com/webhook",
-      CPF_ENCRYPTION_KEY: "x",
-      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      CONTRATO_SIGNER_PROVIDER: "clicksign",
-      CLICKSIGN_API_TOKEN: "x",
-      CLICKSIGN_HMAC_SECRET: "x",
     });
     expect(error).not.toBeNull();
     expect(error.message).toMatch(/MP_WEBHOOK_URL/);
     expect(error.message).toMatch(/https/);
   });
 
+  test("lança em produção quando MP_ACCESS_TOKEN não começa com APP_USR-", () => {
+    const { error } = loadEnv({
+      ...PROD_OK,
+      MP_ACCESS_TOKEN: "TEST-sandbox-token-123",
+    });
+    expect(error).not.toBeNull();
+    expect(error.message).toMatch(/MP_ACCESS_TOKEN/);
+    expect(error.message).toMatch(/APP_USR-/);
+  });
+
   test("Fase 1 B3 — lança em produção quando CONTRATO_SIGNER_PROVIDER=stub", () => {
     const { error } = loadEnv({
-      NODE_ENV: "production",
-      MP_ACCESS_TOKEN: "x",
-      MP_WEBHOOK_SECRET: "x",
-      MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
-      CPF_ENCRYPTION_KEY: "x",
-      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      ...PROD_OK,
       CONTRATO_SIGNER_PROVIDER: "stub",
-      CLICKSIGN_API_TOKEN: "x",
-      CLICKSIGN_HMAC_SECRET: "x",
     });
     expect(error).not.toBeNull();
     expect(error.message).toMatch(/CONTRATO_SIGNER_PROVIDER/);
@@ -175,56 +166,83 @@ describe("config/env.js — startup validation", () => {
   });
 
   test("Fase 1 B3 — lança em produção quando CLICKSIGN_API_TOKEN está ausente", () => {
-    const { error } = loadEnv({
-      NODE_ENV: "production",
-      MP_ACCESS_TOKEN: "x",
-      MP_WEBHOOK_SECRET: "x",
-      MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
-      CPF_ENCRYPTION_KEY: "x",
-      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      CONTRATO_SIGNER_PROVIDER: "clicksign",
-      CLICKSIGN_HMAC_SECRET: "x",
-    });
+    const { error } = loadEnv(PROD_OK, ["CLICKSIGN_API_TOKEN"]);
     expect(error).not.toBeNull();
     expect(error.message).toMatch(/CLICKSIGN_API_TOKEN/);
   });
 
-  test("F1.6 — lança em produção quando MFA_ENCRYPTION_KEY está ausente", () => {
-    const { error } = loadEnv({
-      NODE_ENV: "production",
-      MP_ACCESS_TOKEN: "x",
-      MP_WEBHOOK_SECRET: "x",
-      MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
-      CPF_ENCRYPTION_KEY: "x",
-      // MFA_ENCRYPTION_KEY ausente intencionalmente
-      CONTRATO_SIGNER_PROVIDER: "clicksign",
-      CLICKSIGN_API_TOKEN: "x",
-      CLICKSIGN_HMAC_SECRET: "x",
-    });
-    expect(error).not.toBeNull();
-    expect(error.message).toMatch(/MFA_ENCRYPTION_KEY/);
-  });
-
   test("Fase 1 B3 — lança em produção quando CLICKSIGN_HMAC_SECRET está ausente", () => {
-    const { error } = loadEnv({
-      NODE_ENV: "production",
-      MP_ACCESS_TOKEN: "x",
-      MP_WEBHOOK_SECRET: "x",
-      MP_WEBHOOK_URL: "https://api.kavita.com.br/api/payment/webhook",
-      CPF_ENCRYPTION_KEY: "x",
-      MFA_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      CONTRATO_SIGNER_PROVIDER: "clicksign",
-      CLICKSIGN_API_TOKEN: "x",
-    });
+    const { error } = loadEnv(PROD_OK, ["CLICKSIGN_HMAC_SECRET"]);
     expect(error).not.toBeNull();
     expect(error.message).toMatch(/CLICKSIGN_HMAC_SECRET/);
   });
 
+  test("lança em produção quando CLICKSIGN_API_URL aponta para sandbox", () => {
+    const { error } = loadEnv({
+      ...PROD_OK,
+      CLICKSIGN_API_URL: "https://sandbox.clicksign.com",
+    });
+    expect(error).not.toBeNull();
+    expect(error.message).toMatch(/CLICKSIGN_API_URL/);
+    expect(error.message).toMatch(/sandbox/);
+  });
+
+  test("lança em produção quando MAIL_PROVIDER=disabled", () => {
+    const { error } = loadEnv({
+      ...PROD_OK,
+      MAIL_PROVIDER: "disabled",
+    });
+    expect(error).not.toBeNull();
+    expect(error.message).toMatch(/MAIL_PROVIDER/);
+    expect(error.message).toMatch(/disabled/);
+  });
+
+  test("lança em produção quando KYC_PROVIDER=mock", () => {
+    const { error } = loadEnv({
+      ...PROD_OK,
+      KYC_PROVIDER: "mock",
+    });
+    expect(error).not.toBeNull();
+    expect(error.message).toMatch(/KYC_PROVIDER/);
+  });
+
+  test("lança em produção quando KYC_PROVIDER está vazio", () => {
+    const { error } = loadEnv(PROD_OK, ["KYC_PROVIDER"]);
+    expect(error).not.toBeNull();
+    expect(error.message).toMatch(/KYC_PROVIDER/);
+  });
+
+  test("lança em produção quando APP_URL aponta para localhost", () => {
+    const { error } = loadEnv({
+      ...PROD_OK,
+      APP_URL: "http://localhost:3000",
+    });
+    expect(error).not.toBeNull();
+    expect(error.message).toMatch(/APP_URL/);
+    expect(error.message).toMatch(/localhost/);
+  });
+
+  test("lança em produção quando BACKEND_URL aponta para 127.0.0.1", () => {
+    const { error } = loadEnv({
+      ...PROD_OK,
+      BACKEND_URL: "http://127.0.0.1:5000",
+    });
+    expect(error).not.toBeNull();
+    expect(error.message).toMatch(/BACKEND_URL/);
+    expect(error.message).toMatch(/localhost/);
+  });
+
+  test("F1.6 — lança em produção quando MFA_ENCRYPTION_KEY está ausente", () => {
+    const { error } = loadEnv(PROD_OK, ["MFA_ENCRYPTION_KEY"]);
+    expect(error).not.toBeNull();
+    expect(error.message).toMatch(/MFA_ENCRYPTION_KEY/);
+  });
+
   test("emite console.warn (sem throw) em dev quando MP_WEBHOOK_SECRET está ausente", () => {
-    const { error } = loadEnv({ NODE_ENV: "development" });
+    const { error } = loadEnv({ ...BASE_ENV, NODE_ENV: "development" });
     expect(error).toBeNull();
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("MP_WEBHOOK_SECRET")
+      expect.stringContaining("MP_WEBHOOK_SECRET"),
     );
   });
 

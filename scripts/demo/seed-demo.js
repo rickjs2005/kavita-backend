@@ -2,18 +2,24 @@
 
 // scripts/demo/seed-demo.js
 //
-// Seed mínimo para DEMO. Cria:
+// Seed de desenvolvimento. Cria:
 //   - 1 admin master:   demo-admin@kavita.local       senha: demo1234
 //   - 1 cliente loja:   demo-cliente@kavita.local     senha: demo1234
 //
 // Idempotente: re-rodar não duplica. Pula se o e-mail já existir.
 //
-// Uso (Railway):
-//   railway run node scripts/demo/seed-demo.js
-// OU (local com .env apontando pro DB Railway):
+// Uso local apenas:
 //   node scripts/demo/seed-demo.js
+//
+// BLOQUEADO em produção (NODE_ENV=production aborta antes de qualquer query).
 
 require("dotenv").config();
+
+if (process.env.NODE_ENV === "production") {
+  console.error("Seed bloqueado em produção (NODE_ENV=production).");
+  process.exit(1);
+}
+
 const bcrypt = require("bcrypt");
 const mysql = require("mysql2/promise");
 
