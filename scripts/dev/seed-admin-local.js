@@ -1,17 +1,22 @@
 "use strict";
 
-// scripts/demo/seed-demo.js
+// scripts/dev/seed-admin-local.js
 //
-// Seed de desenvolvimento. Cria:
-//   - 1 admin master:   demo-admin@kavita.local       senha: demo1234
-//   - 1 cliente loja:   demo-cliente@kavita.local     senha: demo1234
+// Seed de desenvolvimento local. Cria fixtures para o dev rodar o
+// projeto sem precisar cadastrar admin/cliente manualmente:
+//   - 1 admin master:   admin-local@kavita.local
+//   - 1 cliente loja:   cliente-local@kavita.local
+//   - senha (ambos):    localdev1234
 //
 // Idempotente: re-rodar não duplica. Pula se o e-mail já existir.
 //
-// Uso local apenas:
-//   node scripts/demo/seed-demo.js
+// Uso (apenas dev local):
+//   node scripts/dev/seed-admin-local.js
 //
-// BLOQUEADO em produção (NODE_ENV=production aborta antes de qualquer query).
+// Salvaguardas:
+//   - aborta se NODE_ENV=production
+//   - aborta se DB_HOST não for localhost/127.0.0.1/host.docker.internal
+//     (impede rodar contra Railway/RDS/etc por .env mal-configurado)
 
 require("dotenv").config();
 
@@ -20,12 +25,23 @@ if (process.env.NODE_ENV === "production") {
   process.exit(1);
 }
 
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "host.docker.internal"]);
+const dbHost = (process.env.DB_HOST || "").trim().toLowerCase();
+if (!LOCAL_HOSTS.has(dbHost)) {
+  console.error(
+    `Seed bloqueado: DB_HOST='${process.env.DB_HOST}' não é local. ` +
+      "Esperado: localhost, 127.0.0.1 ou host.docker.internal. " +
+      "Ajuste o .env para apontar para o MySQL local antes de rodar.",
+  );
+  process.exit(1);
+}
+
 const bcrypt = require("bcrypt");
 const mysql = require("mysql2/promise");
 
-const ADMIN_EMAIL = "demo-admin@kavita.local";
-const CLIENT_EMAIL = "demo-cliente@kavita.local";
-const SENHA = "demo1234";
+const ADMIN_EMAIL = "admin-local@kavita.local";
+const CLIENT_EMAIL = "cliente-local@kavita.local";
+const SENHA = "localdev1234";
 
 (async () => {
   const c = await mysql.createConnection({
@@ -43,7 +59,7 @@ const SENHA = "demo1234";
   if (a.length === 0) {
     await c.query(
       "INSERT INTO admins (nome, email, senha, role, ativo) VALUES (?, ?, ?, 'master', 1)",
-      ["Demo Admin", ADMIN_EMAIL, hash]
+      ["Admin Local", ADMIN_EMAIL, hash]
     );
     console.log(`✓ Admin criado: ${ADMIN_EMAIL} / ${SENHA}`);
   } else {
@@ -55,7 +71,7 @@ const SENHA = "demo1234";
   if (u.length === 0) {
     await c.query(
       "INSERT INTO usuarios (nome, email, senha, telefone) VALUES (?, ?, ?, ?)",
-      ["Demo Cliente", CLIENT_EMAIL, hash, "11999990000"]
+      ["Cliente Local", CLIENT_EMAIL, hash, "11999990000"]
     );
     console.log(`✓ Cliente criado: ${CLIENT_EMAIL} / ${SENHA}`);
   } else {
@@ -63,7 +79,7 @@ const SENHA = "demo1234";
   }
 
   await c.end();
-  console.log("\nLogins da demo:");
+  console.log("\nLogins locais:");
   console.log(`  Admin painel: ${ADMIN_EMAIL}    senha: ${SENHA}`);
   console.log(`  Cliente loja: ${CLIENT_EMAIL}   senha: ${SENHA}`);
 })().catch((err) => {

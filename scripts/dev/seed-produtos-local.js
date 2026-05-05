@@ -1,17 +1,20 @@
 "use strict";
 
-// scripts/seed-produtos-demo.js
+// scripts/dev/seed-produtos-local.js
 //
-// Popula o backend (dev) com produtos a partir de
-// scripts/data/produtos-demo.csv. Faz login admin, garante categorias,
-// cria produtos.
+// Popula o backend (dev local) com produtos de exemplo a partir de
+// scripts/dev/data/produtos-local.csv. Faz login admin, garante
+// categorias e cria produtos via API admin.
 //
 // Uso (dev local):
 //   ADMIN_EMAIL=... ADMIN_PASSWORD=... API_BASE=http://localhost:5000 \
-//     node scripts/seed-produtos-demo.js
+//     node scripts/dev/seed-produtos-local.js
 //
-// BLOQUEADO em produção: aborta se NODE_ENV=production OU se API_BASE
-// apontar para domínio kavita.com.br.
+// Salvaguardas:
+//   - aborta se NODE_ENV=production
+//   - aborta se API_BASE apontar para domínio com cara de produção
+//     (kavita.com.br, *.up.railway.app, *.vercel.app)
+//   - default de API_BASE é localhost; sem default para hosts remotos
 
 if (process.env.NODE_ENV === "production") {
   console.error("Seed bloqueado em produção (NODE_ENV=production).");
@@ -23,14 +26,21 @@ const path = require("node:path");
 
 const API_BASE = process.env.API_BASE || "http://localhost:5000";
 
-if (/(^|\.)kavita\.com\.br/i.test(API_BASE)) {
+const PROD_HOST_PATTERNS = [
+  /(^|\.)kavita\.com\.br/i,
+  /\.up\.railway\.app/i,
+  /\.vercel\.app/i,
+  /\.onrender\.com/i,
+];
+if (PROD_HOST_PATTERNS.some((re) => re.test(API_BASE))) {
   console.error(
-    `Seed bloqueado: API_BASE=${API_BASE} aponta para produção. ` +
-      "Use http://localhost:5000 ou um host de dev/staging.",
+    `Seed bloqueado: API_BASE=${API_BASE} aparenta apontar para produção. ` +
+      "Use http://localhost:5000 ou um host explícito de dev.",
   );
   process.exit(1);
 }
-const CSV_PATH = path.join(__dirname, "data", "produtos-demo.csv");
+
+const CSV_PATH = path.join(__dirname, "data", "produtos-local.csv");
 
 const CATEGORIAS_FIXAS = [
   "Insumos Agrícolas",
