@@ -279,7 +279,7 @@ Migration única: `migrations/2026050500000001-create-whatsapp-tables-and-seed-c
 | id | INT.UNSIGNED PK auto | |
 | key | VARCHAR(120) | identificador lógico, com prefixo `corretora_` |
 | version | INT.UNSIGNED default 1 | múltiplas versões da mesma key convivem |
-| language | VARCHAR(10) default `pt_BR` | |
+| language_code | VARCHAR(10) default `pt_BR` | renomeado de `language` na migration corretiva — ver §7.5 |
 | category | ENUM(`UTILITY`,`MARKETING`,`AUTHENTICATION`) default UTILITY | |
 | body | TEXT | render com placeholders `{{var}}` |
 | variables | JSON | array de strings com nomes das variáveis |
@@ -460,5 +460,82 @@ Mensagem automática do Kavita Mercado do Café.
 ✅ Migration criada com 3 tabelas + 7 templates como rascunho (active=0).
 ✅ Conviver com `comunicacoes_enviadas` (não foi tocada).
 ✅ Aplicação não foi integrada ainda (próxima etapa).
+
+---
+
+## 7.5 Correção pós-Etapa 2: estratégia de idioma (`language_code`)
+
+A migration original (`2026050500000001`) criou `whatsapp_templates.language`
+e **não** criou nenhuma coluna de idioma em `whatsapp_messages`. A
+revisão técnica identificou dois gaps que foram corrigidos antes
+da Etapa 3:
+
+1. O nome canônico da coluna na Meta Cloud API (campo `language.code`
+   no payload de envio de template) é "language code". Padronizar a
+   nomenclatura local como `language_code` evita o ruído de
+   `language` vs `code` espalhado por service/adapter/webhook.
+2. O histórico de envio precisa registrar o **idioma efetivamente
+   usado** no momento do disparo, não só o idioma do template no
+   instante atual. Sem isso, mudar `whatsapp_templates.language_code`
+   de uma versão para outra reescreveria o histórico de mensagens
+   antigas — quebra de auditoria.
+
+### Correção aplicada
+
+Migration `2026050500000002-add-language-code-to-whatsapp-tables.js`:
+
+```sql
+ALTER TABLE whatsapp_templates
+  CHANGE COLUMN language language_code
+  VARCHAR(10) NOT NULL DEFAULT 'pt_BR'
+  COMMENT 'Código de idioma do template aprovado/submetido na Meta, ex: pt_BR';
+
+ALTER TABLE whatsapp_messages
+  ADD COLUMN language_code VARCHAR(10) NOT NULL DEFAULT 'pt_BR'
+  COMMENT 'Código de idioma usado no envio do template WhatsApp, ex: pt_BR';
+```
+
+`CHANGE COLUMN` em vez de `RENAME COLUMN` para garantir que
+default + comment fiquem definidos numa única instrução.
+
+### Estratégia de idioma — contrato
+
+- **Templates começam em `pt_BR`** — todas as 7 entradas semeadas
+  na Etapa 2 têm `language_code='pt_BR'`. Idioma adicional vira
+  uma nova versão da `key` (ex.: nova linha `corretora_lead_recebido`
+  / version 2 / language_code `en_US`).
+- **Service usa `language_code` do template** ao montar a chamada
+  Meta. A resolução é: `whatsappService.sendMessage` busca o
+  template por `(key, version, active=1)` e injeta o
+  `language.code = template.language_code` no payload
+  `messages.create`.
+- **`whatsapp_messages.language_code` registra o idioma usado no
+  envio**. Default `pt_BR` para conveniência; sempre populado pelo
+  service no momento do INSERT (ainda que igual ao default). Esse
+  campo é a verdade auditável — independente de mudanças
+  posteriores em `whatsapp_templates`.
+
+### Validação pós-correção
+
+```
++---------------+-------------+------+-----+---------+-------+
+| whatsapp_templates.language_code | varchar(10) | NO | | pt_BR | |
+| whatsapp_messages.language_code  | varchar(10) | NO | | pt_BR | |
++---------------+-------------+------+-----+---------+-------+
+
+Os 7 templates após o rename: language_code = 'pt_BR' (todos).
+```
+
+### O que muda na Etapa 3 por causa disso
+
+- O service `sendMessage({ key, variables, ... })` resolve template
+  por `(key, version, active=1)` e usa `template.language_code`
+  para o payload Meta + para preencher `whatsapp_messages.language_code`
+  no log.
+- `sendFreeText({ to, text })` (texto livre, dentro da janela 24h)
+  preenche `language_code` com `'pt_BR'` por default ou com o
+  código que o caller passar como override.
+
+---
 
 Aguardando OK para Etapa 3 (`whatsappService.js` + adapter `stub` + retry).
