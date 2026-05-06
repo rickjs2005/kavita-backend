@@ -65,6 +65,69 @@ const FREE_FALLBACK = {
 // frontend oferecer CTA de upgrade sem precisar hardcodar a rota.
 const UPGRADE_URL = "/painel/corretora/planos";
 
+// Decisao Comercial 2026-05-06 — slug canonico do plano comercial
+// fechado por contrato. Nunca pode ser contratado self-service.
+const ENTERPRISE_SLUG = "enterprise";
+
+/**
+ * Decisao Comercial 2026-05-06 — destaque publico (is_featured) DEVE
+ * vir da assinatura ativa, nao de coluna manual. Esta funcao reflete
+ * a regra que o backend publico usa via SQL (ver
+ * corretorasPublicRepository.FEATURED_EXPR).
+ *
+ * Retorna true quando:
+ *   - assinatura status in (active, trialing) E
+ *   - capabilities efetivas (snapshot ou plano vivo) tem
+ *     regional_highlight === true
+ *
+ * Aqui aplicamos a regra em JS para uso de controllers/service que
+ * leem getPlanContext (ex.: payload do painel da corretora). O
+ * publico le via SQL (mais barato, mais consistente em paginacao).
+ */
+function isHighlightActive(planContext) {
+  if (!planContext) return false;
+  const status = planContext.subscription?.status ?? planContext.status;
+  if (status !== "active" && status !== "trialing") return false;
+  const cap = planContext.capabilities?.regional_highlight;
+  return cap === true || cap === "true" || cap === 1;
+}
+
+/**
+ * Decisao Comercial 2026-05-06 — guarda contra contratacao self-service
+ * indevida. Lanca AppError quando:
+ *   - plano nao existe ou esta inativo
+ *   - plano nao e publico (Enterprise so via admin pos-contrato)
+ *   - corretora esta com KYC rejected (nao pode pagar plano)
+ *
+ * `kycStatus` e opcional — quando ausente, nao bloqueia por KYC. Caller
+ * passa quando esta validando contratacao paga (checkout/upgrade).
+ */
+async function assertSelfServiceContractable({ plan, kycStatus = null }) {
+  if (!plan || !plan.is_active) {
+    throw new AppError(
+      "Plano invalido ou inativo.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+    );
+  }
+  if (plan.slug === ENTERPRISE_SLUG || plan.is_public === false) {
+    throw new AppError(
+      "Este plano e contratado via curadoria Kavita. Fale com o time comercial.",
+      ERROR_CODES.FORBIDDEN,
+      403,
+      { reason: "enterprise_only", contact_url: "/painel/corretora/planos" },
+    );
+  }
+  if (kycStatus === "rejected") {
+    throw new AppError(
+      "Sua verificacao KYC esta reprovada. Resolva pendencias antes de contratar plano pago.",
+      ERROR_CODES.FORBIDDEN,
+      403,
+      { reason: "kyc_rejected" },
+    );
+  }
+}
+
 /**
  * Retorna a subscription + capabilities resolvidas da corretora.
  * Se não houver subscription ativa, retorna objeto representando
@@ -532,6 +595,7 @@ async function broadcastCapabilitiesFromPlan(planId) {
 
 module.exports = {
   CAPABILITY_KEYS,
+  ENTERPRISE_SLUG,
   getPlanContext,
   hasCapability,
   requirePlanCapability,
@@ -540,4 +604,6 @@ module.exports = {
   markExpired,
   broadcastCapabilitiesFromPlan,
   getBroadcastPreview,
+  isHighlightActive,
+  assertSelfServiceContractable,
 };

@@ -29,6 +29,33 @@ function parseJsonFields(row) {
   return row;
 }
 
+// Decisao Comercial 2026-05-06 — destaque publico (is_featured) e
+// sempre derivado da ASSINATURA ATIVA da corretora, nunca de um campo
+// manual no admin. Isso elimina estado duplicado: pago/trialing com
+// capability regional_highlight = true ⇒ aparece destacada; downgrade,
+// expirado ou cancelado ⇒ desaparece o destaque automaticamente.
+//
+// Capabilities efetivas seguem a regra de snapshot (Fase 5.4): se a
+// subscription tem capabilities_snapshot, esse e o contrato vigente;
+// senao, cai pro plano vivo. Garante que admin editar o plano no
+// catalogo nao flipe destaques de assinaturas antigas sem broadcast
+// explicito.
+const FEATURED_EXPR = `
+  COALESCE((
+    SELECT 1
+      FROM corretora_subscriptions s
+      JOIN plans p ON p.id = s.plan_id
+     WHERE s.corretora_id = c.id
+       AND s.status IN ('active','trialing')
+       AND JSON_UNQUOTE(JSON_EXTRACT(
+             COALESCE(s.capabilities_snapshot, p.capabilities),
+             '$.regional_highlight'
+           )) = 'true'
+     ORDER BY s.created_at DESC
+     LIMIT 1
+  ), 0)
+`;
+
 // Colunas públicas da corretora + agregado de reviews (approved only).
 // Usamos subquery em vez de JOIN+GROUP BY para preservar a paginação
 // simples do list() sem DISTINCT, e o índice idx_reviews_corretora_status
@@ -40,7 +67,8 @@ function parseJsonFields(row) {
 const SELECT_COLUMNS = `
   c.id, c.name, c.slug, c.contact_name, c.description, c.logo_path,
   c.city, c.state, c.region, c.phone, c.whatsapp, c.email,
-  c.website, c.instagram, c.facebook, c.is_featured,
+  c.website, c.instagram, c.facebook,
+  ${FEATURED_EXPR} AS is_featured,
   c.cidades_atendidas, c.tipos_cafe, c.perfil_compra,
   c.horario_atendimento, c.anos_atuacao, c.foto_responsavel_path,
   c.endereco_textual, c.compra_cafe_especial, c.volume_minimo_sacas,
@@ -110,7 +138,9 @@ async function list({
   }
 
   if (featured === "1") {
-    where.push("c.is_featured = 1");
+    // Decisao Comercial 2026-05-06 — featured agora vem da assinatura
+    // ativa, nao da coluna manual. Mesma expressao usada no SELECT.
+    where.push(`${FEATURED_EXPR} = 1`);
   }
 
   // Fase 5 — filtro por tipo de café que a corretora trabalha.
@@ -158,11 +188,13 @@ async function list({
   // COALESCE estabiliza a ordenação quando sort_order está NULL para
   // corretoras antigas (antes de sort_order existir). Sem o fallback,
   // MySQL ordenava NULLs primeiro e embaralhava a vitrine a cada query.
+  // is_featured e a expressao computada (FEATURED_EXPR), nao mais a
+  // coluna manual — assim destaque vem da assinatura.
   const dataSql = `
     SELECT ${SELECT_COLUMNS}
     FROM corretoras c
     WHERE ${whereClause}
-    ORDER BY c.is_featured DESC, COALESCE(c.sort_order, 999999) ASC, c.name ASC
+    ORDER BY is_featured DESC, COALESCE(c.sort_order, 999999) ASC, c.name ASC
     LIMIT ? OFFSET ?
   `;
 

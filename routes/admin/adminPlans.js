@@ -5,6 +5,8 @@ const express = require("express");
 const router = express.Router();
 const ctrl = require("../../controllers/admin/adminPlansController");
 const requirePermission = require("../../middleware/requirePermission");
+const { validate } = require("../../middleware/validate");
+const planSchemas = require("../../schemas/planSchemas");
 
 // Bloco 5 — permissões granulares:
 //   - `mercado_cafe_view` é o piso (já aplicado no mount — leitura ok)
@@ -50,11 +52,13 @@ router.get(
 router.post(
   "/corretoras/:corretoraId/subscription",
   requirePermission("mercado_cafe_financial"),
+  validate(planSchemas.adminAssignSubscriptionBodySchema),
   ctrl.assignPlanToCorretora,
 );
 router.put(
   "/corretoras/:corretoraId/subscription",
   requirePermission("mercado_cafe_financial"),
+  validate(planSchemas.adminUpdateSubscriptionBodySchema),
   ctrl.updateCorretoraSubscription,
 );
 router.delete(

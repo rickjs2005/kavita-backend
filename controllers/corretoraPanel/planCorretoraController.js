@@ -38,7 +38,13 @@ async function getMyPlan(req, res, next) {
       },
     };
 
-    response.ok(res, { ...ctx, usage });
+    // Decisao Comercial 2026-05-06 — UI mostra badge "Destaque automatico
+    // ativo" quando o plano contratado libera regional_highlight e a
+    // assinatura esta vigente. Reflete o que o publico realmente exibe
+    // (regra recalculada em SQL no corretorasPublicRepository).
+    const highlight_active = planService.isHighlightActive(ctx);
+
+    response.ok(res, { ...ctx, usage, highlight_active });
   } catch (err) {
     next(err);
   }
@@ -62,35 +68,59 @@ async function listAvailablePlans(_req, res, next) {
  * POST /api/corretora/plan/upgrade
  * Body: { plan_id: number }
  *
- * Troca o plano da corretora autenticada. Age sobre
- * req.corretoraUser.corretora_id — impossível trocar plano de outra.
- * Usa planService.assignPlan (transacional: cancela anterior + cria nova).
+ * Decisao Comercial 2026-05-06 — self-service so pode ATIVAR FREE.
+ * Para PRO/MAX, o frontend chama POST /checkout (gera cobranca Asaas).
+ * Para Enterprise, o frontend chama POST /enterprise-contact (abre
+ * tratativa comercial — nao ativa nada).
  *
- * Como billing ainda é manual, a subscription é criada com
- * payment_method=manual e status=active. Admin depois confirma
- * pagamento via SubscriptionManager.
+ * Bloqueamos planos pagos aqui mesmo: e o backend que define o
+ * contrato. UI desatualizada nao consegue contornar.
  */
 async function requestUpgrade(req, res, next) {
   try {
     const corretoraId = req.corretoraUser.corretora_id;
     const planId = Number(req.body?.plan_id);
     if (!Number.isInteger(planId) || planId <= 0) {
-      const AppError = require("../../errors/AppError");
-      const ERROR_CODES = require("../../constants/ErrorCodes");
       throw new AppError(
-        "Selecione um plano válido.",
+        "Selecione um plano valido.",
         ERROR_CODES.VALIDATION_ERROR,
         400,
       );
     }
+
+    const plan = await plansRepo.findById(planId);
+    if (!plan || !plan.is_active) {
+      throw new AppError(
+        "Plano invalido ou inativo.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      );
+    }
+    if (plan.slug === planService.ENTERPRISE_SLUG || plan.is_public === false) {
+      throw new AppError(
+        "Plano Enterprise e fechado por contrato comercial. Use 'Falar com time'.",
+        ERROR_CODES.FORBIDDEN,
+        403,
+        { reason: "enterprise_only" },
+      );
+    }
+    if (Number(plan.price_cents) > 0) {
+      throw new AppError(
+        "Plano pago exige checkout. Use a opcao de pagamento.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+        { reason: "checkout_required", checkout_endpoint: "/api/corretora/plan/checkout" },
+      );
+    }
+
     const result = await planService.assignPlan({
       corretoraId,
       planId,
       opts: {
         status: "active",
+        // FREE: e gratuito, payment_method=manual e o estado correto
+        // (nao ha gateway envolvido).
         payment_method: "manual",
-        // actor_type/id vão para subscription_events — classifica o
-        // upgrade como self-service (não admin) para análise de churn.
         actor_type: "corretora_user",
         actor_id: req.corretoraUser.id,
         meta: {
@@ -100,7 +130,7 @@ async function requestUpgrade(req, res, next) {
         },
       },
     });
-    response.ok(res, result, "Plano atualizado com sucesso.");
+    response.ok(res, result, "Plano gratuito ativado.");
   } catch (err) {
     next(err);
   }
@@ -144,29 +174,24 @@ async function createCheckout(req, res, next) {
     }
 
     const plan = await plansRepo.findById(planId);
-    if (!plan || !plan.is_active) {
-      throw new AppError(
-        "Plano inválido ou inativo.",
-        ERROR_CODES.VALIDATION_ERROR,
-        400,
-      );
-    }
-    if (!plan.is_public) {
-      throw new AppError(
-        "Plano não disponível para contratação direta.",
-        ERROR_CODES.FORBIDDEN,
-        403,
-      );
-    }
 
     const corretora = await adminRepo.findById(corretoraId);
     if (!corretora) {
       throw new AppError(
-        "Corretora não encontrada.",
+        "Corretora nao encontrada.",
         ERROR_CODES.NOT_FOUND,
         404,
       );
     }
+
+    // Decisao Comercial 2026-05-06 — guarda contra contratacao indevida
+    // (Enterprise self-service, plano inativo, KYC reprovado). Concentra
+    // a regra em um lugar, evita drift entre rotas.
+    await planService.assertSelfServiceContractable({
+      plan,
+      kycStatus: corretora.kyc_status ?? null,
+    });
+
     if (!corretora.email) {
       throw new AppError(
         "Cadastre um e-mail institucional no perfil antes de assinar.",
@@ -325,6 +350,87 @@ async function listMyPlanEvents(req, res, next) {
   }
 }
 
+/**
+ * POST /api/corretora/plan/enterprise-contact
+ * Body: { message?: string, phone?: string }
+ *
+ * Decisao Comercial 2026-05-06 — Enterprise nunca ativa plano por
+ * clique. Esta rota apenas:
+ *   1. Registra evento "enterprise_contact_requested" no historico de
+ *      assinatura para audit trail (quem pediu, quando, mensagem).
+ *   2. Retorna canal oficial de contato (whatsapp/email) para a UI
+ *      poder abrir.
+ *
+ * NAO altera subscription, NAO atribui plano, NAO destaca corretora.
+ * Curadoria Kavita responde manualmente; quando contrato e fechado, o
+ * admin atribui o plano enterprise via SubscriptionManager.
+ */
+async function enterpriseContact(req, res, next) {
+  try {
+    const corretoraId = req.corretoraUser.corretora_id;
+    const message =
+      typeof req.body?.message === "string"
+        ? req.body.message.trim().slice(0, 1000)
+        : null;
+    const phone =
+      typeof req.body?.phone === "string"
+        ? req.body.phone.trim().slice(0, 30)
+        : null;
+
+    // Localiza plano enterprise (se existir) so para registrar to_plan_id
+    // no evento — facilita relatorios depois.
+    const enterprise = await plansRepo.findBySlug(planService.ENTERPRISE_SLUG);
+
+    subEventsRepo
+      .create({
+        corretora_id: corretoraId,
+        subscription_id: null,
+        event_type: "enterprise_contact_requested",
+        from_plan_id: null,
+        to_plan_id: enterprise?.id ?? null,
+        from_status: null,
+        to_status: null,
+        plan_snapshot: null,
+        meta: {
+          source: "corretora_self_enterprise_contact",
+          requested_by: req.corretoraUser.id,
+          requested_at: new Date().toISOString(),
+          message,
+          phone,
+        },
+        actor_type: "corretora_user",
+        actor_id: req.corretoraUser.id,
+      })
+      .catch((err) =>
+        logger.warn(
+          { err, corretoraId },
+          "corretora.plan.enterprise_contact.event_failed",
+        ),
+      );
+
+    logger.info(
+      { corretoraId, userId: req.corretoraUser.id },
+      "corretora.plan.enterprise_contact.requested",
+    );
+
+    response.ok(
+      res,
+      {
+        ok: true,
+        // Canal oficial — UI mostra estes para a corretora abrir.
+        // Curadoria responde manualmente.
+        contact: {
+          whatsapp: process.env.KAVITA_COMMERCIAL_WHATSAPP || null,
+          email: process.env.KAVITA_COMMERCIAL_EMAIL || null,
+        },
+      },
+      "Pedido recebido. A curadoria Kavita vai entrar em contato em ate 1 dia util.",
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getMyPlan,
   listAvailablePlans,
@@ -332,4 +438,5 @@ module.exports = {
   createCheckout,
   cancelMyPlan,
   listMyPlanEvents,
+  enterpriseContact,
 };

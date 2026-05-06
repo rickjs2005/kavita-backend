@@ -201,11 +201,35 @@ async function getCorretoraSubscription(req, res, next) {
   try {
     const corretoraId = Number(req.params.corretoraId);
     if (!Number.isInteger(corretoraId) || corretoraId <= 0) {
-      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+      throw new AppError("ID invalido.", ERROR_CODES.VALIDATION_ERROR, 400);
     }
     const ctx = await planService.getPlanContext(corretoraId);
+    const rawSub = await subsRepo.getCurrentForCorretora(corretoraId);
     const history = await subsRepo.listForCorretora(corretoraId);
-    response.ok(res, { current: ctx, history });
+
+    // Decisao Comercial 2026-05-06 — UI admin precisa de subscription
+    // achatada (id, plan_slug, plan_name, payment_method, provider,
+    // meta) para o SubscriptionManager. ctx tem o "shape" amigavel
+    // mas perde os campos crus. Devolvemos os dois: `current` para a
+    // UI (compat) e `context` (capabilities + plan + status).
+    let current = null;
+    if (rawSub) {
+      let meta = rawSub.meta;
+      if (typeof meta === "string") {
+        try {
+          meta = JSON.parse(meta);
+        } catch {
+          meta = null;
+        }
+      }
+      current = {
+        ...rawSub,
+        meta,
+        plan_capabilities: undefined, // remover snapshot duplicado
+      };
+    }
+
+    response.ok(res, { current, context: ctx, history });
   } catch (err) {
     next(err);
   }
@@ -217,19 +241,55 @@ async function assignPlanToCorretora(req, res, next) {
     const planId = Number(req.body.plan_id);
     if (!Number.isInteger(corretoraId) || !Number.isInteger(planId)) {
       throw new AppError(
-        "corretora_id e plan_id são obrigatórios.",
+        "corretora_id e plan_id sao obrigatorios.",
         ERROR_CODES.VALIDATION_ERROR,
         400,
       );
     }
+
+    // Decisao Comercial 2026-05-06 — origem da assinatura precisa
+    // refletir como ela foi contratada para auditoria/relatorios:
+    //   - "checkout"            : criada pelo gateway via webhook
+    //   - "manual_admin"        : admin marcou pago fora do gateway
+    //   - "commercial_contract" : Enterprise / negociado
+    //
+    // Self-service (corretora) nao usa este endpoint — vai por
+    // /api/corretora/plan/checkout ou /upgrade.
+    const allowedSources = new Set([
+      "manual_admin",
+      "commercial_contract",
+      "checkout",
+    ]);
+    const source = allowedSources.has(req.body?.source)
+      ? req.body.source
+      : "manual_admin";
+
+    // payment_method canonico segue source quando admin nao especifica:
+    //   manual_admin        -> "manual"
+    //   commercial_contract -> "manual" (cobranca fora do app)
+    //   checkout            -> deixar como veio do body (provavelmente
+    //                          'pix' ou 'cartao' via Asaas)
+    const paymentMethod =
+      req.body?.payment_method ??
+      (source === "checkout" ? null : "manual");
+
     const result = await planService.assignPlan({
       corretoraId,
       planId,
       opts: {
         status: req.body.status,
-        provider: req.body.provider,
-        provider_subscription_id: req.body.provider_subscription_id,
-        meta: { assigned_by_admin_id: req.admin?.id ?? null, ...req.body.meta },
+        provider: req.body.provider ?? null,
+        provider_subscription_id: req.body.provider_subscription_id ?? null,
+        payment_method: paymentMethod,
+        actor_type: "admin",
+        actor_id: req.admin?.id ?? null,
+        meta: {
+          source,
+          assigned_by_admin_id: req.admin?.id ?? null,
+          assigned_by_admin_nome: req.admin?.nome ?? null,
+          assigned_at: new Date().toISOString(),
+          ...(req.body.meta || {}),
+        },
       },
     });
     require("../../services/adminAuditService").record({
@@ -237,9 +297,9 @@ async function assignPlanToCorretora(req, res, next) {
       action: "plan.assigned",
       targetType: "corretora",
       targetId: corretoraId,
-      meta: { plan_id: planId },
+      meta: { plan_id: planId, source, payment_method: paymentMethod },
     });
-    response.ok(res, result, "Plano atribuído.");
+    response.ok(res, result, "Plano atribuido.");
   } catch (err) {
     next(err);
   }
