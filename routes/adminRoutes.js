@@ -88,6 +88,15 @@ mount(
   requirePermission("mercado_cafe_view"),
   _requireTotp,
 );
+// Suporte interno corretora <-> admin (mensageria). Piso e o mesmo
+// das demais rotas de mercado-do-cafe; resposta exige permissao
+// mercado_cafe_manage (validada dentro do router individual).
+mount(
+  "/admin/mercado-do-cafe/support",
+  "./admin/adminCorretoraSupport",
+  requirePermission("mercado_cafe_view"),
+  _requireTotp,
+);
 mount("/admin/audit", "./admin/adminAudit");
 // Fase 10.1 — stub de simulação de assinatura de contrato. Inerte em
 // produção (service valida CONTRATO_SIGNER_PROVIDER=stub).

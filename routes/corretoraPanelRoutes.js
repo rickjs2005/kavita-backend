@@ -38,5 +38,7 @@ mount("/corretora/contratos", "./corretoraPanel/corretoraContratos");
 mount("/corretora/kyc", "./corretoraPanel/corretoraKycStatus");
 // Etapa 5 da reativacao WhatsApp — painel de mensagens.
 mount("/corretora/whatsapp", "./corretoraPanel/corretoraWhatsapp");
+// Suporte interno corretora <-> admin (mensageria; substitui mailto).
+mount("/corretora/support", "./corretoraPanel/corretoraSupport");
 
 module.exports = router;
