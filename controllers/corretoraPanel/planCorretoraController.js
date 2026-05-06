@@ -44,7 +44,16 @@ async function getMyPlan(req, res, next) {
     // (regra recalculada em SQL no corretorasPublicRepository).
     const highlight_active = planService.isHighlightActive(ctx);
 
-    response.ok(res, { ...ctx, usage, highlight_active });
+    // Canais oficiais de suporte da curadoria Kavita. UI usa para o
+    // bloco "Fale com a Kavita" no painel /planos. Sao envs simples
+    // configuradas em deploy — quando ausentes, frontend esconde o
+    // canal correspondente (e mostra so o que existir).
+    const support = {
+      whatsapp: process.env.KAVITA_COMMERCIAL_WHATSAPP || null,
+      email: process.env.KAVITA_COMMERCIAL_EMAIL || null,
+    };
+
+    response.ok(res, { ...ctx, usage, highlight_active, support });
   } catch (err) {
     next(err);
   }
