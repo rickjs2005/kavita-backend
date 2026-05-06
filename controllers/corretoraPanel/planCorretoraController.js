@@ -45,12 +45,20 @@ async function getMyPlan(req, res, next) {
     const highlight_active = planService.isHighlightActive(ctx);
 
     // Canais oficiais de suporte da curadoria Kavita. UI usa para o
-    // bloco "Fale com a Kavita" no painel /planos. Sao envs simples
-    // configuradas em deploy — quando ausentes, frontend esconde o
-    // canal correspondente (e mostra so o que existir).
+    // bloco "Fale com a Kavita" no painel /planos.
+    //
+    // Fallbacks garantem que o bloco APARECA sempre na UI, mesmo
+    // quando o deploy ainda nao tem as envs setadas. Sao:
+    //   - email: rickjanuario0@gmail.com (curadoria Kavita atual)
+    //   - whatsapp: null por padrao (so aparece se env existir)
+    //
+    // Sobrescreva em producao com:
+    //   KAVITA_COMMERCIAL_EMAIL=...
+    //   KAVITA_COMMERCIAL_WHATSAPP=5532999999999  (so digitos)
     const support = {
       whatsapp: process.env.KAVITA_COMMERCIAL_WHATSAPP || null,
-      email: process.env.KAVITA_COMMERCIAL_EMAIL || null,
+      email:
+        process.env.KAVITA_COMMERCIAL_EMAIL || "rickjanuario0@gmail.com",
     };
 
     response.ok(res, { ...ctx, usage, highlight_active, support });
