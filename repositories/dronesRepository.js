@@ -495,6 +495,80 @@ async function deleteCase(id) {
   return result.affectedRows || 0;
 }
 
+// ─── drones_landing_sections ───────────────────────────────────────────────
+
+async function listLandingSections({ activeOnly = false } = {}) {
+  const where = activeOnly ? "WHERE is_active=1" : "";
+  const [rows] = await pool.query(
+    `SELECT id, section_key, title, subtitle, items_json, sort_order,
+            is_active, created_at, updated_at
+     FROM drones_landing_sections ${where}
+     ORDER BY sort_order ASC, id ASC`,
+  );
+  return rows;
+}
+
+async function findLandingSectionByKey(key) {
+  const [rows] = await pool.query(
+    `SELECT id, section_key, title, subtitle, items_json, sort_order,
+            is_active, created_at, updated_at
+     FROM drones_landing_sections WHERE section_key=? LIMIT 1`,
+    [key],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * UPSERT por section_key — single row por key. Usa INSERT ... ON
+ * DUPLICATE KEY UPDATE para garantir atomicidade sem precisar de
+ * transação manual.
+ */
+async function upsertLandingSection(payload) {
+  const {
+    section_key,
+    title,
+    subtitle,
+    items_json,
+    sort_order,
+    is_active,
+  } = payload;
+  const itemsStr =
+    items_json == null
+      ? null
+      : typeof items_json === "string"
+        ? items_json
+        : JSON.stringify(items_json);
+
+  const [result] = await pool.query(
+    `INSERT INTO drones_landing_sections
+       (section_key, title, subtitle, items_json, sort_order, is_active)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       title=VALUES(title),
+       subtitle=VALUES(subtitle),
+       items_json=VALUES(items_json),
+       sort_order=VALUES(sort_order),
+       is_active=VALUES(is_active)`,
+    [
+      section_key,
+      title,
+      subtitle,
+      itemsStr,
+      sort_order ?? 0,
+      is_active == null ? 1 : is_active ? 1 : 0,
+    ],
+  );
+  return result.affectedRows || 0;
+}
+
+async function deleteLandingSection(key) {
+  const [result] = await pool.query(
+    "DELETE FROM drones_landing_sections WHERE section_key=?",
+    [key],
+  );
+  return result.affectedRows || 0;
+}
+
 // ─── drone_representatives ─────────────────────────────────────────────────
 
 async function countRepresentatives(where, params) {
@@ -604,4 +678,9 @@ module.exports = {
   insertCase,
   updateCase,
   deleteCase,
+  // Landing sections
+  listLandingSections,
+  findLandingSectionByKey,
+  upsertLandingSection,
+  deleteLandingSection,
 };

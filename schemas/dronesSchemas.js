@@ -325,6 +325,45 @@ const updateCaseSchema = z.object({
     .optional(),
 });
 
+// ─── Landing sections (why/who/how/trust) ──────────────────────────────────
+
+const SECTION_KEY_RE = /^[a-z0-9_]{2,40}$/;
+
+/**
+ * Item de uma seção da landing. Shape comum, alguns campos opcionais
+ * porque cada seção (why/who/how/trust) usa um subconjunto.
+ */
+const sectionItemSchema = z.object({
+  icon: z.string().trim().max(40).nullish(),
+  title: z.string().trim().max(160).nullish(),
+  text: z.string().trim().max(1000).nullish(),
+  badge: z.string().trim().max(60).nullish(),
+});
+
+/**
+ * PUT /api/admin/drones/sections/:key — upsert da seção pela key.
+ * O service preenche section_key a partir do params, mas aceitamos
+ * também no body para compatibilidade.
+ */
+const upsertLandingSectionSchema = z.object({
+  section_key: z.preprocess(
+    (v) => String(v || "").trim().toLowerCase(),
+    z.string().regex(SECTION_KEY_RE, "use a-z, 0-9, _ (2-40 chars)"),
+  ),
+  title: z.string().trim().max(160).nullish(),
+  subtitle: z.string().trim().max(500).nullish(),
+  items: z.array(sectionItemSchema).max(50).optional().default([]),
+  sort_order: z
+    .preprocess((v) => Number(v) || 0, z.number().int().min(0).max(999999))
+    .optional(),
+  is_active: z
+    .preprocess(
+      (v) => (v === undefined ? 1 : Number(v) ? 1 : 0),
+      z.union([z.literal(0), z.literal(1)]),
+    )
+    .optional(),
+});
+
 module.exports = {
   createModelBodySchema,
   mediaSelectionBodySchema,
@@ -337,5 +376,7 @@ module.exports = {
   updateFaqSchema,
   createCaseSchema,
   updateCaseSchema,
+  upsertLandingSectionSchema,
+  SECTION_KEY_RE,
   formatDronesErrors,
 };

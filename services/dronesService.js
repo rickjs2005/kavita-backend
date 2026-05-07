@@ -14,6 +14,7 @@ const commentsService = require("./drones/commentsService");
 const leadsService = require("./drones/leadsService");
 const faqService = require("./drones/faqService");
 const casesService = require("./drones/casesService");
+const landingSectionsService = require("./drones/landingSectionsService");
 
 module.exports = {
   // helpers (used by controllers)
@@ -92,4 +93,12 @@ module.exports = {
   createCase: casesService.createCase,
   updateCase: casesService.updateCase,
   deleteCase: casesService.deleteCase,
+
+  // landing sections (why/who/how/trust)
+  listSectionsPublic: landingSectionsService.listSectionsPublic,
+  getSectionPublic: landingSectionsService.getSectionPublic,
+  listSectionsAdmin: landingSectionsService.listSectionsAdmin,
+  getSectionAdmin: landingSectionsService.getSectionAdmin,
+  upsertSection: landingSectionsService.upsertSection,
+  deleteSection: landingSectionsService.deleteSection,
 };

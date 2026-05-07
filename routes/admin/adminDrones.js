@@ -15,6 +15,7 @@ const commentsCtrl      = require("../../controllers/drones/commentsController")
 const leadsCtrl         = require("../../controllers/drones/leadsController");
 const faqCtrl           = require("../../controllers/drones/faqController");
 const casesCtrl         = require("../../controllers/drones/casesController");
+const sectionsCtrl      = require("../../controllers/drones/landingSectionsController");
 
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
@@ -225,5 +226,14 @@ router.get("/cases/:id", casesCtrl.getCase);
 router.post("/cases", caseImageFields, casesCtrl.createCase);
 router.put("/cases/:id", caseImageFields, casesCtrl.updateCase);
 router.delete("/cases/:id", casesCtrl.deleteCase);
+
+/* =========================================================
+ * SEÇÕES editáveis da landing (why/who/how/trust/...)
+ * ========================================================= */
+
+router.get("/sections", sectionsCtrl.listSectionsAdmin);
+router.get("/sections/:key", sectionsCtrl.getSectionAdmin);
+router.put("/sections/:key", jsonParser, sectionsCtrl.upsertSection);
+router.delete("/sections/:key", sectionsCtrl.deleteSection);
 
 module.exports = router;

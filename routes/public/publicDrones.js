@@ -5,6 +5,7 @@ const router = express.Router();
 const dronesPublicController = require("../../controllers/dronesPublicController");
 const faqCtrl = require("../../controllers/drones/faqController");
 const casesCtrl = require("../../controllers/drones/casesController");
+const sectionsCtrl = require("../../controllers/drones/landingSectionsController");
 const dronesCommentThrottle = require("../../middleware/dronesCommentThrottle");
 const authenticateToken = require("../../middleware/authenticateToken");
 const { validateCSRF } = require("../../middleware/csrfProtection");
@@ -174,5 +175,13 @@ router.get("/faq", faqCtrl.listFaqPublic);
  * GET /api/public/drones/cases?model=t25p
  * ========================================================= */
 router.get("/cases", casesCtrl.listCasesPublic);
+
+/* =========================================================
+ * Seções editáveis da landing (why/who/how/trust/...)
+ * GET /api/public/drones/sections        (todas as ativas)
+ * GET /api/public/drones/sections/:key   (uma específica)
+ * ========================================================= */
+router.get("/sections", sectionsCtrl.listSectionsPublic);
+router.get("/sections/:key", sectionsCtrl.getSectionPublic);
 
 module.exports = router;
