@@ -14,6 +14,7 @@ const representativesCtrl = require("../../controllers/drones/representativesCon
 const commentsCtrl      = require("../../controllers/drones/commentsController");
 const leadsCtrl         = require("../../controllers/drones/leadsController");
 const faqCtrl           = require("../../controllers/drones/faqController");
+const casesCtrl         = require("../../controllers/drones/casesController");
 
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
@@ -208,5 +209,21 @@ router.get("/faq", faqCtrl.listFaqAdmin);
 router.post("/faq", jsonParser, faqCtrl.createFaq);
 router.put("/faq/:id", jsonParser, faqCtrl.updateFaq);
 router.delete("/faq/:id", faqCtrl.deleteFaq);
+
+/* =========================================================
+ * CASES (cases comerciais reais)
+ * ========================================================= */
+
+const caseImageFields = upload.fields([
+  { name: "cover_image", maxCount: 1 },
+  { name: "before_image", maxCount: 1 },
+  { name: "after_image", maxCount: 1 },
+]);
+
+router.get("/cases", casesCtrl.listCasesAdmin);
+router.get("/cases/:id", casesCtrl.getCase);
+router.post("/cases", caseImageFields, casesCtrl.createCase);
+router.put("/cases/:id", caseImageFields, casesCtrl.updateCase);
+router.delete("/cases/:id", casesCtrl.deleteCase);
 
 module.exports = router;

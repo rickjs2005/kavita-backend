@@ -411,6 +411,90 @@ async function deleteFaq(id) {
   return result.affectedRows || 0;
 }
 
+// ─── drones_cases ──────────────────────────────────────────────────────────
+
+async function listCases({ activeOnly = false, model_key = null } = {}) {
+  const wheres = [];
+  const params = [];
+  if (activeOnly) wheres.push("is_active=1");
+  if (model_key) {
+    wheres.push("model_key=?");
+    params.push(String(model_key));
+  }
+  const where = wheres.length ? `WHERE ${wheres.join(" AND ")}` : "";
+
+  const [rows] = await pool.query(
+    `SELECT id, title, farm_name, producer_name, city, uf, hectares,
+            model_key, summary, testimonial,
+            cover_image_url, before_image_url, after_image_url,
+            permission_to_use, sort_order, is_active,
+            created_at, updated_at
+     FROM drones_cases ${where}
+     ORDER BY sort_order ASC, id DESC`,
+    params,
+  );
+  return rows;
+}
+
+async function findCaseById(id) {
+  const [rows] = await pool.query(
+    `SELECT id, title, farm_name, producer_name, city, uf, hectares,
+            model_key, summary, testimonial,
+            cover_image_url, before_image_url, after_image_url,
+            permission_to_use, sort_order, is_active,
+            created_at, updated_at
+     FROM drones_cases WHERE id=? LIMIT 1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+async function insertCase(payload) {
+  const [result] = await pool.query(
+    `INSERT INTO drones_cases
+       (title, farm_name, producer_name, city, uf, hectares, model_key,
+        summary, testimonial,
+        cover_image_url, before_image_url, after_image_url,
+        permission_to_use, sort_order, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      payload.title,
+      payload.farm_name,
+      payload.producer_name,
+      payload.city,
+      payload.uf,
+      payload.hectares,
+      payload.model_key,
+      payload.summary,
+      payload.testimonial,
+      payload.cover_image_url,
+      payload.before_image_url,
+      payload.after_image_url,
+      payload.permission_to_use ? 1 : 0,
+      payload.sort_order ?? 0,
+      payload.is_active == null ? 1 : payload.is_active ? 1 : 0,
+    ],
+  );
+  return result.insertId;
+}
+
+async function updateCase(id, sets, params) {
+  if (!sets.length) return 0;
+  const [result] = await pool.query(
+    `UPDATE drones_cases SET ${sets.join(", ")} WHERE id=?`,
+    [...params, id],
+  );
+  return result.affectedRows || 0;
+}
+
+async function deleteCase(id) {
+  const [result] = await pool.query(
+    "DELETE FROM drones_cases WHERE id=?",
+    [id],
+  );
+  return result.affectedRows || 0;
+}
+
 // ─── drone_representatives ─────────────────────────────────────────────────
 
 async function countRepresentatives(where, params) {
@@ -514,4 +598,10 @@ module.exports = {
   insertFaq,
   updateFaq,
   deleteFaq,
+  // Cases
+  listCases,
+  findCaseById,
+  insertCase,
+  updateCase,
+  deleteCase,
 };

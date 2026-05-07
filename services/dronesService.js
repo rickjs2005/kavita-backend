@@ -13,6 +13,7 @@ const representativesService = require("./drones/representativesService");
 const commentsService = require("./drones/commentsService");
 const leadsService = require("./drones/leadsService");
 const faqService = require("./drones/faqService");
+const casesService = require("./drones/casesService");
 
 module.exports = {
   // helpers (used by controllers)
@@ -83,4 +84,12 @@ module.exports = {
   createFaq: faqService.createFaq,
   updateFaq: faqService.updateFaq,
   deleteFaq: faqService.deleteFaq,
+
+  // cases
+  listCasesPublic: casesService.listCasesPublic,
+  listCasesAdmin: casesService.listCasesAdmin,
+  getCaseById: casesService.getCaseById,
+  createCase: casesService.createCase,
+  updateCase: casesService.updateCase,
+  deleteCase: casesService.deleteCase,
 };

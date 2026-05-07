@@ -223,6 +223,108 @@ const updateFaqSchema = z.object({
     .optional(),
 });
 
+// ─── Cases ──────────────────────────────────────────────────────────────────
+
+/**
+ * Body comum de cases (create + update parcial). Como o controller usa
+ * multipart (upload de imagens), todos os campos vêm como string. O
+ * preprocess força tipos numéricos / boolean apropriados.
+ *
+ * Imagens NÃO entram no schema — são tratadas pelo controller via
+ * mediaService antes de delegar ao service.
+ */
+function caseFieldsBase(extend = {}) {
+  return {
+    title: z.string().trim().min(1).max(160),
+    farm_name: z.string().trim().min(1).max(160),
+    producer_name: z.string().trim().max(120).nullish(),
+    city: z.string().trim().max(80).nullish(),
+    uf: z
+      .preprocess(
+        (v) => (v == null ? null : String(v).trim().toUpperCase() || null),
+        z.string().max(2).nullish(),
+      ),
+    hectares: z
+      .preprocess(
+        (v) =>
+          v == null || v === ""
+            ? null
+            : Number.isFinite(Number(v))
+              ? Number(v)
+              : null,
+        z.number().min(0).max(99999999).nullish(),
+      ),
+    model_key: z
+      .preprocess(
+        (v) => (v == null ? null : String(v).trim().toLowerCase() || null),
+        z.string().max(20).nullish(),
+      ),
+    summary: z.string().trim().max(500).nullish(),
+    testimonial: z.string().trim().max(5000).nullish(),
+    permission_to_use: z
+      .preprocess(
+        (v) => (v === undefined ? 0 : Number(v) ? 1 : 0),
+        z.union([z.literal(0), z.literal(1)]),
+      )
+      .optional(),
+    sort_order: z
+      .preprocess((v) => Number(v) || 0, z.number().int().min(0).max(999999))
+      .optional(),
+    is_active: z
+      .preprocess(
+        (v) => (v === undefined ? 1 : Number(v) ? 1 : 0),
+        z.union([z.literal(0), z.literal(1)]),
+      )
+      .optional(),
+    ...extend,
+  };
+}
+
+const createCaseSchema = z.object(caseFieldsBase());
+
+// Para update, os campos obrigatórios viram opcionais — admin pode
+// editar parcialmente.
+const updateCaseSchema = z.object({
+  title: z.string().trim().min(1).max(160).optional(),
+  farm_name: z.string().trim().min(1).max(160).optional(),
+  producer_name: z.string().trim().max(120).nullish(),
+  city: z.string().trim().max(80).nullish(),
+  uf: z.preprocess(
+    (v) => (v == null ? null : String(v).trim().toUpperCase() || null),
+    z.string().max(2).nullish(),
+  ),
+  hectares: z.preprocess(
+    (v) =>
+      v == null || v === ""
+        ? null
+        : Number.isFinite(Number(v))
+          ? Number(v)
+          : null,
+    z.number().min(0).max(99999999).nullish(),
+  ),
+  model_key: z.preprocess(
+    (v) => (v == null ? null : String(v).trim().toLowerCase() || null),
+    z.string().max(20).nullish(),
+  ),
+  summary: z.string().trim().max(500).nullish(),
+  testimonial: z.string().trim().max(5000).nullish(),
+  permission_to_use: z
+    .preprocess(
+      (v) => (Number(v) ? 1 : 0),
+      z.union([z.literal(0), z.literal(1)]),
+    )
+    .optional(),
+  sort_order: z
+    .preprocess((v) => Number(v) || 0, z.number().int().min(0).max(999999))
+    .optional(),
+  is_active: z
+    .preprocess(
+      (v) => (Number(v) ? 1 : 0),
+      z.union([z.literal(0), z.literal(1)]),
+    )
+    .optional(),
+});
+
 module.exports = {
   createModelBodySchema,
   mediaSelectionBodySchema,
@@ -233,5 +335,7 @@ module.exports = {
   LEAD_STATUS_VALUES,
   createFaqSchema,
   updateFaqSchema,
+  createCaseSchema,
+  updateCaseSchema,
   formatDronesErrors,
 };

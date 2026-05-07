@@ -4,6 +4,7 @@ const router = express.Router();
 
 const dronesPublicController = require("../../controllers/dronesPublicController");
 const faqCtrl = require("../../controllers/drones/faqController");
+const casesCtrl = require("../../controllers/drones/casesController");
 const dronesCommentThrottle = require("../../middleware/dronesCommentThrottle");
 const authenticateToken = require("../../middleware/authenticateToken");
 const { validateCSRF } = require("../../middleware/csrfProtection");
@@ -167,5 +168,11 @@ router.post("/leads", jsonParser, dronesPublicController.createLead);
  * GET /api/public/drones/faq
  * ========================================================= */
 router.get("/faq", faqCtrl.listFaqPublic);
+
+/* =========================================================
+ * Cases públicos (apenas itens ativos)
+ * GET /api/public/drones/cases?model=t25p
+ * ========================================================= */
+router.get("/cases", casesCtrl.listCasesPublic);
 
 module.exports = router;
