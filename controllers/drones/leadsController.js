@@ -1,6 +1,7 @@
 "use strict";
 
 const dronesService = require("../../services/dronesService");
+const adminAudit = require("../../services/adminAuditService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const { response } = require("../../lib");
@@ -73,6 +74,14 @@ async function updateLead(req, res, next) {
       throw new AppError("Lead não encontrado.", ERROR_CODES.NOT_FOUND, 404);
     }
 
+    adminAudit.record({
+      req,
+      action: "drones.lead.updated",
+      targetType: "drones_lead",
+      targetId: id,
+      meta: { changed_fields: Object.keys(bodyResult.data) },
+    });
+
     return response.ok(res, { id }, "Lead atualizado.");
   } catch (e) {
     console.error("[drones/admin] updateLead error:", e);
@@ -93,6 +102,13 @@ async function deleteLead(req, res, next) {
     if (!affected) {
       throw new AppError("Lead não encontrado.", ERROR_CODES.NOT_FOUND, 404);
     }
+
+    adminAudit.record({
+      req,
+      action: "drones.lead.deleted",
+      targetType: "drones_lead",
+      targetId: id,
+    });
 
     return response.ok(res, { id }, "Lead removido.");
   } catch (e) {

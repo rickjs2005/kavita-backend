@@ -2,6 +2,7 @@
 
 const dronesService = require("../../services/dronesService");
 const mediaService = require("../../services/mediaService");
+const adminAudit = require("../../services/adminAuditService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const { response } = require("../../lib");
@@ -106,6 +107,13 @@ async function createCase(req, res, next) {
     }
     const images = await persistCaseImages(req);
     const id = await dronesService.createCase({ ...bodyResult.data, ...images });
+    adminAudit.record({
+      req,
+      action: "drones.case.created",
+      targetType: "drones_case",
+      targetId: id,
+      meta: { title: bodyResult.data.title, farm: bodyResult.data.farm_name },
+    });
     return response.created(res, { id }, "Case criado.");
   } catch (e) {
     console.error("[drones/admin] createCase error:", e);
@@ -156,6 +164,14 @@ async function updateCase(req, res, next) {
     });
     if (!affected) throw new AppError("Case não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
+    adminAudit.record({
+      req,
+      action: "drones.case.updated",
+      targetType: "drones_case",
+      targetId: id,
+      meta: { changed_fields: Object.keys({ ...bodyResult.data, ...newImages }) },
+    });
+
     return response.ok(res, { id }, "Case atualizado.");
   } catch (e) {
     console.error("[drones/admin] updateCase error:", e);
@@ -174,6 +190,13 @@ async function deleteCase(req, res, next) {
 
     const affected = await dronesService.deleteCase(id);
     if (!affected) throw new AppError("Case não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+
+    adminAudit.record({
+      req,
+      action: "drones.case.deleted",
+      targetType: "drones_case",
+      targetId: id,
+    });
 
     return response.ok(res, { id }, "Case removido.");
   } catch (e) {

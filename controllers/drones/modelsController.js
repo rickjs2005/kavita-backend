@@ -1,6 +1,7 @@
 "use strict";
 
 const dronesService = require("../../services/dronesService");
+const adminAudit = require("../../services/adminAuditService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const {
@@ -48,6 +49,13 @@ async function createModel(req, res, next) {
       throw e;
     }
 
+    adminAudit.record({
+      req,
+      action: "drones.model.created",
+      targetType: "drone_model",
+      meta: { key, label, sort_order, is_active },
+    });
+
     return response.created(res, { key }, "Modelo criado.");
   } catch (e) {
     console.error("[drones/admin] createModel error:", e);
@@ -64,10 +72,22 @@ async function deleteModel(req, res, next) {
 
     if (hard) {
       await dronesService.hardDeleteDroneModel(modelKey);
+      adminAudit.record({
+        req,
+        action: "drones.model.hard_deleted",
+        targetType: "drone_model",
+        meta: { key: modelKey },
+      });
       return response.ok(res, { modelKey }, "Modelo removido definitivamente.");
     }
 
     await dronesService.softDeleteDroneModel(modelKey);
+    adminAudit.record({
+      req,
+      action: "drones.model.soft_deleted",
+      targetType: "drone_model",
+      meta: { key: modelKey },
+    });
     return response.ok(res, { modelKey }, "Modelo desativado.");
   } catch (e) {
     console.error("[drones/admin] deleteModel error:", e);

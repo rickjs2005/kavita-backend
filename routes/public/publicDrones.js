@@ -9,9 +9,14 @@ const sectionsCtrl = require("../../controllers/drones/landingSectionsController
 const dronesCommentThrottle = require("../../middleware/dronesCommentThrottle");
 const authenticateToken = require("../../middleware/authenticateToken");
 const { validateCSRF } = require("../../middleware/csrfProtection");
+const requireDronesPublicEnabled = require("../../middleware/requireDronesPublicEnabled");
 
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
+
+// Feature flag — desliga todo o módulo público se DRONES_PUBLIC_ENABLED=false.
+// Aplicado em todas as rotas deste router; admin continua intocado.
+router.use(requireDronesPublicEnabled);
 
 /**
  * @openapi

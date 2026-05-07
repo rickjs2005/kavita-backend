@@ -1,6 +1,7 @@
 "use strict";
 
 const dronesService = require("../../services/dronesService");
+const adminAudit = require("../../services/adminAuditService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const { response } = require("../../lib");
@@ -75,6 +76,17 @@ async function upsertSection(req, res, next) {
     }
 
     await dronesService.upsertSection(bodyResult.data);
+    adminAudit.record({
+      req,
+      action: "drones.landing_section.upserted",
+      targetType: "drones_landing_section",
+      meta: {
+        section_key: keyFromParams,
+        items_count: Array.isArray(bodyResult.data.items)
+          ? bodyResult.data.items.length
+          : 0,
+      },
+    });
     return response.ok(res, { section_key: keyFromParams }, "Seção salva.");
   } catch (e) {
     console.error("[drones/admin] upsertSection error:", e);
@@ -93,6 +105,12 @@ async function deleteSection(req, res, next) {
     if (!affected) {
       throw new AppError("Seção não encontrada.", ERROR_CODES.NOT_FOUND, 404);
     }
+    adminAudit.record({
+      req,
+      action: "drones.landing_section.deleted",
+      targetType: "drones_landing_section",
+      meta: { section_key: key },
+    });
     return response.ok(res, { section_key: key }, "Seção removida.");
   } catch (e) {
     console.error("[drones/admin] deleteSection error:", e);

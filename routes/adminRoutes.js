@@ -58,7 +58,15 @@ mount("/admin/colaboradores",   "./admin/adminColaboradores");
 mount("/admin/servicos",        "./admin/adminServicos");
 mount("/admin/servicos/solicitacoes", "./admin/adminSolicitacoesServicos");
 mount("/admin/especialidades",  "./admin/adminEspecialidades");
-mount("/admin/drones",          "./admin/adminDrones");
+// drones_manage protege todo o módulo. Admins com role "master" têm
+// bypass automático em requirePermission, então o usuário principal
+// não é afetado. Admins de outros roles precisam ganhar a permission
+// pela tela /admin/permissions antes de acessar.
+mount(
+  "/admin/drones",
+  "./admin/adminDrones",
+  requirePermission("drones_manage"),
+);
 // Bloco 5 — permissões granulares. O mount exige o piso mínimo (view).
 // Ações mais sensíveis (approve/moderate/plan_manage/financial) ficam
 // no controller/router individual via requirePermission. Quem tem a

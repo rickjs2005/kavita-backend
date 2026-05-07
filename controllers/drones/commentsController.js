@@ -1,6 +1,7 @@
 "use strict";
 
 const dronesService = require("../../services/dronesService");
+const adminAudit = require("../../services/adminAuditService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const { response } = require("../../lib");
@@ -28,6 +29,13 @@ async function approveComment(req, res, next) {
     const affected = await dronesService.setCommentApproval(id, true);
     if (!affected) throw new AppError("Comentário não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
+    adminAudit.record({
+      req,
+      action: "drones.comment.approved",
+      targetType: "drone_comment",
+      targetId: id,
+    });
+
     return response.ok(res, { id }, "Comentário aprovado.");
   } catch (e) {
     console.error("[drones/admin] approveComment error:", e);
@@ -46,6 +54,13 @@ async function rejectComment(req, res, next) {
     const affected = await dronesService.setCommentApproval(id, false);
     if (!affected) throw new AppError("Comentário não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
+    adminAudit.record({
+      req,
+      action: "drones.comment.rejected",
+      targetType: "drone_comment",
+      targetId: id,
+    });
+
     return response.ok(res, { id }, "Comentário reprovado.");
   } catch (e) {
     console.error("[drones/admin] rejectComment error:", e);
@@ -63,6 +78,13 @@ async function deleteComment(req, res, next) {
 
     const affected = await dronesService.deleteComment(id);
     if (!affected) throw new AppError("Comentário não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+
+    adminAudit.record({
+      req,
+      action: "drones.comment.deleted",
+      targetType: "drone_comment",
+      targetId: id,
+    });
 
     return response.ok(res, { id }, "Comentário removido.");
   } catch (e) {

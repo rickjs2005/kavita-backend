@@ -1,6 +1,7 @@
 "use strict";
 
 const dronesService = require("../../services/dronesService");
+const adminAudit = require("../../services/adminAuditService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const { response } = require("../../lib");
@@ -31,6 +32,12 @@ async function createFaq(req, res, next) {
       });
     }
     const id = await dronesService.createFaq(bodyResult.data);
+    adminAudit.record({
+      req,
+      action: "drones.faq.created",
+      targetType: "drones_faq",
+      targetId: id,
+    });
     return response.created(res, { id }, "Item de FAQ criado.");
   } catch (e) {
     console.error("[drones/admin] createFaq error:", e);
@@ -57,6 +64,13 @@ async function updateFaq(req, res, next) {
     if (!affected) {
       throw new AppError("FAQ não encontrada.", ERROR_CODES.NOT_FOUND, 404);
     }
+    adminAudit.record({
+      req,
+      action: "drones.faq.updated",
+      targetType: "drones_faq",
+      targetId: id,
+      meta: { changed_fields: Object.keys(bodyResult.data) },
+    });
     return response.ok(res, { id }, "FAQ atualizada.");
   } catch (e) {
     console.error("[drones/admin] updateFaq error:", e);
@@ -77,6 +91,12 @@ async function deleteFaq(req, res, next) {
     if (!affected) {
       throw new AppError("FAQ não encontrada.", ERROR_CODES.NOT_FOUND, 404);
     }
+    adminAudit.record({
+      req,
+      action: "drones.faq.deleted",
+      targetType: "drones_faq",
+      targetId: id,
+    });
     return response.ok(res, { id }, "FAQ removida.");
   } catch (e) {
     console.error("[drones/admin] deleteFaq error:", e);

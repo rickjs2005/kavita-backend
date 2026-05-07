@@ -2,6 +2,7 @@
 
 const dronesService = require("../../services/dronesService");
 const mediaService = require("../../services/mediaService");
+const adminAudit = require("../../services/adminAuditService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const { safeUnlink, classify, parseJsonField, MAX_VIDEO_BYTES, MAX_IMAGE_BYTES } = require("./dronesFormatters");
@@ -102,6 +103,11 @@ async function upsertPage(req, res, next) {
     }
 
     const saved = await dronesService.upsertPageSettings(payload);
+    adminAudit.record({
+      req,
+      action: "drones.page_settings.upserted",
+      targetType: "drone_page_settings",
+    });
     return response.ok(res, { page: saved }, "Configuração salva.");
   } catch (e) {
     console.error("[drones/admin] upsertPage error:", e);
@@ -136,6 +142,11 @@ async function resetPageToDefault(req, res, next) {
     };
 
     await dronesService.upsertPageSettings(payload);
+    adminAudit.record({
+      req,
+      action: "drones.page_settings.reset",
+      targetType: "drone_page_settings",
+    });
     return response.ok(res, null, "Página resetada para padrão.");
   } catch (e) {
     console.error("[drones/admin] resetPageToDefault error:", e);
@@ -229,6 +240,11 @@ async function upsertLandingConfig(req, res, next) {
     }
 
     const saved = await dronesService.upsertPageSettings(payload);
+    adminAudit.record({
+      req,
+      action: "drones.landing_config.upserted",
+      targetType: "drone_page_settings",
+    });
     return response.ok(res, { config: saved }, "Config Landing salva.");
   } catch (e) {
     console.error("[drones/admin] upsertLandingConfig error:", e);

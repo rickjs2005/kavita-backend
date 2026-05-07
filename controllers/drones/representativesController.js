@@ -1,6 +1,7 @@
 "use strict";
 
 const dronesService = require("../../services/dronesService");
+const adminAudit = require("../../services/adminAuditService");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const { response } = require("../../lib");
@@ -34,6 +35,14 @@ async function createRepresentative(req, res, next) {
 
     const id = await dronesService.createRepresentative(bodyResult.data);
 
+    adminAudit.record({
+      req,
+      action: "drones.representative.created",
+      targetType: "drone_representative",
+      targetId: id,
+      meta: { name: bodyResult.data.name, city: bodyResult.data.address_city },
+    });
+
     return response.created(res, { id }, "Representante criado.");
   } catch (e) {
     console.error("[drones/admin] createRepresentative error:", e);
@@ -54,6 +63,14 @@ async function updateRepresentative(req, res, next) {
     const affected = await dronesService.updateRepresentative(id, bodyResult.data);
     if (!affected) throw new AppError("Representante não encontrado.", ERROR_CODES.NOT_FOUND, 404);
 
+    adminAudit.record({
+      req,
+      action: "drones.representative.updated",
+      targetType: "drone_representative",
+      targetId: id,
+      meta: { changed_fields: Object.keys(bodyResult.data) },
+    });
+
     return response.ok(res, { id }, "Representante atualizado.");
   } catch (e) {
     console.error("[drones/admin] updateRepresentative error:", e);
@@ -68,6 +85,13 @@ async function deleteRepresentative(req, res, next) {
 
     const affected = await dronesService.deleteRepresentative(id);
     if (!affected) throw new AppError("Representante não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+
+    adminAudit.record({
+      req,
+      action: "drones.representative.deleted",
+      targetType: "drone_representative",
+      targetId: id,
+    });
 
     return response.ok(res, { id }, "Representante removido.");
   } catch (e) {
