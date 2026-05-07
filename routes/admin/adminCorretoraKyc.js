@@ -24,6 +24,14 @@ router.post(
   requirePermission("mercado_cafe_moderate"),
   ctrl.runCheck,
 );
+// Self-service: admin informa CNPJ + auto-aprova/rejeita conforme
+// retorno do provider. Substitui o par run-check+approve-manual no
+// fluxo simples. Permissao: mesmo nivel de moderate.
+router.post(
+  "/verify",
+  requirePermission("mercado_cafe_moderate"),
+  ctrl.verify,
+);
 router.post(
   "/approve",
   requirePermission("mercado_cafe_moderate"),

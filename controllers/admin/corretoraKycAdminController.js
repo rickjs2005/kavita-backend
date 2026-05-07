@@ -13,6 +13,7 @@ const {
   runProviderCheckSchema,
   approveManualSchema,
   rejectSchema,
+  verifyCnpjSchema,
 } = require("../../schemas/corretoraKycSchemas");
 
 function _parseId(raw) {
@@ -186,6 +187,38 @@ async function listStale(req, res, next) {
   }
 }
 
+/**
+ * Self-service: admin informa CNPJ + service valida + chama provider
+ * + decide automaticamente (verified se ATIVA, invalid se nao). UI
+ * admin chama este endpoint em vez do par runCheck+approve manual.
+ *
+ * POST /api/admin/mercado-do-cafe/corretoras/:id/kyc/verify
+ * Body: { cnpj: "12.345.678/0001-90" | "12345678000190" }
+ */
+async function verify(req, res, next) {
+  try {
+    const id = _parseId(req.params.id);
+    const { cnpj } = _validate(verifyCnpjSchema, req.body);
+    const data = await kycService.verifyCnpjAndDecide({
+      corretoraId: id,
+      cnpj,
+      actorType: "admin",
+      actorId: req.admin?.id ?? null,
+    });
+    return response.ok(res, data, data.message);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao verificar CNPJ.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
 module.exports = {
   getStatus,
   runCheck,
@@ -193,4 +226,5 @@ module.exports = {
   approveManual,
   reject,
   listStale,
+  verify,
 };

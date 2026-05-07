@@ -29,6 +29,7 @@ const corretorasRepo = require("../repositories/corretorasAdminRepository");
 const kycRepo = require("../repositories/corretoraKycRepository");
 const adminNotesRepo = require("../repositories/corretoraAdminNotesRepository");
 const providerResolver = require("./kyc/kycProviderResolver");
+const { isValidCnpj, normalizeCnpj, maskCnpj } = require("../lib/cnpj");
 
 const VALID_TRANSITIONS = {
   pending_verification: new Set(["under_review", "verified", "rejected"]),
@@ -288,11 +289,335 @@ function requireVerifiedOrThrow(corretora) {
   );
 }
 
+// ===========================================================================
+// CNPJ self-service (Fase 10.2.1 — corretora informa CNPJ no painel)
+// ===========================================================================
+//
+// Wrapper de mais alto nivel sobre runProviderCheck + approve/reject:
+//   - valida CNPJ via algoritmo (lib/cnpj) ANTES de chamar provider
+//   - checa duplicidade contra outras corretoras
+//   - chama provider; auto-aprova se situacao=ATIVA, auto-rejeita se nao
+//   - sincroniza colunas denormalizadas (corretoras.cnpj, .razao_social,
+//     .cnpj_verified_at, .cnpj_verification_status)
+//   - retorna shape unificado pra UI (admin OU painel da corretora)
+//
+// Erro tecnico do provider nao quebra: marca status='error' pra UI
+// pedir nova tentativa sem aparecer 500.
+
+const CNPJ_STATUS = {
+  NOT_INFORMED: "not_informed",
+  PENDING: "pending",
+  VERIFIED: "verified",
+  INVALID: "invalid",
+  ERROR: "error",
+};
+
+/**
+ * Verifica CNPJ self-service. Funciona tanto para admin (chamado via
+ * /api/admin/mercado-do-cafe/corretoras/:id/cnpj/verify) quanto para
+ * a propria corretora (/api/corretora/profile/cnpj/verify).
+ *
+ * @param {Object} params
+ * @param {number} params.corretoraId
+ * @param {string} params.cnpj                 formatado ou normalizado
+ * @param {"admin"|"corretora_user"} params.actorType
+ * @param {number} [params.actorId]
+ *
+ * @returns {Promise<{
+ *   status: 'verified'|'invalid'|'error',
+ *   cnpj: string,
+ *   razao_social: string|null,
+ *   situacao_cadastral: string|null,
+ *   verified_at: string|null,
+ *   message: string,
+ *   error_code: string|null
+ * }>}
+ */
+async function verifyCnpjAndDecide({
+  corretoraId,
+  cnpj,
+  actorType = "admin",
+  actorId,
+}) {
+  if (!Number.isInteger(corretoraId) || corretoraId <= 0) {
+    throw new AppError(
+      "Corretora invalida.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+    );
+  }
+
+  // 1) Valida formato + algoritmo localmente (economiza request).
+  const normalized = normalizeCnpj(cnpj);
+  if (!normalized || normalized.length !== 14) {
+    throw new AppError(
+      "CNPJ deve ter 14 digitos.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+      { field: "cnpj" },
+    );
+  }
+  if (!isValidCnpj(normalized)) {
+    await _setCnpjStatusOnCorretora({
+      corretoraId,
+      cnpj: normalized,
+      status: CNPJ_STATUS.INVALID,
+    });
+    throw new AppError(
+      "CNPJ invalido. Verifique os digitos.",
+      ERROR_CODES.VALIDATION_ERROR,
+      400,
+      { field: "cnpj" },
+    );
+  }
+
+  // 2) Duplicidade: outra corretora ativa ja registrou esse CNPJ.
+  const [[dup]] = await pool.query(
+    `SELECT id, name FROM corretoras
+      WHERE cnpj = ? AND id <> ? AND deleted_at IS NULL
+      LIMIT 1`,
+    [normalized, corretoraId],
+  );
+  if (dup) {
+    logger.warn(
+      {
+        corretoraId,
+        cnpjMasked: maskCnpj(normalized),
+        conflictId: dup.id,
+      },
+      "kyc.cnpj.duplicate_blocked",
+    );
+    throw new AppError(
+      "Este CNPJ ja esta registrado em outra corretora. Fale com o suporte se for engano.",
+      ERROR_CODES.CONFLICT,
+      409,
+      { field: "cnpj" },
+    );
+  }
+
+  // 3) Marca pending antes de chamar provider (UI reflete imediato).
+  await _setCnpjStatusOnCorretora({
+    corretoraId,
+    cnpj: normalized,
+    status: CNPJ_STATUS.PENDING,
+  });
+
+  // 4) Chama provider. Falha tecnica vira status='error'.
+  let providerResp = null;
+  try {
+    const adapter = providerResolver.getActiveAdapter();
+    providerResp = await adapter.verifyCnpj(normalized);
+  } catch (err) {
+    logger.error(
+      {
+        corretoraId,
+        cnpjMasked: maskCnpj(normalized),
+        err: err?.message || String(err),
+      },
+      "kyc.provider.exception",
+    );
+    await _setCnpjStatusOnCorretora({
+      corretoraId,
+      cnpj: normalized,
+      status: CNPJ_STATUS.ERROR,
+    });
+    return {
+      status: CNPJ_STATUS.ERROR,
+      cnpj: normalized,
+      razao_social: null,
+      situacao_cadastral: null,
+      verified_at: null,
+      message:
+        "Nao foi possivel consultar o CNPJ agora. Tente em alguns minutos.",
+      error_code: "PROVIDER_DOWN",
+    };
+  }
+
+  // Provider retornou erro de formato (raro — algoritmo local ja
+  // pegou). Marca invalid sem persistir snapshot.
+  if (!providerResp?.ok) {
+    const errCode = providerResp?.error_code || "PROVIDER_ERROR";
+    const status =
+      errCode === "INVALID_FORMAT" ? CNPJ_STATUS.INVALID : CNPJ_STATUS.ERROR;
+    await _setCnpjStatusOnCorretora({
+      corretoraId,
+      cnpj: normalized,
+      status,
+    });
+    return {
+      status,
+      cnpj: normalized,
+      razao_social: null,
+      situacao_cadastral: null,
+      verified_at: null,
+      message:
+        providerResp?.error_message ||
+        "Nao foi possivel verificar agora.",
+      error_code: errCode,
+    };
+  }
+
+  // 5) Persiste snapshot rico em corretora_kyc.
+  const isAtiva =
+    String(providerResp.situacao_cadastral || "").toUpperCase() === "ATIVA";
+  const verifiedAt = isAtiva ? new Date() : null;
+
+  await kycRepo.upsert({
+    corretora_id: corretoraId,
+    cnpj: normalized,
+    razao_social: providerResp.razao_social ?? null,
+    situacao_cadastral: providerResp.situacao_cadastral ?? null,
+    qsa: providerResp.qsa ?? null,
+    endereco: providerResp.endereco ?? null,
+    natureza_juridica: providerResp.natureza_juridica ?? null,
+    provider: providerResp.provider ?? "mock",
+    provider_response_raw: providerResp.raw_response ?? null,
+    risk_score: providerResp.risk_score ?? null,
+    verified_at: verifiedAt,
+    verified_by_admin_id: actorType === "admin" ? actorId ?? null : null,
+  });
+
+  // 6) Sincroniza colunas denormalizadas + FSM existente
+  // (kyc_status), preservando compat com runProviderCheck/approve/
+  // reject quando admin usar o fluxo classico.
+  const cnpjStatus = isAtiva ? CNPJ_STATUS.VERIFIED : CNPJ_STATUS.INVALID;
+  await pool.query(
+    `UPDATE corretoras
+        SET cnpj = ?,
+            razao_social = ?,
+            cnpj_verified_at = ?,
+            cnpj_verification_status = ?
+      WHERE id = ?`,
+    [
+      normalized,
+      providerResp.razao_social ?? null,
+      verifiedAt,
+      cnpjStatus,
+      corretoraId,
+    ],
+  );
+
+  // FSM principal: ATIVA -> verified; outras -> rejected.
+  // Nao bloqueia se transicao for invalida (ex: ja' verified) —
+  // status auxiliar (cnpj_verification_status) ja' refletiu o
+  // resultado e' suficiente.
+  try {
+    const corretora = await _findCorretora(corretoraId);
+    if (isAtiva && corretora.kyc_status !== "verified") {
+      _assertTransition(corretora.kyc_status, "verified");
+      await _setStatus(corretoraId, "verified", verifiedAt);
+    } else if (!isAtiva && corretora.kyc_status !== "rejected") {
+      _assertTransition(corretora.kyc_status, "rejected");
+      await _setStatus(corretoraId, "rejected");
+      await pool.query(
+        `UPDATE corretora_kyc
+            SET rejected_reason = ?
+          WHERE corretora_id = ?`,
+        [
+          `Situacao Receita: ${providerResp.situacao_cadastral}.`,
+          corretoraId,
+        ],
+      );
+    }
+  } catch (err) {
+    // Transicao FSM invalida nao deve quebrar a verificacao —
+    // cnpj_verification_status ja' guarda o resultado canonico.
+    logger.info(
+      { corretoraId, err: err?.message },
+      "kyc.fsm_transition_skipped",
+    );
+  }
+
+  await _logAdminNote(
+    corretoraId,
+    actorType === "admin" ? actorId : null,
+    `CNPJ ${maskCnpj(normalized)} verificado via ${providerResp.provider} — situacao=${providerResp.situacao_cadastral}.`,
+  );
+
+  logger.info(
+    {
+      corretoraId,
+      cnpjMasked: maskCnpj(normalized),
+      status: cnpjStatus,
+      provider: providerResp.provider,
+      situacao: providerResp.situacao_cadastral,
+      actorType,
+    },
+    "kyc.cnpj.verified",
+  );
+
+  return {
+    status: cnpjStatus,
+    cnpj: normalized,
+    razao_social: providerResp.razao_social ?? null,
+    situacao_cadastral: providerResp.situacao_cadastral ?? null,
+    verified_at: verifiedAt ? verifiedAt.toISOString() : null,
+    message: isAtiva
+      ? "CNPJ verificado com sucesso. Situacao ATIVA na Receita."
+      : `CNPJ encontrado mas com situacao ${providerResp.situacao_cadastral}. Resolva pendencias na Receita antes de operar.`,
+    error_code: null,
+  };
+}
+
+/** Atualiza so' o status auxiliar de CNPJ (sem mudar FSM). Usado
+ *  para transicoes intermediarias (pending, error, invalid local). */
+async function _setCnpjStatusOnCorretora({ corretoraId, cnpj, status }) {
+  try {
+    await pool.query(
+      `UPDATE corretoras
+          SET cnpj_verification_status = ?,
+              cnpj = COALESCE(?, cnpj)
+        WHERE id = ?`,
+      [status, cnpj || null, corretoraId],
+    );
+  } catch (err) {
+    logger.warn(
+      {
+        corretoraId,
+        cnpjMasked: maskCnpj(cnpj),
+        err: err?.message,
+      },
+      "kyc.persist_status_failed",
+    );
+  }
+}
+
+/**
+ * Le o status atual do CNPJ pra UI (admin ou painel corretora).
+ * Nao expoe provider_response_raw — esse fica restrito a SQL/audit.
+ */
+async function getCnpjStatus(corretoraId) {
+  const [[c]] = await pool.query(
+    `SELECT id, cnpj, razao_social, nome_fantasia,
+            cnpj_verified_at, cnpj_verification_status,
+            kyc_status, kyc_verified_at
+       FROM corretoras WHERE id = ? LIMIT 1`,
+    [corretoraId],
+  );
+  if (!c) return null;
+  return {
+    corretora_id: c.id,
+    cnpj: c.cnpj,
+    razao_social: c.razao_social,
+    nome_fantasia: c.nome_fantasia,
+    cnpj_verified_at: c.cnpj_verified_at,
+    cnpj_verification_status:
+      c.cnpj_verification_status || CNPJ_STATUS.NOT_INFORMED,
+    kyc_status: c.kyc_status,
+    kyc_verified_at: c.kyc_verified_at,
+  };
+}
+
 module.exports = {
+  // FSM existente (Fase 10.2)
   runProviderCheck,
   approve,
   reject,
   getStatus,
   requireVerifiedOrThrow,
   VALID_TRANSITIONS,
+  // Self-service CNPJ (Fase 10.2.1)
+  verifyCnpjAndDecide,
+  getCnpjStatus,
+  CNPJ_STATUS,
 };
