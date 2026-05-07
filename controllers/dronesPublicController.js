@@ -13,6 +13,10 @@ const {
   ensureModelExists,
   DEFAULT_DRONE_MODELS,
 } = require("./drones/dronesFormatters");
+const {
+  createLeadPublicSchema,
+  formatDronesErrors,
+} = require("../schemas/dronesSchemas");
 
 /**
  * =========================================================
@@ -392,6 +396,53 @@ async function safeListModelsFromDb() {
   }
 }
 
+/**
+ * =========================================================
+ * NOVO: captura de lead público (interest form)
+ * POST /api/public/drones/leads
+ * =========================================================
+ *
+ * Sem autenticação — visitante anônimo. Best-effort: o frontend
+ * abre o WhatsApp de qualquer forma. Se o save falhar, ele só
+ * perde o registro do lead (não bloqueia a conversão).
+ */
+async function createLead(req, res, next) {
+  try {
+    const bodyResult = createLeadPublicSchema.safeParse(req.body || {});
+    if (!bodyResult.success) {
+      throw new AppError(
+        "Dados inválidos.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+        { fields: formatDronesErrors(bodyResult.error) },
+      );
+    }
+
+    const id = await dronesService.createLeadPublic({
+      ...bodyResult.data,
+      ip: req.ip,
+      user_agent: req.get("user-agent"),
+    });
+
+    return response.created(
+      res,
+      { id },
+      "Lead registrado. Continuamos pelo WhatsApp.",
+    );
+  } catch (e) {
+    console.error("[drones/public] createLead error:", e);
+    return next(
+      e instanceof AppError
+        ? e
+        : new AppError(
+            "Erro ao registrar interesse.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
 module.exports = {
   // legado
   getPage,
@@ -404,4 +455,5 @@ module.exports = {
   getRoot,
   listModels,
   getModelAggregate,
+  createLead,
 };

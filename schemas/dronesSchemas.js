@@ -116,10 +116,83 @@ const updateRepresentativeBodySchema = z.object({
   ).optional(),
 });
 
+// ─── Leads ──────────────────────────────────────────────────────────────────
+
+const LEAD_STATUS_VALUES = [
+  "NOVO",
+  "EM_CONTATO",
+  "NEGOCIACAO",
+  "CONVERTIDO",
+  "PERDIDO",
+];
+
+/**
+ * POST /api/public/drones/leads — captura pública (sem auth).
+ * telefone vem do form do visitante; aceita formatado, normaliza para
+ * dígitos. Demais campos são opcionais — só nome + telefone obrigatórios
+ * para permitir contato posterior.
+ */
+const createLeadPublicSchema = z.object({
+  nome: z.string().trim().min(1, "obrigatório").max(120),
+  telefone: z.preprocess(
+    (v) => String(v || "").replace(/\D/g, ""),
+    z.string().regex(PHONE_DIGITS_RE, "telefone deve ter 10-13 dígitos"),
+  ),
+  cidade: z.string().trim().max(80).nullish(),
+  uf: z.preprocess(
+    (v) => (v == null ? null : String(v).trim().toUpperCase() || null),
+    z.string().max(2).nullish(),
+  ),
+  modelo_interesse: z.preprocess(
+    (v) => (v == null ? null : String(v).trim().toLowerCase() || null),
+    z.string().max(40).nullish(),
+  ),
+  mensagem: z.string().trim().max(1000).nullish(),
+  origem: z.string().trim().max(60).nullish(),
+});
+
+/**
+ * PUT /api/admin/drones/leads/:id — atualização parcial pelo admin.
+ * Campos ausentes são removidos pelo Zod, então o service só aplica
+ * o que veio. Status só aceita valores do enum do banco.
+ */
+const updateLeadAdminSchema = z.object({
+  nome: z.string().trim().min(1).max(120).optional(),
+  telefone: z
+    .preprocess(
+      (v) => String(v || "").replace(/\D/g, ""),
+      z.string().regex(PHONE_DIGITS_RE, "telefone deve ter 10-13 dígitos"),
+    )
+    .optional(),
+  cidade: z.string().trim().max(80).nullish(),
+  uf: z.preprocess(
+    (v) => (v == null ? null : String(v).trim().toUpperCase() || null),
+    z.string().max(2).nullish(),
+  ),
+  modelo_interesse: z.preprocess(
+    (v) => (v == null ? null : String(v).trim().toLowerCase() || null),
+    z.string().max(40).nullish(),
+  ),
+  mensagem: z.string().trim().max(1000).nullish(),
+  origem: z.string().trim().max(60).nullish(),
+  status: z
+    .preprocess(
+      (v) => String(v || "").trim().toUpperCase(),
+      z.enum(LEAD_STATUS_VALUES),
+    )
+    .optional(),
+  assigned_to: z
+    .preprocess((v) => (v == null || v === "" ? null : Number(v)), z.number().int().nullish())
+    .optional(),
+});
+
 module.exports = {
   createModelBodySchema,
   mediaSelectionBodySchema,
   createRepresentativeBodySchema,
   updateRepresentativeBodySchema,
+  createLeadPublicSchema,
+  updateLeadAdminSchema,
+  LEAD_STATUS_VALUES,
   formatDronesErrors,
 };

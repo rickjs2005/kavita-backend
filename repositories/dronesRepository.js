@@ -289,6 +289,81 @@ async function setCommentStatus(id, status) {
   return result.affectedRows || 0;
 }
 
+// ─── drones_leads ──────────────────────────────────────────────────────────
+
+async function countLeads(where, params) {
+  const [[row]] = await pool.query(
+    `SELECT COUNT(*) AS total FROM drones_leads ${where}`,
+    params,
+  );
+  return Number(row?.total || 0);
+}
+
+async function listLeadRows(where, params, limit, offset) {
+  const [rows] = await pool.query(
+    `SELECT id, nome, telefone, cidade, uf, modelo_interesse, mensagem,
+            origem, status, assigned_to, created_at, updated_at
+     FROM drones_leads ${where}
+     ORDER BY created_at DESC, id DESC
+     LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  );
+  return rows;
+}
+
+async function findLeadById(id) {
+  const [rows] = await pool.query(
+    `SELECT id, nome, telefone, cidade, uf, modelo_interesse, mensagem,
+            origem, status, assigned_to, ip_hash, user_agent,
+            created_at, updated_at
+     FROM drones_leads WHERE id=? LIMIT 1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+async function insertLead(payload) {
+  const {
+    nome, telefone, cidade, uf, modelo_interesse, mensagem, origem,
+    ip_hash, user_agent,
+  } = payload;
+  const [result] = await pool.query(
+    `INSERT INTO drones_leads
+       (nome, telefone, cidade, uf, modelo_interesse, mensagem, origem,
+        ip_hash, user_agent)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      nome,
+      telefone,
+      cidade,
+      uf,
+      modelo_interesse,
+      mensagem,
+      origem || "interest_form",
+      ip_hash,
+      user_agent,
+    ],
+  );
+  return result.insertId;
+}
+
+async function updateLead(id, sets, params) {
+  if (!sets.length) return 0;
+  const [result] = await pool.query(
+    `UPDATE drones_leads SET ${sets.join(", ")} WHERE id=?`,
+    [...params, id],
+  );
+  return result.affectedRows || 0;
+}
+
+async function deleteLead(id) {
+  const [result] = await pool.query(
+    "DELETE FROM drones_leads WHERE id=?",
+    [id],
+  );
+  return result.affectedRows || 0;
+}
+
 // ─── drone_representatives ─────────────────────────────────────────────────
 
 async function countRepresentatives(where, params) {
@@ -379,4 +454,11 @@ module.exports = {
   insertRepresentative,
   updateRepresentative,
   deleteRepresentative,
+  // Leads
+  countLeads,
+  listLeadRows,
+  findLeadById,
+  insertLead,
+  updateLead,
+  deleteLead,
 };

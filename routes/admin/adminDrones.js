@@ -12,6 +12,7 @@ const modelsCtrl        = require("../../controllers/drones/modelsController");
 const galleryCtrl       = require("../../controllers/drones/galleryController");
 const representativesCtrl = require("../../controllers/drones/representativesController");
 const commentsCtrl      = require("../../controllers/drones/commentsController");
+const leadsCtrl         = require("../../controllers/drones/leadsController");
 
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
@@ -188,5 +189,14 @@ router.get("/comentarios", commentsCtrl.listComments);
 router.put("/comentarios/:id/aprovar", commentsCtrl.approveComment);
 router.put("/comentarios/:id/reprovar", commentsCtrl.rejectComment);
 router.delete("/comentarios/:id", commentsCtrl.deleteComment);
+
+/* =========================================================
+ * LEADS (interesse capturado pela landing)
+ * ========================================================= */
+
+router.get("/leads", leadsCtrl.listLeads);
+router.get("/leads/:id", leadsCtrl.getLead);
+router.put("/leads/:id", jsonParser, leadsCtrl.updateLead);
+router.delete("/leads/:id", leadsCtrl.deleteLead);
 
 module.exports = router;

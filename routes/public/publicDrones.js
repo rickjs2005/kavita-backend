@@ -154,4 +154,11 @@ router.post(
   dronesPublicController.createComment
 );
 
+/* =========================================================
+ * NOVO: captura de lead (sem auth, sem CSRF — visitante público)
+ * POST /api/public/drones/leads
+ * ========================================================= */
+const jsonParser = express.json({ limit: "32kb" });
+router.post("/leads", jsonParser, dronesPublicController.createLead);
+
 module.exports = router;

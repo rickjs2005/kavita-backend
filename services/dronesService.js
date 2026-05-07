@@ -11,6 +11,7 @@ const modelsService = require("./drones/modelsService");
 const galleryService = require("./drones/galleryService");
 const representativesService = require("./drones/representativesService");
 const commentsService = require("./drones/commentsService");
+const leadsService = require("./drones/leadsService");
 
 module.exports = {
   // helpers (used by controllers)
@@ -65,4 +66,12 @@ module.exports = {
   createDroneModel: modelsService.createDroneModel,
   updateDroneModel: modelsService.updateDroneModel,
   deleteDroneModel: modelsService.deleteDroneModel,
+
+  // leads
+  listLeadsAdmin: leadsService.listLeadsAdmin,
+  countLeadsByStatus: leadsService.countLeadsByStatus,
+  getLeadById: leadsService.getLeadById,
+  createLeadPublic: leadsService.createLeadPublic,
+  updateLead: leadsService.updateLead,
+  deleteLead: leadsService.deleteLead,
 };
