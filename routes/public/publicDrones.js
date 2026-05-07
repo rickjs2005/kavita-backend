@@ -5,6 +5,7 @@ const router = express.Router();
 const dronesPublicController = require("../../controllers/dronesPublicController");
 const dronesCommentThrottle = require("../../middleware/dronesCommentThrottle");
 const authenticateToken = require("../../middleware/authenticateToken");
+const { validateCSRF } = require("../../middleware/csrfProtection");
 
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
@@ -147,6 +148,7 @@ router.get("/comentarios", dronesPublicController.listApprovedComments);
 router.post(
   "/comentarios",
   authenticateToken,          // 🔒 login obrigatório
+  validateCSRF,               // 🔐 protege CSRF (usuário logado)
   dronesCommentThrottle,      // 🛡️ antispam
   upload.array("media", 6),   // 📎 até 6 mídias
   dronesPublicController.createComment

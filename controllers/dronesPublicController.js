@@ -353,18 +353,24 @@ async function createComment(req, res, next) {
       }
     }
 
+    // Comentário público entra como PENDENTE — admin precisa aprovar
+    // antes de aparecer na landing. Auto-approve foi removido para
+    // evitar conteúdo problemático ir ao ar sem moderação.
     const id = await dronesService.createComment({
-      model_key, // ✅ alinhado com admin
+      model_key,
       display_name,
       comment_text: textSan,
-      status: "APROVADO",
-      approved_at: new Date(),
+      status: "PENDENTE",
       ip: req.ip,
       user_agent: req.get("user-agent"),
       mediaItems,
     });
 
-    return response.created(res, { id, status: "APROVADO" }, "Comentário publicado com sucesso.");
+    return response.created(
+      res,
+      { id, status: "PENDENTE" },
+      "Comentário enviado. Em breve nossa equipe vai revisar e publicar."
+    );
   } catch (e) {
     console.error("[drones/public] createComment error:", e);
     files.forEach(safeUnlink);
