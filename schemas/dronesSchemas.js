@@ -186,6 +186,43 @@ const updateLeadAdminSchema = z.object({
     .optional(),
 });
 
+// ─── FAQ ────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/admin/drones/faq — criar item de FAQ.
+ * answer aceita até 5000 chars (texto longo). question é título do item.
+ */
+const createFaqSchema = z.object({
+  question: z.string().trim().min(1, "obrigatório").max(255),
+  answer: z.string().trim().min(1, "obrigatório").max(5000),
+  sort_order: z
+    .preprocess((v) => Number(v) || 0, z.number().int().min(0).max(999999))
+    .optional(),
+  is_active: z
+    .preprocess(
+      (v) => (v === undefined ? 1 : Number(v) ? 1 : 0),
+      z.union([z.literal(0), z.literal(1)]),
+    )
+    .optional(),
+});
+
+/**
+ * PUT /api/admin/drones/faq/:id — atualização parcial de item de FAQ.
+ */
+const updateFaqSchema = z.object({
+  question: z.string().trim().min(1).max(255).optional(),
+  answer: z.string().trim().min(1).max(5000).optional(),
+  sort_order: z
+    .preprocess((v) => Number(v) || 0, z.number().int().min(0).max(999999))
+    .optional(),
+  is_active: z
+    .preprocess(
+      (v) => (Number(v) ? 1 : 0),
+      z.union([z.literal(0), z.literal(1)]),
+    )
+    .optional(),
+});
+
 module.exports = {
   createModelBodySchema,
   mediaSelectionBodySchema,
@@ -194,5 +231,7 @@ module.exports = {
   createLeadPublicSchema,
   updateLeadAdminSchema,
   LEAD_STATUS_VALUES,
+  createFaqSchema,
+  updateFaqSchema,
   formatDronesErrors,
 };

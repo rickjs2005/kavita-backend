@@ -13,6 +13,7 @@ const galleryCtrl       = require("../../controllers/drones/galleryController");
 const representativesCtrl = require("../../controllers/drones/representativesController");
 const commentsCtrl      = require("../../controllers/drones/commentsController");
 const leadsCtrl         = require("../../controllers/drones/leadsController");
+const faqCtrl           = require("../../controllers/drones/faqController");
 
 const mediaService = require("../../services/mediaService");
 const upload = mediaService.upload;
@@ -198,5 +199,14 @@ router.get("/leads", leadsCtrl.listLeads);
 router.get("/leads/:id", leadsCtrl.getLead);
 router.put("/leads/:id", jsonParser, leadsCtrl.updateLead);
 router.delete("/leads/:id", leadsCtrl.deleteLead);
+
+/* =========================================================
+ * FAQ (editável pelo admin)
+ * ========================================================= */
+
+router.get("/faq", faqCtrl.listFaqAdmin);
+router.post("/faq", jsonParser, faqCtrl.createFaq);
+router.put("/faq/:id", jsonParser, faqCtrl.updateFaq);
+router.delete("/faq/:id", faqCtrl.deleteFaq);
 
 module.exports = router;

@@ -12,6 +12,7 @@ const galleryService = require("./drones/galleryService");
 const representativesService = require("./drones/representativesService");
 const commentsService = require("./drones/commentsService");
 const leadsService = require("./drones/leadsService");
+const faqService = require("./drones/faqService");
 
 module.exports = {
   // helpers (used by controllers)
@@ -74,4 +75,12 @@ module.exports = {
   createLeadPublic: leadsService.createLeadPublic,
   updateLead: leadsService.updateLead,
   deleteLead: leadsService.deleteLead,
+
+  // faq
+  listFaqPublic: faqService.listFaqPublic,
+  listFaqAdmin: faqService.listFaqAdmin,
+  getFaqById: faqService.getFaqById,
+  createFaq: faqService.createFaq,
+  updateFaq: faqService.updateFaq,
+  deleteFaq: faqService.deleteFaq,
 };

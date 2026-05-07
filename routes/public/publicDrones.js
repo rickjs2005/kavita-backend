@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 
 const dronesPublicController = require("../../controllers/dronesPublicController");
+const faqCtrl = require("../../controllers/drones/faqController");
 const dronesCommentThrottle = require("../../middleware/dronesCommentThrottle");
 const authenticateToken = require("../../middleware/authenticateToken");
 const { validateCSRF } = require("../../middleware/csrfProtection");
@@ -160,5 +161,11 @@ router.post(
  * ========================================================= */
 const jsonParser = express.json({ limit: "32kb" });
 router.post("/leads", jsonParser, dronesPublicController.createLead);
+
+/* =========================================================
+ * FAQ pública (apenas itens ativos, ordem sort_order)
+ * GET /api/public/drones/faq
+ * ========================================================= */
+router.get("/faq", faqCtrl.listFaqPublic);
 
 module.exports = router;

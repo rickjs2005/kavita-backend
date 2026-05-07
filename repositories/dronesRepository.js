@@ -364,6 +364,53 @@ async function deleteLead(id) {
   return result.affectedRows || 0;
 }
 
+// ─── drones_faq ────────────────────────────────────────────────────────────
+
+async function listFaqRows({ activeOnly = false } = {}) {
+  const where = activeOnly ? "WHERE is_active=1" : "";
+  const [rows] = await pool.query(
+    `SELECT id, question, answer, sort_order, is_active, created_at, updated_at
+     FROM drones_faq ${where}
+     ORDER BY sort_order ASC, id ASC`,
+  );
+  return rows;
+}
+
+async function findFaqById(id) {
+  const [rows] = await pool.query(
+    `SELECT id, question, answer, sort_order, is_active, created_at, updated_at
+     FROM drones_faq WHERE id=? LIMIT 1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+async function insertFaq({ question, answer, sort_order, is_active }) {
+  const [result] = await pool.query(
+    `INSERT INTO drones_faq (question, answer, sort_order, is_active)
+     VALUES (?, ?, ?, ?)`,
+    [question, answer, sort_order ?? 0, is_active ?? 1],
+  );
+  return result.insertId;
+}
+
+async function updateFaq(id, sets, params) {
+  if (!sets.length) return 0;
+  const [result] = await pool.query(
+    `UPDATE drones_faq SET ${sets.join(", ")} WHERE id=?`,
+    [...params, id],
+  );
+  return result.affectedRows || 0;
+}
+
+async function deleteFaq(id) {
+  const [result] = await pool.query(
+    "DELETE FROM drones_faq WHERE id=?",
+    [id],
+  );
+  return result.affectedRows || 0;
+}
+
 // ─── drone_representatives ─────────────────────────────────────────────────
 
 async function countRepresentatives(where, params) {
@@ -461,4 +508,10 @@ module.exports = {
   insertLead,
   updateLead,
   deleteLead,
+  // FAQ
+  listFaqRows,
+  findFaqById,
+  insertFaq,
+  updateFaq,
+  deleteFaq,
 };
