@@ -427,6 +427,7 @@ async function listCases({ activeOnly = false, model_key = null } = {}) {
     `SELECT id, title, farm_name, producer_name, city, uf, hectares,
             model_key, summary, testimonial,
             cover_image_url, before_image_url, after_image_url,
+            before_label, after_label, metrics_json,
             permission_to_use, sort_order, is_active,
             created_at, updated_at
      FROM drones_cases ${where}
@@ -441,6 +442,7 @@ async function findCaseById(id) {
     `SELECT id, title, farm_name, producer_name, city, uf, hectares,
             model_key, summary, testimonial,
             cover_image_url, before_image_url, after_image_url,
+            before_label, after_label, metrics_json,
             permission_to_use, sort_order, is_active,
             created_at, updated_at
      FROM drones_cases WHERE id=? LIMIT 1`,
@@ -450,13 +452,21 @@ async function findCaseById(id) {
 }
 
 async function insertCase(payload) {
+  const metricsStr =
+    payload.metrics_json == null
+      ? null
+      : typeof payload.metrics_json === "string"
+        ? payload.metrics_json
+        : JSON.stringify(payload.metrics_json);
+
   const [result] = await pool.query(
     `INSERT INTO drones_cases
        (title, farm_name, producer_name, city, uf, hectares, model_key,
         summary, testimonial,
         cover_image_url, before_image_url, after_image_url,
+        before_label, after_label, metrics_json,
         permission_to_use, sort_order, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       payload.title,
       payload.farm_name,
@@ -470,6 +480,9 @@ async function insertCase(payload) {
       payload.cover_image_url,
       payload.before_image_url,
       payload.after_image_url,
+      payload.before_label,
+      payload.after_label,
+      metricsStr,
       payload.permission_to_use ? 1 : 0,
       payload.sort_order ?? 0,
       payload.is_active == null ? 1 : payload.is_active ? 1 : 0,

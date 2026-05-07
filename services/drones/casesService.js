@@ -2,7 +2,38 @@
 
 const dronesRepo = require("../../repositories/dronesRepository");
 const mediaService = require("../../services/mediaService");
-const { clampInt, sanitizeText } = require("./helpers");
+const { clampInt, sanitizeText, safeParseJson } = require("./helpers");
+
+/**
+ * Sanitiza um array de métricas vindo do admin.
+ *
+ * Aceita:
+ *   - array de objects { label, value, hint? }
+ *   - string JSON com o mesmo shape (multipart serializa array como string)
+ *   - null/undefined → null
+ *
+ * Retorna array com no máximo 6 itens. Cada label/value/hint é
+ * trimado e limitado em tamanho. Itens vazios (sem label E sem value)
+ * são descartados.
+ */
+function sanitizeMetrics(raw) {
+  if (raw == null || raw === "") return null;
+  let arr = raw;
+  if (typeof raw === "string") {
+    arr = safeParseJson(raw, null);
+  }
+  if (!Array.isArray(arr)) return null;
+  const out = [];
+  for (const it of arr.slice(0, 6)) {
+    if (!it || typeof it !== "object") continue;
+    const label = sanitizeText(it.label, 60);
+    const value = sanitizeText(it.value, 40);
+    const hint = sanitizeText(it.hint, 80);
+    if (!label && !value) continue;
+    out.push({ label: label || null, value: value || null, hint: hint || null });
+  }
+  return out.length ? out : null;
+}
 
 /**
  * Sanitiza payload textual do case. Retorna objeto pronto para o
@@ -31,6 +62,8 @@ function sanitizeBaseFields(p = {}) {
       p.testimonial == null
         ? null
         : String(p.testimonial).trim() || null,
+    before_label: sanitizeText(p.before_label, 160),
+    after_label: sanitizeText(p.after_label, 160),
   };
 }
 
@@ -54,14 +87,23 @@ async function listCasesPublic({ model_key } = {}) {
     cover_image_url: r.cover_image_url,
     before_image_url: r.before_image_url,
     after_image_url: r.after_image_url,
+    before_label: r.before_label,
+    after_label: r.after_label,
+    metrics: safeParseJson(r.metrics_json, null),
   }));
 }
 
 async function listCasesAdmin({ model_key } = {}) {
-  return dronesRepo.listCases({
+  const rows = await dronesRepo.listCases({
     activeOnly: false,
     model_key: model_key ? String(model_key).toLowerCase() : null,
   });
+  // Admin recebe metrics já parseado (consistente com público) — UI
+  // de edição trabalha com array, não string JSON.
+  return rows.map((r) => ({
+    ...r,
+    metrics: safeParseJson(r.metrics_json, null),
+  }));
 }
 
 async function getCaseById(id) {
@@ -87,6 +129,7 @@ async function createCase(payload = {}) {
     cover_image_url: sanitizeText(payload.cover_image_url, 255),
     before_image_url: sanitizeText(payload.before_image_url, 255),
     after_image_url: sanitizeText(payload.after_image_url, 255),
+    metrics_json: sanitizeMetrics(payload.metrics ?? payload.metrics_json),
     permission_to_use,
     sort_order,
     is_active,
@@ -116,6 +159,8 @@ async function updateCase(id, payload = {}) {
     ["cover_image_url", 255],
     ["before_image_url", 255],
     ["after_image_url", 255],
+    ["before_label", 160],
+    ["after_label", 160],
   ];
   for (const [k, maxLen] of textMap) {
     if (Object.prototype.hasOwnProperty.call(payload, k)) {
@@ -158,6 +203,17 @@ async function updateCase(id, payload = {}) {
   if (Object.prototype.hasOwnProperty.call(payload, "permission_to_use")) {
     sets.push("permission_to_use=?");
     params.push(Number(payload.permission_to_use) ? 1 : 0);
+  }
+
+  // metrics: aceita "metrics" (array) ou "metrics_json" (string ou
+  // array). Sanitiza e re-serializa para a coluna JSON.
+  const hasMetrics =
+    Object.prototype.hasOwnProperty.call(payload, "metrics") ||
+    Object.prototype.hasOwnProperty.call(payload, "metrics_json");
+  if (hasMetrics) {
+    const cleaned = sanitizeMetrics(payload.metrics ?? payload.metrics_json);
+    sets.push("metrics_json=?");
+    params.push(cleaned == null ? null : JSON.stringify(cleaned));
   }
 
   return dronesRepo.updateCase(caseId, sets, params);

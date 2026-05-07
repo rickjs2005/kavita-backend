@@ -261,6 +261,38 @@ function caseFieldsBase(extend = {}) {
       ),
     summary: z.string().trim().max(500).nullish(),
     testimonial: z.string().trim().max(5000).nullish(),
+    // Storytelling labels do antes/depois (texto curto sob cada imagem)
+    before_label: z.string().trim().max(160).nullish(),
+    after_label: z.string().trim().max(160).nullish(),
+    // Métricas: array opcional de { label, value, hint? }. Vem de
+    // multipart como JSON string; preprocess converte para array.
+    metrics: z
+      .preprocess(
+        (v) => {
+          if (v == null || v === "") return null;
+          if (Array.isArray(v)) return v;
+          if (typeof v === "string") {
+            try {
+              const parsed = JSON.parse(v);
+              return Array.isArray(parsed) ? parsed : null;
+            } catch {
+              return null;
+            }
+          }
+          return null;
+        },
+        z
+          .array(
+            z.object({
+              label: z.string().trim().max(60).nullish(),
+              value: z.string().trim().max(40).nullish(),
+              hint: z.string().trim().max(80).nullish(),
+            }),
+          )
+          .max(6)
+          .nullish(),
+      )
+      .optional(),
     permission_to_use: z
       .preprocess(
         (v) => (v === undefined ? 0 : Number(v) ? 1 : 0),
@@ -308,6 +340,35 @@ const updateCaseSchema = z.object({
   ),
   summary: z.string().trim().max(500).nullish(),
   testimonial: z.string().trim().max(5000).nullish(),
+  before_label: z.string().trim().max(160).nullish(),
+  after_label: z.string().trim().max(160).nullish(),
+  metrics: z
+    .preprocess(
+      (v) => {
+        if (v == null || v === "") return null;
+        if (Array.isArray(v)) return v;
+        if (typeof v === "string") {
+          try {
+            const parsed = JSON.parse(v);
+            return Array.isArray(parsed) ? parsed : null;
+          } catch {
+            return null;
+          }
+        }
+        return null;
+      },
+      z
+        .array(
+          z.object({
+            label: z.string().trim().max(60).nullish(),
+            value: z.string().trim().max(40).nullish(),
+            hint: z.string().trim().max(80).nullish(),
+          }),
+        )
+        .max(6)
+        .nullish(),
+    )
+    .optional(),
   permission_to_use: z
     .preprocess(
       (v) => (Number(v) ? 1 : 0),
