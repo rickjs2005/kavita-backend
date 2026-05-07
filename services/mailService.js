@@ -277,62 +277,78 @@ async function sendLeadProducerConfirmationEmail({
   retornoLabel,
   leadId,
   statusToken,
+  cidade,
 }) {
   const appUrl = config.appUrl.replace(/\/$/, "");
   const corretoraUrl = corretoraSlug
     ? `${appUrl}/mercado-do-cafe/corretoras/${corretoraSlug}`
     : `${appUrl}/mercado-do-cafe/corretoras`;
-  // Link único para consultar status do lead (Sprint 7). Emitido só
-  // quando o caller forneceu leadId + statusToken; ausência não
-  // bloqueia o envio do e-mail.
   const statusUrl =
     leadId && statusToken
       ? `${appUrl}/mercado-do-cafe/lead-status/${leadId}/${statusToken}`
       : null;
 
-  const safeProdutor = (produtorNome || "produtor(a)")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  const safeCorretora = (corretoraNome || "a corretora")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  const safeRetorno = retornoLabel
-    ? String(retornoLabel)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-    : null;
+  // Engine humanizado — gera intro/saudacao/explicacao em variantes.
+  // Determinismo via leadId garante que o mesmo produtor recebe sempre
+  // a mesma copy (caso receba 2 emails do sistema, parecem do mesmo
+  // remetente humano).
+  const humanizer = require("./messaging/humanMessageBuilder");
+  const ctx = humanizer.buildContext({
+    lead: { id: leadId, nome: produtorNome, cidade },
+    corretora: { name: corretoraNome },
+  });
+  const corpoTexto = humanizer.humanize("produtor_lead_recebido", ctx) || "";
 
-  const retornoLine = safeRetorno
-    ? `A corretora <strong>${safeCorretora}</strong> foi avisada e deve retornar por <strong>${safeRetorno}</strong>. Normalmente o retorno chega no mesmo dia útil.`
-    : `A corretora <strong>${safeCorretora}</strong> foi avisada e deve retornar pelo canal que você escolheu. Normalmente o retorno chega no mesmo dia útil.`;
+  // Subject com leve variacao por horario — evita aparencia de
+  // "broadcast em massa" quando varios produtores recebem no mesmo dia.
+  const subjectVariations = [
+    `Sua mensagem chegou na ${corretoraNome || "corretora"}`,
+    `${corretoraNome || "A corretora"} já viu seu interesse pelo café`,
+    `${corretoraNome || "A corretora"} foi avisada — Kavita`,
+  ];
+  const subject = humanizer.pickVariation(subjectVariations, leadId);
+
+  const safeProdutor = escapeHtml(produtorNome || "produtor(a)");
+  const safeCorretora = escapeHtml(corretoraNome || "a corretora");
+  const safeRetorno = retornoLabel ? escapeHtml(String(retornoLabel)) : null;
+
+  // Frase do canal preferido em prosa, integrada na copy humana,
+  // em vez de uma linha separada formal.
+  const retornoFrase = safeRetorno
+    ? ` A ${safeCorretora} deve te chamar por ${safeRetorno} no mesmo dia útil.`
+    : ` A ${safeCorretora} deve te chamar pelo canal que você escolheu, normalmente no mesmo dia útil.`;
+
+  // Quebra o corpo humanizado em paragrafos HTML — engine retorna
+  // texto com \n separando frases.
+  const corpoHtml = corpoTexto
+    .split(/\n+/)
+    .filter(Boolean)
+    .map((line) => `<p style="margin:0 0 12px;line-height:1.55;">${escapeHtml(line)}</p>`)
+    .join("");
 
   await transporterProxy.sendMail({
     from: buildFrom("Kavita — Mercado do Café"),
     to: toEmail,
-    subject: `Seu pedido de contato chegou na ${corretoraNome || "corretora"}`,
+    subject,
     html: `
       <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 560px; color:#1c1917;">
-        <h2 style="color:#b45309;margin:0 0 12px;">☕ Recebemos seu pedido de contato</h2>
-        <p>Olá, ${safeProdutor}.</p>
-        <p>${retornoLine}</p>
-        <p style="margin-top:16px;">Enquanto isso, se quiser, você pode rever a página da corretora ou chamar direto pelos canais dela:</p>
-        <p style="margin:22px 0;">
+        <p style="color:#b45309;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;margin:0 0 10px;">☕ Kavita · Mercado do Café</p>
+        ${corpoHtml}
+        <p style="margin:6px 0 18px;color:#44403c;font-size:14px;line-height:1.55;">${retornoFrase}</p>
+        <p style="margin:18px 0;">
           <a href="${corretoraUrl}"
              style="display:inline-block;background:#b45309;color:white;
-                    padding:12px 24px;border-radius:10px;text-decoration:none;
+                    padding:12px 22px;border-radius:10px;text-decoration:none;
                     font-weight:600;">
-            Abrir a página da corretora
+            Abrir página da ${safeCorretora}
           </a>
         </p>
         ${
           statusUrl
             ? `<div style="background:#fef3c7;border-left:3px solid #b45309;border-radius:6px;padding:12px 14px;margin:18px 0;">
                  <p style="margin:0 0 6px;color:#44403c;font-size:13px;line-height:1.5;">
-                   <strong>Acompanhe o andamento a qualquer momento.</strong>
-                   Este link privado mostra se a corretora já respondeu e se o lote foi fechado.
+                   <strong>Acompanhar o andamento.</strong>
+                   Este link privado mostra se a corretora já respondeu e se o lote fechou.
                  </p>
                  <p style="margin:0;">
                    <a href="${statusUrl}"
@@ -343,32 +359,39 @@ async function sendLeadProducerConfirmationEmail({
                </div>`
             : ""
         }
-        <p style="color:#57534e;font-size:13px;line-height:1.6;margin-top:20px;">
-          <strong>Não ouviu nada em um dia útil?</strong> Responda este e-mail. A curadoria da Kavita entra em contato com a corretora e te ajuda a destravar a conversa.
-        </p>
-        <p style="color:#78716c;font-size:12px;margin-top:28px;">
-          — Kavita · Mercado do Café<br/>
-          <span style="color:#a8a29e;">Zona da Mata mineira</span>
+        <p style="color:#78716c;font-size:12px;margin-top:24px;line-height:1.5;">
+          Kavita · Mercado do Café<br/>
+          <span style="color:#a8a29e;">Zona da Mata mineira — Manhuaçu/MG</span>
         </p>
       </div>
     `,
     text: [
-      `Olá, ${produtorNome || "produtor(a)"}.`,
+      corpoTexto,
       "",
       retornoLabel
-        ? `A corretora ${corretoraNome || ""} foi avisada e deve retornar por ${retornoLabel}. Normalmente o retorno chega no mesmo dia útil.`
-        : `A corretora ${corretoraNome || ""} foi avisada e deve retornar pelo canal que você escolheu. Normalmente o retorno chega no mesmo dia útil.`,
+        ? `Canal preferido: ${retornoLabel}.`
+        : null,
       "",
-      `Abrir a página da corretora: ${corretoraUrl}`,
+      `Abrir página da corretora: ${corretoraUrl}`,
       statusUrl ? `Ver status do meu contato: ${statusUrl}` : null,
       "",
-      "Não ouviu nada em um dia útil? Responda este e-mail que a curadoria ajuda a destravar a conversa.",
-      "",
-      "— Kavita · Mercado do Café",
+      "Kavita · Mercado do Café — Zona da Mata mineira",
     ]
       .filter(Boolean)
       .join("\n"),
   });
+
+  // Helper local pra escape HTML — duplicado do existente em
+  // corretoraLeadsService, mantido aqui pra autocontido.
+  function escapeHtml(str) {
+    if (str == null) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
 }
 
 /**

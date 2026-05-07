@@ -44,27 +44,49 @@ function buildReviewUrl({ corretoraSlug }) {
   return `${appUrl}/mercado-do-cafe/${corretoraSlug}?avaliar=1`;
 }
 
-function buildEmail({ leadNome, corretoraNome, corretoraSlug, producerEmail }) {
+function buildEmail({ leadId, leadNome, corretoraNome, corretoraSlug, producerEmail }) {
   const unsubUrl = buildUnsubscribeUrl(producerEmail);
   const reviewUrl = buildReviewUrl({ corretoraSlug });
-  const saudacao = leadNome ? `Olá, ${leadNome.split(" ")[0]}` : "Olá";
 
-  const subject = `Como foi seu contato com ${corretoraNome}?`;
+  // 2026-05-08 — copy humanizada via engine. Variantes deterministicas
+  // por leadId garantem que o produtor recebe sempre a mesma versao
+  // (caso o email seja reenviado por bug operacional, parece "do mesmo
+  // remetente humano"), mas leads diferentes recebem versoes
+  // diferentes, evitando aparencia de broadcast.
+  const humanizer = require("./messaging/humanMessageBuilder");
+  const ctx = humanizer.buildContext({
+    lead: { id: leadId, nome: leadNome },
+    corretora: { name: corretoraNome },
+  });
+  const corpoTexto = humanizer.humanize("produtor_followup_7d", ctx) || "";
+
+  // Subject com 3 variantes — leve variacao reduz aparencia robotica.
+  const subjectVariations = [
+    `Como foi seu contato com ${corretoraNome}?`,
+    `${leadNome ? leadNome.split(" ")[0] + ", " : ""}sua experiência com ${corretoraNome}`,
+    `Avaliação rápida do contato com ${corretoraNome}`,
+  ];
+  const subject = humanizer.pickVariation(subjectVariations, leadId);
+
+  // Quebra o corpo humanizado em paragrafos HTML.
+  const corpoHtml = corpoTexto
+    .split(/\n+/)
+    .filter(Boolean)
+    .map((line) => `<p style="margin:0 0 12px;line-height:1.55;">${escapeHtml(line)}</p>`)
+    .join("");
+
   const html = `
-    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 540px;">
-      <h2 style="color:#b45309;margin:0 0 12px;">☕ ${saudacao}</h2>
-      <p>Há cerca de uma semana você entrou em contato com
-         <strong>${corretoraNome}</strong> pelo Kavita — Mercado do Café.</p>
-      <p>Uma avaliação curta ajuda outros produtores da Zona da Mata
-         a escolher com segurança, e a corretora a melhorar o atendimento.</p>
-      <p>
+    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 540px; color:#1c1917;">
+      <p style="color:#b45309;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;margin:0 0 10px;">☕ Kavita · Mercado do Café</p>
+      ${corpoHtml}
+      <p style="margin:18px 0;">
         <a href="${reviewUrl}" style="display:inline-block;background:#b45309;color:white;
-                  padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
+                  padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:600;">
           Deixar avaliação (1 minuto)
         </a>
       </p>
       <p style="color:#71717a;font-size:12px;margin-top:24px;">
-        Kavita · Mercado do Café · Zona da Mata Mineira
+        Kavita · Mercado do Café · Zona da Mata mineira
       </p>
       <p style="color:#71717a;font-size:11px;margin-top:8px;">
         Não quer mais receber estes lembretes?
@@ -73,14 +95,23 @@ function buildEmail({ leadNome, corretoraNome, corretoraSlug, producerEmail }) {
     </div>
   `;
   const text = [
-    `${saudacao},`,
+    corpoTexto,
     "",
-    `Há cerca de uma semana você contatou ${corretoraNome} pelo Kavita — Mercado do Café.`,
-    `Sua avaliação ajuda outros produtores: ${reviewUrl}`,
+    `Avaliar: ${reviewUrl}`,
     "",
     `Descadastrar: ${unsubUrl}`,
   ].join("\n");
   return { subject, html, text };
+}
+
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 /**
@@ -136,6 +167,7 @@ async function runOnce({ maxPerTick = DEFAULT_MAX_PER_TICK, now = new Date() } =
       }
 
       const { subject, html, text } = buildEmail({
+        leadId: row.lead_id,
         leadNome: row.lead_nome,
         corretoraNome: row.corretora_nome,
         corretoraSlug: row.corretora_slug,

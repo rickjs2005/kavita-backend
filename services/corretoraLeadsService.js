@@ -243,6 +243,9 @@ async function createLeadFromPublic({ slug, data, meta }) {
         corretoraNome: corretora.name,
         corretoraSlug: corretora.slug,
         retornoLabel,
+        // 2026-05-08 — humanizer usa cidade pra detectar regiao
+        // (Zona da Mata) e adaptar copy.
+        cidade: data.cidade,
         // Sprint 7 — link autenticado por HMAC para o produtor
         // acompanhar o status do próprio lead sem login.
         leadId,
@@ -687,12 +690,20 @@ async function updateLead(leadId, corretoraId, data, actor = {}) {
       publicCorretorasRepo
         .findById(current.corretora_id)
         .then((corretora) => {
-          const corretoraName = corretora?.name || "a corretora";
-          const firstName =
-            String(current.nome ?? "").split(" ")[0] || "produtor";
+          // 2026-05-08 — SMS humanizado via engine. Variantes
+          // deterministicas por leadId garantem que produtores
+          // diferentes recebem versoes diferentes (sem aparencia
+          // de broadcast em massa) mas o mesmo produtor sempre
+          // recebe a mesma copy se o SMS for re-enviado.
+          const humanizer = require("./messaging/humanMessageBuilder");
+          const ctx = humanizer.buildContext({
+            lead: { id: current.id, nome: current.nome, cidade: current.cidade },
+            corretora,
+          });
+          const text = humanizer.humanize("produtor_sms_contacted", ctx);
           return smsService.send({
             to: current.telefone,
-            text: `Oi ${firstName}, a ${corretoraName} recebeu seu contato no Kavita e vai retornar em breve.`,
+            text,
             context: "lead.contacted",
           });
         })
