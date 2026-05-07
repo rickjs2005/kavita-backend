@@ -26,6 +26,13 @@
 // (lead, corretora, etc). Engine retorna { subject, body } prontos.
 
 const crypto = require("crypto");
+// Modulos auxiliares — opcionais. Carregados via require() para evitar
+// circular import e para falhar graciosamente caso ainda nao existam
+// em ambiente legado (ex: tests unitarios isolados).
+let _regional;
+let _styles;
+try { _regional = require("./regionalContext"); } catch { _regional = null; }
+try { _styles = require("./communicationStyles"); } catch { _styles = null; }
 
 // ---------------------------------------------------------------------------
 // Normalizadores de dados sujos
@@ -454,12 +461,23 @@ function buildContext({ lead, corretora, contrato, proposta, now } = {}) {
       String(lead.volume_range || ""),
     );
     ctx.leadId = lead.id; // seed pro pickVariation
+
+    // Intel regional: microrregiao, altitude, qualidade tipica,
+    // vocabulario local, contexto de mercado. Variantes premium/
+    // regional usam pra demonstrar conhecimento real.
+    if (_regional && ctx.cidadeProdutor) {
+      ctx.intel = _regional.getRegionalIntel(ctx.cidadeProdutor);
+    }
   }
 
   if (corretora) {
     ctx.nomeCorretora = corretora.name || corretora.nome || null;
     ctx.nomeCorretor = corretora.contact_name || null;
     ctx.corretoraId = corretora.id;
+    // Estilo de comunicacao da corretora — opcional. Se ausente,
+    // humanize cai nas variantes genericas.
+    ctx.communicationStyle =
+      corretora.communication_style || corretora.communicationStyle || null;
   }
 
   if (contrato) {
@@ -508,8 +526,19 @@ function formatValor(valor) {
  * @returns {string|null}  texto final, ou null se intent desconhecido
  */
 function humanize(intent, ctx, opts = {}) {
-  const variations = VARIATIONS[intent];
+  // 1. Estilo da corretora (premium/agressivo/etc) tem prioridade —
+  //    variantes do estilo sobrescrevem o banco generico para o intent.
+  let variations = null;
+  const style = opts.communicationStyle || ctx.communicationStyle;
+  if (style && _styles) {
+    variations = _styles.getStyleVariants(style, intent);
+  }
+  // 2. Fallback para banco generico
+  if (!variations || variations.length === 0) {
+    variations = VARIATIONS[intent];
+  }
   if (!variations) return null;
+
   const seed = opts.seed ?? ctx.leadId ?? ctx.corretoraId ?? null;
   const variant = pickVariation(variations, seed);
   if (typeof variant !== "function") return null;
