@@ -14,6 +14,7 @@ const usersRepo = require("../../repositories/corretoraUsersRepository");
 const authService = require("../../services/corretoraAuthService");
 const resetTokens = require("../../services/passwordResetTokenService");
 const mailService = require("../../services/mailService");
+const { safeRateLimit } = require("../../lib/rateLimitHelpers");
 
 const SCOPE = "corretora_user";
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1h
@@ -26,7 +27,7 @@ const TOKEN_TTL_MS = 60 * 60 * 1000; // 1h
  * enumeração de usuários.
  */
 async function forgotPassword(req, res, next) {
-  const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
+  const rateLimit = safeRateLimit(req);
   const { email } = req.body;
 
   // Resposta genérica reutilizada para todos os caminhos (sucesso,
@@ -121,7 +122,7 @@ async function forgotPassword(req, res, next) {
  * antiga, é deslogado imediatamente.
  */
 async function resetPassword(req, res, next) {
-  const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
+  const rateLimit = safeRateLimit(req);
   const { token, senha } = req.body;
 
   try {

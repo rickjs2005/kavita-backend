@@ -74,6 +74,16 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
     // --- Throttle mock: dronesCommentThrottle ---
     const throttleMock = jest.fn((_req, _res, next) => next());
 
+    // --- CSRF mock ---
+    // POST /comentarios passa por validateCSRF (cookie auth → CSRF
+    // double-submit). Sem mockar, o middleware real rejeita supertest
+    // com 403 (FORBIDDEN). O teste 401 funciona porque verifyUser
+    // rejeita ANTES do CSRF, mas os demais (201/429/500) batem no
+    // CSRF e nunca chegam no controller. Mockar valida apenas o
+    // wiring do router — o comportamento real do CSRF é coberto pelo
+    // teste dedicado de csrfProtection.
+    const csrfMock = jest.fn((_req, _res, next) => next());
+
     // --- mediaService.upload mock (multer) ---
     // IMPORTANT: como não existe multer real rodando, req.body do multipart pode vir vazio.
     // Aqui simulamos que multer preenche req.body + req.files.
@@ -97,6 +107,11 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
     };
 
     // --- Controller mock ---
+    // Importante: precisa cobrir TODOS os handlers exportados pelo controller
+    // real, senão o `router.post("/leads", ..., controller.createLead)` recebe
+    // undefined e Express dispara "Route.post() requires a callback function
+    // but got a [object Undefined]" no carregamento do router (antes mesmo
+    // do primeiro request).
     const controllerMock = {
       getRoot: jest.fn(),
       listModels: jest.fn(),
@@ -106,6 +121,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
       listRepresentatives: jest.fn(),
       listApprovedComments: jest.fn(),
       createComment: jest.fn(),
+      createLead: jest.fn(),
     };
 
     // resolve absolute paths to match project imports
@@ -114,11 +130,13 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
     const pathVerifyUser = require.resolve("../../middleware/authenticateToken");
     const pathThrottle = require.resolve("../../middleware/dronesCommentThrottle");
     const pathMediaService = require.resolve("../../services/mediaService");
+    const pathCsrf = require.resolve("../../middleware/csrfProtection");
 
     jest.doMock(pathPool, () => poolMock, { virtual: false });
     jest.doMock(pathController, () => controllerMock, { virtual: false });
     jest.doMock(pathVerifyUser, () => verifyUserMock, { virtual: false });
     jest.doMock(pathThrottle, () => throttleMock, { virtual: false });
+    jest.doMock(pathCsrf, () => ({ validateCSRF: csrfMock }), { virtual: false });
     jest.doMock(
       pathMediaService,
       () => ({
@@ -139,6 +157,7 @@ describe("Public Drones routes (routes/publicDrones.js)", () => {
       throttleMock,
       uploadMock,
       controllerMock,
+      csrfMock,
     };
   }
 

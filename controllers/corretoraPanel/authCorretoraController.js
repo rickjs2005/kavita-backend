@@ -14,6 +14,7 @@ const mailService = require("../../services/mailService");
 const analyticsService = require("../../services/analyticsService");
 const auditLogsRepo = require("../../repositories/adminAuditLogsRepository");
 const logger = require("../../lib/logger");
+const { safeRateLimit } = require("../../lib/rateLimitHelpers");
 
 const COOKIE_NAME = "corretoraToken";
 
@@ -32,7 +33,7 @@ function getCookieOptions() {
  * Body validado por validate(corretoraLoginSchema).
  */
 async function login(req, res, next) {
-  const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
+  const rateLimit = safeRateLimit(req);
   const { email, senha } = req.body;
 
   try {
@@ -356,7 +357,7 @@ async function finalizeLogin({ req, res, user }) {
  * Em sucesso, emite o cookie corretoraToken normal + alerta IP.
  */
 async function verifyTotpStep(req, res, next) {
-  const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
+  const rateLimit = safeRateLimit(req);
   try {
     const { challenge_token: challengeToken, code } = req.body ?? {};
     const decoded = authService.verifyTotpChallengeToken(challengeToken);

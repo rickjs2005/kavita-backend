@@ -50,6 +50,31 @@ const jwt = require("jsonwebtoken");
 const SECRET = process.env.JWT_SECRET || "test-secret";
 
 // ---------------------------------------------------------------------------
+// Reset GLOBAL do pool entre TODOS os testes do arquivo.
+//
+// Causa raiz da contaminação:
+//   `jest.clearAllMocks()` (chamado em vários beforeEach abaixo) só limpa
+//   `mock.calls/instances/results` — NÃO esvazia a fila de
+//   `mockResolvedValueOnce` nem remove `mockResolvedValue` (sem Once).
+//   O teste "Persistent Lockout > login endpoint returns 429" usa
+//   `pool.query.mockResolvedValue(...)` (sem Once), o que deixa um retorno
+//   FIXO no mock que vaza pra todos os testes seguintes do mesmo arquivo.
+//   Resultado: no admin login subsequente, queries que deveriam retornar
+//   estados específicos (admin row, permissions, ultimo_login) recebem o
+//   user de lockout antigo, fazendo bcrypt.compare falhar e o fluxo
+//   tentar caminhos não previstos (incluindo timeout de 30s do
+//   requestTimeout em alguns paths).
+//
+// `mockReset` faz o que precisamos: apaga a fila Once + remove
+// implementações persistentes, mantendo o mock funcional como `jest.fn()`.
+const pool = require("../../config/pool");
+beforeEach(() => {
+  pool.query.mockReset();
+  pool.execute.mockReset();
+  pool.getConnection.mockReset();
+});
+
+// ---------------------------------------------------------------------------
 // 1. CSRF enforcement
 // ---------------------------------------------------------------------------
 describe("CSRF Enforcement", () => {

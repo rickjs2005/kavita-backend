@@ -11,6 +11,7 @@ const { response } = require("../../lib");
 const logger = require("../../lib/logger");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
+const { safeRateLimit } = require("../../lib/rateLimitHelpers");
 
 // Load speakeasy once at module load (optional dependency for MFA)
 let speakeasy = null;
@@ -30,7 +31,12 @@ function getAdminCookieOptions() {
 
 async function login(req, res, next) {
   const { email, senha } = req.body || {};
-  const rateLimit = req.rateLimit || { fail: () => {}, reset: () => {} };
+  // safeRateLimit cobre o caso em que `req.rateLimit` já foi setado por
+  // outro middleware (ex.: express-rate-limit) com um objeto truthy mas
+  // SEM `.fail()` / `.reset()`. O fallback `req.rateLimit || {...}` antigo
+  // falhava porque o `||` não detecta a ausência das funções dentro do
+  // objeto. Ver lib/rateLimitHelpers.js.
+  const rateLimit = safeRateLimit(req);
 
   if (!email || !senha) {
     rateLimit.fail();

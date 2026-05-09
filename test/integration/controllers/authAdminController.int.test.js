@@ -12,7 +12,17 @@
  * Regras do projeto:
  * - Sem MySQL real: mock de config/pool
  * - Sem bcrypt/jwt reais: mocks das libs
- * - Sem speakeasy instalado: mock com virtual: true
+ * - speakeasy: instalado em node_modules — mock SEM `virtual: true`. O
+ *   comentário antigo dizia "sem speakeasy instalado" + virtual:true,
+ *   mas o pacote existe. `virtual: true` para módulo existente é
+ *   inconsistente entre runs em paralelo: quando outro arquivo de
+ *   teste carrega o speakeasy real ANTES (ex.: security-p0.test.js
+ *   via require("../../server")), o resolver jest fixa o caminho
+ *   real e o doMock virtual deixa de aplicar — controller usa o
+ *   speakeasy real e o mockReturnValue(true) do teste é ignorado,
+ *   levando a `verify()` real falhar (TOTP não é "111111") e
+ *   loginMfa retornar 401. Sem `virtual: true` o doMock funciona
+ *   independente da ordem dos arquivos.
  * - AAA (Arrange → Act → Assert) em todos os testes
  * - jest.resetModules() por carregamento para isolar estado do módulo (mfaChallenges Map)
  * - Sem snapshots
@@ -101,7 +111,7 @@ function loadController() {
   jest.doMock("jsonwebtoken", () => mockJwt);
   jest.doMock("../../../security/accountLockout", () => mockLockout);
   jest.doMock("../../../services/adminLogs", () => mockAdminLogs);
-  jest.doMock("speakeasy", () => mockSpeakeasy, { virtual: true });
+  jest.doMock("speakeasy", () => mockSpeakeasy);
 
   const controller = require("../../../controllers/admin/authAdminController");
 
