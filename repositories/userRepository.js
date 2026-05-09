@@ -82,10 +82,13 @@ async function findUserByEmailOrCpf(email, cpf) {
  * @param {{ nome: string, email: string, senha: string, cpf?: string|null }} data
  */
 async function createUser({ nome, email, senha, cpf = null }) {
-  await pool.query(
+  const [result] = await pool.query(
     "INSERT INTO usuarios (nome, email, senha, cpf, cpf_hash) VALUES (?, ?, ?, ?, ?)",
     [nome, email, senha, encryptCPF(cpf), hashCPF(cpf)]
   );
+  // Retorna o id gerado para o caller (controller `register` usa para
+  // gravar evidência LGPD em `consents` com subject_id correto).
+  return result?.insertId ?? null;
 }
 
 /**

@@ -35,6 +35,22 @@ const registerSchema = z.object({
     (v) => (typeof v === "string" ? sanitizeCPF(v) : v),
     z.string().refine(isValidCPF, "CPF inválido.")
   ),
+  // LGPD — bloqueador go-live. Aceite obrigatório dos Termos de Uso e
+  // da Política de Privacidade. Frontend deve enviar `true` literal;
+  // qualquer outro valor é rejeitado. A evidência forense (versão + IP
+  // + user-agent + timestamp) vai para a tabela `consents` no controller.
+  aceite_termos: z.literal(true, {
+    errorMap: () => ({
+      message:
+        "Para continuar, é necessário aceitar os Termos de Uso e a Política de Privacidade.",
+    }),
+  }),
+  // Versões dos textos exibidos ao usuário no momento do submit.
+  // Hidden fields preenchidos pelo frontend a partir de
+  // `GET /api/public/legal/versions`. Backend grava o que veio aqui;
+  // se ausente, default p/ versões correntes do servidor (lib/legal/versions.js).
+  terms_version: z.string().trim().min(1).max(20).optional(),
+  privacy_version: z.string().trim().min(1).max(20).optional(),
 });
 
 // ---------------------------------------------------------------------------

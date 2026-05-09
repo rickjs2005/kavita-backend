@@ -149,6 +149,18 @@ const createLeadPublicSchema = z.object({
   ),
   mensagem: z.string().trim().max(1000).nullish(),
   origem: z.string().trim().max(60).nullish(),
+  // LGPD — visitante anônimo aceita Termos + Privacidade antes do
+  // disparo do WhatsApp. Importante para qualquer contato comercial
+  // posterior (proteção contra "spam não-solicitado") e para LGPD
+  // (base legal: consentimento, art. 7º, I).
+  aceite_termos: z.literal(true, {
+    errorMap: () => ({
+      message:
+        "Para enviar, é necessário aceitar os Termos de Uso e a Política de Privacidade.",
+    }),
+  }),
+  terms_version: z.string().trim().min(1).max(20).optional(),
+  privacy_version: z.string().trim().min(1).max(20).optional(),
 });
 
 /**

@@ -1,6 +1,7 @@
 // controllers/dronesPublicController.js
 const dronesService = require("../services/dronesService");
 const mediaService = require("../services/mediaService");
+const consentsService = require("../services/consentsService");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const { response } = require("../lib");
@@ -422,6 +423,21 @@ async function createLead(req, res, next) {
       ...bodyResult.data,
       ip: req.ip,
       user_agent: req.get("user-agent"),
+    });
+
+    // LGPD — registra evidência forense do aceite (visitante anônimo).
+    // Sem subject_email aqui (drones não pede email — só telefone).
+    // Best-effort: nunca bloqueia o lead em caso de falha no log.
+    await consentsService.record(req, {
+      subject_type: "drone_lead",
+      subject_id: typeof id === "number" ? id : null,
+      source: consentsService.SOURCES.DRONE_LEAD,
+      ...(bodyResult.data.terms_version
+        ? { terms_version: bodyResult.data.terms_version }
+        : {}),
+      ...(bodyResult.data.privacy_version
+        ? { privacy_version: bodyResult.data.privacy_version }
+        : {}),
     });
 
     return response.created(

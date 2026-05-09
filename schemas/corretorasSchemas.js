@@ -192,6 +192,24 @@ const submitCorretoraSchema = z
       .string({ required_error: "Confirmação de senha é obrigatória." })
       .min(8, "Confirmação deve ter pelo menos 8 caracteres.")
       .max(200),
+    // LGPD — bloqueador go-live. Aceite explícito de Termos de Uso da
+    // plataforma + Política de Privacidade. Evidência (versão + IP +
+    // UA + timestamp) gravada em `consents` pelo controller.
+    //
+    // Multipart/form-data (logo upload) entrega TUDO como string. Daí
+    // o preprocess que coage "true"/true → true e qualquer outra coisa
+    // → false antes do literal(true) validar.
+    aceite_termos: z.preprocess(
+      (v) => v === true || v === "true",
+      z.literal(true, {
+        errorMap: () => ({
+          message:
+            "Para concluir o cadastro, é necessário aceitar os Termos de Uso e a Política de Privacidade.",
+        }),
+      }),
+    ),
+    terms_version: z.string().trim().min(1).max(20).optional(),
+    privacy_version: z.string().trim().min(1).max(20).optional(),
   })
   .refine((data) => data.senha === data.senha_confirmacao, {
     message: "As senhas não coincidem.",

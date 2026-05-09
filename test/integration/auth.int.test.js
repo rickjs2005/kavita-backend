@@ -40,7 +40,9 @@ function setup({ authenticatedUser = null } = {}) {
   const userRepoMock = {
     findUserByEmail: jest.fn(),
     findUserByEmailOrCpf: jest.fn().mockResolvedValue([]),
-    createUser: jest.fn().mockResolvedValue(),
+    // createUser agora retorna insertId (número) — usado pelo controller
+    // para gravar evidência LGPD em `consents` com subject_id correto.
+    createUser: jest.fn().mockResolvedValue(42),
     incrementTokenVersion: jest.fn().mockResolvedValue(),
     updatePassword: jest.fn().mockResolvedValue(),
   };
@@ -251,8 +253,12 @@ describe("POST /api/users/register", () => {
       { email: "r@t.com", cpf: "99999999999" },
     ]);
 
+    // LGPD bloqueador go-live: registerSchema agora exige aceite_termos.
+    // Adicionado em todos os payloads abaixo. O backend valida com
+    // z.literal(true) e grava evidência forense em `consents`.
     const res = await request(app).post("/api/users/register").send({
       nome: "Rick", email: "r@t.com", senha: "12345678", cpf: "111.444.777-35",
+      aceite_termos: true,
     });
 
     expect(res.status).toBe(409);
@@ -268,6 +274,7 @@ describe("POST /api/users/register", () => {
 
     const res = await request(app).post("/api/users/register").send({
       nome: "Rick", email: "new@t.com", senha: "12345678", cpf: "111.444.777-35",
+      aceite_termos: true,
     });
 
     expect(res.status).toBe(409);
@@ -280,11 +287,39 @@ describe("POST /api/users/register", () => {
 
     const res = await request(app).post("/api/users/register").send({
       nome: "Rick", email: "r@t.com", senha: "12345678", cpf: "111.444.777-35",
+      aceite_termos: true,
     });
 
     expect(res.status).toBe(201);
     expect(res.body.ok).toBe(true);
     expect(userRepoMock.createUser).toHaveBeenCalled();
+  });
+
+  // ─── LGPD — testes específicos de aceite_termos ────────────────────────────
+  test("400: registro sem aceite_termos → VALIDATION_ERROR", async () => {
+    const { app, userRepoMock } = setup();
+    userRepoMock.findUserByEmailOrCpf.mockResolvedValue([]);
+
+    const res = await request(app).post("/api/users/register").send({
+      nome: "Rick", email: "r@t.com", senha: "12345678", cpf: "111.444.777-35",
+      // aceite_termos ausente
+    });
+
+    expect(res.status).toBe(400);
+    expect(userRepoMock.createUser).not.toHaveBeenCalled();
+  });
+
+  test("400: aceite_termos=false → VALIDATION_ERROR", async () => {
+    const { app, userRepoMock } = setup();
+    userRepoMock.findUserByEmailOrCpf.mockResolvedValue([]);
+
+    const res = await request(app).post("/api/users/register").send({
+      nome: "Rick", email: "r@t.com", senha: "12345678", cpf: "111.444.777-35",
+      aceite_termos: false,
+    });
+
+    expect(res.status).toBe(400);
+    expect(userRepoMock.createUser).not.toHaveBeenCalled();
   });
 });
 

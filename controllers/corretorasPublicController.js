@@ -11,6 +11,7 @@ const publicRepo = require("../repositories/corretorasPublicRepository");
 const slugHistoryRepo = require("../repositories/corretoraSlugHistoryRepository");
 const corretorasService = require("../services/corretorasService");
 const mediaService = require("../services/mediaService");
+const consentsService = require("../services/consentsService");
 const {
   listPublicQuerySchema,
 } = require("../schemas/corretorasSchemas");
@@ -97,6 +98,18 @@ const submitCorretora = async (req, res, next) => {
     }
 
     const { id } = await corretorasService.createSubmission(data);
+
+    // LGPD — registra evidência forense do aceite de Termos + Privacidade.
+    // Best-effort: nunca bloqueia o cadastro por causa de erro no log.
+    // O aceite em si já foi validado pelo schema (aceite_termos === true).
+    await consentsService.record(req, {
+      subject_type: "corretora",
+      subject_id: typeof id === "number" ? id : null,
+      subject_email: data.email || null,
+      source: consentsService.SOURCES.CORRETORA_SIGNUP,
+      ...(data.terms_version ? { terms_version: data.terms_version } : {}),
+      ...(data.privacy_version ? { privacy_version: data.privacy_version } : {}),
+    });
 
     return response.created(
       res,

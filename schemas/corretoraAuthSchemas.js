@@ -264,6 +264,13 @@ const createLeadSchema = z.object({
     .max(500)
     .optional()
     .nullable(),
+  // LGPD — versões dos termos exibidos ao produtor no momento do
+  // submit. Hidden fields preenchidos pelo frontend a partir de
+  // GET /api/public/legal/versions. Backend grava em `consents` com
+  // estas versões; se ausentes, defaults internos (lib/legal/versions.js)
+  // são aplicados.
+  terms_version: z.string().trim().min(1).max(20).optional(),
+  privacy_version: z.string().trim().min(1).max(20).optional(),
 });
 
 // ---------------------------------------------------------------------------

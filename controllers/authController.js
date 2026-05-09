@@ -6,6 +6,7 @@ const passwordResetTokens = require("../services/passwordResetTokenService");
 const { sendResetPasswordEmail } = require("../services/mailService");
 const { assertNotLocked, incrementFailure, resetFailures, syncFromRedis } = require("../security/accountLockout");
 const userRepo = require("../repositories/userRepository");
+const consentsService = require("../services/consentsService");
 
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
@@ -100,8 +101,11 @@ const login = async (req, res, next) => {
 };
 
 const register = async (req, res, next) => {
-  // cpf is already sanitized (digits-only) by registerSchema preprocess
-  const { nome, email, senha, cpf } = req.body;
+  // cpf is already sanitized (digits-only) by registerSchema preprocess.
+  // aceite_termos é obrigatório (validado por registerSchema). As versões
+  // são opcionais — backend grava as versões correntes (lib/legal/versions.js)
+  // se o frontend não enviou hidden fields.
+  const { nome, email, senha, cpf, terms_version, privacy_version } = req.body;
 
   try {
     const existing = await userRepo.findUserByEmailOrCpf(email, cpf);
@@ -120,7 +124,21 @@ const register = async (req, res, next) => {
     }
 
     const hashed = await bcrypt.hash(senha, 10);
-    await userRepo.createUser({ nome, email, senha: hashed, cpf });
+    const newUserId = await userRepo.createUser({ nome, email, senha: hashed, cpf });
+
+    // LGPD — registra evidência forense do aceite de termos. Best-effort
+    // (não bloqueia o cadastro se o INSERT em `consents` falhar; o aceite
+    // já foi validado pelo schema).
+    await consentsService.record(req, {
+      subject_type: "user",
+      subject_id: typeof newUserId === "number" ? newUserId : null,
+      subject_email: email,
+      source: consentsService.SOURCES.USER_REGISTER,
+      // Se o frontend mandou versões, respeitar. Caso contrário, o service
+      // aplica as versões correntes do servidor.
+      ...(terms_version ? { terms_version } : {}),
+      ...(privacy_version ? { privacy_version } : {}),
+    });
 
     return response.created(res, null, "Conta criada com sucesso! Faça login para continuar.");
   } catch (error) {

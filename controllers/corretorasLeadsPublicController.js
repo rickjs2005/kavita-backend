@@ -8,6 +8,7 @@ const { response } = require("../lib");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const leadsService = require("../services/corretoraLeadsService");
+const consentsService = require("../services/consentsService");
 
 /**
  * POST /api/public/corretoras/:slug/leads
@@ -46,6 +47,19 @@ async function submitLead(req, res, next) {
         userAgent: req.get("user-agent")?.slice(0, 500) || null,
       },
     });
+
+    // LGPD — registra evidência forense do aceite (consentimento_contato
+    // já é obrigatório no schema do lead há tempos). Lead público é
+    // anônimo (sem subject_id de usuário); usamos email como correlator.
+    // Best-effort — não bloqueia o lead em caso de falha no log.
+    if (!result.deduplicated && req.body?.consentimento_contato === true) {
+      await consentsService.record(req, {
+        subject_type: "corretora_lead",
+        subject_id: typeof result.id === "number" ? result.id : null,
+        subject_email: req.body?.email || null,
+        source: consentsService.SOURCES.CORRETORA_LEAD,
+      });
+    }
 
     const msg = result.deduplicated
       ? "Já recebemos seu contato recentemente — a corretora foi avisada de que você voltou a chamar e retorna em breve."
