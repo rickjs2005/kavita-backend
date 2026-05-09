@@ -45,15 +45,19 @@ function runStep(command, args, stepName) {
 async function main() {
   const start = Date.now();
   log(`NODE_ENV=${process.env.NODE_ENV ?? "undefined"}`);
-  // DEBUG temporário — confirma que envs do Railway chegaram ao processo.
-  // Remover após resolver o boot. Mostra ÚLTIMOS 4 chars das sensíveis,
-  // valores literais das não-sensíveis.
-  log(`[debug] DB_HOST=${process.env.DB_HOST ?? "MISSING"}`);
-  log(`[debug] DB_PORT=${process.env.DB_PORT ?? "MISSING"}`);
-  log(`[debug] DB_USER=${process.env.DB_USER ?? "MISSING"}`);
-  log(`[debug] DB_NAME=${process.env.DB_NAME ?? "MISSING"}`);
-  log(`[debug] DB_PASSWORD_len=${(process.env.DB_PASSWORD ?? "").length}`);
-  log(`[debug] JWT_SECRET_len=${(process.env.JWT_SECRET ?? "").length}`);
+  // Em produção não imprimimos os envs sensíveis (DB_*, JWT_SECRET_len etc).
+  // Mesmo "_len" e nomes de host vazam topologia útil para um atacante com
+  // acesso ao agregador de logs. Em dev/test mantemos o diagnóstico.
+  if (process.env.NODE_ENV !== "production") {
+    log(`[debug] DB_HOST=${process.env.DB_HOST ?? "MISSING"}`);
+    log(`[debug] DB_PORT=${process.env.DB_PORT ?? "MISSING"}`);
+    log(`[debug] DB_USER=${process.env.DB_USER ?? "MISSING"}`);
+    log(`[debug] DB_NAME=${process.env.DB_NAME ?? "MISSING"}`);
+    log(`[debug] DB_PASSWORD_len=${(process.env.DB_PASSWORD ?? "").length}`);
+    log(`[debug] JWT_SECRET_len=${(process.env.JWT_SECRET ?? "").length}`);
+  } else {
+    log("envs sensíveis omitidas (NODE_ENV=production)");
+  }
 
   if (process.env.SKIP_DB_MIGRATE === "1") {
     log("SKIP_DB_MIGRATE=1 — pulando migrations (deploy de emergência).");
