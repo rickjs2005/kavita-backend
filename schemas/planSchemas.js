@@ -96,6 +96,17 @@ const adminAssignSubscriptionBodySchema = z
     source: z
       .enum(["manual_admin", "commercial_contract", "checkout"])
       .optional(),
+    // Motivo da alteração feita pelo admin. Vai parar no meta do
+    // subscription_events (auditoria financeira / churn analytics)
+    // e no audit_log. Evita "alteração silenciosa" — admin é
+    // obrigado a justificar quando mudar plano/status.
+    reason: z
+      .string()
+      .trim()
+      .min(3, "Motivo muito curto.")
+      .max(500, "Motivo muito longo (máx 500 caracteres).")
+      .optional()
+      .nullable(),
     meta: z.record(z.unknown()).optional(),
   })
   .strip();

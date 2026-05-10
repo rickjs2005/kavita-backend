@@ -9,8 +9,10 @@ const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const plansRepo = require("../../repositories/plansRepository");
 const subsRepo = require("../../repositories/subscriptionsRepository");
+const eventsRepo = require("../../repositories/subscriptionEventsRepository");
 const promosRepo = require("../../repositories/cityPromotionsRepository");
 const planService = require("../../services/planService");
+const logger = require("../../lib/logger");
 const broadcastTokens = require("../../lib/broadcastPreviewTokens");
 
 // ─── Plans ──────────────────────────────────────────────────────────────────
@@ -354,9 +356,84 @@ async function updateCorretoraSubscription(req, res, next) {
       targetId: corretoraId,
       meta:
         diff.changed_fields.length > 0
-          ? diff
-          : { patch }, // fallback quando diff está vazio (ex.: noop)
+          ? { ...diff, reason: body.reason ?? null }
+          : { patch, reason: body.reason ?? null }, // fallback quando diff vazio (ex.: noop)
     });
+
+    // Append-only no subscription_events sempre que mudar plano ou
+    // status — é o que alimenta a timeline do painel da corretora e a
+    // análise financeira de churn. Ajuste em datas/notas só vai pro
+    // audit_log, sem poluir a timeline.
+    //
+    // Convenções de event_type (alinhadas com planService.assignPlan):
+    //   - upgraded       : plano novo com price_cents > anterior
+    //   - downgraded     : plano novo com price_cents < anterior
+    //   - status_changed : mesmo plano, status diferente
+    //
+    // Roda fora da transação (best-effort) — falha de evento não
+    // reverte a edição que o admin acabou de salvar.
+    const planChanged = current.plan_id !== updated.plan_id;
+    const statusChanged = current.status !== updated.status;
+    if (planChanged || statusChanged) {
+      let toPlan = null;
+      let fromPlan = null;
+      try {
+        if (planChanged) {
+          [toPlan, fromPlan] = await Promise.all([
+            plansRepo.findById(updated.plan_id).catch(() => null),
+            plansRepo.findById(current.plan_id).catch(() => null),
+          ]);
+        }
+      } catch (err) {
+        logger.warn(
+          { err, corretoraId, subscriptionId: current.id },
+          "subscription.update.plan_lookup_failed",
+        );
+      }
+
+      let eventType = "status_changed";
+      if (planChanged) {
+        const fromPrice = Number(fromPlan?.price_cents ?? current.monthly_price_cents ?? 0);
+        const toPrice = Number(toPlan?.price_cents ?? updated.monthly_price_cents ?? 0);
+        eventType = toPrice >= fromPrice ? "upgraded" : "downgraded";
+      }
+
+      eventsRepo
+        .create({
+          corretora_id: corretoraId,
+          subscription_id: updated.id,
+          event_type: eventType,
+          from_plan_id: current.plan_id ?? null,
+          to_plan_id: updated.plan_id ?? null,
+          from_status: current.status ?? null,
+          to_status: updated.status ?? null,
+          plan_snapshot: toPlan
+            ? {
+                id: toPlan.id,
+                slug: toPlan.slug,
+                name: toPlan.name,
+                price_cents: toPlan.price_cents ?? null,
+                billing_cycle: toPlan.billing_cycle ?? null,
+              }
+            : null,
+          meta: {
+            source: body.source ?? "manual_admin",
+            reason: body.reason ?? null,
+            edited_by_admin_id: req.admin?.id ?? null,
+            edited_by_admin_nome: req.admin?.nome ?? null,
+            edited_at: new Date().toISOString(),
+          },
+          actor_type: "admin",
+          actor_id: req.admin?.id ?? null,
+        })
+        .catch((err) =>
+          logger.warn(
+            { err, corretoraId, subscriptionId: updated.id },
+            "subscription.update.event_failed",
+          ),
+        );
+    }
+
     response.ok(res, updated, "Assinatura atualizada.");
   } catch (err) {
     next(err);
