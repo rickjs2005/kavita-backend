@@ -30,27 +30,40 @@ afterEach(() => console.error.mockRestore());
 
 describe("newsWhatsappController", () => {
   describe("subscribe", () => {
-    test("created=true on first subscription", async () => {
+    const baseSubscriber = {
+      id: 7,
+      phone: "31999991234",
+      status: "pending",
+      confirm_token: "a".repeat(64),
+    };
+
+    test("created=true on first subscription, includes optin link + token + short code", async () => {
       service.createOrReturn.mockResolvedValue({
-        subscriber: { id: 7, phone: "31999991234", status: "pending" },
+        subscriber: baseSubscriber,
         created: true,
+        optinLink: "https://wa.me/5531999990000?text=...",
+        shortCode: "AAAAAAAA",
       });
       await ctrl.subscribe(
         makeReq({ body: { phone: "31999991234", source: "home_news" } }),
         makeRes(),
         makeNext(),
       );
-      expect(response.ok).toHaveBeenCalled();
       const [, payload, message] = response.ok.mock.calls[0];
       expect(payload.created).toBe(true);
       expect(payload.id).toBe(7);
+      expect(payload.confirm_token).toHaveLength(64);
+      expect(payload.short_code).toBe("AAAAAAAA");
+      expect(payload.whatsapp_optin_link).toMatch(/^https:\/\/wa\.me/);
       expect(message).toMatch(/registrada/i);
     });
 
-    test("created=false when already subscribed", async () => {
+    test("created=false when already subscribed (still returns link)", async () => {
       service.createOrReturn.mockResolvedValue({
-        subscriber: { id: 7, phone: "31999991234", status: "active" },
+        subscriber: { ...baseSubscriber, status: "active" },
         created: false,
+        optinLink: "https://wa.me/5531999990000?text=...",
+        shortCode: "AAAAAAAA",
       });
       await ctrl.subscribe(
         makeReq({ body: { phone: "31999991234" } }),
@@ -59,12 +72,15 @@ describe("newsWhatsappController", () => {
       );
       const [, payload] = response.ok.mock.calls[0];
       expect(payload.created).toBe(false);
+      expect(payload.whatsapp_optin_link).toBeTruthy();
     });
 
     test("captures IP and user-agent (truncated to 255)", async () => {
       service.createOrReturn.mockResolvedValue({
-        subscriber: { id: 1, phone: "31999991234", status: "pending" },
+        subscriber: baseSubscriber,
         created: true,
+        optinLink: null,
+        shortCode: null,
       });
       const longUA = "x".repeat(400);
       await ctrl.subscribe(
@@ -86,6 +102,152 @@ describe("newsWhatsappController", () => {
         next,
       );
       expect(next.mock.calls[0][0]).toBeInstanceOf(AppError);
+    });
+  });
+
+  describe("confirm", () => {
+    const validToken = "a".repeat(64);
+
+    test("confirms pending → active", async () => {
+      service.confirmByToken.mockResolvedValue({
+        ok: true,
+        alreadyActive: false,
+        status: "active",
+      });
+      await ctrl.confirm(
+        makeReq({ body: { token: validToken } }),
+        makeRes(),
+        makeNext(),
+      );
+      const [, payload, message] = response.ok.mock.calls[0];
+      expect(payload.status).toBe("active");
+      expect(payload.alreadyActive).toBe(false);
+      expect(message).toMatch(/confirmada/i);
+    });
+
+    test("idempotent — already active", async () => {
+      service.confirmByToken.mockResolvedValue({
+        ok: true,
+        alreadyActive: true,
+        status: "active",
+      });
+      await ctrl.confirm(
+        makeReq({ body: { token: validToken } }),
+        makeRes(),
+        makeNext(),
+      );
+      const [, payload, message] = response.ok.mock.calls[0];
+      expect(payload.alreadyActive).toBe(true);
+      expect(message).toMatch(/ja estava/i);
+    });
+
+    test("token NOT_FOUND → 404", async () => {
+      service.confirmByToken.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
+      const next = makeNext();
+      await ctrl.confirm(makeReq({ body: { token: validToken } }), makeRes(), next);
+      expect(next.mock.calls[0][0].code).toBe("NOT_FOUND");
+    });
+
+    test("subscriber UNSUBSCRIBED → 409 CONFLICT (no auto-reactivation)", async () => {
+      service.confirmByToken.mockResolvedValue({ ok: false, code: "UNSUBSCRIBED" });
+      const next = makeNext();
+      await ctrl.confirm(makeReq({ body: { token: validToken } }), makeRes(), next);
+      expect(next.mock.calls[0][0].code).toBe("CONFLICT");
+      expect(next.mock.calls[0][0].status).toBe(409);
+    });
+  });
+
+  describe("unsubscribe", () => {
+    const validToken = "b".repeat(64);
+
+    test("opts out — first time", async () => {
+      service.unsubscribeByToken.mockResolvedValue({
+        ok: true,
+        alreadyUnsubscribed: false,
+        status: "unsubscribed",
+      });
+      await ctrl.unsubscribe(
+        makeReq({ body: { token: validToken } }),
+        makeRes(),
+        makeNext(),
+      );
+      const [, payload, message] = response.ok.mock.calls[0];
+      expect(payload.status).toBe("unsubscribed");
+      expect(payload.alreadyUnsubscribed).toBe(false);
+      expect(message).toMatch(/cancelada/i);
+    });
+
+    test("idempotent — already unsubscribed", async () => {
+      service.unsubscribeByToken.mockResolvedValue({
+        ok: true,
+        alreadyUnsubscribed: true,
+        status: "unsubscribed",
+      });
+      await ctrl.unsubscribe(
+        makeReq({ body: { token: validToken } }),
+        makeRes(),
+        makeNext(),
+      );
+      const [, , message] = response.ok.mock.calls[0];
+      expect(message).toMatch(/ja estava/i);
+    });
+
+    test("token NOT_FOUND → 404", async () => {
+      service.unsubscribeByToken.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
+      const next = makeNext();
+      await ctrl.unsubscribe(makeReq({ body: { token: validToken } }), makeRes(), next);
+      expect(next.mock.calls[0][0].code).toBe("NOT_FOUND");
+    });
+  });
+
+  describe("adminUpdateStatus", () => {
+    test("forwards id + status + adminId to service", async () => {
+      service.updateStatusByAdmin.mockResolvedValue({
+        ok: true,
+        subscriber: { id: 7, status: "active" },
+      });
+      await ctrl.adminUpdateStatus(
+        makeReq({
+          params: { id: 7 },
+          body: { status: "active" },
+          adminUser: { id: 99 },
+        }),
+        makeRes(),
+        makeNext(),
+      );
+      expect(service.updateStatusByAdmin).toHaveBeenCalledWith({
+        id: 7,
+        status: "active",
+        adminId: 99,
+      });
+    });
+
+    test("404 when service returns NOT_FOUND", async () => {
+      service.updateStatusByAdmin.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
+      const next = makeNext();
+      await ctrl.adminUpdateStatus(
+        makeReq({ params: { id: 999 }, body: { status: "active" } }),
+        makeRes(),
+        next,
+      );
+      expect(next.mock.calls[0][0].code).toBe("NOT_FOUND");
+    });
+
+    test("falls back to req.user.id when adminUser is missing", async () => {
+      service.updateStatusByAdmin.mockResolvedValue({
+        ok: true,
+        subscriber: { id: 7, status: "active" },
+      });
+      await ctrl.adminUpdateStatus(
+        makeReq({
+          params: { id: 7 },
+          body: { status: "active" },
+          user: { id: 5 },
+        }),
+        makeRes(),
+        makeNext(),
+      );
+      expect(service.updateStatusByAdmin.mock.calls[0][0].adminId).toBe(5);
     });
   });
 

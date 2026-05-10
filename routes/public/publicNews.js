@@ -6,7 +6,11 @@ const newsPublicController = require("../../controllers/newsPublicController");
 const newsWhatsappController = require("../../controllers/newsWhatsappController");
 const { validate } = require("../../middleware/validate");
 const { newsWhatsappLimiter } = require("../../middleware/absoluteRateLimit");
-const { subscribeBodySchema } = require("../../schemas/newsWhatsappSchemas");
+const {
+  subscribeBodySchema,
+  confirmBodySchema,
+  unsubscribeBodySchema,
+} = require("../../schemas/newsWhatsappSchemas");
 
 /**
  * @openapi
@@ -270,6 +274,65 @@ router.post(
   newsWhatsappLimiter,
   validate(subscribeBodySchema),
   newsWhatsappController.subscribe,
+);
+
+/**
+ * @openapi
+ * /api/news/whatsapp-confirm:
+ *   post:
+ *     tags: [Kavita News (Public)]
+ *     summary: Confirma opt-in via token retornado no subscribe
+ *     description: |
+ *       Promove pending → active. Idempotente. Rate-limit 5/min/IP.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token: { type: string }
+ *     responses:
+ *       200: { description: "Confirmado (ou ja estava active)" }
+ *       404: { description: "Token nao encontrado" }
+ *       409: { description: "Subscriber em opt-out — exige reativacao manual" }
+ *       429: { description: "Rate limit excedido" }
+ */
+router.post(
+  "/whatsapp-confirm",
+  newsWhatsappLimiter,
+  validate(confirmBodySchema),
+  newsWhatsappController.confirm,
+);
+
+/**
+ * @openapi
+ * /api/news/whatsapp-unsubscribe:
+ *   post:
+ *     tags: [Kavita News (Public)]
+ *     summary: Opt-out via token
+ *     description: |
+ *       Marca como unsubscribed. Idempotente. Rate-limit 5/min/IP.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token: { type: string }
+ *     responses:
+ *       200: { description: "Opt-out registrado" }
+ *       404: { description: "Token nao encontrado" }
+ *       429: { description: "Rate limit excedido" }
+ */
+router.post(
+  "/whatsapp-unsubscribe",
+  newsWhatsappLimiter,
+  validate(unsubscribeBodySchema),
+  newsWhatsappController.unsubscribe,
 );
 
 module.exports = router;

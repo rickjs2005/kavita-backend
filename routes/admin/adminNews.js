@@ -7,7 +7,11 @@ const { validate } = require("../../middleware/validate");
 const { createClimaBodySchema, updateClimaBodySchema } = require("../../schemas/climaSchemas");
 const { createCotacaoBodySchema, updateCotacaoBodySchema } = require("../../schemas/cotacoesSchemas");
 const { PostIdParamSchema, CreatePostSchema, UpdatePostSchema } = require("../../schemas/newsSchemas");
-const { listSubscribersQuerySchema } = require("../../schemas/newsWhatsappSchemas");
+const {
+  listSubscribersQuerySchema,
+  adminSubscriberIdParamSchema,
+  adminUpdateStatusBodySchema,
+} = require("../../schemas/newsWhatsappSchemas");
 
 router.use("/upload", adminNewsUploadRoutes);
 
@@ -45,6 +49,16 @@ router.get(
   "/whatsapp-subscribers",
   validate(listSubscribersQuerySchema, "query"),
   newsWhatsappController.listSubscribers,
+);
+
+// PATCH manual de status — usado quando o admin recebe a mensagem de opt-in
+// pelo proprio WhatsApp e marca active na mao. Tambem cobre reativacao
+// pos-opt-out (LGPD: so via admin, nao por link publico).
+router.patch(
+  "/whatsapp-subscribers/:id/status",
+  validate(adminSubscriberIdParamSchema, "params"),
+  validate(adminUpdateStatusBodySchema),
+  newsWhatsappController.adminUpdateStatus,
 );
 
 module.exports = router;

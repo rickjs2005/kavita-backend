@@ -53,7 +53,7 @@ const subscribe = async (req, res, next) => {
     // Trunca user-agent para caber no varchar(255) sem 500 silencioso.
     const user_agent = ua && ua.length > 255 ? ua.slice(0, 255) : ua;
 
-    const { subscriber, created } = await service.createOrReturn({
+    const { subscriber, created, optinLink, shortCode } = await service.createOrReturn({
       phone,
       source,
       ip,
@@ -67,8 +67,14 @@ const subscribe = async (req, res, next) => {
         phone: subscriber.phone,
         status: subscriber.status,
         created,
+        // Token e link de opt-in. NUNCA expomos o phone do admin no frontend
+        // alem do que o usuario digitou; o link wa.me ja contem o numero
+        // da Kavita encodado pela env KAVITA_WHATSAPP_NUMBER.
+        confirm_token: subscriber.confirm_token || null,
+        short_code: shortCode || null,
+        whatsapp_optin_link: optinLink || null,
       },
-      created ? "Inscricao registrada." : "Voce ja esta inscrito.",
+      created ? "Inscricao registrada." : "Voce ja esta na lista.",
     );
   } catch (error) {
     console.error("newsWhatsappController.subscribe:", error);
@@ -78,6 +84,191 @@ const subscribe = async (req, res, next) => {
         ERROR_CODES.SERVER_ERROR,
         500,
       ),
+    );
+  }
+};
+
+/* =========================================================
+ * PUBLIC - POST /api/news/whatsapp-confirm
+ * ========================================================= */
+
+/**
+ * @openapi
+ * /api/news/whatsapp-confirm:
+ *   post:
+ *     tags:
+ *       - Kavita News (Public)
+ *     summary: Confirma opt-in via token
+ *     description: |
+ *       Promove o subscriber de pending para active. Idempotente: se ja active,
+ *       responde 200 com `alreadyActive=true`. Se o token pertencer a um
+ *       subscriber que pediu opt-out, responde 410 (GONE) — reativacao apos
+ *       opt-out exige acao manual do admin.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token: { type: string, example: "abc123..." }
+ *     responses:
+ *       200: { description: "Confirmado (ou ja estava active)" }
+ *       404: { description: "Token nao encontrado" }
+ *       410: { description: "Subscriber ja optou por sair (unsubscribed)" }
+ *       429: { description: "Rate limit excedido" }
+ */
+const confirm = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    const result = await service.confirmByToken(token);
+
+    if (!result.ok) {
+      if (result.code === "NOT_FOUND") {
+        return next(
+          new AppError("Token nao encontrado.", ERROR_CODES.NOT_FOUND, 404),
+        );
+      }
+      if (result.code === "UNSUBSCRIBED") {
+        return next(
+          new AppError(
+            "Inscricao foi cancelada anteriormente. Reativacao precisa ser feita pelo admin.",
+            ERROR_CODES.CONFLICT,
+            409,
+          ),
+        );
+      }
+      return next(
+        new AppError(
+          "Nao foi possivel confirmar.",
+          ERROR_CODES.SERVER_ERROR,
+          500,
+        ),
+      );
+    }
+
+    return response.ok(
+      res,
+      { status: result.status, alreadyActive: result.alreadyActive },
+      result.alreadyActive
+        ? "Voce ja estava confirmado."
+        : "Inscricao confirmada — voce esta no canal.",
+    );
+  } catch (error) {
+    console.error("newsWhatsappController.confirm:", error);
+    return next(
+      new AppError("Erro ao confirmar.", ERROR_CODES.SERVER_ERROR, 500),
+    );
+  }
+};
+
+/* =========================================================
+ * PUBLIC - POST /api/news/whatsapp-unsubscribe
+ * ========================================================= */
+
+/**
+ * @openapi
+ * /api/news/whatsapp-unsubscribe:
+ *   post:
+ *     tags:
+ *       - Kavita News (Public)
+ *     summary: Opt-out via token
+ *     description: |
+ *       Marca como unsubscribed. Idempotente — chamadas repetidas nao falham.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token: { type: string }
+ *     responses:
+ *       200: { description: "Opt-out registrado (ou ja estava)" }
+ *       404: { description: "Token nao encontrado" }
+ *       429: { description: "Rate limit excedido" }
+ */
+const unsubscribe = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    const result = await service.unsubscribeByToken(token);
+
+    if (!result.ok) {
+      return next(
+        new AppError("Token nao encontrado.", ERROR_CODES.NOT_FOUND, 404),
+      );
+    }
+
+    return response.ok(
+      res,
+      { status: result.status, alreadyUnsubscribed: result.alreadyUnsubscribed },
+      result.alreadyUnsubscribed
+        ? "Voce ja estava fora do canal."
+        : "Inscricao cancelada — voce nao recebera mais alertas.",
+    );
+  } catch (error) {
+    console.error("newsWhatsappController.unsubscribe:", error);
+    return next(
+      new AppError("Erro ao processar opt-out.", ERROR_CODES.SERVER_ERROR, 500),
+    );
+  }
+};
+
+/* =========================================================
+ * ADMIN - PATCH /api/admin/news/whatsapp-subscribers/:id/status
+ * ========================================================= */
+
+/**
+ * @openapi
+ * /api/admin/news/whatsapp-subscribers/{id}/status:
+ *   patch:
+ *     tags: [Kavita News (Admin)]
+ *     summary: Muda o status de um subscriber manualmente (admin)
+ *     description: |
+ *       Usado quando o admin recebe a mensagem de opt-in pelo proprio
+ *       WhatsApp e marca como active manualmente. Tambem permite reativar
+ *       um subscriber que tinha pedido opt-out (LGPD: so via admin).
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string, enum: [pending, active, unsubscribed] }
+ *     responses:
+ *       200: { description: "Status atualizado" }
+ *       401: { description: "Nao autenticado" }
+ *       404: { description: "Subscriber nao encontrado" }
+ */
+const adminUpdateStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params; // ja coerced pelo schema
+    const { status } = req.body;
+    const adminId = req.adminUser?.id || req.user?.id || null;
+
+    const result = await service.updateStatusByAdmin({ id, status, adminId });
+    if (!result.ok) {
+      return next(
+        new AppError("Subscriber nao encontrado.", ERROR_CODES.NOT_FOUND, 404),
+      );
+    }
+
+    return response.ok(res, result.subscriber, "Status atualizado.");
+  } catch (error) {
+    console.error("newsWhatsappController.adminUpdateStatus:", error);
+    return next(
+      new AppError("Erro ao atualizar status.", ERROR_CODES.SERVER_ERROR, 500),
     );
   }
 };
@@ -130,5 +321,8 @@ const listSubscribers = async (req, res, next) => {
 
 module.exports = {
   subscribe,
+  confirm,
+  unsubscribe,
   listSubscribers,
+  adminUpdateStatus,
 };

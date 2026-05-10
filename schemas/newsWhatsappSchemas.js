@@ -46,6 +46,28 @@ const subscribeBodySchema = z.object({
     .transform((v) => (v && v.length > 0 ? v : "home_news")),
 });
 
+/** Token opaco gerado por crypto.randomBytes(32).toString("hex") = 64 hex chars. */
+const confirmTokenSchema = z
+  .string({ required_error: "Token é obrigatório." })
+  .trim()
+  .regex(/^[a-f0-9]{64}$/i, "Token inválido.");
+
+const confirmBodySchema = z.object({
+  token: confirmTokenSchema,
+});
+
+const unsubscribeBodySchema = z.object({
+  token: confirmTokenSchema,
+});
+
+const adminSubscriberIdParamSchema = z.object({
+  id: z.coerce.number().int().positive(),
+});
+
+const adminUpdateStatusBodySchema = z.object({
+  status: z.enum(["pending", "active", "unsubscribed"]),
+});
+
 const listSubscribersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
   offset: z.coerce.number().int().min(0).optional().default(0),
@@ -54,6 +76,10 @@ const listSubscribersQuerySchema = z.object({
 
 module.exports = {
   subscribeBodySchema,
+  confirmBodySchema,
+  unsubscribeBodySchema,
+  adminSubscriberIdParamSchema,
+  adminUpdateStatusBodySchema,
   listSubscribersQuerySchema,
   // export helper para uso em testes
   digitsOnly,

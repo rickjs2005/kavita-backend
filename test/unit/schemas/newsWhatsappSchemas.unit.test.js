@@ -103,4 +103,63 @@ describe("newsWhatsappSchemas", () => {
       expect(r.data.status).toBe("active");
     });
   });
+
+  describe("confirmBodySchema / unsubscribeBodySchema", () => {
+    const {
+      confirmBodySchema,
+      unsubscribeBodySchema,
+    } = require("../../../schemas/newsWhatsappSchemas");
+    const validToken = "a".repeat(64);
+
+    test("accepts 64-char hex token", () => {
+      expect(confirmBodySchema.safeParse({ token: validToken }).success).toBe(true);
+      expect(unsubscribeBodySchema.safeParse({ token: validToken }).success).toBe(true);
+    });
+
+    test("accepts uppercase hex", () => {
+      const t = "A".repeat(64);
+      expect(confirmBodySchema.safeParse({ token: t }).success).toBe(true);
+    });
+
+    test("rejects too short", () => {
+      expect(confirmBodySchema.safeParse({ token: "abc" }).success).toBe(false);
+    });
+
+    test("rejects non-hex chars", () => {
+      const t = "g".repeat(64);
+      expect(confirmBodySchema.safeParse({ token: t }).success).toBe(false);
+    });
+
+    test("missing token fails", () => {
+      expect(confirmBodySchema.safeParse({}).success).toBe(false);
+    });
+  });
+
+  describe("adminUpdateStatusBodySchema", () => {
+    const {
+      adminUpdateStatusBodySchema,
+      adminSubscriberIdParamSchema,
+    } = require("../../../schemas/newsWhatsappSchemas");
+
+    test("accepts valid statuses", () => {
+      for (const s of ["pending", "active", "unsubscribed"]) {
+        expect(adminUpdateStatusBodySchema.safeParse({ status: s }).success).toBe(true);
+      }
+    });
+
+    test("rejects unknown status", () => {
+      expect(adminUpdateStatusBodySchema.safeParse({ status: "deleted" }).success).toBe(false);
+    });
+
+    test("id param coerces from string", () => {
+      const r = adminSubscriberIdParamSchema.safeParse({ id: "42" });
+      expect(r.success).toBe(true);
+      expect(r.data.id).toBe(42);
+    });
+
+    test("id param rejects negative", () => {
+      const r = adminSubscriberIdParamSchema.safeParse({ id: -1 });
+      expect(r.success).toBe(false);
+    });
+  });
 });
