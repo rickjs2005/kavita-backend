@@ -96,6 +96,40 @@ router.get("/cotacoes", newsPublicController.listCotacoes);
 
 /**
  * @openapi
+ * /api/news/cotacoes/history-batch:
+ *   get:
+ *     tags:
+ *       - Kavita News (Public)
+ *     summary: Histórico em lote (até 12 cotações)
+ *     description: |
+ *       Retorna o histórico de várias cotações em uma única requisição.
+ *       Usado pelo painel "Cotações em tempo real" da home /news para
+ *       desenhar sparklines sem precisar fazer N requisições.
+ *     parameters:
+ *       - in: query
+ *         name: slugs
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: "Slugs separados por vírgula (ex: cafe-arabica,soja,milho). Máx 12."
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 24
+ *         description: "Pontos por slug (1-50). Default 24."
+ *     responses:
+ *       200:
+ *         description: "Mapa { slug: [pontos...] }"
+ *       400:
+ *         description: Parâmetros inválidos
+ *       500:
+ *         description: Erro interno
+ */
+router.get("/cotacoes/history-batch", newsPublicController.getCotacoesHistoryBatch);
+
+/**
+ * @openapi
  * /api/news/cotacoes/{slug}:
  *   get:
  *     tags:

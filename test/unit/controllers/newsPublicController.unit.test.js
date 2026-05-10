@@ -101,6 +101,64 @@ describe("newsPublicController", () => {
     });
   });
 
+  describe("getCotacoesHistoryBatch", () => {
+    test("success — passes deduped slugs and capped limit", async () => {
+      cotacoesRepo.listCotacoesHistoryPublicBatch.mockResolvedValue({
+        soja: [{ id: 1, price: 10 }],
+        milho: [{ id: 2, price: 5 }],
+      });
+      await ctrl.getCotacoesHistoryBatch(
+        makeReq({ query: { slugs: "soja, milho ,soja", limit: "200" } }),
+        makeRes(),
+        makeNext(),
+      );
+      expect(cotacoesRepo.listCotacoesHistoryPublicBatch).toHaveBeenCalledWith(
+        ["soja", "milho"], // deduped + normalized
+        50, // capped at 50
+      );
+      expect(response.ok).toHaveBeenCalled();
+    });
+
+    test("missing slugs → 400", async () => {
+      const next = makeNext();
+      await ctrl.getCotacoesHistoryBatch(makeReq({ query: {} }), makeRes(), next);
+      expect(next.mock.calls[0][0].code).toBe("VALIDATION_ERROR");
+    });
+
+    test("only invalid slugs → 400", async () => {
+      const next = makeNext();
+      await ctrl.getCotacoesHistoryBatch(
+        makeReq({ query: { slugs: "  ,  " } }),
+        makeRes(),
+        next,
+      );
+      expect(next.mock.calls[0][0].code).toBe("VALIDATION_ERROR");
+    });
+
+    test("repo error → 500 via AppError", async () => {
+      cotacoesRepo.listCotacoesHistoryPublicBatch.mockRejectedValue(new Error("db"));
+      const next = makeNext();
+      await ctrl.getCotacoesHistoryBatch(
+        makeReq({ query: { slugs: "soja" } }),
+        makeRes(),
+        next,
+      );
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AppError);
+    });
+
+    test("caps to 12 slugs", async () => {
+      cotacoesRepo.listCotacoesHistoryPublicBatch.mockResolvedValue({});
+      const slugs = Array.from({ length: 20 }, (_, i) => `slug-${i}`).join(",");
+      await ctrl.getCotacoesHistoryBatch(
+        makeReq({ query: { slugs } }),
+        makeRes(),
+        makeNext(),
+      );
+      const passed = cotacoesRepo.listCotacoesHistoryPublicBatch.mock.calls[0][0];
+      expect(passed).toHaveLength(12);
+    });
+  });
+
   describe("listPosts", () => {
     test("success", async () => {
       postsRepo.listPostsPublic.mockResolvedValue([{ id: 1 }]);

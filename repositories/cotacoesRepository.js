@@ -280,6 +280,72 @@ async function listCotacaoHistoryPublic(cotacaoId, limit = 10) {
   );
 }
 
+/**
+ * Batch público: retorna histórico de várias cotações em uma única query.
+ *
+ * Uso na home /news: o card CotacaoMini precisa de sparkline para 4-8
+ * cotações de uma vez — fazer N requisições seria desperdício. Esse endpoint
+ * casa news_cotacoes (filtra ativo=1 + slugs informados) com news_cotacoes_history
+ * (mesmos filtros do endpoint singular: sync_status='ok', price NOT NULL,
+ * últimos 7 dias) e devolve um mapa { slug: [pontos...] }.
+ *
+ * `limitPerSlug` controla quantos pontos por cotação (default 24, max 50).
+ *
+ * Não substitui o endpoint singular — apenas complementa para uso em listas.
+ */
+async function listCotacoesHistoryPublicBatch(slugs, limitPerSlug = 24) {
+  if (!Array.isArray(slugs) || slugs.length === 0) return {};
+
+  const safeLimit = Math.min(Math.max(Number(limitPerSlug) || 24, 1), 50);
+
+  // Estratégia: pega TODOS os pontos das últimas 7 dias para os slugs ativos
+  // e particiona em JS. Para um conjunto pequeno (≤ 8 slugs), isso é mais
+  // simples e rápido que ROW_NUMBER() OVER PARTITION (que exige MySQL 8+ e
+  // complica leitura). Se o uso crescer, vale migrar para window function.
+  const placeholders = slugs.map(() => "?").join(",");
+
+  const rows = await query(
+    `
+    SELECT
+      c.slug         AS slug,
+      h.id           AS id,
+      h.price        AS price,
+      h.variation_day AS variation_day,
+      h.source       AS source,
+      h.observed_at  AS observed_at,
+      h.created_at   AS created_at
+    FROM news_cotacoes_history h
+    INNER JOIN news_cotacoes c ON c.id = h.cotacao_id
+    WHERE c.ativo = 1
+      AND c.slug IN (${placeholders})
+      AND h.sync_status = 'ok'
+      AND h.price IS NOT NULL
+      AND h.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    ORDER BY c.slug ASC, h.created_at DESC
+    `,
+    slugs,
+  );
+
+  // Agrupa por slug e aplica o limite por grupo (mais recentes primeiro,
+  // mas o sparkline desenha em ordem cronológica — o frontend faz reverse).
+  const bySlug = {};
+  for (const row of rows) {
+    if (!bySlug[row.slug]) bySlug[row.slug] = [];
+    if (bySlug[row.slug].length < safeLimit) {
+      bySlug[row.slug].push({
+        id: row.id,
+        price: row.price,
+        variation_day: row.variation_day,
+        source: row.source,
+        observed_at: row.observed_at,
+        created_at: row.created_at,
+      });
+    }
+  }
+
+  return bySlug;
+}
+
 // ─── Public (site, sem autenticação) ─────────────────────────────────────────
 
 async function listCotacoesPublic({ group_key } = {}) {
@@ -317,6 +383,7 @@ module.exports = {
   deleteCotacao,
   insertCotacaoHistory,
   listCotacaoHistoryPublic,
+  listCotacoesHistoryPublicBatch,
   listCotacoesPublic,
   getCotacaoPublicBySlug,
 };

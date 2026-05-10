@@ -91,6 +91,59 @@ const getCotacaoHistory = async (req, res, next) => {
   }
 };
 
+/**
+ * Batch: histórico de várias cotações de uma vez (até 12 slugs).
+ *
+ * Query: ?slugs=cafe-arabica,soja,milho[&limit=24]
+ * Resposta: data = { "<slug>": [pontos...], ... }
+ *
+ * Limites:
+ *   - até 12 slugs por chamada (uso típico do dashboard: 4-8)
+ *   - até 50 pontos por slug (alinhado com o endpoint singular)
+ *   - slugs inválidos são silenciosamente filtrados — só retorna 400 se sobrar zero
+ */
+const getCotacoesHistoryBatch = async (req, res, next) => {
+  const raw = String(req.query.slugs || "").trim();
+  if (!raw) {
+    return next(
+      new AppError(
+        "Parâmetro 'slugs' obrigatório (CSV).",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      ),
+    );
+  }
+
+  const slugs = Array.from(
+    new Set(
+      raw
+        .split(",")
+        .map((s) => normalizeSlug(s))
+        .filter((s) => s && isValidSlug(s)),
+    ),
+  ).slice(0, 12);
+
+  if (slugs.length === 0) {
+    return next(
+      new AppError(
+        "Nenhum slug válido informado.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      ),
+    );
+  }
+
+  const limit = Math.min(Math.max(toInt(req.query.limit, 24), 1), 50);
+
+  try {
+    const bySlug = await cotacoesRepo.listCotacoesHistoryPublicBatch(slugs, limit);
+    return response.ok(res, bySlug || {}, null, { slugs, limit });
+  } catch (error) {
+    console.error("newsPublicController.getCotacoesHistoryBatch:", error);
+    return next(new AppError("Erro ao buscar histórico em lote.", ERROR_CODES.SERVER_ERROR, 500));
+  }
+};
+
 /* =========================================================
  * PUBLIC - POSTS
  * ========================================================= */
@@ -155,4 +208,14 @@ const overview = async (req, res, next) => {
   }
 };
 
-module.exports = { listClima, getClima, listCotacoes, getCotacao, getCotacaoHistory, listPosts, getPost, overview };
+module.exports = {
+  listClima,
+  getClima,
+  listCotacoes,
+  getCotacao,
+  getCotacaoHistory,
+  getCotacoesHistoryBatch,
+  listPosts,
+  getPost,
+  overview,
+};
