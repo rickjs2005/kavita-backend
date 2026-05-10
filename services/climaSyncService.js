@@ -33,9 +33,18 @@ async function syncOne(row) {
   try {
     const data = await fetchRainData(row);
 
+    // Os campos de current weather (temperature_c, humidity_pct, wind_kmh,
+    // condition) podem ser null quando o provider responder sem o bloco
+    // current — não esquentar: o updateClima ignora chaves que o repository
+    // não conheça (current weather columns são adicionadas pela migration
+    // 2026051400000002 e o repo detecta presença dinamicamente).
     const patch = {
       mm_24h: data.mm_24h ?? null,
       mm_7d: data.mm_7d ?? null,
+      temperature_c: data.temperature_c ?? null,
+      humidity_pct: data.humidity_pct ?? null,
+      wind_kmh: data.wind_kmh ?? null,
+      condition: data.condition ?? null,
       source: data.source || row.source || "UNKNOWN",
       last_update_at: nowSql(),
       last_sync_observed_at: nowSql(),
@@ -49,6 +58,8 @@ async function syncOne(row) {
       ok: true,
       mm_24h: data.mm_24h,
       mm_7d: data.mm_7d,
+      temperature_c: data.temperature_c,
+      condition: data.condition,
     };
   } catch (err) {
     return {

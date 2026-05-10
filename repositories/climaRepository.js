@@ -15,8 +15,30 @@ async function queryOne(sql, params = []) {
   return rows?.[0] || null;
 }
 
-const CLIMA_SELECT = `
-  SELECT
+// ─── Column detection ────────────────────────────────────────────────────────
+// As colunas de current weather (temperature_c, humidity_pct, wind_kmh,
+// condition) são adicionadas pela migration 2026051400000002. Se a migration
+// ainda não rodou em algum ambiente, queries não devem referenciá-las.
+// Mesmo padrão usado em cotacoesRepository.js para as colunas BRL.
+
+const CURRENT_COLS = ["temperature_c", "humidity_pct", "wind_kmh", "condition"];
+let _hasCurrentCols = null; // null = não verificado, true/false = verificado
+
+async function hasCurrentColumns() {
+  if (_hasCurrentCols !== null) return _hasCurrentCols;
+  try {
+    const [cols] = await db.query(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'news_clima' AND COLUMN_NAME IN (?)",
+      [CURRENT_COLS],
+    );
+    _hasCurrentCols = Array.isArray(cols) && cols.length === CURRENT_COLS.length;
+  } catch {
+    _hasCurrentCols = false;
+  }
+  return _hasCurrentCols;
+}
+
+const BASE_COLS = `
     id,
     city_name,
     slug,
@@ -36,22 +58,39 @@ const CLIMA_SELECT = `
     mm_24h,
     mm_7d,
     source,
-    ativo
-  FROM news_clima
-`;
+    ativo`;
+
+function buildSelect(withCurrent) {
+  if (withCurrent) {
+    return `SELECT ${BASE_COLS}, temperature_c, humidity_pct, wind_kmh, \`condition\` FROM news_clima`;
+  }
+  return `SELECT ${BASE_COLS} FROM news_clima`;
+}
+
+async function getClimaSelect() {
+  return buildSelect(await hasCurrentColumns());
+}
+
+// Mantido para compat com leituras síncronas (não há nenhuma hoje, mas o
+// nome existia antes). Usa o select base; se um caller precisar dos campos
+// novos, deve passar pelo helper async.
+const CLIMA_SELECT = buildSelect(false);
 
 // ─── Admin / Internal ────────────────────────────────────────────────────────
 
 async function getClimaById(id) {
-  return queryOne(`${CLIMA_SELECT} WHERE id = ? LIMIT 1`, [id]);
+  const sel = await getClimaSelect();
+  return queryOne(`${sel} WHERE id = ? LIMIT 1`, [id]);
 }
 
 async function getClimaBySlug(slug) {
-  return queryOne(`${CLIMA_SELECT} WHERE slug = ? LIMIT 1`, [slug]);
+  const sel = await getClimaSelect();
+  return queryOne(`${sel} WHERE slug = ? LIMIT 1`, [slug]);
 }
 
 async function listClima() {
-  return query(`${CLIMA_SELECT} ORDER BY ativo DESC, city_name ASC`);
+  const sel = await getClimaSelect();
+  return query(`${sel} ORDER BY ativo DESC, city_name ASC`);
 }
 
 async function createClima(data) {
@@ -163,6 +202,17 @@ async function updateClima(id, data) {
     ativo: "ativo",
   };
 
+  // Campos de current weather só entram no UPDATE se a migration nova
+  // já rodou neste ambiente. Caso contrário, ignoramos silenciosamente —
+  // o restante do patch (chuva, last_update_at) é aplicado normalmente.
+  if (await hasCurrentColumns()) {
+    map.temperature_c = "temperature_c";
+    map.humidity_pct = "humidity_pct";
+    map.wind_kmh = "wind_kmh";
+    // `condition` é palavra reservada em alguns dialetos — escapar por segurança.
+    map.condition = "`condition`";
+  }
+
   for (const [k, col] of Object.entries(map)) {
     if (Object.prototype.hasOwnProperty.call(data, k)) {
       fields.push(`${col} = ?`);
@@ -194,11 +244,13 @@ async function deleteClima(id) {
 // ─── Public (site, sem autenticação) ─────────────────────────────────────────
 
 async function listClimaPublic() {
-  return query(`${CLIMA_SELECT} WHERE ativo = 1 ORDER BY city_name ASC`);
+  const sel = await getClimaSelect();
+  return query(`${sel} WHERE ativo = 1 ORDER BY city_name ASC`);
 }
 
 async function getClimaPublicBySlug(slug) {
-  return queryOne(`${CLIMA_SELECT} WHERE slug = ? AND ativo = 1 LIMIT 1`, [slug]);
+  const sel = await getClimaSelect();
+  return queryOne(`${sel} WHERE slug = ? AND ativo = 1 LIMIT 1`, [slug]);
 }
 
 module.exports = {
@@ -210,4 +262,6 @@ module.exports = {
   deleteClima,
   listClimaPublic,
   getClimaPublicBySlug,
+  // Auxiliares para teste
+  hasCurrentColumns,
 };

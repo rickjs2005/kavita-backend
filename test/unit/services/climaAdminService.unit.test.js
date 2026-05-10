@@ -121,4 +121,86 @@ describe("climaAdminService", () => {
       expect(result.mm_7d).toBe(0);
     });
   });
+
+  describe("weatherCodeToCondition", () => {
+    test("maps known WMO codes to PT label", () => {
+      expect(service.weatherCodeToCondition(0)).toBe("Céu limpo");
+      expect(service.weatherCodeToCondition(2)).toBe("Parcialmente nublado");
+      expect(service.weatherCodeToCondition(63)).toBe("Chuva moderada");
+      expect(service.weatherCodeToCondition(95)).toBe("Trovoada");
+    });
+
+    test("returns null for unknown codes", () => {
+      expect(service.weatherCodeToCondition(123)).toBeNull();
+      expect(service.weatherCodeToCondition(null)).toBeNull();
+      expect(service.weatherCodeToCondition(undefined)).toBeNull();
+      expect(service.weatherCodeToCondition("nope")).toBeNull();
+    });
+  });
+
+  describe("clampHumidity", () => {
+    test("rounds and accepts valid 0-100", () => {
+      expect(service.clampHumidity(73)).toBe(73);
+      expect(service.clampHumidity(73.6)).toBe(74);
+      expect(service.clampHumidity(0)).toBe(0);
+      expect(service.clampHumidity(100)).toBe(100);
+    });
+
+    test("rejects out-of-range and non-numeric", () => {
+      expect(service.clampHumidity(-5)).toBeNull();
+      expect(service.clampHumidity(150)).toBeNull();
+      expect(service.clampHumidity("nope")).toBeNull();
+      expect(service.clampHumidity(null)).toBeNull();
+    });
+  });
+
+  describe("fetchRainData — current weather", () => {
+    test("returns parsed current weather alongside rain", async () => {
+      mockFetchResponse({
+        daily: { precipitation_sum: [1.0, 2.0, 0, 0, 0, 0, 1.5] },
+        current: {
+          temperature_2m: 22.4,
+          relative_humidity_2m: 82,
+          wind_speed_10m: 18.0,
+          weather_code: 63,
+        },
+      });
+
+      const r = await service.fetchRainData({ station_lat: -19.9, station_lon: -43.9 });
+
+      expect(r.temperature_c).toBe(22.4);
+      expect(r.humidity_pct).toBe(82);
+      expect(r.wind_kmh).toBe(18.0);
+      expect(r.condition).toBe("Chuva moderada");
+      expect(r.meta.hasCurrent).toBe(true);
+    });
+
+    test("returns nulls when current block is absent", async () => {
+      mockFetchResponse({
+        daily: { precipitation_sum: [1.0] },
+        // sem `current` — provider respondeu parcialmente
+      });
+
+      const r = await service.fetchRainData({ station_lat: -19.9, station_lon: -43.9 });
+
+      expect(r.temperature_c).toBeNull();
+      expect(r.humidity_pct).toBeNull();
+      expect(r.wind_kmh).toBeNull();
+      expect(r.condition).toBeNull();
+      expect(r.meta.hasCurrent).toBe(false);
+      // Chuva continua funcionando.
+      expect(r.mm_24h).toBe(1.0);
+    });
+
+    test("requests current params and km/h unit", async () => {
+      mockFetchResponse({ daily: { precipitation_sum: [0] }, current: {} });
+      await service.fetchRainData({ station_lat: -19.9, station_lon: -43.9 });
+      const calledUrl = global.fetch.mock.calls[0][0];
+      expect(calledUrl).toContain("current=temperature_2m");
+      expect(calledUrl).toContain("relative_humidity_2m");
+      expect(calledUrl).toContain("wind_speed_10m");
+      expect(calledUrl).toContain("weather_code");
+      expect(calledUrl).toContain("wind_speed_unit=kmh");
+    });
+  });
 });
