@@ -39,8 +39,49 @@ const createAdmin = async (req, res, next) => {
 
 const updateAdmin = async (req, res, next) => {
   try {
-    const id = req.params.id;
+    const id = Number(req.params.id);
+    const currentAdminId = req.admin?.id;
     const { role, ativo } = req.body;
+
+    // Carrega o alvo antes pra ter `role` atual e `ativo` atual — necessario
+    // para checar auto-rebaixamento (P4) e ultimo-admin (P2).
+    const target = await repo.findById(id);
+    if (!target) return next(new AppError("Admin não encontrado.", ERROR_CODES.NOT_FOUND, 404));
+
+    const isSelf = currentAdminId === target.id;
+    const desativando = ativo !== undefined && !ativo && Boolean(target.ativo);
+    const trocandoRole = role !== undefined && role !== target.role;
+
+    // P4 — Auto-rebaixamento: admin nao pode mudar o proprio role nem se desativar.
+    // Outras alteracoes do proprio cadastro continuam sendo feitas em outras telas
+    // (ex.: troca de senha). Aqui bloqueamos especificamente as duas mudancas
+    // que poderiam derrubar o acesso do proprio admin.
+    if (isSelf && trocandoRole) {
+      return next(new AppError(
+        "Você não pode alterar o próprio papel. Peça a outro admin para fazer essa mudança.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      ));
+    }
+    if (isSelf && desativando) {
+      return next(new AppError(
+        "Você não pode desativar a si mesmo.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      ));
+    }
+
+    // P2 — Ultimo admin ativo: desativar o ultimo admin ativo deixa o sistema sem ninguem.
+    if (desativando) {
+      const ativos = await repo.countActive();
+      if (ativos <= 1) {
+        return next(new AppError(
+          "Não é possível desativar o último admin ativo do sistema.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400,
+        ));
+      }
+    }
 
     const fields = [];
     const values = [];
@@ -58,7 +99,7 @@ const updateAdmin = async (req, res, next) => {
     const affected = await repo.update(id, fields, values);
     if (!affected) return next(new AppError("Admin não encontrado.", ERROR_CODES.NOT_FOUND, 404));
 
-    await logAdminAction({ adminId: req.admin?.id, acao: "atualizar_admin", entidade: "admin", entidadeId: id });
+    await logAdminAction({ adminId: currentAdminId, acao: "atualizar_admin", entidade: "admin", entidadeId: id });
     return response.ok(res, null, "Admin atualizado com sucesso.");
   } catch (err) {
     return next(err instanceof AppError ? err : new AppError("Erro ao atualizar admin.", ERROR_CODES.SERVER_ERROR, 500));
@@ -73,6 +114,20 @@ const deleteAdmin = async (req, res, next) => {
     if (!admin) return next(new AppError("Admin não encontrado.", ERROR_CODES.NOT_FOUND, 404));
     if (admin.id === req.admin?.id) return next(new AppError("Você não pode remover a si mesmo.", ERROR_CODES.VALIDATION_ERROR, 400));
     if (admin.role === "master") return next(new AppError("O admin master não pode ser removido.", ERROR_CODES.VALIDATION_ERROR, 400));
+
+    // P2 — Ultimo admin ativo: bloquear remocao se o alvo for o ultimo ativo.
+    // (As checagens self/master acima ja cobrem casos comuns; este e' o catch-all
+    // para evitar lockout em cenarios com poucos admins.)
+    if (admin.ativo) {
+      const ativos = await repo.countActive();
+      if (ativos <= 1) {
+        return next(new AppError(
+          "Não é possível remover o último admin ativo do sistema.",
+          ERROR_CODES.VALIDATION_ERROR,
+          400,
+        ));
+      }
+    }
 
     await repo.deleteById(id);
     await logAdminAction({ adminId: req.admin?.id, acao: "remover_admin", entidade: "admin", entidadeId: id });

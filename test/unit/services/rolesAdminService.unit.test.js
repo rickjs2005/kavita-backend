@@ -43,6 +43,8 @@ function setupModule(repoOverrides = {}, connOverride = null) {
     insertRolePermissions: jest.fn().mockResolvedValue(undefined),
     findRoleForDelete: jest.fn(),
     deleteRole: jest.fn().mockResolvedValue(1),
+    // Default: assume que existe outra cobertura (proteção P1 não dispara)
+    countActiveAdminsWithPermissionExcludingRole: jest.fn().mockResolvedValue(99),
     ...repoOverrides,
   };
 
@@ -270,6 +272,85 @@ describe("rolesAdminService.update", () => {
     expect(logsMock.logAdminAction).toHaveBeenCalledWith(
       expect.objectContaining({ adminId: 42, acao: "atualizar_role", entidadeId: 1 })
     );
+  });
+
+  // ---------------------------------------------------------------------------
+  // P1 — Proteção lockout em permissões críticas
+  // ---------------------------------------------------------------------------
+
+  test("P1: bloqueia remoção de roles_manage quando ninguém mais tem", async () => {
+    const { svc, repoMock, mockConn } = setupModule({
+      findRoleById: jest.fn().mockResolvedValue(
+        makeRole({ id: 1, permissions: ["roles_manage", "users_view"] }),
+      ),
+      countActiveAdminsWithPermissionExcludingRole: jest.fn().mockResolvedValue(0),
+    });
+
+    await expect(
+      svc.update(1, { permissions: ["users_view"] }, 1),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: "VALIDATION_ERROR",
+    });
+
+    expect(repoMock.countActiveAdminsWithPermissionExcludingRole).toHaveBeenCalledWith(
+      "roles_manage",
+      1,
+    );
+    // Falhou ANTES de abrir transação.
+    expect(mockConn.beginTransaction).not.toHaveBeenCalled();
+  });
+
+  test("P1: permite remoção quando outro role ativo cobre a permissão crítica", async () => {
+    const { svc, mockConn } = setupModule({
+      findRoleById: jest.fn().mockResolvedValue(
+        makeRole({ id: 1, permissions: ["roles_manage"] }),
+      ),
+      countActiveAdminsWithPermissionExcludingRole: jest.fn().mockResolvedValue(2),
+    });
+
+    await svc.update(1, { permissions: [] }, 1);
+
+    expect(mockConn.commit).toHaveBeenCalled();
+  });
+
+  test("P1: não checa lockout quando role atual já não tinha a permissão crítica", async () => {
+    const { svc, repoMock } = setupModule({
+      findRoleById: jest.fn().mockResolvedValue(
+        makeRole({ id: 1, permissions: ["users_view"] }),
+      ),
+    });
+
+    await svc.update(1, { permissions: ["users_view", "products_manage"] }, 1);
+
+    // Nenhuma checagem porque nem roles_manage nem permissions_manage
+    // estavam no role original.
+    expect(repoMock.countActiveAdminsWithPermissionExcludingRole).not.toHaveBeenCalled();
+  });
+
+  test("P1: não checa lockout quando permissions não é enviado", async () => {
+    const { svc, repoMock } = setupModule({
+      findRoleById: jest.fn().mockResolvedValue(
+        makeRole({ id: 1, permissions: ["roles_manage"] }),
+      ),
+    });
+
+    await svc.update(1, { nome: "Novo Nome" }, 1);
+
+    expect(repoMock.countActiveAdminsWithPermissionExcludingRole).not.toHaveBeenCalled();
+  });
+
+  test("P1: bloqueia também remoção de permissions_manage", async () => {
+    const { svc } = setupModule({
+      findRoleById: jest.fn().mockResolvedValue(
+        makeRole({ id: 1, permissions: ["permissions_manage"] }),
+      ),
+      countActiveAdminsWithPermissionExcludingRole: jest.fn().mockResolvedValue(0),
+    });
+
+    await expect(
+      svc.update(1, { permissions: [] }, 1),
+    ).rejects.toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
   });
 });
 

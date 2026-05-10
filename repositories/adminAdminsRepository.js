@@ -21,8 +21,19 @@ async function findByEmail(email) {
 }
 
 async function findById(id) {
-  const [rows] = await pool.query("SELECT id, role FROM admins WHERE id = ?", [id]);
+  const [rows] = await pool.query("SELECT id, role, ativo FROM admins WHERE id = ?", [id]);
   return rows[0] || null;
+}
+
+/**
+ * Conta admins ativos (ativo = 1).
+ * Usado pelas proteções "último admin" em delete e desativação (P2 da auditoria 2026-05-09).
+ */
+async function countActive() {
+  const [rows] = await pool.query(
+    "SELECT COUNT(*) AS total FROM admins WHERE ativo = 1"
+  );
+  return Number(rows?.[0]?.total ?? 0);
 }
 
 async function insert(nome, email, senhaHash, role) {
@@ -45,4 +56,4 @@ async function deleteById(id) {
   await pool.query("DELETE FROM admins WHERE id = ?", [id]);
 }
 
-module.exports = { findAll, findRoleBySlug, findByEmail, findById, insert, update, deleteById };
+module.exports = { findAll, findRoleBySlug, findByEmail, findById, countActive, insert, update, deleteById };

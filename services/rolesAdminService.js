@@ -18,6 +18,46 @@ function normalizeSlug(slug) {
   return String(slug).trim().toLowerCase();
 }
 
+/**
+ * Permissões cuja remoção pode causar lockout total do sistema.
+ * Quando o admin atualiza um role removendo uma destas, validamos que
+ * pelo menos um admin ativo continuará tendo a permissão por outro role
+ * (P1 da auditoria 2026-05-09).
+ */
+const CRITICAL_PERMISSIONS = ["roles_manage", "permissions_manage"];
+
+/**
+ * Verifica se a nova lista de permissões deixaria o sistema sem cobertura
+ * em alguma permissão crítica. Lança AppError 400 com mensagem amigável
+ * quando o cenário de lockout é detectado.
+ *
+ * Critério: para cada permissão crítica que o role atual TEM e a nova
+ * lista NÃO TEM, contar admins ativos que ainda teriam essa permissão por
+ * OUTROS roles. Se zero, bloquear.
+ */
+async function assertNoCriticalLockout(roleId, currentPermissions, nextPermissions) {
+  const currentSet = new Set(currentPermissions || []);
+  const nextSet = new Set(nextPermissions || []);
+
+  for (const critical of CRITICAL_PERMISSIONS) {
+    const hadIt = currentSet.has(critical);
+    const stillHas = nextSet.has(critical);
+    if (!hadIt || stillHas) continue; // não está sendo removida deste role
+
+    const stillCovered = await repo.countActiveAdminsWithPermissionExcludingRole(
+      critical,
+      roleId,
+    );
+    if (stillCovered === 0) {
+      throw new AppError(
+        `Não é possível remover a permissão '${critical}' deste papel: nenhum outro admin ativo manteria essa permissão. Atribua-a a outro papel antes de remover daqui.`,
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+      );
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // list
 // ---------------------------------------------------------------------------
@@ -83,6 +123,13 @@ async function update(id, { nome, descricao, permissions }, adminId) {
   const existing = await repo.findRoleById(id);
   if (!existing) {
     throw new AppError("Role não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
+
+  // P1 — Lockout: se o caller mandou nova lista de permissions, validar
+  // que nenhuma permissão crítica está perdendo cobertura. Verificamos ANTES
+  // de abrir a transação para falhar barato.
+  if (Array.isArray(permissions)) {
+    await assertNoCriticalLockout(id, existing.permissions, permissions);
   }
 
   await withTransaction(async (conn) => {

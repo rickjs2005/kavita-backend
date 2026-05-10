@@ -165,6 +165,30 @@ async function deleteRole(conn, id) {
   return result.affectedRows;
 }
 
+/**
+ * Conta admins ativos que possuem `permissionKey` POR OUTROS roles que
+ * não o `excludeRoleId`. Usado pela proteção anti-lockout (P1 da auditoria
+ * 2026-05-09): antes de remover uma permissão crítica de um role, garantir
+ * que pelo menos um admin ativo continuará tendo essa permissão por outro
+ * caminho.
+ *
+ * Os admins têm `role` como slug (string) — daí o JOIN por `r.slug = a.role`.
+ */
+async function countActiveAdminsWithPermissionExcludingRole(permissionKey, excludeRoleId) {
+  const [rows] = await pool.query(
+    `SELECT COUNT(DISTINCT a.id) AS total
+     FROM admins a
+     INNER JOIN admin_roles r ON r.slug = a.role
+     INNER JOIN admin_role_permissions rp ON rp.role_id = r.id
+     INNER JOIN admin_permissions p ON p.id = rp.permission_id
+     WHERE a.ativo = 1
+       AND p.chave = ?
+       AND r.id != ?`,
+    [permissionKey, excludeRoleId],
+  );
+  return Number(rows?.[0]?.total ?? 0);
+}
+
 module.exports = {
   listRoles,
   findRoleById,
@@ -176,4 +200,5 @@ module.exports = {
   insertRolePermissions,
   findRoleForDelete,
   deleteRole,
+  countActiveAdminsWithPermissionExcludingRole,
 };

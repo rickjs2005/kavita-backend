@@ -15,6 +15,14 @@ async function findByChave(chave) {
   return rows[0] || null;
 }
 
+async function findById(id) {
+  const [rows] = await pool.query(
+    "SELECT id, chave, grupo, descricao FROM admin_permissions WHERE id = ?",
+    [id],
+  );
+  return rows[0] || null;
+}
+
 async function insert(chave, grupo, descricao) {
   const [result] = await pool.query(
     "INSERT INTO admin_permissions (chave, grupo, descricao) VALUES (?, ?, ?)",
@@ -36,4 +44,4 @@ async function deleteById(id) {
   return result.affectedRows;
 }
 
-module.exports = { findAll, findByChave, insert, update, deleteById };
+module.exports = { findAll, findByChave, findById, insert, update, deleteById };
