@@ -1,11 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const newsAdmin = require("../../controllers/adminNewsController");
+const newsWhatsappController = require("../../controllers/newsWhatsappController");
 const adminNewsUploadRoutes = require("./adminNewsUpload");
 const { validate } = require("../../middleware/validate");
 const { createClimaBodySchema, updateClimaBodySchema } = require("../../schemas/climaSchemas");
 const { createCotacaoBodySchema, updateCotacaoBodySchema } = require("../../schemas/cotacoesSchemas");
 const { PostIdParamSchema, CreatePostSchema, UpdatePostSchema } = require("../../schemas/newsSchemas");
+const { listSubscribersQuerySchema } = require("../../schemas/newsWhatsappSchemas");
 
 router.use("/upload", adminNewsUploadRoutes);
 
@@ -36,5 +38,13 @@ router.get("/posts", newsAdmin.listPosts);
 router.post("/posts", validate(CreatePostSchema), newsAdmin.createPost);
 router.put("/posts/:id", validate(PostIdParamSchema, "params"), validate(UpdatePostSchema), newsAdmin.updatePost);
 router.delete("/posts/:id", validate(PostIdParamSchema, "params"), newsAdmin.deletePost);
+
+// WHATSAPP SUBSCRIBERS — leitura para o admin acompanhar a lista de espera
+// do canal "Central no WhatsApp" (POST público fica em routes/public/publicNews.js).
+router.get(
+  "/whatsapp-subscribers",
+  validate(listSubscribersQuerySchema, "query"),
+  newsWhatsappController.listSubscribers,
+);
 
 module.exports = router;

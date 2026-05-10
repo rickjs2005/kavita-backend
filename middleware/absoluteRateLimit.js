@@ -144,6 +144,14 @@ const producerMagicLinkLimiter = makeIpLimiter({
   max: envInt("RATE_LIMIT_PRODUCER_MAGIC_PER_MINUTE", 5),
 });
 
+// Inscrição no canal WhatsApp do Kavita News — 5/min/IP. Mesmo perfil do
+// magic-link (coleta de telefone, risco de enumeração e abuso).
+const newsWhatsappLimiter = makeIpLimiter({
+  name: "news_whatsapp",
+  windowMs: ONE_MINUTE,
+  max: envInt("RATE_LIMIT_NEWS_WHATSAPP_PER_MINUTE", 5),
+});
+
 module.exports = {
   globalLimiter,
   webhookLimiter,
@@ -152,4 +160,5 @@ module.exports = {
   motoristaMagicLinkLimiter,
   registerLimiter,
   producerMagicLinkLimiter,
+  newsWhatsappLimiter,
 };

@@ -3,6 +3,10 @@ const express = require("express");
 const router = express.Router();
 
 const newsPublicController = require("../../controllers/newsPublicController");
+const newsWhatsappController = require("../../controllers/newsWhatsappController");
+const { validate } = require("../../middleware/validate");
+const { newsWhatsappLimiter } = require("../../middleware/absoluteRateLimit");
+const { subscribeBodySchema } = require("../../schemas/newsWhatsappSchemas");
 
 /**
  * @openapi
@@ -234,5 +238,38 @@ router.get("/posts", newsPublicController.listPosts);
  *         description: Erro interno
  */
 router.get("/posts/:slug", newsPublicController.getPost);
+
+/**
+ * @openapi
+ * /api/news/whatsapp-subscribe:
+ *   post:
+ *     tags:
+ *       - Kavita News (Public)
+ *     summary: Inscreve um número no canal WhatsApp do Kavita News
+ *     description: |
+ *       Idempotente — reinscrição do mesmo número retorna 200 com `created=false`.
+ *       Rate-limit: 5 req/min/IP (env RATE_LIMIT_NEWS_WHATSAPP_PER_MINUTE).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone]
+ *             properties:
+ *               phone:  { type: string, example: "(31) 99999-0000" }
+ *               source: { type: string, example: "home_news" }
+ *     responses:
+ *       200: { description: "Inscrição registrada (ou já existia)" }
+ *       400: { description: "Telefone inválido" }
+ *       429: { description: "Rate limit excedido" }
+ *       500: { description: "Erro interno" }
+ */
+router.post(
+  "/whatsapp-subscribe",
+  newsWhatsappLimiter,
+  validate(subscribeBodySchema),
+  newsWhatsappController.subscribe,
+);
 
 module.exports = router;
