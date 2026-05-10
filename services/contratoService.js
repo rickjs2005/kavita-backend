@@ -448,6 +448,18 @@ async function enviarParaAssinatura({ id, corretoraId, actor }) {
   if (!contrato) {
     throw new AppError("Contrato não encontrado.", ERROR_CODES.NOT_FOUND, 404);
   }
+  // Mensagem específica para 'signed' antes do check genérico —
+  // dá feedback claro à UI quando alguém tenta reenviar contrato
+  // já assinado (caminho de defesa em profundidade; o repository
+  // bloqueia o UPDATE de qualquer jeito).
+  if (contrato.status === "signed") {
+    throw new AppError(
+      "Contrato assinado não pode ser alterado.",
+      ERROR_CODES.CONFLICT,
+      409,
+      { contrato_id: id, current_status: "signed" },
+    );
+  }
   if (contrato.status !== "draft") {
     throw new AppError(
       "Contrato não está em rascunho.",
@@ -521,6 +533,14 @@ async function cancelar({ id, corretoraId, motivo, actor }) {
   if (!contrato) {
     throw new AppError("Contrato não encontrado.", ERROR_CODES.NOT_FOUND, 404);
   }
+  if (contrato.status === "signed") {
+    throw new AppError(
+      "Contrato assinado não pode ser alterado.",
+      ERROR_CODES.CONFLICT,
+      409,
+      { contrato_id: id, current_status: "signed" },
+    );
+  }
   if (!["draft", "sent"].includes(contrato.status)) {
     throw new AppError(
       "Contrato não pode ser cancelado neste status.",
@@ -567,6 +587,14 @@ async function simularAssinatura({ id, actor }) {
   const contrato = await contratoRepo.findByIdUnscoped(id);
   if (!contrato) {
     throw new AppError("Contrato não encontrado.", ERROR_CODES.NOT_FOUND, 404);
+  }
+  if (contrato.status === "signed") {
+    throw new AppError(
+      "Contrato assinado não pode ser alterado.",
+      ERROR_CODES.CONFLICT,
+      409,
+      { contrato_id: id, current_status: "signed" },
+    );
   }
   if (contrato.status !== "sent") {
     throw new AppError(

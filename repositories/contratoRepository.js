@@ -7,6 +7,8 @@
 "use strict";
 
 const pool = require("../config/pool");
+const AppError = require("../errors/AppError");
+const ERROR_CODES = require("../constants/ErrorCodes");
 
 function parseJsonField(value) {
   if (value == null) return null;
@@ -130,10 +132,50 @@ async function updateStatus(id, status, patch = {}) {
   }
 
   values.push(id);
-  await pool.query(
-    `UPDATE contratos SET ${sets.join(", ")} WHERE id = ?`,
+  // Imutabilidade pós-assinatura (Fase 10.4): contrato em status
+  // 'signed' não pode mais ser alterado por nenhum caminho — nem pelo
+  // service da corretora, nem pelo webhook ClickSign reenviando
+  // evento depois da assinatura, nem por bug acidental em outro
+  // lugar do código. Defesa atômica em um SQL: se a linha está
+  // signed, o WHERE não casa, affectedRows=0 e levantamos AppError.
+  //
+  // O caminho legítimo do webhook (sent → signed) passa, porque
+  // status atual é 'sent' nesse momento — só fica imutável depois
+  // que a transição completa.
+  const [result] = await pool.query(
+    `UPDATE contratos
+        SET ${sets.join(", ")}
+      WHERE id = ?
+        AND status <> 'signed'`,
     values,
   );
+
+  if (result.affectedRows === 0) {
+    // 0 linhas: ou contrato não existe, ou já está signed. Diferenciar
+    // ajuda o caller a decidir (404 vs 409).
+    const [rows] = await pool.query(
+      "SELECT status FROM contratos WHERE id = ? LIMIT 1",
+      [id],
+    );
+    if (rows.length === 0) {
+      throw new AppError(
+        "Contrato não encontrado.",
+        ERROR_CODES.NOT_FOUND,
+        404,
+      );
+    }
+    if (rows[0].status === "signed") {
+      throw new AppError(
+        "Contrato assinado não pode ser alterado.",
+        ERROR_CODES.CONFLICT,
+        409,
+        { contrato_id: id, current_status: "signed" },
+      );
+    }
+    // Mesmo status já está aplicado — UPDATE sem efeito real (idempotência).
+    // Não tratamos como erro pois pode acontecer em race condition leve
+    // entre o pre-check do service e o UPDATE.
+  }
 }
 
 async function findBySignerDocumentId(documentId) {
