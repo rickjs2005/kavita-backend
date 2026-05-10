@@ -45,6 +45,13 @@ const ERROR_CODES = {
   // Payload inclui `details.capability` + `details.current_plan` +
   // `details.upgrade_url` para o frontend oferecer CTA de upgrade.
   PLAN_CAPABILITY_REQUIRED: "PLAN_CAPABILITY_REQUIRED",
+  // PLAN_INACTIVE → corretora não tem subscription ativa/trialing —
+  // HTTP 403. Diferente do CAPABILITY_REQUIRED: aqui o plano até
+  // pode ter a feature, mas a assinatura está canceled/expired/
+  // past_due. Frontend mostra CTA "regularizar assinatura" apontando
+  // para details.upgrade_url. details.subscription_status traz o
+  // estado atual para a UI explicar ao usuário.
+  PLAN_INACTIVE: "PLAN_INACTIVE",
 
   // News/Clima/Cotações (geocoding/provider)
   GEOCODING_ERROR: "GEOCODING_ERROR",

@@ -252,6 +252,58 @@ function requirePlanCapability(key) {
 }
 
 /**
+ * Versão do guard para uso DENTRO de services (não como middleware).
+ * Útil quando o caminho de criação de recurso depende de um campo do
+ * body para decidir (ex: contratoService valida o lead antes de
+ * cobrar plano para evitar 403 falso quando lead nem é da corretora).
+ *
+ * Bloqueia em duas dimensões:
+ *   1) subscription.status NÃO está em (active, trialing) → PLAN_INACTIVE
+ *   2) capability requerida === false                      → PLAN_CAPABILITY_REQUIRED
+ *
+ * Sem subscription ativa, getPlanContext retorna fallback Free com
+ * status="free_default" e capabilities zeradas — também cai em
+ * PLAN_INACTIVE, que é o efeito desejado.
+ *
+ * Retorna o ctx para o caller usar (ex: log, snapshot).
+ */
+async function requireActivePlanWithCapability(corretoraId, capabilityKey) {
+  const ctx = await getPlanContext(corretoraId);
+  const status = ctx.subscription?.status ?? ctx.status;
+  const isActive = status === "active" || status === "trialing";
+
+  if (!isActive) {
+    throw new AppError(
+      "Plano inativo. Regularize sua assinatura para gerar contratos.",
+      ERROR_CODES.PLAN_INACTIVE,
+      403,
+      {
+        subscription_status: status ?? "none",
+        current_plan: ctx.plan?.slug ?? "free",
+        upgrade_url: UPGRADE_URL,
+      },
+    );
+  }
+
+  const v = ctx.capabilities?.[capabilityKey];
+  const ok = v === true;
+  if (!ok) {
+    throw new AppError(
+      "Seu plano atual não permite geração de contratos.",
+      ERROR_CODES.PLAN_CAPABILITY_REQUIRED,
+      403,
+      {
+        capability: capabilityKey,
+        current_plan: ctx.plan?.slug ?? "free",
+        upgrade_url: UPGRADE_URL,
+      },
+    );
+  }
+
+  return ctx;
+}
+
+/**
  * Atribui plano à corretora. Cancela subscription anterior e cria
  * nova. Usado pelo admin (atribuição manual) e, futuramente, pelo
  * webhook do provider.
@@ -599,6 +651,7 @@ module.exports = {
   getPlanContext,
   hasCapability,
   requirePlanCapability,
+  requireActivePlanWithCapability,
   assignPlan,
   cancelPlan,
   markExpired,

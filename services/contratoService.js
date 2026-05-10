@@ -34,6 +34,7 @@ const publicCorretorasRepo = require("../repositories/corretorasPublicRepository
 const leadEventsRepo = require("../repositories/corretoraLeadEventsRepository");
 const contratoSignerService = require("./contratoSignerService");
 const corretoraKycService = require("./corretoraKycService");
+const planService = require("./planService");
 const { parseDataFieldsByTipo } = require("../schemas/contratoSchemas");
 
 // ---------------------------------------------------------------------------
@@ -287,6 +288,34 @@ async function gerarContrato({
   // inclui `kyc_status` (coluna adicionada na migration 07).
   corretoraKycService.requireVerifiedOrThrow(corretora);
 
+  // Fase 10.3 — gate de plano. Subscription precisa estar
+  // active|trialing E plan.capabilities.create_contract === true.
+  // Sem isso, draft criado em qualquer plano (inclusive Free
+  // após cancelamento) — a corretora poderia gerar PDF + hash +
+  // QR com selo Kavita sem estar pagando. Roda DEPOIS do KYC
+  // pra mensagem de bloqueio refletir a primeira pendência.
+  try {
+    await planService.requireActivePlanWithCapability(
+      corretoraId,
+      "create_contract",
+    );
+  } catch (err) {
+    // Loga tentativa bloqueada antes de propagar — útil pra
+    // identificar corretoras pressionando o limite e avaliar
+    // se vale upgrade automático ou fricção comercial.
+    logger.info(
+      {
+        corretoraId,
+        leadId,
+        tipo,
+        reason: err?.code,
+        details: err?.details,
+      },
+      "contrato.blocked_by_plan",
+    );
+    throw err;
+  }
+
   // 2) Valida dataFields do tipo certo (Zod discriminado)
   let parsedFields;
   try {
@@ -425,6 +454,33 @@ async function enviarParaAssinatura({ id, corretoraId, actor }) {
       ERROR_CODES.CONFLICT,
       409,
     );
+  }
+
+  // Fase 10.3 — defesa em profundidade: bloqueia envio para
+  // assinatura se a corretora perdeu o plano ativo entre o draft
+  // e o envio (cancelamento, expiração, downgrade). Draft
+  // permanece no banco — admin pode reativar plano e enviar
+  // depois sem regerar. KYC já é validado na criação; revalidar
+  // aqui não custa caro e cobre o caso da corretora ser
+  // rejeitada pelo admin com draft pendente.
+  const corretoraDraft = await publicCorretorasRepo.findById(corretoraId);
+  corretoraKycService.requireVerifiedOrThrow(corretoraDraft);
+  try {
+    await planService.requireActivePlanWithCapability(
+      corretoraId,
+      "create_contract",
+    );
+  } catch (err) {
+    logger.info(
+      {
+        corretoraId,
+        contratoId: id,
+        reason: err?.code,
+        details: err?.details,
+      },
+      "contrato.envio_blocked_by_plan",
+    );
+    throw err;
   }
 
   if (SIGNER_PROVIDER === "clicksign") {
