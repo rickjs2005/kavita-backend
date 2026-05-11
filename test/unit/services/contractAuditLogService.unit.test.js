@@ -36,6 +36,10 @@ describe("contractAuditLogService.record", () => {
       payload: { tipo: "disponivel", hash_sha256: "a".repeat(64) },
     });
     expect(createEvent).toHaveBeenCalledTimes(1);
+    // Fase 10.6 — `record` agora passa (data, conn) ao repo. Aqui
+    // o caller não está em transação, então conn é undefined e o
+    // repo cai no default param (pool). O contrato do INSERT em si
+    // permanece igual.
     expect(createEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         contrato_id: 42,
@@ -49,6 +53,28 @@ describe("contractAuditLogService.record", () => {
         new_status: "draft",
         payload: expect.objectContaining({ tipo: "disponivel" }),
       }),
+      undefined,
+    );
+  });
+
+  it("propaga a conexão transacional para o repository quando passada via { conn }", async () => {
+    const createEvent = jest.fn().mockResolvedValue(2);
+    const svc = load({ createEvent });
+    const fakeConn = { __mock: "tx-conn" };
+    await svc.record(
+      {
+        contratoId: 42,
+        eventType: "created",
+        actorType: "corretora_user",
+        actorId: 7,
+        newStatus: "draft",
+        payload: { tipo: "disponivel" },
+      },
+      { conn: fakeConn },
+    );
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ contrato_id: 42, event_type: "created" }),
+      fakeConn,
     );
   });
 

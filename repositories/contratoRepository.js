@@ -25,17 +25,23 @@ function hydrate(row) {
   return { ...row, data_fields: parseJsonField(row.data_fields) };
 }
 
-async function create({
-  lead_id,
-  corretora_id,
-  created_by_user_id,
-  tipo,
-  pdf_url,
-  hash_sha256,
-  qr_verification_token,
-  data_fields,
-}) {
-  const [result] = await pool.query(
+// Aceita uma conexão transacional opcional para que o caller envolva
+// o INSERT com o registro de contract_audit_log (event_type='created')
+// em uma única transação. Sem conn explícita, cai no pool padrão.
+async function create(
+  {
+    lead_id,
+    corretora_id,
+    created_by_user_id,
+    tipo,
+    pdf_url,
+    hash_sha256,
+    qr_verification_token,
+    data_fields,
+  },
+  conn = pool,
+) {
+  const [result] = await conn.query(
     `INSERT INTO contratos
        (lead_id, corretora_id, created_by_user_id, tipo,
         status, pdf_url, hash_sha256, qr_verification_token,

@@ -27,6 +27,7 @@ const QRCode = require("qrcode");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const logger = require("../lib/logger");
+const { withTransaction } = require("../lib/withTransaction");
 
 const contratoRepo = require("../repositories/contratoRepository");
 const leadsRepo = require("../repositories/corretoraLeadsRepository");
@@ -421,37 +422,56 @@ async function gerarContrato({
     __numero_externo: metaContrato.numero_externo,
   };
 
-  const contratoId = await contratoRepo.create({
-    lead_id: leadId,
-    corretora_id: corretoraId,
-    created_by_user_id: createdByUserId ?? null,
-    tipo,
-    pdf_url: relPath,
-    hash_sha256: hash,
-    qr_verification_token: token,
-    data_fields: snapshot,
-  });
+  // Fase 10.6 — INSERT do contrato e do audit "created" sob a MESMA
+  // transação. O audit "created" é classificado como crítico em
+  // contractAuditLogService.record — se ele falhar, lança AppError
+  // que sai do callback do withTransaction e dispara rollback,
+  // garantindo que o contrato não fica persistido sem trilha
+  // jurídica inicial. (Antes desta refatoração, contrato e audit
+  // rodavam em queries independentes — risco de inconsistência.)
+  //
+  // O PDF em disco já foi gravado neste ponto (passo 5). Em caso
+  // de rollback, o arquivo .pdf fica órfão no storage e é coletado
+  // pelo orphan cleanup do mediaService no próximo ciclo. Esse é
+  // um trade-off aceito: o arquivo é grande, o registro é pequeno,
+  // e gravar disco fora da tx mantém a janela atômica curta.
+  const contratoId = await withTransaction(async (conn) => {
+    const id = await contratoRepo.create(
+      {
+        lead_id: leadId,
+        corretora_id: corretoraId,
+        created_by_user_id: createdByUserId ?? null,
+        tipo,
+        pdf_url: relPath,
+        hash_sha256: hash,
+        qr_verification_token: token,
+        data_fields: snapshot,
+      },
+      conn,
+    );
 
-  // Fase 10.5 — audit log do nascimento do contrato. CRÍTICO: se
-  // falhar, lança 500 (sem trilha não vale como prova). O contrato
-  // já está no banco neste ponto — em produção, a próxima evolução
-  // é envelopar create() + audit em transação para garantir atômico.
-  await auditLog.record({
-    contratoId,
-    corretoraId,
-    leadId,
-    eventType: "created",
-    actorType: "corretora_user",
-    actorId: createdByUserId ?? null,
-    ip: auditContext.ip ?? null,
-    userAgent: auditContext.userAgent ?? null,
-    newStatus: "draft",
-    payload: {
-      tipo,
-      numero_externo: metaContrato.numero_externo,
-      hash_sha256: hash,
-      qr_verification_token: token,
-    },
+    await auditLog.record(
+      {
+        contratoId: id,
+        corretoraId,
+        leadId,
+        eventType: "created",
+        actorType: "corretora_user",
+        actorId: createdByUserId ?? null,
+        ip: auditContext.ip ?? null,
+        userAgent: auditContext.userAgent ?? null,
+        newStatus: "draft",
+        payload: {
+          tipo,
+          numero_externo: metaContrato.numero_externo,
+          hash_sha256: hash,
+          qr_verification_token: token,
+        },
+      },
+      { conn },
+    );
+
+    return id;
   });
 
   // 7) Evento na timeline do lead (fire-and-forget por convenção,

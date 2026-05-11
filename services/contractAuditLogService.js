@@ -66,8 +66,17 @@ const VALID_ACTOR_TYPES = new Set([
  *   - payload      (opcional — JSON livre com motivo, capability,
  *     numero_externo, hash, etc)
  *   - critical     (opcional — override; default deriva de eventType)
+ *
+ * Segundo argumento (opções):
+ *   - conn         (opcional — conexão transacional MySQL2). Quando
+ *     o caller precisa atomicidade entre o INSERT do recurso (ex:
+ *     contrato) e o registro de auditoria, basta passar a `conn` do
+ *     `withTransaction` que o repositório executa o INSERT dentro
+ *     da mesma tx. Se o audit falhar e o caller propagar o erro, a
+ *     tx faz rollback no `withTransaction` e o recurso não fica
+ *     persistido.
  */
-async function record(data) {
+async function record(data, { conn } = {}) {
   if (!data || !data.eventType || !data.actorType || !data.contratoId) {
     // Erro de programação — falha imediatamente para flagrar no dev.
     throw new AppError(
@@ -87,21 +96,24 @@ async function record(data) {
   const isCritical = data.critical ?? CRITICAL_EVENTS.has(data.eventType);
 
   try {
-    await repo.createEvent({
-      contrato_id: data.contratoId,
-      corretora_id: data.corretoraId ?? null,
-      lead_id: data.leadId ?? null,
-      event_type: data.eventType,
-      actor_type: data.actorType,
-      actor_id: data.actorId ?? null,
-      ip: data.ip ?? null,
-      user_agent: data.userAgent ?? null,
-      previous_status: data.previousStatus ?? null,
-      new_status: data.newStatus ?? null,
-      provider: data.provider ?? null,
-      provider_document_id: data.providerDocumentId ?? null,
-      payload: data.payload ?? null,
-    });
+    await repo.createEvent(
+      {
+        contrato_id: data.contratoId,
+        corretora_id: data.corretoraId ?? null,
+        lead_id: data.leadId ?? null,
+        event_type: data.eventType,
+        actor_type: data.actorType,
+        actor_id: data.actorId ?? null,
+        ip: data.ip ?? null,
+        user_agent: data.userAgent ?? null,
+        previous_status: data.previousStatus ?? null,
+        new_status: data.newStatus ?? null,
+        provider: data.provider ?? null,
+        provider_document_id: data.providerDocumentId ?? null,
+        payload: data.payload ?? null,
+      },
+      conn,
+    );
   } catch (err) {
     // Auditoria é série A na nossa tese — logger SEMPRE.
     logger.error(
