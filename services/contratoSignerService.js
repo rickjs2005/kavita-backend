@@ -23,6 +23,7 @@ const leadsRepo = require("../repositories/corretoraLeadsRepository");
 const publicCorretorasRepo = require("../repositories/corretorasPublicRepository");
 const leadEventsRepo = require("../repositories/corretoraLeadEventsRepository");
 const clicksignAdapter = require("./contratos/clicksignAdapter");
+const auditLog = require("./contractAuditLogService");
 
 const STORAGE_ROOT = path.join(process.cwd(), "storage", "contratos");
 
@@ -134,7 +135,7 @@ async function _persistSignedPdf({ contrato, signedBuffer }) {
  * Chamado pelo contratoService.enviarParaAssinatura quando
  * CONTRATO_SIGNER_PROVIDER=clicksign.
  */
-async function enviarParaClickSign({ contrato, actor }) {
+async function enviarParaClickSign({ contrato, actor, auditContext = {} }) {
   if (!clicksignAdapter.isConfigured()) {
     throw new AppError(
       "ClickSign não configurado — defina CLICKSIGN_API_TOKEN e CLICKSIGN_HMAC_SECRET.",
@@ -171,11 +172,49 @@ async function enviarParaClickSign({ contrato, actor }) {
     );
   }
 
-  await contratoRepo.updateStatus(contrato.id, "sent", {
-    signer_provider: "clicksign",
-    signer_envelope_id: envelope.envelopeId,
-    signer_document_id: envelope.documentId,
-    sent_at: new Date(),
+  try {
+    await contratoRepo.updateStatus(contrato.id, "sent", {
+      signer_provider: "clicksign",
+      signer_envelope_id: envelope.envelopeId,
+      signer_document_id: envelope.documentId,
+      sent_at: new Date(),
+    });
+  } catch (err) {
+    if (err?.details?.current_status === "signed") {
+      await auditLog.record({
+        contratoId: contrato.id,
+        corretoraId: contrato.corretora_id,
+        leadId: contrato.lead_id,
+        eventType: "immutable_blocked",
+        actorType: "corretora_user",
+        actorId: actor?.userId ?? null,
+        ip: auditContext.ip ?? null,
+        userAgent: auditContext.userAgent ?? null,
+        previousStatus: "signed",
+        provider: "clicksign",
+        providerDocumentId: envelope.documentId,
+        payload: { attempted_action: "sent_to_signature" },
+      });
+    }
+    throw err;
+  }
+
+  await auditLog.record({
+    contratoId: contrato.id,
+    corretoraId: contrato.corretora_id,
+    leadId: contrato.lead_id,
+    eventType: "sent_to_signature",
+    actorType: "corretora_user",
+    actorId: actor?.userId ?? null,
+    ip: auditContext.ip ?? null,
+    userAgent: auditContext.userAgent ?? null,
+    previousStatus: contrato.status,
+    newStatus: "sent",
+    provider: "clicksign",
+    providerDocumentId: envelope.documentId,
+    payload: {
+      envelope_id: envelope.envelopeId,
+    },
   });
 
   await leadEventsRepo
@@ -253,6 +292,22 @@ async function processarEventoWebhook(domainEvent) {
 
   if (contrato.status === domainEvent.status_hint) {
     // Idempotência — ClickSign reenviou evento já aplicado.
+    // Registra como webhook_applied informativo (best-effort) para
+    // ficar visível na auditoria que o evento chegou e foi aceito.
+    await auditLog.record({
+      contratoId: contrato.id,
+      corretoraId: contrato.corretora_id,
+      leadId: contrato.lead_id,
+      eventType: "webhook_applied",
+      actorType: "webhook",
+      provider: "clicksign",
+      providerDocumentId: domainEvent.document_id,
+      payload: {
+        reason: "already_at_target_status",
+        status_hint: domainEvent.status_hint,
+        provider_event_id: domainEvent.provider_event_id ?? null,
+      },
+    });
     return { applied: true, reason: "already_at_target_status" };
   }
 
@@ -297,11 +352,57 @@ async function processarEventoWebhook(domainEvent) {
     title = "Contrato expirado sem assinatura";
   }
 
-  await contratoRepo.updateStatus(
-    contrato.id,
-    domainEvent.status_hint,
-    patch,
-  );
+  try {
+    await contratoRepo.updateStatus(
+      contrato.id,
+      domainEvent.status_hint,
+      patch,
+    );
+  } catch (err) {
+    if (err?.details?.current_status === "signed") {
+      // Webhook tentando mutar contrato signed (ex: ClickSign reenvia
+      // 'cancelled' depois de 'signed'). Registra como webhook_blocked
+      // best-effort para a auditoria. Em seguida REJEITA — o controller
+      // do webhook captura, marca o webhook_events como failed e
+      // responde 200 (não infla retry do provider).
+      await auditLog.record({
+        contratoId: contrato.id,
+        corretoraId: contrato.corretora_id,
+        leadId: contrato.lead_id,
+        eventType: "webhook_blocked",
+        actorType: "webhook",
+        previousStatus: "signed",
+        provider: "clicksign",
+        providerDocumentId: domainEvent.document_id,
+        payload: {
+          attempted_status: domainEvent.status_hint,
+          reason: "immutable_signed",
+          provider_event_id: domainEvent.provider_event_id ?? null,
+        },
+      });
+    }
+    throw err;
+  }
+
+  // Fase 10.5 — audit log da transição aplicada pelo webhook.
+  // Crítico porque é a evidência jurídica da assinatura/cancelamento.
+  await auditLog.record({
+    contratoId: contrato.id,
+    corretoraId: contrato.corretora_id,
+    leadId: contrato.lead_id,
+    eventType: domainEvent.status_hint, // 'signed' | 'cancelled' | 'expired'
+    actorType: "webhook",
+    previousStatus: contrato.status,
+    newStatus: domainEvent.status_hint,
+    provider: "clicksign",
+    providerDocumentId: domainEvent.document_id,
+    payload: {
+      occurred_at: domainEvent.occurred_at ?? null,
+      provider_event_id: domainEvent.provider_event_id ?? null,
+      signed_pdf_url: patch.signed_pdf_url ?? null,
+      signed_hash_sha256: patch.signed_hash_sha256 ?? null,
+    },
+  });
 
   await leadEventsRepo
     .create({

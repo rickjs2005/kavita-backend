@@ -81,6 +81,16 @@ describe("contratoService — imutabilidade pós-assinatura", () => {
       require.resolve("../../../services/planService"),
       () => planService,
     );
+    // Fase 10.5 — audit log foi plugado nos paths de cancelar/enviar/
+    // simular/created/blocked. Mocamos como no-op para isolar a
+    // regra de imutabilidade do banco de audit.
+    jest.doMock(
+      require.resolve("../../../services/contractAuditLogService"),
+      () => ({
+        record: jest.fn().mockResolvedValue(undefined),
+        fromRequest: () => ({}),
+      }),
+    );
 
     // eslint-disable-next-line global-require
     const service = require("../../../services/contratoService");

@@ -88,6 +88,16 @@ describe("contratoService — guards de KYC + plano + capability", () => {
       require.resolve("../../../services/planService"),
       () => planService,
     );
+    // Fase 10.5 — audit log foi plugado em todos os pontos de
+    // bloqueio; mocamos como no-op para esses testes não tentarem
+    // gravar no banco real.
+    jest.doMock(
+      require.resolve("../../../services/contractAuditLogService"),
+      () => ({
+        record: jest.fn().mockResolvedValue(undefined),
+        fromRequest: () => ({}),
+      }),
+    );
 
     // Faz o caminho positivo curto-circuitar antes de Puppeteer:
     // mocamos `_renderHtml` indiretamente via mock do template loader

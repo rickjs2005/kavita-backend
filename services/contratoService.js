@@ -35,6 +35,7 @@ const leadEventsRepo = require("../repositories/corretoraLeadEventsRepository");
 const contratoSignerService = require("./contratoSignerService");
 const corretoraKycService = require("./corretoraKycService");
 const planService = require("./planService");
+const auditLog = require("./contractAuditLogService");
 const { parseDataFieldsByTipo } = require("../schemas/contratoSchemas");
 
 // ---------------------------------------------------------------------------
@@ -246,6 +247,10 @@ async function gerarContrato({
   tipo,
   dataFields,
   createdByUserId,
+  // Fase 10.5 — contexto opcional de auditoria (ip, userAgent) vindo
+  // do controller. actor_type/actor_id são derivados do createdByUserId
+  // que é o usuário da corretora autenticado.
+  auditContext = {},
 }) {
   // 1) Carrega lead + corretora (scope)
   const lead = await leadsRepo.findByIdForCorretora(leadId, corretoraId);
@@ -286,7 +291,30 @@ async function gerarContrato({
   // Fase 10.2 — gate de KYC. Corretora precisa estar verified antes
   // de emitir qualquer contrato. `publicCorretorasRepo.findById` já
   // inclui `kyc_status` (coluna adicionada na migration 07).
-  corretoraKycService.requireVerifiedOrThrow(corretora);
+  try {
+    corretoraKycService.requireVerifiedOrThrow(corretora);
+  } catch (err) {
+    // Fase 10.5 — registra tentativa bloqueada antes de propagar.
+    // best-effort (não-crítico): se o audit falhar, mantemos o 403
+    // para o usuário e logamos a falha do audit separadamente.
+    // contratoId é 0 porque o contrato ainda não foi criado — o que
+    // importa aqui é o evento de tentativa associado à corretora.
+    await auditLog.record({
+      contratoId: 0,
+      corretoraId,
+      leadId,
+      eventType: "blocked_by_kyc",
+      actorType: "corretora_user",
+      actorId: createdByUserId ?? null,
+      ip: auditContext.ip ?? null,
+      userAgent: auditContext.userAgent ?? null,
+      payload: {
+        kyc_status: corretora.kyc_status ?? null,
+        tipo,
+      },
+    });
+    throw err;
+  }
 
   // Fase 10.3 — gate de plano. Subscription precisa estar
   // active|trialing E plan.capabilities.create_contract === true.
@@ -313,6 +341,21 @@ async function gerarContrato({
       },
       "contrato.blocked_by_plan",
     );
+    await auditLog.record({
+      contratoId: 0,
+      corretoraId,
+      leadId,
+      eventType: "blocked_by_plan",
+      actorType: "corretora_user",
+      actorId: createdByUserId ?? null,
+      ip: auditContext.ip ?? null,
+      userAgent: auditContext.userAgent ?? null,
+      payload: {
+        reason: err?.code ?? null,
+        details: err?.details ?? null,
+        tipo,
+      },
+    });
     throw err;
   }
 
@@ -389,6 +432,28 @@ async function gerarContrato({
     data_fields: snapshot,
   });
 
+  // Fase 10.5 — audit log do nascimento do contrato. CRÍTICO: se
+  // falhar, lança 500 (sem trilha não vale como prova). O contrato
+  // já está no banco neste ponto — em produção, a próxima evolução
+  // é envelopar create() + audit em transação para garantir atômico.
+  await auditLog.record({
+    contratoId,
+    corretoraId,
+    leadId,
+    eventType: "created",
+    actorType: "corretora_user",
+    actorId: createdByUserId ?? null,
+    ip: auditContext.ip ?? null,
+    userAgent: auditContext.userAgent ?? null,
+    newStatus: "draft",
+    payload: {
+      tipo,
+      numero_externo: metaContrato.numero_externo,
+      hash_sha256: hash,
+      qr_verification_token: token,
+    },
+  });
+
   // 7) Evento na timeline do lead (fire-and-forget por convenção,
   // mas aqui aguardamos porque é parte do rito jurídico).
   await leadEventsRepo
@@ -443,7 +508,7 @@ async function gerarContrato({
  * muda status; no modo ClickSign (PR 2), chamará a API e guardará
  * envelope_id.
  */
-async function enviarParaAssinatura({ id, corretoraId, actor }) {
+async function enviarParaAssinatura({ id, corretoraId, actor, auditContext = {} }) {
   const contrato = await contratoRepo.findById(id, corretoraId);
   if (!contrato) {
     throw new AppError("Contrato não encontrado.", ERROR_CODES.NOT_FOUND, 404);
@@ -498,13 +563,55 @@ async function enviarParaAssinatura({ id, corretoraId, actor }) {
   if (SIGNER_PROVIDER === "clicksign") {
     // Delega para o orquestrador — ele fala com a API e persiste os
     // IDs do envelope. Eventos, logs e transição também são de lá.
-    return contratoSignerService.enviarParaClickSign({ contrato, actor });
+    // auditContext propagado para o signer registrar sent_to_signature
+    // com o actor correto.
+    return contratoSignerService.enviarParaClickSign({
+      contrato,
+      actor,
+      auditContext,
+    });
   }
 
-  await contratoRepo.updateStatus(id, "sent", {
-    signer_provider: "stub",
-    signer_document_id: `stub-${randomUUID()}`,
-    sent_at: new Date(),
+  const stubDocumentId = `stub-${randomUUID()}`;
+  try {
+    await contratoRepo.updateStatus(id, "sent", {
+      signer_provider: "stub",
+      signer_document_id: stubDocumentId,
+      sent_at: new Date(),
+    });
+  } catch (err) {
+    // Imutabilidade pós-signed barra o updateStatus. Registra a
+    // tentativa antes de propagar.
+    if (err?.details?.current_status === "signed") {
+      await auditLog.record({
+        contratoId: id,
+        corretoraId,
+        leadId: contrato.lead_id,
+        eventType: "immutable_blocked",
+        actorType: "corretora_user",
+        actorId: actor?.userId ?? null,
+        ip: auditContext.ip ?? null,
+        userAgent: auditContext.userAgent ?? null,
+        previousStatus: "signed",
+        payload: { attempted_action: "sent_to_signature" },
+      });
+    }
+    throw err;
+  }
+
+  await auditLog.record({
+    contratoId: id,
+    corretoraId,
+    leadId: contrato.lead_id,
+    eventType: "sent_to_signature",
+    actorType: "corretora_user",
+    actorId: actor?.userId ?? null,
+    ip: auditContext.ip ?? null,
+    userAgent: auditContext.userAgent ?? null,
+    previousStatus: contrato.status,
+    newStatus: "sent",
+    provider: "stub",
+    providerDocumentId: stubDocumentId,
   });
 
   await leadEventsRepo
@@ -528,7 +635,7 @@ async function enviarParaAssinatura({ id, corretoraId, actor }) {
 /**
  * Cancela um contrato que ainda não foi assinado.
  */
-async function cancelar({ id, corretoraId, motivo, actor }) {
+async function cancelar({ id, corretoraId, motivo, actor, auditContext = {} }) {
   const contrato = await contratoRepo.findById(id, corretoraId);
   if (!contrato) {
     throw new AppError("Contrato não encontrado.", ERROR_CODES.NOT_FOUND, 404);
@@ -549,9 +656,41 @@ async function cancelar({ id, corretoraId, motivo, actor }) {
     );
   }
 
-  await contratoRepo.updateStatus(id, "cancelled", {
-    cancelled_at: new Date(),
-    cancel_reason: motivo,
+  try {
+    await contratoRepo.updateStatus(id, "cancelled", {
+      cancelled_at: new Date(),
+      cancel_reason: motivo,
+    });
+  } catch (err) {
+    if (err?.details?.current_status === "signed") {
+      await auditLog.record({
+        contratoId: id,
+        corretoraId,
+        leadId: contrato.lead_id,
+        eventType: "immutable_blocked",
+        actorType: "corretora_user",
+        actorId: actor?.userId ?? null,
+        ip: auditContext.ip ?? null,
+        userAgent: auditContext.userAgent ?? null,
+        previousStatus: "signed",
+        payload: { attempted_action: "cancelled", motivo },
+      });
+    }
+    throw err;
+  }
+
+  await auditLog.record({
+    contratoId: id,
+    corretoraId,
+    leadId: contrato.lead_id,
+    eventType: "cancelled",
+    actorType: "corretora_user",
+    actorId: actor?.userId ?? null,
+    ip: auditContext.ip ?? null,
+    userAgent: auditContext.userAgent ?? null,
+    previousStatus: contrato.status,
+    newStatus: "cancelled",
+    payload: { motivo },
   });
 
   await leadEventsRepo
@@ -575,7 +714,7 @@ async function cancelar({ id, corretoraId, motivo, actor }) {
  * Simulação de assinatura concluída — só disponível enquanto o
  * provedor ativo for `stub`. Endpoint admin.
  */
-async function simularAssinatura({ id, actor }) {
+async function simularAssinatura({ id, actor, auditContext = {} }) {
   if (SIGNER_PROVIDER !== "stub") {
     throw new AppError(
       "Simulação de assinatura só funciona com CONTRATO_SIGNER_PROVIDER=stub.",
@@ -605,7 +744,42 @@ async function simularAssinatura({ id, actor }) {
   }
 
   const signedAt = new Date();
-  await contratoRepo.updateStatus(id, "signed", { signed_at: signedAt });
+  try {
+    await contratoRepo.updateStatus(id, "signed", { signed_at: signedAt });
+  } catch (err) {
+    if (err?.details?.current_status === "signed") {
+      await auditLog.record({
+        contratoId: id,
+        corretoraId: contrato.corretora_id,
+        leadId: contrato.lead_id,
+        eventType: "immutable_blocked",
+        actorType: "admin",
+        actorId: actor?.id ?? null,
+        ip: auditContext.ip ?? null,
+        userAgent: auditContext.userAgent ?? null,
+        previousStatus: "signed",
+        payload: { attempted_action: "simularAssinatura" },
+      });
+    }
+    throw err;
+  }
+
+  await auditLog.record({
+    contratoId: id,
+    corretoraId: contrato.corretora_id,
+    leadId: contrato.lead_id,
+    eventType: "signed",
+    // simularAssinatura é um stub admin (NODE_ENV/staging) — system
+    // capta melhor que admin porque é UI de teste, não ato jurídico.
+    actorType: "system",
+    actorId: actor?.id ?? null,
+    ip: auditContext.ip ?? null,
+    userAgent: auditContext.userAgent ?? null,
+    previousStatus: "sent",
+    newStatus: "signed",
+    provider: "stub",
+    payload: { admin_actor: actor?.id ?? null, simulated: true },
+  });
 
   await leadEventsRepo
     .create({

@@ -20,4 +20,14 @@ router.post(
   ctrl.simularAssinatura,
 );
 
+// Fase 10.5 — leitura da trilha de auditoria do contrato. Apenas
+// leitura: `mercado_cafe_view` (visualização do módulo) é suficiente.
+// Mutação não existe — a tabela é append-only e os eventos são
+// gravados pelos próprios services do ciclo de vida.
+router.get(
+  "/:id/audit-log",
+  requirePermission("mercado_cafe_view"),
+  ctrl.listAuditLog,
+);
+
 module.exports = router;

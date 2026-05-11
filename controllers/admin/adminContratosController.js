@@ -13,6 +13,8 @@ const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const contratoService = require("../../services/contratoService");
+const auditLog = require("../../services/contractAuditLogService");
+const auditLogRepo = require("../../repositories/contractAuditLogRepository");
 
 async function simularAssinatura(req, res, next) {
   try {
@@ -24,6 +26,7 @@ async function simularAssinatura(req, res, next) {
     const result = await contratoService.simularAssinatura({
       id,
       actor: { id: req.admin?.id ?? null },
+      auditContext: auditLog.fromRequest(req),
     });
 
     return response.ok(res, result, "Assinatura simulada com sucesso.");
@@ -40,4 +43,30 @@ async function simularAssinatura(req, res, next) {
   }
 }
 
-module.exports = { simularAssinatura };
+// Fase 10.5 — Auditoria do contrato (timeline append-only).
+// GET /api/admin/contratos/:id/audit-log
+// RBAC já aplicado no mount (verifyAdmin + validateCSRF +
+// requirePermission("mercado_cafe_view") na rota).
+async function listAuditLog(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new AppError("ID inválido.", ERROR_CODES.VALIDATION_ERROR, 400);
+    }
+    const limit = Number(req.query.limit) || 100;
+    const items = await auditLogRepo.listByContratoId(id, { limit });
+    return response.ok(res, { items });
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao listar auditoria.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+module.exports = { simularAssinatura, listAuditLog };

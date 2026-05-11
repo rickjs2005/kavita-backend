@@ -9,6 +9,7 @@ const { response } = require("../../lib");
 const AppError = require("../../errors/AppError");
 const ERROR_CODES = require("../../constants/ErrorCodes");
 const contratoService = require("../../services/contratoService");
+const auditLog = require("../../services/contractAuditLogService");
 const {
   createContratoBaseSchema,
   cancelContratoSchema,
@@ -70,6 +71,7 @@ async function createContrato(req, res, next) {
       tipo,
       dataFields: data_fields,
       createdByUserId: req.corretoraUser.id,
+      auditContext: auditLog.fromRequest(req),
     });
 
     return response.created(res, result, "Contrato gerado.");
@@ -88,6 +90,7 @@ async function enviarContrato(req, res, next) {
       id,
       corretoraId: req.corretoraUser.corretora_id,
       actor: { userId: req.corretoraUser.id },
+      auditContext: auditLog.fromRequest(req),
     });
     return response.ok(res, result, "Contrato enviado para assinatura.");
   } catch (err) {
@@ -120,6 +123,7 @@ async function cancelarContrato(req, res, next) {
       corretoraId: req.corretoraUser.corretora_id,
       motivo: parsed.data.motivo,
       actor: { userId: req.corretoraUser.id },
+      auditContext: auditLog.fromRequest(req),
     });
     return response.ok(res, result, "Contrato cancelado.");
   } catch (err) {
@@ -191,6 +195,22 @@ async function baixarPdf(req, res, next) {
         500,
       );
     }
+
+    // Fase 10.5 — audit best-effort do download. Roda ANTES do
+    // stream para a linha estar gravada antes do response começar a
+    // sair (se gravarmos depois e o cliente cancelar o download,
+    // perdemos a evidência). Falha do audit não impede o serviço.
+    await auditLog.record({
+      contratoId: contrato.id,
+      corretoraId: req.corretoraUser.corretora_id,
+      leadId: contrato.lead_id ?? null,
+      eventType: "downloaded",
+      actorType: "corretora_user",
+      actorId: req.corretoraUser.id,
+      ip: req.ip ?? null,
+      userAgent: req.headers?.["user-agent"]?.slice(0, 500) ?? null,
+      payload: { variant: "draft_or_signed" },
+    });
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
