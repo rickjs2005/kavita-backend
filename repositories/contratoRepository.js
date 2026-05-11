@@ -116,7 +116,12 @@ async function hasActiveForLead(lead_id, corretora_id) {
   return rows.length > 0;
 }
 
-async function updateStatus(id, status, patch = {}) {
+// Aceita conexão transacional opcional (Fase 10.7). Caller que precisa
+// atomicidade entre o UPDATE de transição (ex: cancelled) e o audit
+// correspondente passa a `conn` do withTransaction — UPDATE e o
+// SELECT diagnóstico subsequente rodam na mesma tx, permitindo
+// rollback caso o audit crítico falhe depois.
+async function updateStatus(id, status, patch = {}, conn = pool) {
   const sets = ["status = ?", "updated_at = CURRENT_TIMESTAMP"];
   const values = [status];
 
@@ -148,7 +153,7 @@ async function updateStatus(id, status, patch = {}) {
   // O caminho legítimo do webhook (sent → signed) passa, porque
   // status atual é 'sent' nesse momento — só fica imutável depois
   // que a transição completa.
-  const [result] = await pool.query(
+  const [result] = await conn.query(
     `UPDATE contratos
         SET ${sets.join(", ")}
       WHERE id = ?
@@ -158,8 +163,10 @@ async function updateStatus(id, status, patch = {}) {
 
   if (result.affectedRows === 0) {
     // 0 linhas: ou contrato não existe, ou já está signed. Diferenciar
-    // ajuda o caller a decidir (404 vs 409).
-    const [rows] = await pool.query(
+    // ajuda o caller a decidir (404 vs 409). Lê na MESMA conexão para
+    // ver dentro da própria transação (caso a inconsistência seja
+    // mid-flight no mesmo escopo).
+    const [rows] = await conn.query(
       "SELECT status FROM contratos WHERE id = ? LIMIT 1",
       [id],
     );

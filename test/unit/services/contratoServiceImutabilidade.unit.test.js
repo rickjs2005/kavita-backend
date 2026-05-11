@@ -91,6 +91,15 @@ describe("contratoService — imutabilidade pós-assinatura", () => {
         fromRequest: () => ({}),
       }),
     );
+    // Fase 10.7 — cancelar passou a usar withTransaction. Mocamos o
+    // helper para executar o callback diretamente (sem abrir conexão
+    // real no MySQL).
+    jest.doMock(
+      require.resolve("../../../lib/withTransaction"),
+      () => ({
+        withTransaction: jest.fn(async (fn) => fn({ __mock: "tx-conn" })),
+      }),
+    );
 
     // eslint-disable-next-line global-require
     const service = require("../../../services/contratoService");
@@ -115,10 +124,14 @@ describe("contratoService — imutabilidade pós-assinatura", () => {
       actor: { userId: 7 },
     });
     expect(result).toEqual({ id: 42, status: "cancelled" });
+    // Fase 10.7 — updateStatus agora recebe (id, status, patch, conn).
+    // Validamos os 3 primeiros; a conn vem do withTransaction mockado
+    // e é validada nas suites de transação dedicadas.
     expect(contratoRepo.updateStatus).toHaveBeenCalledWith(
       42,
       "cancelled",
       expect.objectContaining({ cancel_reason: "ajuste no preço" }),
+      expect.anything(),
     );
   });
 

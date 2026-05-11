@@ -676,10 +676,43 @@ async function cancelar({ id, corretoraId, motivo, actor, auditContext = {} }) {
     );
   }
 
+  // Fase 10.7 — UPDATE de cancelamento + audit 'cancelled' rodam
+  // na MESMA transação. Se o audit crítico falhar, withTransaction
+  // dispara rollback e o contrato volta para o status anterior —
+  // sem trilha, sem estado final inconsistente.
+  //
+  // immutable_blocked (raça com signed depois do pre-check) segue
+  // best-effort FORA da tx: o UPDATE já lançou e a tx já foi
+  // revertida, então gravamos só o evento observacional para
+  // visibilidade.
   try {
-    await contratoRepo.updateStatus(id, "cancelled", {
-      cancelled_at: new Date(),
-      cancel_reason: motivo,
+    await withTransaction(async (conn) => {
+      await contratoRepo.updateStatus(
+        id,
+        "cancelled",
+        {
+          cancelled_at: new Date(),
+          cancel_reason: motivo,
+        },
+        conn,
+      );
+
+      await auditLog.record(
+        {
+          contratoId: id,
+          corretoraId,
+          leadId: contrato.lead_id,
+          eventType: "cancelled",
+          actorType: "corretora_user",
+          actorId: actor?.userId ?? null,
+          ip: auditContext.ip ?? null,
+          userAgent: auditContext.userAgent ?? null,
+          previousStatus: contrato.status,
+          newStatus: "cancelled",
+          payload: { motivo },
+        },
+        { conn },
+      );
     });
   } catch (err) {
     if (err?.details?.current_status === "signed") {
@@ -698,20 +731,6 @@ async function cancelar({ id, corretoraId, motivo, actor, auditContext = {} }) {
     }
     throw err;
   }
-
-  await auditLog.record({
-    contratoId: id,
-    corretoraId,
-    leadId: contrato.lead_id,
-    eventType: "cancelled",
-    actorType: "corretora_user",
-    actorId: actor?.userId ?? null,
-    ip: auditContext.ip ?? null,
-    userAgent: auditContext.userAgent ?? null,
-    previousStatus: contrato.status,
-    newStatus: "cancelled",
-    payload: { motivo },
-  });
 
   await leadEventsRepo
     .create({
