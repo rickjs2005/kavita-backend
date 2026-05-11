@@ -113,5 +113,8 @@
   "keywords": [],
   "overrides": {
     "punycode": "^2.3.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }
