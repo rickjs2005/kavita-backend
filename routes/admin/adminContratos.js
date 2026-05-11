@@ -11,6 +11,14 @@ const router = express.Router();
 const requirePermission = require("../../middleware/requirePermission");
 const ctrl = require("../../controllers/admin/adminContratosController");
 
+// Fase 10.10 — listagem admin paginada com filtros básicos.
+// `mercado_cafe_view` é piso para leitura do módulo.
+router.get(
+  "/",
+  requirePermission("mercado_cafe_view"),
+  ctrl.listForAdmin,
+);
+
 // Reusa a granular já existente `mercado_cafe_plan_manage` para o stub
 // (quem gerencia planos pode disparar rituais do módulo). A ClickSign
 // real, quando plugada, poderá exigir uma granular dedicada.

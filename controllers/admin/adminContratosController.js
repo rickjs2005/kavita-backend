@@ -15,6 +15,7 @@ const ERROR_CODES = require("../../constants/ErrorCodes");
 const contratoService = require("../../services/contratoService");
 const auditLog = require("../../services/contractAuditLogService");
 const auditLogRepo = require("../../repositories/contractAuditLogRepository");
+const contratoRepo = require("../../repositories/contratoRepository");
 
 async function simularAssinatura(req, res, next) {
   try {
@@ -69,4 +70,45 @@ async function listAuditLog(req, res, next) {
   }
 }
 
-module.exports = { simularAssinatura, listAuditLog };
+// Fase 10.10 — Listagem admin paginada de contratos.
+// GET /api/admin/contratos
+// RBAC: requirePermission("mercado_cafe_view") aplicado na rota.
+// Query params validados via middleware `validate(adminListContratosQuerySchema)`
+// — quando o controller é alcançado, req.body/req.query já está limpo.
+async function listForAdmin(req, res, next) {
+  try {
+    // O middleware validate roda em req.body por default; aqui usamos
+    // req.query diretamente (Zod coerce já cuidou de string→number).
+    // Como `validate` está configurado pra body neste projeto, fazemos
+    // o parse manualmente aqui — alinhado ao padrão de outros admin
+    // listings (ex.: adminCorretoras listCorretoras).
+    const schemas = require("../../schemas/contratoSchemas");
+    const parsed = schemas.adminListContratosQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      const fields = parsed.error.issues.map((issue) => ({
+        field: issue.path.join(".") || "query",
+        message: issue.message,
+      }));
+      throw new AppError(
+        "Parâmetros de filtro inválidos.",
+        ERROR_CODES.VALIDATION_ERROR,
+        400,
+        { fields },
+      );
+    }
+    const result = await contratoRepo.listForAdmin(parsed.data);
+    return response.ok(res, result);
+  } catch (err) {
+    return next(
+      err instanceof AppError
+        ? err
+        : new AppError(
+            "Erro ao listar contratos.",
+            ERROR_CODES.SERVER_ERROR,
+            500,
+          ),
+    );
+  }
+}
+
+module.exports = { simularAssinatura, listAuditLog, listForAdmin };

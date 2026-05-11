@@ -121,10 +121,43 @@ const cancelContratoSchema = z.object({
 // Body vazio, mas mantemos schema pra satisfazer validate() se usado.
 const simularAssinaturaSchema = z.object({}).passthrough();
 
+// GET /api/admin/contratos — listagem admin paginada com filtros.
+// Todos os campos são opcionais; o repository monta WHERE dinâmico.
+const adminListContratosQuerySchema = z
+  .object({
+    status: z
+      .enum(["draft", "sent", "signed", "cancelled", "expired"])
+      .optional(),
+    tipo: z.enum(["disponivel", "entrega_futura"]).optional(),
+    corretora_id: z.coerce.number().int().positive().optional(),
+    lead_id: z.coerce.number().int().positive().optional(),
+    q: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .optional()
+      .transform((v) => (v ? v : undefined)),
+    // Datas YYYY-MM-DD. O service/repo converte para boundary
+    // (start: 00:00:00, end: 23:59:59) para casar com DATETIME.
+    date_from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Use formato AAAA-MM-DD.")
+      .optional(),
+    date_to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Use formato AAAA-MM-DD.")
+      .optional(),
+    page: z.coerce.number().int().min(1).max(10000).optional().default(1),
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  })
+  .strip();
+
 module.exports = {
   createContratoBaseSchema,
   cancelContratoSchema,
   simularAssinaturaSchema,
+  adminListContratosQuerySchema,
   parseDataFieldsByTipo,
   // Exportados para testes
   disponivelDataFields,

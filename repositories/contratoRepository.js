@@ -254,6 +254,109 @@ async function findByIdForProducer(id, email) {
   return hydrate(rows[0]);
 }
 
+/**
+ * Listagem admin paginada com filtros (Fase 10.10).
+ *
+ * JOIN com `corretoras` e `corretora_leads` traz nomes legíveis sem
+ * obrigar segunda query. Não retorna `data_fields` (snapshot JSON
+ * potencialmente grande) — a tela de detalhe / auditoria carrega
+ * isso quando precisa.
+ *
+ * Filtros opcionais:
+ *   - status, tipo
+ *   - corretora_id, lead_id
+ *   - q (busca em c.id, data_fields.__numero_externo, l.nome)
+ *   - date_from / date_to (inclusivos por dia em America/Sao_Paulo)
+ *
+ * Paginação: page (1-based), limit (1..100). Retorna { items, meta }
+ * onde meta inclui total, page, limit, total_pages.
+ */
+async function listForAdmin(filters = {}) {
+  const where = [];
+  const params = [];
+
+  if (filters.status) {
+    where.push("c.status = ?");
+    params.push(filters.status);
+  }
+  if (filters.tipo) {
+    where.push("c.tipo = ?");
+    params.push(filters.tipo);
+  }
+  if (Number.isInteger(filters.corretora_id)) {
+    where.push("c.corretora_id = ?");
+    params.push(filters.corretora_id);
+  }
+  if (Number.isInteger(filters.lead_id)) {
+    where.push("c.lead_id = ?");
+    params.push(filters.lead_id);
+  }
+  // q: busca em (id numérico OU numero_externo no JSON OU nome do
+  // produtor no lead). JSON_UNQUOTE evita aspas no LIKE.
+  if (filters.q) {
+    const q = String(filters.q).trim();
+    const like = `%${q}%`;
+    const conds = ["l.nome LIKE ?", "JSON_UNQUOTE(JSON_EXTRACT(c.data_fields, '$.__numero_externo')) LIKE ?"];
+    params.push(like, like);
+    const asNum = Number(q);
+    if (Number.isInteger(asNum) && asNum > 0) {
+      conds.unshift("c.id = ?");
+      params.unshift(asNum);
+    }
+    where.push(`(${conds.join(" OR ")})`);
+  }
+  if (filters.date_from) {
+    where.push("c.created_at >= ?");
+    params.push(`${filters.date_from} 00:00:00`);
+  }
+  if (filters.date_to) {
+    where.push("c.created_at <= ?");
+    params.push(`${filters.date_to} 23:59:59`);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const page = Math.max(1, Number(filters.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(filters.limit) || 20));
+  const offset = (page - 1) * limit;
+
+  const [[{ total }]] = await pool.query(
+    `SELECT COUNT(*) AS total
+       FROM contratos c
+       LEFT JOIN corretoras co ON co.id = c.corretora_id
+       LEFT JOIN corretora_leads l ON l.id = c.lead_id
+       ${whereSql}`,
+    params,
+  );
+
+  const [rows] = await pool.query(
+    `SELECT
+        c.id, c.tipo, c.status, c.lead_id, c.corretora_id,
+        c.created_at, c.sent_at, c.signed_at, c.cancelled_at,
+        JSON_UNQUOTE(JSON_EXTRACT(c.data_fields, '$.__numero_externo')) AS numero_externo,
+        co.name AS corretora_name, co.slug AS corretora_slug,
+        l.nome AS lead_nome
+       FROM contratos c
+       LEFT JOIN corretoras co ON co.id = c.corretora_id
+       LEFT JOIN corretora_leads l ON l.id = c.lead_id
+       ${whereSql}
+      ORDER BY c.created_at DESC, c.id DESC
+      LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  );
+
+  const totalNum = Number(total) || 0;
+  return {
+    items: rows,
+    meta: {
+      total: totalNum,
+      page,
+      limit,
+      total_pages: Math.max(1, Math.ceil(totalNum / limit)),
+    },
+  };
+}
+
 module.exports = {
   create,
   findById,
@@ -262,6 +365,7 @@ module.exports = {
   findBySignerDocumentId,
   listByLead,
   listByProducerEmail,
+  listForAdmin,
   findByIdForProducer,
   hasActiveForLead,
   updateStatus,
