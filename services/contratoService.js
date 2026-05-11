@@ -593,15 +593,48 @@ async function enviarParaAssinatura({ id, corretoraId, actor, auditContext = {} 
   }
 
   const stubDocumentId = `stub-${randomUUID()}`;
+  const sentAt = new Date();
+
+  // Fase 10.8 — UPDATE para 'sent' + audit 'sent_to_signature' rodam
+  // na MESMA transação (fluxo stub apenas — ClickSign permanece como
+  // está nesta etapa). Se o audit crítico falhar, withTransaction
+  // dispara rollback e o contrato volta para 'draft' — sem estado
+  // 'sent' órfão sem trilha jurídica.
+  //
+  // immutable_blocked segue best-effort FORA da tx, capturando a
+  // race com signed (alguém assinou entre o pre-check e o UPDATE).
   try {
-    await contratoRepo.updateStatus(id, "sent", {
-      signer_provider: "stub",
-      signer_document_id: stubDocumentId,
-      sent_at: new Date(),
+    await withTransaction(async (conn) => {
+      await contratoRepo.updateStatus(
+        id,
+        "sent",
+        {
+          signer_provider: "stub",
+          signer_document_id: stubDocumentId,
+          sent_at: sentAt,
+        },
+        conn,
+      );
+
+      await auditLog.record(
+        {
+          contratoId: id,
+          corretoraId,
+          leadId: contrato.lead_id,
+          eventType: "sent_to_signature",
+          actorType: "corretora_user",
+          actorId: actor?.userId ?? null,
+          ip: auditContext.ip ?? null,
+          userAgent: auditContext.userAgent ?? null,
+          previousStatus: contrato.status,
+          newStatus: "sent",
+          provider: "stub",
+          providerDocumentId: stubDocumentId,
+        },
+        { conn },
+      );
     });
   } catch (err) {
-    // Imutabilidade pós-signed barra o updateStatus. Registra a
-    // tentativa antes de propagar.
     if (err?.details?.current_status === "signed") {
       await auditLog.record({
         contratoId: id,
@@ -618,21 +651,6 @@ async function enviarParaAssinatura({ id, corretoraId, actor, auditContext = {} 
     }
     throw err;
   }
-
-  await auditLog.record({
-    contratoId: id,
-    corretoraId,
-    leadId: contrato.lead_id,
-    eventType: "sent_to_signature",
-    actorType: "corretora_user",
-    actorId: actor?.userId ?? null,
-    ip: auditContext.ip ?? null,
-    userAgent: auditContext.userAgent ?? null,
-    previousStatus: contrato.status,
-    newStatus: "sent",
-    provider: "stub",
-    providerDocumentId: stubDocumentId,
-  });
 
   await leadEventsRepo
     .create({
