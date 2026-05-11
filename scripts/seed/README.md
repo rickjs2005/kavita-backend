@@ -1,7 +1,7 @@
 # Seed para apresentação privada (demo 30min)
 
 Popula o banco com dados realistas para o roteiro público da demo:
-catálogo, cupons, news, drone models. **Não cobre** pedidos, corretoras,
+catálogo, cupons e news. **Não cobre** pedidos, corretoras, drones,
 admins demo ou usuário cliente demo — esses devem ser criados via admin
 UI ou via fluxo real (instruções abaixo).
 
@@ -13,9 +13,11 @@ UI ou via fluxo real (instruções abaixo).
 | products | 12 | skip se name idêntico já existe |
 | cupons | 3 (BEMVINDO10, FRETEAGRO50, CAFE15) | INSERT IGNORE por código |
 | news_posts | 6 publicados | INSERT IGNORE por slug |
-| drone_models | 5 modelos DJI Agras | INSERT IGNORE por key |
 
 Pode rodar várias vezes sem duplicar.
+
+**Drones**: o cadastro de modelos (T25, T70, T100) já existe no banco
+e é gerenciado pelo admin. O seed não toca nesses dados.
 
 ## Como rodar
 

@@ -2,17 +2,18 @@
 // scripts/seed/demo.js
 //
 // Seed idempotente para apresentação controlada (demo de 30min ao sócio).
-// Popula somente catálogo + editorial + drones — o suficiente para o roteiro
-// público não mostrar telas vazias. Pedidos, corretoras e contas demo ficam
-// fora deste script (instruções no README.md ao lado).
+// Popula somente catálogo + editorial — o suficiente para o roteiro
+// público não mostrar telas vazias. Pedidos, corretoras, drones e contas
+// demo ficam fora deste script (instruções no README.md ao lado).
+//
+// Drones NÃO são populados: já há cadastro próprio (T25, T70, T100) feito
+// via admin e não queremos duplicar nem conflitar.
 //
 // Idempotência:
 //   - Categories  → INSERT IGNORE por slug (UNIQUE).
 //   - Products    → checa por nome (LIKE exato) antes de inserir.
 //   - Cupons      → INSERT IGNORE por codigo (UNIQUE).
 //   - News posts  → INSERT IGNORE por slug (UNIQUE).
-//   - Drone models→ INSERT IGNORE por key (UNIQUE).
-//   - Hero slides → idempotente por título (skip se existe).
 //
 // Rodar:  node scripts/seed/demo.js
 // Dry-run: node scripts/seed/demo.js --dry-run
@@ -223,32 +224,6 @@ async function seedNewsPosts(conn) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// DRONE MODELS
-// ────────────────────────────────────────────────────────────────────────
-
-const DRONE_MODELS = [
-  { key: "agras-t10", label: "DJI Agras T10", sort_order: 1 },
-  { key: "agras-t25", label: "DJI Agras T25", sort_order: 2 },
-  { key: "agras-t40", label: "DJI Agras T40", sort_order: 3 },
-  { key: "agras-t50", label: "DJI Agras T50", sort_order: 4 },
-  { key: "matrice-30t", label: "DJI Matrice 30T (Inspeção)", sort_order: 5 },
-];
-
-async function seedDroneModels(conn) {
-  let inserted = 0;
-  for (const m of DRONE_MODELS) {
-    if (DRY_RUN) { log("drone_model", m.key); inserted++; continue; }
-    const [r] = await conn.query(
-      `INSERT IGNORE INTO drone_models (\`key\`, label, is_active, sort_order)
-       VALUES (?, ?, 1, ?)`,
-      [m.key, m.label, m.sort_order],
-    );
-    if (r.affectedRows > 0) inserted++;
-  }
-  log(`drone models inseridos: ${inserted}/${DRONE_MODELS.length}`);
-}
-
-// ────────────────────────────────────────────────────────────────────────
 // MAIN
 // ────────────────────────────────────────────────────────────────────────
 
@@ -268,7 +243,6 @@ async function main() {
     await seedProducts(conn, categoryIds);
     await seedCupons(conn);
     await seedNewsPosts(conn);
-    await seedDroneModels(conn);
 
     if (DRY_RUN) {
       await conn.rollback();
