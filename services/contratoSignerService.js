@@ -17,6 +17,7 @@ const path = require("path");
 const AppError = require("../errors/AppError");
 const ERROR_CODES = require("../constants/ErrorCodes");
 const logger = require("../lib/logger");
+const { withTransaction } = require("../lib/withTransaction");
 
 const contratoRepo = require("../repositories/contratoRepository");
 const leadsRepo = require("../repositories/corretoraLeadsRepository");
@@ -172,12 +173,52 @@ async function enviarParaClickSign({ contrato, actor, auditContext = {} }) {
     );
   }
 
+  // Fase 10.11 — chamada HTTP ao ClickSign já aconteceu (acima);
+  // agora UPDATE + audit 'sent_to_signature' rodam na MESMA
+  // transação. Se o audit crítico falhar, withTransaction faz
+  // rollback do UPDATE — o envelope no provider permanece (lá fora
+  // não há rollback), mas o estado interno do contrato volta para
+  // draft e a reconciliação pode reenviar/limpar via webhook ou
+  // ferramenta operacional. Preferimos isso a deixar o contrato
+  // como 'sent' sem trilha jurídica do envio.
+  //
+  // immutable_blocked (race com signed entre envio e UPDATE) segue
+  // best-effort FORA da tx — mesma regra dos outros fluxos.
+  const sentAt = new Date();
   try {
-    await contratoRepo.updateStatus(contrato.id, "sent", {
-      signer_provider: "clicksign",
-      signer_envelope_id: envelope.envelopeId,
-      signer_document_id: envelope.documentId,
-      sent_at: new Date(),
+    await withTransaction(async (conn) => {
+      await contratoRepo.updateStatus(
+        contrato.id,
+        "sent",
+        {
+          signer_provider: "clicksign",
+          signer_envelope_id: envelope.envelopeId,
+          signer_document_id: envelope.documentId,
+          sent_at: sentAt,
+        },
+        conn,
+      );
+
+      await auditLog.record(
+        {
+          contratoId: contrato.id,
+          corretoraId: contrato.corretora_id,
+          leadId: contrato.lead_id,
+          eventType: "sent_to_signature",
+          actorType: "corretora_user",
+          actorId: actor?.userId ?? null,
+          ip: auditContext.ip ?? null,
+          userAgent: auditContext.userAgent ?? null,
+          previousStatus: contrato.status,
+          newStatus: "sent",
+          provider: "clicksign",
+          providerDocumentId: envelope.documentId,
+          payload: {
+            envelope_id: envelope.envelopeId,
+          },
+        },
+        { conn },
+      );
     });
   } catch (err) {
     if (err?.details?.current_status === "signed") {
@@ -198,24 +239,6 @@ async function enviarParaClickSign({ contrato, actor, auditContext = {} }) {
     }
     throw err;
   }
-
-  await auditLog.record({
-    contratoId: contrato.id,
-    corretoraId: contrato.corretora_id,
-    leadId: contrato.lead_id,
-    eventType: "sent_to_signature",
-    actorType: "corretora_user",
-    actorId: actor?.userId ?? null,
-    ip: auditContext.ip ?? null,
-    userAgent: auditContext.userAgent ?? null,
-    previousStatus: contrato.status,
-    newStatus: "sent",
-    provider: "clicksign",
-    providerDocumentId: envelope.documentId,
-    payload: {
-      envelope_id: envelope.envelopeId,
-    },
-  });
 
   await leadEventsRepo
     .create({
@@ -352,12 +375,49 @@ async function processarEventoWebhook(domainEvent) {
     title = "Contrato expirado sem assinatura";
   }
 
+  // Fase 10.11 — UPDATE da transição + audit do evento crítico
+  // (signed | cancelled | expired) rodam na MESMA transação.
+  // O download do PDF assinado (acima, quando status_hint=signed)
+  // já aconteceu — chamada HTTP NUNCA dentro da tx para não
+  // prender conexão. Se o audit crítico falhar aqui, rollback
+  // reverte o UPDATE: o controller do webhook marca o
+  // webhook_events como failed e responde 200 (idempotência do
+  // provider faz o evento voltar e reaplicar).
+  //
+  // webhook_blocked (race signed mid-flight) segue best-effort
+  // FORA da tx.
   try {
-    await contratoRepo.updateStatus(
-      contrato.id,
-      domainEvent.status_hint,
-      patch,
-    );
+    await withTransaction(async (conn) => {
+      await contratoRepo.updateStatus(
+        contrato.id,
+        domainEvent.status_hint,
+        patch,
+        conn,
+      );
+
+      // Audit log da transição aplicada pelo webhook. Crítico —
+      // é a evidência jurídica da assinatura/cancelamento.
+      await auditLog.record(
+        {
+          contratoId: contrato.id,
+          corretoraId: contrato.corretora_id,
+          leadId: contrato.lead_id,
+          eventType: domainEvent.status_hint, // 'signed' | 'cancelled' | 'expired'
+          actorType: "webhook",
+          previousStatus: contrato.status,
+          newStatus: domainEvent.status_hint,
+          provider: "clicksign",
+          providerDocumentId: domainEvent.document_id,
+          payload: {
+            occurred_at: domainEvent.occurred_at ?? null,
+            provider_event_id: domainEvent.provider_event_id ?? null,
+            signed_pdf_url: patch.signed_pdf_url ?? null,
+            signed_hash_sha256: patch.signed_hash_sha256 ?? null,
+          },
+        },
+        { conn },
+      );
+    });
   } catch (err) {
     if (err?.details?.current_status === "signed") {
       // Webhook tentando mutar contrato signed (ex: ClickSign reenvia
@@ -383,26 +443,6 @@ async function processarEventoWebhook(domainEvent) {
     }
     throw err;
   }
-
-  // Fase 10.5 — audit log da transição aplicada pelo webhook.
-  // Crítico porque é a evidência jurídica da assinatura/cancelamento.
-  await auditLog.record({
-    contratoId: contrato.id,
-    corretoraId: contrato.corretora_id,
-    leadId: contrato.lead_id,
-    eventType: domainEvent.status_hint, // 'signed' | 'cancelled' | 'expired'
-    actorType: "webhook",
-    previousStatus: contrato.status,
-    newStatus: domainEvent.status_hint,
-    provider: "clicksign",
-    providerDocumentId: domainEvent.document_id,
-    payload: {
-      occurred_at: domainEvent.occurred_at ?? null,
-      provider_event_id: domainEvent.provider_event_id ?? null,
-      signed_pdf_url: patch.signed_pdf_url ?? null,
-      signed_hash_sha256: patch.signed_hash_sha256 ?? null,
-    },
-  });
 
   await leadEventsRepo
     .create({
