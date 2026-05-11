@@ -284,7 +284,7 @@ app.use(errorHandler);
 if (process.env.NODE_ENV !== "test") {
   const PORT = process.env.PORT || 5000;
 
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     _logger.info({ port: PORT, env: process.env.NODE_ENV, appUrl: config.appUrl }, "server started");
 
     if (redis.ready) {
