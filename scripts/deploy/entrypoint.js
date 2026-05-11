@@ -78,7 +78,39 @@ async function main() {
     }
   }
 
-  log(`Migrations ok em ${Date.now() - start}ms. Iniciando server.`);
+  log(`Migrations ok em ${Date.now() - start}ms.`);
+
+  // Garante que o diretório de uploads existe e é gravável ANTES de subir
+  // o server. Sem isso, mediaService falha silenciosamente em deploys onde
+  // o volume está montado mas sem permissão de escrita.
+  const fs = require('fs');
+
+  const uploadsDir = process.env.UPLOADS_DIR || '/app/uploads';
+
+  try {
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o755 });
+      console.log(`[entrypoint] Criado diretório ${uploadsDir}`);
+    }
+
+    // Tenta ajustar permissões (no-op se já estiver ok)
+    try {
+      fs.chmodSync(uploadsDir, 0o755);
+    } catch (e) {
+      console.warn(`[entrypoint] chmod warn em ${uploadsDir}:`, e.message);
+    }
+
+    // Testa escrita
+    const testFile = path.join(uploadsDir, '.write-test');
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    console.log(`[entrypoint] ✓ ${uploadsDir} é gravável`);
+  } catch (err) {
+    console.error(`[entrypoint] ✗ ERRO no volume ${uploadsDir}:`, err.message);
+    console.error(`[entrypoint]   Backend vai subir, mas uploads vão falhar até resolver permissões manualmente.`);
+  }
+
+  log("Iniciando server.");
   // require em vez de spawn — herda o process para o Node tratar
   // SIGTERM corretamente (bootstrap/shutdown.js já depende disso).
   require(path.resolve(__dirname, "..", "..", "server.js"));
