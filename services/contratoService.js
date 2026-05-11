@@ -801,8 +801,46 @@ async function simularAssinatura({ id, actor, auditContext = {} }) {
   }
 
   const signedAt = new Date();
+
+  // Fase 10.9 — UPDATE para 'signed' + audit 'signed' rodam na
+  // MESMA transação (fluxo stub/admin apenas — webhook ClickSign
+  // permanece como está nesta etapa). Se o audit crítico falhar,
+  // withTransaction dispara rollback e o contrato volta para
+  // 'sent' — sem estado 'signed' órfão sem trilha jurídica.
+  //
+  // immutable_blocked segue best-effort FORA da tx, mesmo padrão
+  // dos fluxos created/cancelled/sent_to_signature: race com signed
+  // mid-flight (improvável aqui porque o pre-check exige 'sent',
+  // mas mantido por simetria defensiva).
   try {
-    await contratoRepo.updateStatus(id, "signed", { signed_at: signedAt });
+    await withTransaction(async (conn) => {
+      await contratoRepo.updateStatus(
+        id,
+        "signed",
+        { signed_at: signedAt },
+        conn,
+      );
+
+      await auditLog.record(
+        {
+          contratoId: id,
+          corretoraId: contrato.corretora_id,
+          leadId: contrato.lead_id,
+          eventType: "signed",
+          // simularAssinatura é um stub admin (NODE_ENV/staging) — system
+          // capta melhor que admin porque é UI de teste, não ato jurídico.
+          actorType: "system",
+          actorId: actor?.id ?? null,
+          ip: auditContext.ip ?? null,
+          userAgent: auditContext.userAgent ?? null,
+          previousStatus: "sent",
+          newStatus: "signed",
+          provider: "stub",
+          payload: { admin_actor: actor?.id ?? null, simulated: true },
+        },
+        { conn },
+      );
+    });
   } catch (err) {
     if (err?.details?.current_status === "signed") {
       await auditLog.record({
@@ -820,23 +858,6 @@ async function simularAssinatura({ id, actor, auditContext = {} }) {
     }
     throw err;
   }
-
-  await auditLog.record({
-    contratoId: id,
-    corretoraId: contrato.corretora_id,
-    leadId: contrato.lead_id,
-    eventType: "signed",
-    // simularAssinatura é um stub admin (NODE_ENV/staging) — system
-    // capta melhor que admin porque é UI de teste, não ato jurídico.
-    actorType: "system",
-    actorId: actor?.id ?? null,
-    ip: auditContext.ip ?? null,
-    userAgent: auditContext.userAgent ?? null,
-    previousStatus: "sent",
-    newStatus: "signed",
-    provider: "stub",
-    payload: { admin_actor: actor?.id ?? null, simulated: true },
-  });
 
   await leadEventsRepo
     .create({
