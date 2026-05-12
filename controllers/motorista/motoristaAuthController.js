@@ -37,10 +37,13 @@ async function consumeMagicLink(req, res, next) {
     const result = await authService.consumeMagicLink({ token });
 
     // Seta cookie HttpOnly de sessao
+    const isProd = process.env.NODE_ENV === "production";
     res.cookie(result.cookie.name, result.cookie.value, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      // 'none' em prod para funcionar com Vercel <-> Railway (cross-domain
+      // via Next.js rewrites). 'lax' em dev mantém o comportamento local.
+      sameSite: isProd ? "none" : "lax",
+      secure: isProd,
       maxAge: result.cookie.maxAgeSeconds * 1000,
       path: "/",
     });
@@ -53,7 +56,15 @@ async function consumeMagicLink(req, res, next) {
 
 async function logout(_req, res, next) {
   try {
-    res.clearCookie("motoristaToken", { path: "/" });
+    // Atributos do clearCookie devem bater com os do cookie original
+    // (ver consumeMagicLink); senão o navegador não apaga.
+    const isProd = process.env.NODE_ENV === "production";
+    res.clearCookie("motoristaToken", {
+      path: "/",
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+    });
     return response.noContent(res);
   } catch (err) {
     return next(err);

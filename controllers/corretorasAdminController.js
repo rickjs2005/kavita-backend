@@ -717,10 +717,13 @@ const impersonateCorretora = async (req, res, next) => {
       adminNome: req.admin?.nome ?? null,
     });
 
+    const isProd = process.env.NODE_ENV === "production";
     res.cookie("corretoraToken", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProd,
+      // 'none' em prod para funcionar com Vercel <-> Railway (cross-domain
+      // via Next.js rewrites). 'lax' em dev mantém o comportamento local.
+      sameSite: isProd ? "none" : "lax",
       maxAge: corretoraAuthService.IMPERSONATION_COOKIE_MAX_AGE_MS,
       path: "/",
     });

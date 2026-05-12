@@ -20,10 +20,13 @@ try { speakeasy = require("speakeasy"); } catch { /* optional */ }
 const COOKIE_NAME = "adminToken";
 
 function getAdminCookieOptions() {
+  const isProd = process.env.NODE_ENV === "production";
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProd,
+    // 'none' em prod para funcionar com Vercel <-> Railway (cross-domain
+    // via Next.js rewrites). 'lax' em dev mantém o comportamento local.
+    sameSite: isProd ? "none" : "lax",
     maxAge: authAdminService.COOKIE_MAX_AGE_MS,
     path: "/",
   };
@@ -262,10 +265,13 @@ async function logout(req, res) {
     }
   }
 
+  // Atributos do clearCookie devem bater com os do cookie original
+  // (ver getAdminCookieOptions); senão o navegador não apaga.
+  const isProd = process.env.NODE_ENV === "production";
   res.clearCookie(COOKIE_NAME, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
     path: "/",
   });
 

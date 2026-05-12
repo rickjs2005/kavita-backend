@@ -19,10 +19,13 @@ const { safeRateLimit } = require("../../lib/rateLimitHelpers");
 const COOKIE_NAME = "corretoraToken";
 
 function getCookieOptions() {
+  const isProd = process.env.NODE_ENV === "production";
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProd,
+    // 'none' em prod para funcionar com Vercel <-> Railway (cross-domain
+    // via Next.js rewrites). 'lax' em dev mantém o comportamento local.
+    sameSite: isProd ? "none" : "lax",
     maxAge: authService.COOKIE_MAX_AGE_MS,
     path: "/",
   };
@@ -206,10 +209,13 @@ async function logout(req, res) {
     }
   }
 
+  // Atributos do clearCookie devem bater com os do cookie original
+  // (ver getCookieOptions); senão o navegador não apaga.
+  const isProd = process.env.NODE_ENV === "production";
   res.clearCookie(COOKIE_NAME, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
     path: "/",
   });
 
@@ -237,10 +243,13 @@ async function exitImpersonation(req, res, next) {
       );
     }
 
+    // Atributos do clearCookie devem bater com os do cookie original
+    // (ver getCookieOptions); senão o navegador não apaga.
+    const isProd = process.env.NODE_ENV === "production";
     res.clearCookie(COOKIE_NAME, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       path: "/",
     });
 

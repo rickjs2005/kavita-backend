@@ -13,11 +13,13 @@ const COOKIE_NAME = verifyProducer.COOKIE_NAME;
 const COOKIE_MAX_AGE_MS = authService.JWT_TTL_DAYS * 24 * 60 * 60 * 1000;
 
 function cookieOptions() {
-  const prod = process.env.NODE_ENV === "production";
+  const isProd = process.env.NODE_ENV === "production";
   return {
     httpOnly: true,
-    secure: prod,
-    sameSite: "lax",
+    secure: isProd,
+    // 'none' em prod para funcionar com Vercel <-> Railway (cross-domain
+    // via Next.js rewrites). 'lax' em dev mantém o comportamento local.
+    sameSite: isProd ? "none" : "lax",
     path: "/",
     maxAge: COOKIE_MAX_AGE_MS,
   };
@@ -66,7 +68,15 @@ async function getMe(req, res, next) {
 }
 
 async function logout(_req, res) {
-  res.clearCookie(COOKIE_NAME, { path: "/" });
+  // Atributos do clearCookie devem bater com os do cookie original
+  // (ver cookieOptions); senão o navegador não apaga.
+  const isProd = process.env.NODE_ENV === "production";
+  res.clearCookie(COOKIE_NAME, {
+    path: "/",
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+  });
   return response.ok(res, null, "Sessão encerrada.");
 }
 
